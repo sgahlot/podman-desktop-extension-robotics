@@ -1,0 +1,17 @@
+FROM scratch as builder
+
+COPY packages/backend/dist/ /extension/dist
+COPY packages/backend/package.json /extension/
+COPY packages/backend/media/ /extension/media
+COPY LICENSE /extension/
+COPY packages/backend/icon.png /extension/
+COPY README.md /extension/
+
+FROM scratch
+
+LABEL org.opencontainers.image.title="Physical AI" \
+      org.opencontainers.image.description="Podman Desktop extension for Physical AI robotics development" \
+      org.opencontainers.image.vendor="Red Hat" \
+      io.podman-desktop.api.version=">= 1.28.0"
+
+COPY --from=builder /extension /extension

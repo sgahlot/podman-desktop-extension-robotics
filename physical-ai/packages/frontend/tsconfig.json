@@ -1,0 +1,25 @@
+{
+  "extends": "@tsconfig/svelte/tsconfig.json",
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "strict": true,
+    "resolveJsonModule": true,
+    "preserveValueImports": false,
+    "baseUrl": ".",
+    "paths": {
+      "/@/*": ["./src/*"],
+      "/@shared/*": ["../shared/*"]
+    },
+    "allowJs": true,
+    "checkJs": true
+  },
+  "include": [
+    "src/**/*.d.ts",
+    "src/**/*.ts",
+    "src/**/*.js",
+    "src/**/*.svelte",
+    "../../types/**/*.d.ts",
+    "../shared/**/*.ts"
+  ]
+}

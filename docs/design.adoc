@@ -1,0 +1,281 @@
+= Physical AI Podman Desktop Extension — Design Document
+:toc: macro
+:toc-title: Contents
+:toclevels: 3
+:icons: font
+:source-highlighter: highlight.js
+
+toc::[]
+
+== Purpose
+
+This document captures the architecture, component design, data flow, and key technical decisions for the Physical AI Podman Desktop extension. It is a living document — updated as the project evolves.
+
+For work breakdown and progress tracking, see the link:podman-extension-plan.md[plan doc].
+
+== Goals
+
+[cols="1,3"]
+|===
+| Goal | Description
+
+| Zero-CLI robotics dev
+| Robotics engineers should be able to go from "install extension" to "running simulation" without touching a terminal
+
+| Ubuntu-to-Fedora bridge
+| Provide curated Fedora/ROS2 base images as a migration path from Ubuntu-based robotics workflows
+
+| Local-to-cluster path
+| Enable the transition from local Podman development to OpenShift deployment
+
+| ROSCon demo-ready
+| MVP must be demonstrable at ROSCon Toronto, September 2026
+|===
+
+== Architecture Overview
+
+[source]
+----
+            ┌───────────────────────────────────────────────────────┐
+            │                  Podman Desktop                       │
+            │                                                       │
+            │  ┌─────────────────────────────────────────────────┐  │
+            │  │          Physical AI Extension                  │  │
+            │  │                                                 │  │
+            │  │  ┌──────────┐   RPC    ┌───────────────────┐    │  │
+            │  │  │ Frontend │◄────────►│    Backend        │    │  │
+            │  │  │ (Svelte) │ Message  │  (extension.ts)   │    │  │
+            │  │  │          │  Proxy   │                   │    │  │
+            │  │  └──────────┘          └────────┬──────────┘    │  │
+            │  │                                 │               │  │
+            │  └─────────────────────────────────┼───────────────┘  │
+            │                                    │                  │
+            └────────────────────────────────────┼──────────────────┘
+                                                 │
+                                ┌────────────────┼────────────────┐
+                                │                │                │
+                          ┌─────▼──────┐  ┌──────▼──────┐  ┌──────▼──────┐
+                          │  Podman    │  │   Quay.io   │  │  Kind /     │
+                          │  Engine    │  │  Registry   │  │  OpenShift  │
+                          │            │  │             │  │  (stretch)  │
+                          │ ┌────────┐ │  └─────────────┘  └─────────────┘
+                          │ │ROS2 Pod│ │
+                          │ │┌──────┐│ │
+                          │ ││Gazebo││ │
+                          │ │├──────┤│ │
+                          │ ││ROS2  ││ │
+                          │ │├──────┤│ │
+                          │ ││noVNC ││ │
+                          │ │└──────┘│ │
+                          │ └────────┘ │
+                          └────────────┘
+----
+
+== Component Design
+
+=== Extension Backend (`packages/backend`)
+
+The backend is the entry point loaded by Podman Desktop. It manages the extension lifecycle and provides the API surface for the frontend.
+
+==== Responsibilities
+
+* Extension activation/deactivation (`activate()` / `deactivate()`)
+* Webview panel creation and media asset loading
+* RPC bridge registration via `RpcExtension`
+* Podman Engine interaction (container/pod lifecycle)
+* Image pull orchestration from Quay registry
+
+==== Key Files
+
+[cols="1,2"]
+|===
+| File | Role
+
+| `src/extension.ts` | Entry point — creates webview panel, wires RPC
+| `src/api-impl.ts` | `PhysicalAiApiImpl` — implements the API interface
+| `package.json` | Extension manifest (contributes, engines, commands)
+| `vite.config.js` | Builds to CJS, externalizes `@podman-desktop/api`
+|===
+
+=== Extension Frontend (`packages/frontend`)
+
+The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. It uses TailwindCSS for styling and `@podman-desktop/ui-svelte` for consistent look and feel.
+
+==== Responsibilities
+
+* Dashboard landing page
+* Image catalog browser _(APPENG-5770)_
+* Simulation launch and visualization _(APPENG-5772)_
+* ROS2 topic monitor _(APPENG-5773)_
+* Fleet status dashboard _(APPENG-5776, stretch)_
+
+==== Key Files
+
+[cols="1,2"]
+|===
+| File | Role
+
+| `src/App.svelte` | Root component, hash-based routing via tinro
+| `src/Dashboard.svelte` | Landing page with quick-link cards
+| `src/api/client.ts` | RPC client — creates proxy to backend API
+| `src/lib/Route.svelte` | Route component with state persistence
+|===
+
+=== Shared Layer (`packages/shared`)
+
+The shared package defines the API contract between frontend and backend and provides the RPC transport.
+
+==== MessageProxy RPC Bridge
+
+[source]
+----
+Frontend (RpcBrowser)                    Backend (RpcExtension)
+        │                                        │
+        │──── IMessageRequest ──────────────────►│
+        │     { id, channel, args }              │
+        │                                        │── calls registered method
+        │◄─── IMessageResponse ─────────────────│
+        │     { id, channel, body, status }      │
+----
+
+* Frontend calls `physicalAiClient.someMethod(args)` — the proxy serializes this as an `IMessageRequest` via `postMessage`
+* Backend `RpcExtension` dispatches to the registered method on `PhysicalAiApiImpl`
+* Response is sent back as `IMessageResponse` with status `success` or `error`
+* 10-second timeout per request
+
+==== API Interface
+
+The `PhysicalAiApi` abstract class defines the contract. Both the frontend proxy and backend implementation conform to it.
+
+.Current API (scaffold)
+[source,typescript]
+----
+export abstract class PhysicalAiApi {
+  abstract getStatus(): Promise<string>;
+}
+----
+
+This will grow as features are added (image catalog, simulation control, topic monitoring, etc.).
+
+== Data Flow
+
+=== Image Catalog (planned)
+
+[source]
+----
+User browses catalog ──► Frontend requests image list ──► Backend queries Quay API
+                                                                    │
+User clicks "Pull"   ──► Frontend sends pull request  ──► Backend calls Podman pull
+                                                                    │
+                         Frontend shows progress      ◄── Backend streams status
+----
+
+=== Simulation Launch (planned)
+
+[source]
+----
+User clicks "Launch" ──► Frontend sends launch request ──► Backend creates Podman pod
+                                                                     │
+                                                              ┌──────┴──────┐
+                                                              │ ROS2 container
+                                                              │ Gazebo container
+                                                              │ noVNC container
+                                                              └──────┬──────┘
+                                                                     │
+                         Frontend renders noVNC iframe ◄── Backend returns pod info
+----
+
+== Container Architecture
+
+=== Single Robot Pod (planned)
+
+[source]
+----
+┌─── Podman Pod: physical-ai-sim ───────────────────┐
+│                                                     │
+│  ┌─────────────┐  ┌──────────┐  ┌──────────────┐  │
+│  │ ROS2 Jazzy  │  │  Gazebo  │  │    noVNC     │  │
+│  │  + robot    │  │  server  │  │  (web viz)   │  │
+│  │  packages   │  │          │  │              │  │
+│  └──────┬──────┘  └────┬─────┘  └──────┬───────┘  │
+│         │              │               │           │
+│         └──── shared network (localhost) ──────────│
+│                                                     │
+│  Exposed ports: noVNC (6080), Gazebo (11345)       │
+└─────────────────────────────────────────────────────┘
+----
+
+=== Multi-Robot Fleet (planned, stretch)
+
+[source]
+----
+┌─── Pod: robot-1 ───┐  ┌─── Pod: robot-2 ───┐
+│  ROS2 + Gazebo     │  │  ROS2 + Gazebo     │
+│  DDS bridge        │  │  DDS bridge        │
+└────────┬───────────┘  └────────┬───────────┘
+         │                       │
+         └───────┬───────────────┘
+                 │
+         ┌───────▼───────┐
+         │  Zenoh Router │
+         │  (sidecar)    │
+         └───────────────┘
+----
+
+== Key Technical Decisions
+
+[cols="1,2,2"]
+|===
+| Decision | Choice | Rationale
+
+| Extension template
+| Full template (3-package)
+| Extension will have substantial UI — catalog, dashboards, panels
+
+| Frontend framework
+| Svelte 5 + TailwindCSS
+| Podman Desktop standard; `@podman-desktop/ui-svelte` provides consistent components
+
+| Frontend-backend communication
+| MessageProxy RPC
+| Type-safe, proxy-based — frontend calls look like regular async method calls
+
+| Routing
+| tinro (hash mode)
+| Required for webview context; state persisted via `PodmanDesktopApi.setState()`
+
+| Build tooling
+| Vite 8
+| Fast builds, native TypeScript support, matches Podman Desktop ecosystem
+
+| Container base
+| Fedora + ROS2 Jazzy
+| Aligns with Red Hat ecosystem; migration path from Ubuntu
+
+| Middleware
+| Zenoh with DDS bridge
+| Enables cross-container ROS2 communication without shared network namespace
+
+| Package manager
+| npm with workspaces
+| Matches the official full template
+
+| Min Podman Desktop
+| >= 1.28.0
+| User's current version; webview API is stable at this version
+|===
+
+== Open Questions
+
+* **Base image registry:** Should we use a dedicated Quay org or publish under an existing Red Hat org?
+* **Simulation fidelity:** What Gazebo worlds/robots should be included in the MVP demo?
+* **noVNC vs alternatives:** noVNC is the default assumption — are there lighter-weight browser streaming options worth evaluating?
+* **GPU passthrough:** Will the demo require GPU access for Gazebo rendering inside containers?
+
+== References
+
+* https://podman-desktop.io/docs/extensions/developing[Podman Desktop extension development guide]
+* https://podman-desktop.io/docs/extensions/templates[Extension templates]
+* https://github.com/podman-desktop/podman-desktop-extension-full-template[Full template repo]
+* https://github.com/podman-desktop/podman-desktop/tree/main/extensions[Built-in extensions]
+* https://podman-desktop.io/api[Podman Desktop Extension API reference]
