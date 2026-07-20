@@ -49,11 +49,15 @@ npm run build
 
 === Load in Podman Desktop
 
-. Enable **Development Mode** in Podman Desktop settings
+. Enable **Development Mode**: *Settings > Preferences > Extensions > Development Mode*
++
+image::docs/images/enable-dev-mode.png[Enable Development Mode,600]
 . Navigate to *Extensions* in the left nav
 . Go to the *Local extension* tab
 . Click "Add a local folder..." and select `packages/backend`
 . The "Physical AI" extension appears in the navbar
++
+image::docs/images/physical-ai-extension.png[Physical AI Extension,600]
 
 == Project Structure
 
