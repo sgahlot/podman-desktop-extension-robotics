@@ -5,6 +5,7 @@ import Route from './lib/Route.svelte';
 import { onMount } from 'svelte';
 import { getRouterState } from './api/client';
 import Dashboard from './Dashboard.svelte';
+import ImageCatalog from './ImageCatalog.svelte';
 
 router.mode.hash();
 
@@ -21,6 +22,9 @@ onMount(() => {
     <div class="flex flex-row w-full h-full overflow-hidden">
       <Route path="/" breadcrumb="Dashboard">
         <Dashboard />
+      </Route>
+      <Route path="/images" breadcrumb="Image Catalog">
+        <ImageCatalog />
       </Route>
     </div>
   </main>

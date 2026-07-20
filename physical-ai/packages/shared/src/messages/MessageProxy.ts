@@ -80,7 +80,8 @@ export class RpcExtension {
     });
   }
 
-  registerInstance<T extends Record<keyof T, UnaryRPC>>(classType: new (...args: unknown[]) => T, instance: T): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  registerInstance<T extends Record<string, any>>(classType: new (...args: any[]) => T, instance: T): void {
     const methodNames = Object.getOwnPropertyNames(classType.prototype).filter(
       name => name !== 'constructor' && typeof instance[name as keyof T] === 'function',
     );
