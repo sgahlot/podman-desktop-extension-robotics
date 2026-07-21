@@ -14,6 +14,33 @@ onMount(async () => {
 });
 </script>
 
+<style>
+  .card-tooltip {
+    position: relative;
+  }
+  .card-tooltip .tooltip-text {
+    visibility: hidden;
+    opacity: 0;
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    background-color: #1f2937;
+    color: #ffffff;
+    pointer-events: none;
+    transition: opacity 0.15s;
+    margin-bottom: 4px;
+    z-index: 10;
+  }
+  .card-tooltip:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+  }
+</style>
+
 <div class="flex flex-col p-4 gap-4">
   <h1 class="text-3xl text-[var(--pd-content-header)]">Physical AI</h1>
   <p class="text-[var(--pd-content-text)]">
@@ -25,21 +52,28 @@ onMount(async () => {
     <div class="grid grid-cols-3 gap-4">
       <button
         on:click={() => router.goto('/images')}
-        class="p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left hover:border-purple-500 cursor-pointer"
+        class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left hover:border-purple-500 cursor-pointer"
       >
+        <span class="tooltip-text">Browse and pull container images</span>
         <div class="text-lg">Image Catalog</div>
-        <div class="text-sm text-gray-700">Browse and pull container images</div>
       </button>
-      <div class="p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)]">
+      <div class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)]">
+        <span class="tooltip-text">Launch ROS2 + Gazebo simulations</span>
         <div class="text-lg">Simulation</div>
-        <div class="text-sm text-gray-700">Launch ROS2 + Gazebo simulations</div>
         <div class="text-xs text-gray-900 mt-2">Coming soon</div>
       </div>
-      <div class="p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)]">
+      <div class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)]">
+        <span class="tooltip-text">Scale to multi-robot local fleet</span>
         <div class="text-lg">Fleet</div>
-        <div class="text-sm text-gray-700">Scale to multi-robot local fleet</div>
         <div class="text-xs text-gray-900 mt-2">Coming soon</div>
       </div>
+      <button
+        on:click={() => router.goto('/help')}
+        class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left hover:border-purple-500 cursor-pointer"
+      >
+        <span class="tooltip-text">Guide to using this extension</span>
+        <div class="text-lg">Help</div>
+      </button>
     </div>
   </div>
 
