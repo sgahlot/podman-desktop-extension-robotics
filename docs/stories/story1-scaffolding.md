@@ -1,4 +1,4 @@
-# Story 1: Extension Scaffolding and Base Image Catalog — ✅ Done
+# Story 1: Extension Scaffolding and Base Image Catalog — 🟡 Almost Done
 
 **Jira:** APPENG-5764 | **Parent:** APPENG-5763 (Epic)
 
@@ -11,7 +11,7 @@
 | Status | Key | Summary |
 |--------|-----|---------|
 | ✅ | APPENG-5768 | Scaffold Podman Desktop extension with TypeScript/Svelte boilerplate |
-| ✅ | APPENG-5769 | Build and publish Fedora + ROS2 Jazzy base image to Quay |
+| 🟡 | APPENG-5769 | Build and publish ROS2 Jazzy base image to Quay |
 | ✅ | APPENG-5770 | Implement image catalog UI with pull and status indicators |
 
 ---
@@ -53,7 +53,7 @@ See [Decisions and Directions](../podman-extension-plan.md#decisions-and-directi
 
 ---
 
-## APPENG-5769: Build ROS2 Jazzy Base Image — ✅ Done
+## APPENG-5769: Build ROS2 Jazzy Base Image — 🟡 Almost Done
 
 **Description:** Build a container image with ROS2 Jazzy core runtime and convenience tools (colcon, rosdep). Publish to Quay registry.
 
@@ -61,11 +61,24 @@ See [Decisions and Directions](../podman-extension-plan.md#decisions-and-directi
 
 ### What was done
 
+**Container image:**
 - Created `containers/ros2-jazzy-base/` with Containerfile, entrypoint, and README
 - Based on `ros:jazzy-ros-base` (official Ubuntu 24.04 image)
 - Includes: colcon, rosdep (pre-initialized), vcstool, cmake, build-essential, git
 - Entrypoint sources `/opt/ros/jazzy/setup.bash` automatically
 - Working directory set to `/ros2_ws`
+
+**Build & Push UI in extension:**
+- "Build & Push Base Image" page accessible from Dashboard card
+- Build: fires `containerEngine.buildImage()` with bundled Containerfile assets, streams build logs, shows step progress bar (STEP N/M parsing)
+- Push: fires `containerEngine.pushImage()` with animated indeterminate progress bar (Podman Desktop push API only provides start/end callbacks, no intermediate progress)
+- Push success displays image tag and full SHA256 digest
+- Detects existing local images: shows "Rebuild" instead of "Build", enables push without rebuilding
+- Build logs are collapsible with line count
+- Registry authentication must be configured via Podman Desktop Settings → Registries (not CLI `podman login`)
+- Containerfile assets bundled in `packages/backend/assets/ros2-jazzy-base/` for runtime access via `extensionContext.extensionUri`
+- Help page updated with Build & Push documentation
+- API contract extended with `buildBaseImage()`, `getBuildProgress()`, `pushImage()`, `getPushProgress()` (10 methods total)
 
 ### Key files
 
@@ -74,6 +87,15 @@ containers/ros2-jazzy-base/
 ├── Containerfile     # Image definition
 ├── entrypoint.sh     # Sources ROS2 setup, execs CMD
 └── README.md         # Build/run/publish instructions
+
+packages/frontend/src/BuildBaseImage.svelte       # Build & push page with progress and logs
+packages/frontend/src/Dashboard.svelte            # "Build & Push Base Image" card
+packages/frontend/src/Help.svelte                 # Build & push documentation section
+packages/backend/src/api-impl.ts                  # Build and push implementation
+packages/backend/assets/ros2-jazzy-base/          # Bundled Containerfile and entrypoint for builds
+packages/shared/src/PhysicalAiApi.ts              # API contract (10 methods)
+packages/shared/src/types/ImageCatalog.ts         # BuildProgress, PushProgress types
+Containerfile                                     # Updated to COPY assets into extension OCI image
 ```
 
 ### Decisions made
@@ -84,10 +106,23 @@ containers/ros2-jazzy-base/
 | rviz2 | Excluded | Requires full desktop stack (OpenGL, Qt5, X11); planned as separate "desktop" variant |
 | Location | `containers/ros2-jazzy-base/` | Standard multi-image convention; root Containerfile stays for extension OCI packaging |
 
-### Future work
+### Key learnings
 
-- **Migrate to Fedora base** — once ROS2 Jazzy Fedora packaging matures (COPR repos or source build)
-- **Add rviz2/desktop variant** — separate image with GUI dependencies for visualization
+- `extensionContext.extensionUri` resolves to `packages/backend/` during development — assets must be placed there, not at repo root
+- `containerEngine.pushImage()` expects image name:tag as second param, not the hex SHA ID
+- Push callback only fires at start and end (no intermediate layer progress) — use an indeterminate animated progress bar
+- On macOS, `podman login` from host CLI may not share credentials with the Podman machine VM — use Podman Desktop Settings → Registries instead
+- Push callback data may contain multiple newline-separated JSON objects in a single chunk — split before parsing
+
+### Follow-up tasks
+
+| Status | Key | Summary |
+|--------|-----|---------|
+| ⚪ | APPENG-5769-01 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora |
+| ⚪ | APPENG-5769-02 | Add rviz2/desktop variant of the base image |
+
+- **APPENG-5769-01:** Replace Ubuntu 24.04 base with Fedora once ROS2 Jazzy Fedora packaging matures (COPR repos or source build). Update Containerfile, bundled assets, and extension build.
+- **APPENG-5769-02:** Create a separate "desktop" image variant that includes rviz2 and GUI dependencies (OpenGL, Qt5, X11) for visualization workflows.
 
 ---
 
@@ -115,7 +150,7 @@ containers/ros2-jazzy-base/
 ```
 packages/frontend/src/ImageCatalog.svelte   # Full catalog page (browse, pull, progress, local detection)
 packages/backend/src/api-impl.ts            # Backend: Quay API, pull with progress, local image listing
-packages/shared/src/PhysicalAiApi.ts        # API contract (6 methods)
+packages/shared/src/PhysicalAiApi.ts        # API contract (10 methods)
 packages/shared/src/types/ImageCatalog.ts   # Shared types (QuayRepository, QuayTag, PullProgress)
 ```
 
