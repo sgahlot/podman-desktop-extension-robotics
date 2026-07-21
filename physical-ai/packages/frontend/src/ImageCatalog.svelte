@@ -1,8 +1,8 @@
 <script lang="ts">
 import { physicalAiClient } from './api/client';
-import { onMount } from 'svelte';
+import { onMount, onDestroy } from 'svelte';
 import { router } from 'tinro';
-import type { QuayRepository, QuayTag } from '/@shared/src/types/ImageCatalog';
+import type { QuayRepository, QuayTag, PullProgress } from '/@shared/src/types/ImageCatalog';
 
 let namespace = 'ecosystem-appeng';
 let filter = '';
@@ -15,11 +15,51 @@ let tags: QuayTag[] = [];
 let loadingTags = false;
 
 let pullingImages: Set<string> = new Set();
+let pullProgress: Map<string, PullProgress> = new Map();
 let pullResults: Map<string, { success: boolean; message: string }> = new Map();
+let pollTimers: Map<string, number> = new Map();
 
 $: filteredRepos = repos.filter(r =>
   r.name.toLowerCase().includes(filter.toLowerCase()),
 );
+
+function startPolling(pullKey: string, imageKey: string) {
+  const timer = window.setInterval(async () => {
+    try {
+      const progress = await physicalAiClient.getPullProgress(imageKey);
+      if (progress) {
+        pullProgress.set(imageKey, progress);
+        pullProgress = pullProgress;
+
+        if (progress.done) {
+          stopPolling(imageKey);
+          pullingImages.delete(pullKey);
+          pullingImages = pullingImages;
+          pullProgress.delete(imageKey);
+          pullProgress = pullProgress;
+
+          if (progress.error) {
+            pullResults.set(pullKey, { success: false, message: progress.error });
+          } else {
+            pullResults.set(pullKey, { success: true, message: 'Pulled' });
+          }
+          pullResults = pullResults;
+        }
+      }
+    } catch {
+      // ignore polling errors
+    }
+  }, 500);
+  pollTimers.set(imageKey, timer);
+}
+
+function stopPolling(imageKey: string) {
+  const timer = pollTimers.get(imageKey);
+  if (timer) {
+    window.clearInterval(timer);
+    pollTimers.delete(imageKey);
+  }
+}
 
 async function loadRepos() {
   loading = true;
@@ -61,6 +101,7 @@ async function toggleTags(repo: QuayRepository) {
 
 async function pullImage(repo: QuayRepository, tag: QuayTag) {
   const pullKey = `${repo.namespace}/${repo.name}:${tag.name}`;
+  const imageKey = `quay.io/${repo.namespace}/${repo.name}:${tag.name}`;
   pullingImages.add(pullKey);
   pullingImages = pullingImages;
   pullResults.delete(pullKey);
@@ -68,17 +109,27 @@ async function pullImage(repo: QuayRepository, tag: QuayTag) {
 
   try {
     await physicalAiClient.pullImage(`${repo.namespace}/${repo.name}`, tag.name);
-    pullResults.set(pullKey, { success: true, message: 'Pulled' });
+    startPolling(pullKey, imageKey);
   } catch (e) {
+    pullingImages.delete(pullKey);
+    pullingImages = pullingImages;
     pullResults.set(pullKey, {
       success: false,
       message: e instanceof Error ? e.message : typeof e === 'string' ? e : 'Pull failed',
     });
-  } finally {
-    pullingImages.delete(pullKey);
-    pullingImages = pullingImages;
     pullResults = pullResults;
   }
+}
+
+function getPullStatus(repoKey: string, tagName: string, _progressMap: Map<string, PullProgress>): string {
+  const imageKey = `quay.io/${repoKey}:${tagName}`;
+  const progress = _progressMap.get(imageKey);
+  if (!progress) return 'Pulling...';
+  if (progress.currentMB !== undefined && progress.totalMB !== undefined && progress.totalMB > 0) {
+    const percent = Math.round(progress.currentMB / progress.totalMB * 100);
+    return `${progress.currentMB}/${progress.totalMB} MB (${percent}%)`;
+  }
+  return progress.status || 'Pulling...';
 }
 
 function formatSize(bytes: number): string {
@@ -94,6 +145,12 @@ function formatDate(dateStr: string): string {
 
 onMount(() => {
   loadRepos();
+});
+
+onDestroy(() => {
+  for (const timer of pollTimers.values()) {
+    window.clearInterval(timer);
+  }
 });
 </script>
 
@@ -200,9 +257,9 @@ onMount(() => {
                         <td class="py-2 pr-4 text-[var(--pd-content-text)]">{formatSize(tag.size)}</td>
                         <td class="py-2 pr-4 text-[var(--pd-content-text)]">{formatDate(tag.last_modified)}</td>
                         <td class="py-2 pr-4 text-[var(--pd-content-text)] font-mono">{tag.manifest_digest.substring(7, 19)}</td>
-                        <td class="py-2">
+                        <td class="py-2 min-w-[220px]">
                           {#if pullingImages.has(pullKey)}
-                            <span style="color: #7c3aed;">Pulling...</span>
+                            <span style="color: #7c3aed;">{getPullStatus(repoKey, tag.name, pullProgress)}</span>
                           {:else if pullResults.has(pullKey)}
                             {@const result = pullResults.get(pullKey)}
                             <span style="color: {result?.success ? '#16a34a' : '#dc2626'};">

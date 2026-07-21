@@ -1,10 +1,12 @@
 import * as extensionApi from '@podman-desktop/api';
 import type { PhysicalAiApi } from '/@shared/src/PhysicalAiApi';
-import type { QuayRepository, QuayTag } from '/@shared/src/types/ImageCatalog';
+import type { QuayRepository, QuayTag, PullProgress } from '/@shared/src/types/ImageCatalog';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
 
 export class PhysicalAiApiImpl implements PhysicalAiApi {
+  private activePulls = new Map<string, PullProgress>();
+
   async getStatus(): Promise<string> {
     return 'Physical AI extension is running';
   }
@@ -48,6 +50,10 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return data.tags;
   }
 
+  async getPullProgress(image: string): Promise<PullProgress | null> {
+    return this.activePulls.get(image) || null;
+  }
+
   async pullImage(fullImageName: string, tag: string): Promise<void> {
     const connections = extensionApi.provider.getContainerConnections();
     const podmanConnection = connections.find(
@@ -59,10 +65,32 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
 
     const imageToPull = `quay.io/${fullImageName}:${tag}`;
-    await extensionApi.containerEngine.pullImage(
+    this.activePulls.set(imageToPull, { image: imageToPull, status: 'Starting...' });
+
+    extensionApi.containerEngine.pullImage(
       podmanConnection.connection,
       imageToPull,
-      () => {},
-    );
+      event => {
+        this.activePulls.set(imageToPull, {
+          image: imageToPull,
+          status: event.status || '',
+          currentMB: event.progressDetail?.current
+            ? Math.round(event.progressDetail.current / (1024 * 1024) * 10) / 10
+            : undefined,
+          totalMB: event.progressDetail?.total
+            ? Math.round(event.progressDetail.total / (1024 * 1024) * 10) / 10
+            : undefined,
+        });
+      },
+    ).then(() => {
+      this.activePulls.set(imageToPull, { image: imageToPull, status: 'Complete', done: true });
+    }).catch((err: unknown) => {
+      this.activePulls.set(imageToPull, {
+        image: imageToPull,
+        status: 'Failed',
+        done: true,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
   }
 }

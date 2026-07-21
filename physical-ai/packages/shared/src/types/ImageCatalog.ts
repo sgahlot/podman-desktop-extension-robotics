@@ -15,3 +15,12 @@ export interface QuayTag {
   is_manifest_list: boolean;
 }
 
+export interface PullProgress {
+  image: string;
+  status: string;
+  currentMB?: number;
+  totalMB?: number;
+  done?: boolean;
+  error?: string;
+}
+

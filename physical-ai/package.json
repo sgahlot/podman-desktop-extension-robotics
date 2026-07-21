@@ -11,6 +11,7 @@
     "npm": ">=10.0.0"
   },
   "scripts": {
+    "clean": "rm -rf packages/backend/dist packages/backend/media",
     "build": "concurrently \"npm run -w packages/frontend build\" \"npm run -w packages/backend build\"",
     "watch": "concurrently \"npm run -w packages/frontend watch\" \"npm run -w packages/backend watch\"",
     "format:check": "prettier --check \"**/src/**/*.{ts,svelte}\"",
