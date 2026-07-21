@@ -12,7 +12,7 @@
 |--------|-----|---------|
 | ✅ | APPENG-5768 | Scaffold Podman Desktop extension with TypeScript/Svelte boilerplate |
 | ⚪ | APPENG-5769 | Build and publish Fedora + ROS2 Jazzy base image to Quay |
-| ⚪ | APPENG-5770 | Implement image catalog UI with pull and status indicators |
+| ✅ | APPENG-5770 | Implement image catalog UI with pull and status indicators |
 
 ---
 
@@ -61,8 +61,36 @@ See [Decisions and Directions](../podman-extension-plan.md#decisions-and-directi
 
 ---
 
-## APPENG-5770: Image Catalog UI — ⚪ Not Started
+## APPENG-5770: Image Catalog UI — ✅ Done
 
 **Description:** Build the UI within the extension to browse curated base images, pull them from Quay, and show download/status indicators.
 
-*No work done yet.*
+**Completed:** 2026-07-21
+
+### What was done
+
+- Image Catalog page browsing Quay.io namespace with paginated repository listing
+- Client-side name filter for repositories
+- Expandable repo rows showing tags with size, date, and digest
+- Pull images from Quay via Podman with real-time progress bar (fire-and-forget + polling pattern)
+- Per-layer download progress aggregated into smooth totals with percentage display
+- "Locally Available" collapsible section showing local images matching the namespace (scrollable, max 10 visible)
+- Green "✓ Local" badge on tag rows for already-pulled images, with "Pull again" option
+- Refresh button to re-check local images without leaving the page
+- Error handling with truncated messages, tooltips, and retry links
+- Auto-refresh of local images after each successful pull
+
+### Key files
+
+```
+packages/frontend/src/ImageCatalog.svelte   # Full catalog page (browse, pull, progress, local detection)
+packages/backend/src/api-impl.ts            # Backend: Quay API, pull with progress, local image listing
+packages/shared/src/PhysicalAiApi.ts        # API contract (6 methods)
+packages/shared/src/types/ImageCatalog.ts   # Shared types (QuayRepository, QuayTag, PullProgress)
+```
+
+### Key learnings
+
+- Podman Desktop webview does NOT deliver unsolicited backend-to-frontend messages — use polling instead of pub/sub
+- Svelte 5 reactivity with Map/Set requires passing the collection as an explicit template argument
+- Tailwind CSS classes don't render in Podman Desktop webviews — use inline styles
