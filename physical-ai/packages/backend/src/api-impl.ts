@@ -6,6 +6,7 @@ const QUAY_API_BASE = 'https://quay.io/api/v1';
 
 export class PhysicalAiApiImpl implements PhysicalAiApi {
   private activePulls = new Map<string, PullProgress>();
+  private layerProgress = new Map<string, Map<string, { current: number; total: number }>>();
 
   async getStatus(): Promise<string> {
     return 'Physical AI extension is running';
@@ -66,25 +67,44 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
     const imageToPull = `quay.io/${fullImageName}:${tag}`;
     this.activePulls.set(imageToPull, { image: imageToPull, status: 'Starting...' });
+    this.layerProgress.set(imageToPull, new Map());
 
     extensionApi.containerEngine.pullImage(
       podmanConnection.connection,
       imageToPull,
       event => {
+        const layers = this.layerProgress.get(imageToPull)!;
+
+        if (event.id && event.progressDetail?.current !== undefined && event.progressDetail?.total) {
+          layers.set(event.id, {
+            current: event.progressDetail.current,
+            total: event.progressDetail.total,
+          });
+        }
+
+        let totalCurrent = 0;
+        let totalSize = 0;
+        for (const layer of layers.values()) {
+          totalCurrent += layer.current;
+          totalSize += layer.total;
+        }
+
         this.activePulls.set(imageToPull, {
           image: imageToPull,
-          status: event.status || '',
-          currentMB: event.progressDetail?.current
-            ? Math.round(event.progressDetail.current / (1024 * 1024) * 10) / 10
+          status: totalSize > 0 ? 'Downloading' : (event.status || ''),
+          currentMB: totalSize > 0
+            ? Math.round(totalCurrent / (1024 * 1024) * 10) / 10
             : undefined,
-          totalMB: event.progressDetail?.total
-            ? Math.round(event.progressDetail.total / (1024 * 1024) * 10) / 10
+          totalMB: totalSize > 0
+            ? Math.round(totalSize / (1024 * 1024) * 10) / 10
             : undefined,
         });
       },
     ).then(() => {
+      this.layerProgress.delete(imageToPull);
       this.activePulls.set(imageToPull, { image: imageToPull, status: 'Complete', done: true });
     }).catch((err: unknown) => {
+      this.layerProgress.delete(imageToPull);
       this.activePulls.set(imageToPull, {
         image: imageToPull,
         status: 'Failed',
