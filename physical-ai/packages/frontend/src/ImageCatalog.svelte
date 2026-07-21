@@ -4,7 +4,7 @@ import { onMount, onDestroy } from 'svelte';
 import { router } from 'tinro';
 import type { QuayRepository, QuayTag, PullProgress } from '/@shared/src/types/ImageCatalog';
 
-let namespace = 'ecosystem-appeng';
+let namespace = '';
 let filter = '';
 let repos: QuayRepository[] = [];
 let loading = false;
@@ -178,7 +178,8 @@ function formatDate(dateStr: string): string {
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-onMount(() => {
+onMount(async () => {
+  namespace = await physicalAiClient.getDefaultNamespace();
   refreshLocalImages();
   loadRepos();
 });

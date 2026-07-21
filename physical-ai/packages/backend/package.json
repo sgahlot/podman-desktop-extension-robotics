@@ -16,7 +16,17 @@
         "command": "physical-ai.open",
         "title": "Physical AI: Open Dashboard"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Physical AI",
+      "properties": {
+        "physical-ai.defaultNamespace": {
+          "type": "string",
+          "default": "ecosystem-appeng",
+          "description": "Default Quay.io namespace for browsing and building images"
+        }
+      }
+    }
   },
   "scripts": {
     "build": "vite build",

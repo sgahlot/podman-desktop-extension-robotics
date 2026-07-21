@@ -202,6 +202,11 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return this.activePushes.get(tag) || null;
   }
 
+  async getDefaultNamespace(): Promise<string> {
+    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    return config.get<string>('defaultNamespace') ?? 'ecosystem-appeng';
+  }
+
   async pushImage(tag: string): Promise<void> {
     const images = await extensionApi.containerEngine.listImages();
     const imageInfo = images.find(img => img.RepoTags?.includes(tag));

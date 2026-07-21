@@ -11,4 +11,5 @@ export abstract class PhysicalAiApi {
   abstract getBuildProgress(tag: string): Promise<BuildProgress | null>;
   abstract pushImage(tag: string): Promise<void>;
   abstract getPushProgress(tag: string): Promise<PushProgress | null>;
+  abstract getDefaultNamespace(): Promise<string>;
 }

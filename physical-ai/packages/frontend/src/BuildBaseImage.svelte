@@ -4,7 +4,7 @@ import { onMount, onDestroy } from 'svelte';
 import { router } from 'tinro';
 import type { BuildProgress, PushProgress } from '/@shared/src/types/ImageCatalog';
 
-let tag = 'quay.io/ecosystem-appeng/ros2-jazzy-base:latest';
+let tag = '';
 let imageExistsLocally = false;
 
 let building = false;
@@ -139,7 +139,9 @@ function reset() {
   checkLocalImage();
 }
 
-onMount(() => {
+onMount(async () => {
+  const ns = await physicalAiClient.getDefaultNamespace();
+  tag = `quay.io/${ns}/ros2-jazzy-base:latest`;
   checkLocalImage();
 });
 
