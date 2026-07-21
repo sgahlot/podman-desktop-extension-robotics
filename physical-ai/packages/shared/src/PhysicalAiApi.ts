@@ -6,4 +6,5 @@ export abstract class PhysicalAiApi {
   abstract getImageTags(namespace: string, name: string): Promise<QuayTag[]>;
   abstract pullImage(fullImageName: string, tag: string): Promise<void>;
   abstract getPullProgress(image: string): Promise<PullProgress | null>;
+  abstract listLocalImages(): Promise<string[]>;
 }

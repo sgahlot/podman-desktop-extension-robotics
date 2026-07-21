@@ -55,6 +55,11 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return this.activePulls.get(image) || null;
   }
 
+  async listLocalImages(): Promise<string[]> {
+    const images = await extensionApi.containerEngine.listImages();
+    return images.flatMap(img => img.RepoTags ?? []);
+  }
+
   async pullImage(fullImageName: string, tag: string): Promise<void> {
     const connections = extensionApi.provider.getContainerConnections();
     const podmanConnection = connections.find(
@@ -103,6 +108,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     ).then(() => {
       this.layerProgress.delete(imageToPull);
       this.activePulls.set(imageToPull, { image: imageToPull, status: 'Complete', done: true });
+      setTimeout(() => this.activePulls.delete(imageToPull), 30000);
     }).catch((err: unknown) => {
       this.layerProgress.delete(imageToPull);
       this.activePulls.set(imageToPull, {
@@ -111,6 +117,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         done: true,
         error: err instanceof Error ? err.message : String(err),
       });
+      setTimeout(() => this.activePulls.delete(imageToPull), 30000);
     });
   }
 }

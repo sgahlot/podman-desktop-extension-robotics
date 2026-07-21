@@ -13,6 +13,10 @@ let error = '';
 let expandedRepo: string | null = null;
 let tags: QuayTag[] = [];
 let loadingTags = false;
+let tagError = '';
+
+let localImages: Set<string> = new Set();
+let localSectionExpanded = true;
 
 let pullingImages: Set<string> = new Set();
 let pullProgress: Map<string, PullProgress> = new Map();
@@ -22,6 +26,23 @@ let pollTimers: Map<string, number> = new Map();
 $: filteredRepos = repos.filter(r =>
   r.name.toLowerCase().includes(filter.toLowerCase()),
 );
+
+$: localImagesForNamespace = Array.from(localImages).filter(
+  img => img.startsWith(`quay.io/${namespace}/`),
+);
+
+async function refreshLocalImages() {
+  try {
+    const tags = await physicalAiClient.listLocalImages();
+    localImages = new Set(tags);
+  } catch {
+    // ignore — local image check is best-effort
+  }
+}
+
+function isLocal(repoKey: string, tagName: string, _localSet: Set<string>): boolean {
+  return _localSet.has(`quay.io/${repoKey}:${tagName}`);
+}
 
 function startPolling(pullKey: string, imageKey: string) {
   const timer = window.setInterval(async () => {
@@ -42,6 +63,7 @@ function startPolling(pullKey: string, imageKey: string) {
             pullResults.set(pullKey, { success: false, message: progress.error });
           } else {
             pullResults.set(pullKey, { success: true, message: 'Pulled' });
+            refreshLocalImages();
           }
           pullResults = pullResults;
         }
@@ -67,6 +89,7 @@ async function loadRepos() {
   repos = [];
   expandedRepo = null;
   tags = [];
+  tagError = '';
 
   try {
     repos = await physicalAiClient.listCatalogImages(namespace);
@@ -83,16 +106,19 @@ async function toggleTags(repo: QuayRepository) {
   if (expandedRepo === repoKey) {
     expandedRepo = null;
     tags = [];
+    tagError = '';
     return;
   }
 
   expandedRepo = repoKey;
   loadingTags = true;
   tags = [];
+  tagError = '';
 
   try {
     tags = await physicalAiClient.getImageTags(repo.namespace, repo.name);
-  } catch {
+  } catch (e) {
+    tagError = e instanceof Error ? e.message : 'Failed to load tags';
     tags = [];
   } finally {
     loadingTags = false;
@@ -121,15 +147,24 @@ async function pullImage(repo: QuayRepository, tag: QuayTag) {
   }
 }
 
-function getPullStatus(repoKey: string, tagName: string, _progressMap: Map<string, PullProgress>): string {
+function resetPullResult(pullKey: string) {
+  pullResults.delete(pullKey);
+  pullResults = pullResults;
+}
+
+function getProgress(repoKey: string, tagName: string, _progressMap: Map<string, PullProgress>): { percent: number; text: string } | null {
   const imageKey = `quay.io/${repoKey}:${tagName}`;
   const progress = _progressMap.get(imageKey);
-  if (!progress) return 'Pulling...';
+  if (!progress) return null;
   if (progress.currentMB !== undefined && progress.totalMB !== undefined && progress.totalMB > 0) {
-    const percent = Math.round(progress.currentMB / progress.totalMB * 100);
-    return `${progress.currentMB}/${progress.totalMB} MB (${percent}%)`;
+    const percent = Math.min(Math.round(progress.currentMB / progress.totalMB * 100), 100);
+    return { percent, text: `Downloading... ${progress.currentMB} MB (${percent}%)` };
   }
-  return progress.status || 'Pulling...';
+  return { percent: 0, text: progress.status || 'Pulling...' };
+}
+
+function truncateError(msg: string, max: number = 80): string {
+  return msg.length > max ? msg.substring(0, max) + '...' : msg;
 }
 
 function formatSize(bytes: number): string {
@@ -144,6 +179,7 @@ function formatDate(dateStr: string): string {
 }
 
 onMount(() => {
+  refreshLocalImages();
   loadRepos();
 });
 
@@ -187,6 +223,46 @@ onDestroy(() => {
     </button>
   </div>
 
+  <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)]">
+    <div class="flex flex-row items-center">
+      <button
+        on:click={() => localSectionExpanded = !localSectionExpanded}
+        class="flex-1 text-left p-3 flex flex-row items-center gap-3 hover:bg-[var(--pd-content-bg)] rounded-l-lg cursor-pointer"
+      >
+        <span class="text-xs text-[var(--pd-content-text)]">
+          {localSectionExpanded ? '▼' : '▶'}
+        </span>
+        <div class="flex flex-row items-center gap-2">
+          <span class="text-sm font-medium" style="color: #16a34a;">Locally Available ({localImagesForNamespace.length})</span>
+        </div>
+      </button>
+      <button
+        on:click|stopPropagation={() => refreshLocalImages()}
+        class="p-3 text-xs hover:bg-[var(--pd-content-bg)] rounded-r-lg cursor-pointer"
+        style="color: #7c3aed;"
+        title="Refresh local images"
+      >
+        ↻ Refresh
+      </button>
+    </div>
+    {#if localSectionExpanded && localImagesForNamespace.length > 0}
+      <div class="border-t border-[var(--pd-content-card-border)] px-3 py-2" style="max-height: 180px; overflow-y: auto;">
+        <div class="flex flex-col gap-1">
+          {#each localImagesForNamespace as img}
+            <div class="flex flex-row items-center gap-2 text-xs text-[var(--pd-content-text)]">
+              <span style="color: #16a34a;">&#10003;</span>
+              <span class="font-mono">{img}</span>
+            </div>
+          {/each}
+        </div>
+      </div>
+    {:else if localSectionExpanded}
+      <div class="border-t border-[var(--pd-content-card-border)] px-3 py-2">
+        <span class="text-xs text-[var(--pd-content-text)]">No local images for this namespace</span>
+      </div>
+    {/if}
+  </div>
+
   {#if repos.length > 0}
     <div class="flex flex-col gap-1">
       <label for="filter" class="text-xs text-[var(--pd-content-text)]">Filter by name</label>
@@ -201,7 +277,7 @@ onDestroy(() => {
   {/if}
 
   {#if error}
-    <div class="p-3 rounded bg-red-100 text-red-800 text-sm">{error}</div>
+    <div class="p-3 rounded text-sm" style="background-color: #fef2f2; color: #991b1b;">{error}</div>
   {/if}
 
   {#if loading}
@@ -236,6 +312,10 @@ onDestroy(() => {
             <div class="border-t border-[var(--pd-content-card-border)] p-3">
               {#if loadingTags}
                 <div class="text-xs text-[var(--pd-content-text)]">Loading tags...</div>
+              {:else if tagError}
+                <div class="text-xs p-2 rounded" style="background-color: #fef2f2; color: #991b1b;">
+                  Failed to load tags: {tagError}
+                </div>
               {:else if tags.length === 0}
                 <div class="text-xs text-[var(--pd-content-text)]">No tags found</div>
               {:else}
@@ -252,19 +332,59 @@ onDestroy(() => {
                   <tbody>
                     {#each tags as tag}
                       {@const pullKey = `${repoKey}:${tag.name}`}
+                      {@const progress = getProgress(repoKey, tag.name, pullProgress)}
+                      {@const tagIsLocal = isLocal(repoKey, tag.name, localImages)}
                       <tr class="border-b border-[var(--pd-content-card-border)] last:border-b-0">
                         <td class="py-2 pr-4 font-medium text-[var(--pd-content-header)]">{tag.name}</td>
                         <td class="py-2 pr-4 text-[var(--pd-content-text)]">{formatSize(tag.size)}</td>
                         <td class="py-2 pr-4 text-[var(--pd-content-text)]">{formatDate(tag.last_modified)}</td>
                         <td class="py-2 pr-4 text-[var(--pd-content-text)] font-mono">{tag.manifest_digest.substring(7, 19)}</td>
-                        <td class="py-2 min-w-[220px]">
+                        <td class="py-2 min-w-[260px]">
                           {#if pullingImages.has(pullKey)}
-                            <span style="color: #7c3aed;">{getPullStatus(repoKey, tag.name, pullProgress)}</span>
+                            <div class="flex flex-col gap-1">
+                              <div style="background-color: #e5e7eb; border-radius: 4px; height: 6px; width: 180px; overflow: hidden;">
+                                <div style="background-color: #7c3aed; height: 100%; width: {progress?.percent ?? 0}%; transition: width 0.3s;"></div>
+                              </div>
+                              <span class="text-xs" style="color: #7c3aed;">
+                                {progress?.text ?? 'Pulling...'}
+                              </span>
+                            </div>
                           {:else if pullResults.has(pullKey)}
                             {@const result = pullResults.get(pullKey)}
-                            <span style="color: {result?.success ? '#16a34a' : '#dc2626'};">
-                              {result?.message}
-                            </span>
+                            <div class="flex flex-row items-center gap-2">
+                              {#if result?.success}
+                                <span class="text-xs" style="color: #16a34a;">Pulled</span>
+                                <button
+                                  on:click|stopPropagation={() => resetPullResult(pullKey)}
+                                  class="text-xs cursor-pointer hover:underline"
+                                  style="color: #7c3aed;"
+                                >
+                                  Pull again
+                                </button>
+                              {:else}
+                                <span class="text-xs" style="color: #dc2626;" title={result?.message}>
+                                  {truncateError(result?.message ?? 'Pull failed')}
+                                </span>
+                                <button
+                                  on:click|stopPropagation={() => resetPullResult(pullKey)}
+                                  class="text-xs cursor-pointer hover:underline"
+                                  style="color: #7c3aed;"
+                                >
+                                  Retry
+                                </button>
+                              {/if}
+                            </div>
+                          {:else if tagIsLocal}
+                            <div class="flex flex-row items-center gap-2">
+                              <span class="text-xs" style="color: #16a34a;">&#10003; Local</span>
+                              <button
+                                on:click|stopPropagation={() => pullImage(repo, tag)}
+                                class="text-xs cursor-pointer hover:underline"
+                                style="color: #7c3aed;"
+                              >
+                                Pull again
+                              </button>
+                            </div>
                           {:else}
                             <button
                               on:click|stopPropagation={() => pullImage(repo, tag)}
