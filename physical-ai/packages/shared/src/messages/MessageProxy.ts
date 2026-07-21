@@ -95,6 +95,7 @@ export class RpcExtension {
   register(channel: string, method: (...args: unknown[]) => Promise<unknown>): void {
     this.methods.set(channel, method);
   }
+
 }
 
 export interface Subscriber {
@@ -179,7 +180,7 @@ export class RpcBrowser {
       if (!reject) return;
       reject(new Error('Timeout'));
       this.promises.delete(requestId);
-    }, 10000);
+    }, 600000);
 
     return promise;
   }

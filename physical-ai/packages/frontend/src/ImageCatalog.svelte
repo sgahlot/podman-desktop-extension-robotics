@@ -72,7 +72,7 @@ async function pullImage(repo: QuayRepository, tag: QuayTag) {
   } catch (e) {
     pullResults.set(pullKey, {
       success: false,
-      message: e instanceof Error ? e.message : 'Pull failed',
+      message: e instanceof Error ? e.message : typeof e === 'string' ? e : 'Pull failed',
     });
   } finally {
     pullingImages.delete(pullKey);
@@ -189,7 +189,7 @@ onMount(() => {
                       <th class="pb-2 pr-4">Size</th>
                       <th class="pb-2 pr-4">Last Modified</th>
                       <th class="pb-2 pr-4">Digest</th>
-                      <th class="pb-2"></th>
+                      <th class="pb-2">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -202,10 +202,10 @@ onMount(() => {
                         <td class="py-2 pr-4 text-[var(--pd-content-text)] font-mono">{tag.manifest_digest.substring(7, 19)}</td>
                         <td class="py-2">
                           {#if pullingImages.has(pullKey)}
-                            <span class="text-purple-500">Pulling...</span>
+                            <span style="color: #7c3aed;">Pulling...</span>
                           {:else if pullResults.has(pullKey)}
                             {@const result = pullResults.get(pullKey)}
-                            <span class={result?.success ? 'text-green-600' : 'text-red-600'}>
+                            <span style="color: {result?.success ? '#16a34a' : '#dc2626'};">
                               {result?.message}
                             </span>
                           {:else}

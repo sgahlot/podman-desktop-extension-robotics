@@ -14,3 +14,4 @@ export interface QuayTag {
   manifest_digest: string;
   is_manifest_list: boolean;
 }
+
