@@ -40,7 +40,7 @@ Drivers:
 
 | Story | Summary | Status | Sub-tasks |
 |-------|---------|--------|-----------|
-| APPENG-5764 | Extension scaffolding and base image catalog | 🟡 In Progress | 3/3 done |
+| APPENG-5764 | Extension scaffolding and base image catalog | ✅ Done | 3/3 done |
 | APPENG-5765 | Single robot simulation workflow | ⚪ Not Started | 0/3 done |
 | APPENG-5766 | Multi-robot local scaling *(stretch)* | ⚪ Not Started | 0/3 done |
 | APPENG-5767 | OpenShift deployment bridge *(stretch)* | ⚪ Not Started | 0/3 done |
@@ -53,7 +53,7 @@ Drivers:
 
 ## Work Breakdown
 
-### Story 1: Extension scaffolding and base image catalog — 🟡 In Progress (2/3 sub-tasks done)
+### Story 1: Extension scaffolding and base image catalog — ✅ Done
 
 > Detail doc: [story1-scaffolding.md](stories/story1-scaffolding.md)
 
@@ -68,7 +68,7 @@ Drivers:
 | Status | Key | Summary | Description |
 |--------|-----|---------|-------------|
 | ✅ | APPENG-5768 | Scaffold Podman Desktop extension with TypeScript/Svelte boilerplate | Set up the Podman Desktop extension project structure, registration, and basic navigation shell. |
-| ⚪ | APPENG-5769 | Build and publish Fedora + ROS2 Jazzy base image to Quay | Build a Fedora-based container image with ROS2 Jazzy core runtime and convenience tools (colcon, rosdep, rviz2). Publish to Quay registry. |
+| ✅ | APPENG-5769 | Build and publish Fedora + ROS2 Jazzy base image to Quay | Build a Fedora-based container image with ROS2 Jazzy core runtime and convenience tools (colcon, rosdep, rviz2). Publish to Quay registry. |
 | ✅ | APPENG-5770 | Implement image catalog UI with pull and status indicators | Build the UI within the extension to browse curated base images, pull them from Quay, and show download/status indicators. |
 
 ---
@@ -232,12 +232,12 @@ A Miro board would be useful for a team kickoff/planning session where people ne
 | Status | Key | Issue Type | Parent | Summary |
 |--------|-----|------------|--------|---------|
 | 🟡 | APPENG-5763 | Epic | — | Podman Desktop Extension for Physical AI Robotics Development |
-| 🟡 | APPENG-5764 | Story | APPENG-5763 | Extension scaffolding and base image catalog |
+| ✅ | APPENG-5764 | Story | APPENG-5763 | Extension scaffolding and base image catalog |
 | ⚪ | APPENG-5765 | Story | APPENG-5763 | Single robot simulation workflow |
 | ⚪ | APPENG-5766 | Story | APPENG-5763 | Multi-robot local scaling |
 | ⚪ | APPENG-5767 | Story | APPENG-5763 | OpenShift deployment bridge |
 | ✅ | APPENG-5768 | Sub-task | APPENG-5764 | Scaffold Podman Desktop extension with TypeScript/Svelte boilerplate |
-| ⚪ | APPENG-5769 | Sub-task | APPENG-5764 | Build and publish Fedora + ROS2 Jazzy base image to Quay |
+| ✅ | APPENG-5769 | Sub-task | APPENG-5764 | Build and publish Fedora + ROS2 Jazzy base image to Quay |
 | ✅ | APPENG-5770 | Sub-task | APPENG-5764 | Implement image catalog UI with pull and status indicators |
 | ⚪ | APPENG-5771 | Sub-task | APPENG-5765 | Container orchestration for ROS2 + Gazebo launch via Podman pod |
 | ⚪ | APPENG-5772 | Sub-task | APPENG-5765 | Integrate noVNC or web-based video stream for simulation visualization |

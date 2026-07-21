@@ -1,4 +1,4 @@
-# Story 1: Extension Scaffolding and Base Image Catalog — 🟡 In Progress
+# Story 1: Extension Scaffolding and Base Image Catalog — ✅ Done
 
 **Jira:** APPENG-5764 | **Parent:** APPENG-5763 (Epic)
 
@@ -11,7 +11,7 @@
 | Status | Key | Summary |
 |--------|-----|---------|
 | ✅ | APPENG-5768 | Scaffold Podman Desktop extension with TypeScript/Svelte boilerplate |
-| ⚪ | APPENG-5769 | Build and publish Fedora + ROS2 Jazzy base image to Quay |
+| ✅ | APPENG-5769 | Build and publish Fedora + ROS2 Jazzy base image to Quay |
 | ✅ | APPENG-5770 | Implement image catalog UI with pull and status indicators |
 
 ---
@@ -53,11 +53,41 @@ See [Decisions and Directions](../podman-extension-plan.md#decisions-and-directi
 
 ---
 
-## APPENG-5769: Build Fedora + ROS2 Base Image — ⚪ Not Started
+## APPENG-5769: Build ROS2 Jazzy Base Image — ✅ Done
 
-**Description:** Build a Fedora-based container image with ROS2 Jazzy core runtime and convenience tools (colcon, rosdep, rviz2). Publish to Quay registry.
+**Description:** Build a container image with ROS2 Jazzy core runtime and convenience tools (colcon, rosdep). Publish to Quay registry.
 
-*No work done yet.*
+**Completed:** 2026-07-21
+
+### What was done
+
+- Created `containers/ros2-jazzy-base/` with Containerfile, entrypoint, and README
+- Based on `ros:jazzy-ros-base` (official Ubuntu 24.04 image)
+- Includes: colcon, rosdep (pre-initialized), vcstool, cmake, build-essential, git
+- Entrypoint sources `/opt/ros/jazzy/setup.bash` automatically
+- Working directory set to `/ros2_ws`
+
+### Key files
+
+```
+containers/ros2-jazzy-base/
+├── Containerfile     # Image definition
+├── entrypoint.sh     # Sources ROS2 setup, execs CMD
+└── README.md         # Build/run/publish instructions
+```
+
+### Decisions made
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Base OS | Ubuntu 24.04 (interim) | ROS2 Jazzy not officially supported on Fedora; Ubuntu has official images |
+| rviz2 | Excluded | Requires full desktop stack (OpenGL, Qt5, X11); planned as separate "desktop" variant |
+| Location | `containers/ros2-jazzy-base/` | Standard multi-image convention; root Containerfile stays for extension OCI packaging |
+
+### Future work
+
+- **Migrate to Fedora base** — once ROS2 Jazzy Fedora packaging matures (COPR repos or source build)
+- **Add rviz2/desktop variant** — separate image with GUI dependencies for visualization
 
 ---
 

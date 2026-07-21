@@ -47,7 +47,7 @@ export async function activate(extensionContext: ExtensionContext): Promise<void
   panel.webview.html = indexHtml;
 
   const rpcExtension = new RpcExtension(panel.webview);
-  const physicalAiApi = new PhysicalAiApiImpl();
+  const physicalAiApi = new PhysicalAiApiImpl(extensionContext);
   rpcExtension.registerInstance<PhysicalAiApiImpl>(PhysicalAiApiImpl, physicalAiApi);
 }
 

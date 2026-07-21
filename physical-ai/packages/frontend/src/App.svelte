@@ -7,6 +7,7 @@ import { getRouterState } from './api/client';
 import Dashboard from './Dashboard.svelte';
 import ImageCatalog from './ImageCatalog.svelte';
 import Help from './Help.svelte';
+import BuildBaseImage from './BuildBaseImage.svelte';
 
 router.mode.hash();
 
@@ -29,6 +30,9 @@ onMount(() => {
       </Route>
       <Route path="/help" breadcrumb="Help">
         <Help />
+      </Route>
+      <Route path="/build" breadcrumb="Build & Push Base Image">
+        <BuildBaseImage />
       </Route>
     </div>
   </main>

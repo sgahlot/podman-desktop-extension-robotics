@@ -24,3 +24,21 @@ export interface PullProgress {
   error?: string;
 }
 
+export interface BuildProgress {
+  tag: string;
+  status: string;
+  currentStep?: number;
+  totalSteps?: number;
+  logs: string[];
+  done?: boolean;
+  error?: string;
+}
+
+export interface PushProgress {
+  tag: string;
+  status: string;
+  logs: string[];
+  done?: boolean;
+  error?: string;
+}
+

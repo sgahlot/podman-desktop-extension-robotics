@@ -68,6 +68,13 @@ onMount(async () => {
         <div class="text-xs text-gray-900 mt-2">Coming soon</div>
       </div>
       <button
+        on:click={() => router.goto('/build')}
+        class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left hover:border-purple-500 cursor-pointer"
+      >
+        <span class="tooltip-text">Build and push ROS2 Jazzy base image</span>
+        <div class="text-lg">Build &amp; Push Base Image</div>
+      </button>
+      <button
         on:click={() => router.goto('/help')}
         class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left hover:border-purple-500 cursor-pointer"
       >

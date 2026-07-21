@@ -3,6 +3,7 @@ FROM scratch as builder
 COPY packages/backend/dist/ /extension/dist
 COPY packages/backend/package.json /extension/
 COPY packages/backend/media/ /extension/media
+COPY packages/backend/assets/ /extension/assets
 COPY LICENSE /extension/
 COPY packages/backend/icon.png /extension/
 COPY README.md /extension/

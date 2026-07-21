@@ -49,6 +49,27 @@ import { router } from 'tinro';
     </div>
 
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
+      <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Build &amp; Push Base Image</h2>
+      <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
+        <div>
+          <strong>Build</strong> — Enter an image tag (default: <span class="font-mono">quay.io/ecosystem-appeng/ros2-jazzy-base:latest</span>) and click Build. The extension builds a ROS2 Jazzy base image (Ubuntu 24.04) locally using the bundled Containerfile. A step progress bar and collapsible build logs show real-time status.
+        </div>
+        <div>
+          <strong>Rebuild</strong> — If the image already exists locally, the button changes to "Rebuild" so you can build a fresh copy.
+        </div>
+        <div>
+          <strong>Push</strong> — After a successful build, or if the image already exists locally, a "Push to Registry" button appears. Click it to push the image to the registry specified in the tag. An animated progress bar is shown during the push.
+        </div>
+        <div>
+          <strong>Registry authentication</strong> — Push requires registry credentials. Log in via Podman Desktop &rarr; Settings &rarr; Registries (not <span class="font-mono">podman login</span> from the CLI).
+        </div>
+        <div>
+          <strong>Completion</strong> — On success, the image tag and full digest (SHA256) are displayed.
+        </div>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Tips</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-1">
         <p>&#8226; The progress percentage may start low and adjust upward as new image layers are discovered during download — this is normal.</p>
