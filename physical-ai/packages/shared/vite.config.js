@@ -8,6 +8,9 @@ const config = {
   mode: process.env.MODE,
   root: PACKAGE_ROOT,
   envDir: process.cwd(),
+  test: {
+    globals: true,
+  },
   resolve: {
     alias: {
       '/@/': join(PACKAGE_ROOT, 'src') + '/',

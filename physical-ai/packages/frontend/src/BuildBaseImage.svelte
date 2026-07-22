@@ -43,7 +43,6 @@ async function startBuild() {
   logs = [];
   pushDone = false;
   pushError = '';
-  pushLogs = [];
 
   try {
     await physicalAiClient.buildBaseImage(tag);

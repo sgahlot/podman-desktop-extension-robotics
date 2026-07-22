@@ -1,6 +1,7 @@
 import { join } from 'path';
 import * as path from 'path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { svelteTesting } from '@testing-library/svelte/vite';
 import { defineConfig } from 'vite';
 import { fileURLToPath } from 'url';
 
@@ -16,7 +17,7 @@ export default defineConfig({
       '/@shared/': join(PACKAGE_ROOT, '../shared') + '/',
     },
   },
-  plugins: [svelte({ hot: !process.env.VITEST })],
+  plugins: [svelte({ hot: !process.env.VITEST }), svelteTesting()],
   test: {
     include: ['src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     globals: true,
