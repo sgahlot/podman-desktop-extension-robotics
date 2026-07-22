@@ -376,12 +376,43 @@ describe('PhysicalAiApiImpl', () => {
 
       await api.buildBaseImage('my-tag:latest');
 
+      expect(extensionApi.Uri.joinPath).toHaveBeenCalledWith(
+        MOCK_CONTEXT.extensionUri,
+        'assets',
+        'ros2-jazzy-base',
+      );
       expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
         '/fake/assets/ros2-jazzy-base',
         expect.any(Function),
         {
           containerFile: 'Containerfile',
           tag: 'my-tag:latest',
+          provider: mockConnection.connection,
+        },
+      );
+    });
+  });
+
+  describe('buildSimulationImage', () => {
+    it('builds from the turtlebot3 simulation asset directory', async () => {
+      const mockConnection = createMockConnection();
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([mockConnection] as any);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets/ros2-humble-turtlebot3' } as any);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
+
+      await api.buildSimulationImage('sim-tag:latest');
+
+      expect(extensionApi.Uri.joinPath).toHaveBeenCalledWith(
+        MOCK_CONTEXT.extensionUri,
+        'assets',
+        'ros2-humble-turtlebot3',
+      );
+      expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
+        '/fake/assets/ros2-humble-turtlebot3',
+        expect.any(Function),
+        {
+          containerFile: 'Containerfile',
+          tag: 'sim-tag:latest',
           provider: mockConnection.connection,
         },
       );
