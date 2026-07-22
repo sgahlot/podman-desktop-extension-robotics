@@ -4,6 +4,7 @@ import type { PhysicalAiApi } from '/@shared/src/PhysicalAiApi';
 import type { QuayRepository, QuayTag, PullProgress, BuildProgress, PushProgress } from '/@shared/src/types/ImageCatalog';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import { formatSimulationConfig, resolveSimulationProfile } from '/@shared/src/types/SimulationProfiles';
+import { resolveSimulationBaseImage } from '/@shared/src/types/SimulationBaseImages';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
 
@@ -84,7 +85,11 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return podmanConnection;
   }
 
-  private startImageBuild(tag: string, assetDir: string): void {
+  private startImageBuild(
+    tag: string,
+    assetDir: string,
+    buildargs?: { [key: string]: string },
+  ): void {
     const podmanConnection = this.getRunningPodmanConnection();
 
     const contextDir = extensionApi.Uri.joinPath(
@@ -134,6 +139,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         tag,
         provider: podmanConnection.connection,
         abortController,
+        ...(buildargs ? { buildargs } : {}),
       },
     ).then(() => {
       this.buildAbortControllers.delete(tag);
@@ -265,7 +271,10 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
           'Supported: humble/turtlebot3/dds/gazebo.',
       );
     }
-    this.startImageBuild(tag, profile.assetDir);
+    const baseImage = resolveSimulationBaseImage(config.baseImage);
+    this.startImageBuild(tag, profile.assetDir, {
+      ROS_BASE_IMAGE: baseImage.imageRef,
+    });
   }
 
   async getPushProgress(tag: string): Promise<PushProgress | null> {
@@ -279,11 +288,14 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async getSimulationConfig(): Promise<SimulationConfig> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const rawBase = config.get<string>('simulationBaseImage');
+    const baseImage = resolveSimulationBaseImage(rawBase).id;
     return {
       robot: config.get<string>('simulationRobot') ?? 'turtlebot3',
       distro: config.get<string>('simulationDistro') ?? 'humble',
       middleware: config.get<string>('simulationMiddleware') ?? 'dds',
       engine: config.get<string>('simulationEngine') ?? 'gazebo',
+      baseImage,
     };
   }
 
@@ -293,6 +305,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     await pdConfig.update('simulationDistro', config.distro);
     await pdConfig.update('simulationMiddleware', config.middleware);
     await pdConfig.update('simulationEngine', config.engine);
+    await pdConfig.update('simulationBaseImage', config.baseImage);
   }
 
   async pushImage(tag: string): Promise<void> {

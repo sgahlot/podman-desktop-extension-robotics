@@ -427,9 +427,10 @@ describe('PhysicalAiApiImpl', () => {
       distro: 'humble',
       middleware: 'dds',
       engine: 'gazebo',
+      baseImage: 'sloretz' as const,
     };
 
-    it('builds from the turtlebot3 simulation asset directory', async () => {
+    it('builds from the turtlebot3 simulation asset directory with base image build-arg', async () => {
       const mockConnection = createMockConnection();
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([mockConnection] as any);
       vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets/ros2-humble-turtlebot3' } as any);
@@ -445,12 +446,39 @@ describe('PhysicalAiApiImpl', () => {
       expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
         '/fake/assets/ros2-humble-turtlebot3',
         expect.any(Function),
-        {
+        expect.objectContaining({
           containerFile: 'Containerfile',
           tag: 'sim-tag:latest',
           provider: mockConnection.connection,
           abortController: expect.any(AbortController),
-        },
+          buildargs: {
+            ROS_BASE_IMAGE:
+              'ghcr.io/sloretz/ros:humble-desktop@sha256:970146e40f7aaa818c5783e28ed5302489bc72f61efe92438a1613fcf90b7d5c',
+          },
+        }),
+      );
+    });
+
+    it('passes the official OSRF base image when selected', async () => {
+      const mockConnection = createMockConnection();
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([mockConnection] as any);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets/ros2-humble-turtlebot3' } as any);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
+
+      await api.buildSimulationImage('sim-tag:osrf', {
+        ...supportedConfig,
+        baseImage: 'osrf',
+      });
+
+      expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
+        '/fake/assets/ros2-humble-turtlebot3',
+        expect.any(Function),
+        expect.objectContaining({
+          buildargs: {
+            ROS_BASE_IMAGE:
+              'docker.io/osrf/ros:humble-desktop@sha256:3d87cf339919a85cff7743ec9ba5e7ec81ccc26c9f722f1c7a6af5008dfdc128',
+          },
+        }),
       );
     });
 

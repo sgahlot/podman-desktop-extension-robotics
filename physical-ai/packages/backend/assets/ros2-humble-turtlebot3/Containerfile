@@ -1,4 +1,14 @@
-FROM ghcr.io/sloretz/ros:humble-desktop
+# Base: multi-arch ROS 2 Humble desktop (incl. arm64). Official docker.io/ros
+# humble-desktop is amd64-oriented; sloretz rebuilds are used for Apple Silicon.
+# Digest pinned for reproducibility — bump deliberately after testing.
+ARG ROS_BASE_IMAGE=ghcr.io/sloretz/ros:humble-desktop@sha256:970146e40f7aaa818c5783e28ed5302489bc72f61efe92438a1613fcf90b7d5c
+FROM ${ROS_BASE_IMAGE}
+
+# TurtleBot3 humble-branch commits (ROBOTIS-GIT), pinned 2026-07-22
+ARG TURTLEBOT3_SHA=90a68bd2e3c61c12966779da89d8eeaec82730e9
+ARG TURTLEBOT3_MSGS_SHA=cdee60f7618b9ed2f85f65259c0f96e3f02b1c55
+ARG DYNAMIXEL_SDK_SHA=0d3403df29561890eb168652b2ed234dd6728bb2
+ARG TURTLEBOT3_SIMULATIONS_SHA=a35a56c8b04877dc89772b598084d8ce648a9023
 
 LABEL org.opencontainers.image.title="ROS2 Humble TurtleBot3 Simulation" \
       org.opencontainers.image.description="ROS2 Humble with TurtleBot3, Gazebo, and Nav2 for simulation" \
@@ -27,13 +37,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-nav2-bringup \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone TurtleBot3 packages
+# Clone TurtleBot3 packages at pinned commits (not floating branch tips)
 RUN mkdir -p /root/turtlebot3_ws/src \
     && cd /root/turtlebot3_ws/src \
-    && git clone -b humble https://github.com/ROBOTIS-GIT/turtlebot3.git \
-    && git clone -b humble https://github.com/ROBOTIS-GIT/turtlebot3_msgs.git \
-    && git clone -b humble https://github.com/ROBOTIS-GIT/DynamixelSDK.git \
-    && git clone -b humble https://github.com/ROBOTIS-GIT/turtlebot3_simulations.git
+    && git clone https://github.com/ROBOTIS-GIT/turtlebot3.git \
+    && git -C turtlebot3 checkout "${TURTLEBOT3_SHA}" \
+    && git clone https://github.com/ROBOTIS-GIT/turtlebot3_msgs.git \
+    && git -C turtlebot3_msgs checkout "${TURTLEBOT3_MSGS_SHA}" \
+    && git clone https://github.com/ROBOTIS-GIT/DynamixelSDK.git \
+    && git -C DynamixelSDK checkout "${DYNAMIXEL_SDK_SHA}" \
+    && git clone https://github.com/ROBOTIS-GIT/turtlebot3_simulations.git \
+    && git -C turtlebot3_simulations checkout "${TURTLEBOT3_SIMULATIONS_SHA}"
 
 # Build TurtleBot3 workspace (skip turtlebot3_gazebo — uses classic Gazebo, not gz-sim)
 RUN . /opt/ros/humble/setup.sh \

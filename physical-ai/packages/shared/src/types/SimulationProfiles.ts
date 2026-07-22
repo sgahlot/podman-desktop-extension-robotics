@@ -1,4 +1,5 @@
 import type { SimulationConfig } from './SimulationConfig';
+import { resolveSimulationBaseImage } from './SimulationBaseImages';
 
 /**
  * Maps a wizard selection to a bundled Containerfile asset.
@@ -39,11 +40,12 @@ export function resolveSimulationProfile(config: SimulationConfig): SimulationPr
 }
 
 export function formatSimulationConfig(config: SimulationConfig): string {
-  return `${config.distro}/${config.robot}/${config.middleware}/${config.engine}`;
+  return `${config.distro}/${config.robot}/${config.middleware}/${config.engine}/${config.baseImage}`;
 }
 
 export function simulationImageTag(namespace: string, config: SimulationConfig): string | undefined {
   const profile = resolveSimulationProfile(config);
   if (!profile) return undefined;
-  return `quay.io/${namespace}/${profile.imageName}:latest`;
+  const base = resolveSimulationBaseImage(config.baseImage);
+  return `quay.io/${namespace}/${profile.imageName}:${base.imageTag}`;
 }

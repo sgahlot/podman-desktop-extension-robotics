@@ -44,6 +44,16 @@
           "type": "string",
           "default": "gazebo",
           "description": "Simulation engine (e.g. gazebo)"
+        },
+        "physical-ai.simulationBaseImage": {
+          "type": "string",
+          "enum": ["sloretz", "osrf"],
+          "enumDescriptions": [
+            "ghcr.io/sloretz multi-arch Humble desktop (recommended on Apple Silicon)",
+            "docker.io/osrf official Humble desktop (amd64 only)"
+          ],
+          "default": "sloretz",
+          "description": "Base image preset for simulation builds"
         }
       }
     }

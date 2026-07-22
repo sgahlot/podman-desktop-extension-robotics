@@ -7,12 +7,19 @@ import {
   resolveSimulationProfile,
   simulationImageTag,
 } from '/@shared/src/types/SimulationProfiles';
+import {
+  SIMULATION_BASE_IMAGES,
+  resolveSimulationBaseImage,
+  DEFAULT_SIMULATION_BASE_IMAGE,
+} from '/@shared/src/types/SimulationBaseImages';
+import type { SimulationBaseImageId } from '/@shared/src/types/SimulationBaseImages';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 
 let robot = 'turtlebot3';
 let distro = 'humble';
 let middleware = 'dds';
 let engine = 'gazebo';
+let baseImage: SimulationBaseImageId = DEFAULT_SIMULATION_BASE_IMAGE;
 
 let loading = true;
 let saving = false;
@@ -23,10 +30,11 @@ let ns = 'ecosystem-appeng';
 let tag = '';
 let lastConfigKey = '';
 
-$: currentConfig = { robot, distro, middleware, engine } as SimulationConfig;
+$: currentConfig = { robot, distro, middleware, engine, baseImage } as SimulationConfig;
 $: profile = resolveSimulationProfile(currentConfig);
+$: basePreset = resolveSimulationBaseImage(baseImage);
 $: {
-  const key = `${ns}|${robot}|${distro}|${middleware}|${engine}`;
+  const key = `${ns}|${robot}|${distro}|${middleware}|${engine}|${baseImage}`;
   if (key !== lastConfigKey) {
     lastConfigKey = key;
     tag = simulationImageTag(ns, currentConfig) ?? '';
@@ -45,6 +53,7 @@ onMount(async () => {
     distro = config.distro;
     middleware = config.middleware;
     engine = config.engine;
+    baseImage = config.baseImage ?? DEFAULT_SIMULATION_BASE_IMAGE;
   } catch {
     // defaults are fine
   } finally {
@@ -132,6 +141,25 @@ async function save() {
         </select>
       </div>
 
+      <div class="flex flex-col gap-1">
+        <label for="baseImage" class="text-xs text-[var(--pd-content-text)]">Base image</label>
+        <select
+          id="baseImage"
+          bind:value={baseImage}
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
+        >
+          {#each SIMULATION_BASE_IMAGES as preset}
+            <option value={preset.id}>{preset.label}</option>
+          {/each}
+        </select>
+        <span class="text-xs text-[var(--pd-content-text)] opacity-80">{basePreset.description}</span>
+        {#if !basePreset.architectures.includes('arm64')}
+          <span class="text-xs" style="color: #9a3412;">
+            Warning: this preset is amd64-only. On Apple Silicon the build may fail or use slow emulation.
+          </span>
+        {/if}
+      </div>
+
       <div class="flex flex-row items-center gap-3 mt-2">
         <button
           on:click={save}
@@ -159,6 +187,8 @@ async function save() {
         <div><strong>Distro:</strong> ROS2 {distro}</div>
         <div><strong>Middleware:</strong> {middleware.toUpperCase()}</div>
         <div><strong>Engine:</strong> {engine}</div>
+        <div><strong>Base image:</strong> {basePreset.label}</div>
+        <div class="font-mono break-all opacity-80">{basePreset.imageRef}</div>
         {#if profile}
           <div class="mt-1" style="color: #16a34a;">
             &#10003; Buildable: {profile.label}
@@ -178,7 +208,8 @@ async function save() {
     {#if profile && tag}
       <p class="text-sm text-[var(--pd-content-text)]">
         Builds <span class="font-mono">{profile.assetDir}</span> from the bundled Containerfile
-        using your current wizard selection (Save is optional for build; required for Story 2 launch later).
+        with base <span class="font-mono">{basePreset.id}</span>
+        (Save is optional for build; required for Story 2 launch later).
       </p>
 
       <BuildPushPanel
