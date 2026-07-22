@@ -199,6 +199,71 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     });
   }
 
+  async buildSimulationImage(tag: string): Promise<void> {
+    const connections = extensionApi.provider.getContainerConnections();
+    const podmanConnection = connections.find(
+      c => c.connection.type === 'podman' && c.connection.status() === 'started',
+    );
+
+    if (!podmanConnection) {
+      throw new Error('No running Podman connection found');
+    }
+
+    const contextDir = extensionApi.Uri.joinPath(
+      this.extensionContext.extensionUri, 'assets', 'ros2-humble-turtlebot3',
+    ).fsPath;
+
+    this.activeBuilds.set(tag, {
+      tag,
+      status: 'Starting...',
+      logs: [],
+    });
+
+    extensionApi.containerEngine.buildImage(
+      contextDir,
+      (eventName: string, data: string) => {
+        const progress = this.activeBuilds.get(tag);
+        if (!progress) return;
+
+        if (eventName === 'stream') {
+          const line = data.trim();
+          if (line) {
+            progress.logs.push(line);
+            const stepMatch = line.match(/^STEP\s+(\d+)\/(\d+)/i);
+            if (stepMatch) {
+              progress.currentStep = parseInt(stepMatch[1], 10);
+              progress.totalSteps = parseInt(stepMatch[2], 10);
+              progress.status = `Building... Step ${progress.currentStep}/${progress.totalSteps}`;
+            }
+          }
+        } else if (eventName === 'error') {
+          progress.logs.push(`ERROR: ${data}`);
+          progress.error = data;
+        }
+      },
+      {
+        containerFile: 'Containerfile',
+        tag,
+        provider: podmanConnection.connection,
+      },
+    ).then(() => {
+      const progress = this.activeBuilds.get(tag);
+      if (progress) {
+        progress.status = 'Complete';
+        progress.done = true;
+      }
+      setTimeout(() => this.activeBuilds.delete(tag), 30000);
+    }).catch((err: unknown) => {
+      const progress = this.activeBuilds.get(tag);
+      if (progress) {
+        progress.status = 'Failed';
+        progress.done = true;
+        progress.error = err instanceof Error ? err.message : String(err);
+      }
+      setTimeout(() => this.activeBuilds.delete(tag), 30000);
+    });
+  }
+
   async getPushProgress(tag: string): Promise<PushProgress | null> {
     return this.activePushes.get(tag) || null;
   }

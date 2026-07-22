@@ -79,6 +79,12 @@ import { router } from 'tinro';
           <strong>Selections persist</strong> — Your configuration is saved in Podman Desktop settings and will be remembered across sessions. You can also view and edit these values in Settings &rarr; Preferences &rarr; Physical AI.
         </div>
         <div>
+          <strong>Build</strong> — After saving your configuration, scroll down to the "Build &amp; Push Simulation Image" section. The image tag is derived from your selections (e.g. <span class="font-mono">ros2-humble-turtlebot3</span>). Click Build to build the simulation image locally from the bundled Containerfile. A step progress bar and collapsible build logs show real-time status.
+        </div>
+        <div>
+          <strong>Push</strong> — After a successful build, or if the image already exists locally, click "Push to Registry" to push it. Registry authentication must be configured via Podman Desktop &rarr; Settings &rarr; Registries.
+        </div>
+        <div>
           <strong>Coming soon</strong> — Zenoh middleware support and additional robot types will be added in future updates. Saved selections will be used by the one-click simulation launch (Story 2).
         </div>
       </div>

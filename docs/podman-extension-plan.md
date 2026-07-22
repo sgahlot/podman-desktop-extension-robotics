@@ -70,6 +70,15 @@ Drivers:
 | ✅ | APPENG-5768 | Scaffold Podman Desktop extension with TypeScript/Svelte boilerplate | Set up the Podman Desktop extension project structure, registration, and basic navigation shell. |
 | 🟡 | APPENG-5769 | Build and publish ROS2 Jazzy base image to Quay | Built with Ubuntu 24.04 interim base (Fedora migration tracked separately). Includes build & push UI in extension. |
 | ✅ | APPENG-5770 | Implement image catalog UI with pull and status indicators | Build the UI within the extension to browse curated base images, pull them from Quay, and show download/status indicators. |
+| ⚪ | TBD | Project creation wizard and simulation image setup | Build a wizard UI for selecting robot type (e.g. TurtleBot3), ROS distro (Humble/Jazzy), middleware (Zenoh/DDS), and simulation engine (Gazebo). Create corresponding simulation Containerfiles (starting with ROS2 Humble + TurtleBot3 + Gazebo). Persist selections for Story 2 to consume. See implementation parts below. |
+
+##### TBD Implementation Parts
+
+| Status | Part | Summary |
+|--------|------|---------|
+| ✅ | Part 1 | Simulation Containerfile — create `containers/ros2-humble-turtlebot3/` with Containerfile + entrypoint from side-work scripts; copy to `packages/backend/assets/` |
+| ✅ | Part 2 | Wizard UI — new "Simulation Setup" page with dropdowns for robot/distro/middleware/engine; Dashboard card; persist selections via PD configuration |
+| ✅ | Part 3 | Wire Build & Push — backend `buildSimulationImage()` API; build/push controls added to Simulation Setup page |
 
 #### Follow-up tasks (from APPENG-5769 scope adjustments)
 
@@ -175,9 +184,10 @@ Now that the scaffold (APPENG-5768) is complete, sub-tasks have fine-grained dep
     │
     ├── APPENG-5769 (Base image)         ◀── independent, no code dependency
     ├── APPENG-5770 (Image catalog UI)   ◀── independent, can use mock data
+    ├── TBD (Wizard + sim images)        ◀── wizard UI + TurtleBot3 Containerfile; feeds into 5771
     ├── APPENG-5773 (Topic monitor UI)   ◀── independent, can use mock data
     │
-    └── APPENG-5771 (ROS2+Gazebo orchestration)  ◀── CRITICAL PATH
+    └── APPENG-5771 (ROS2+Gazebo orchestration)  ◀── CRITICAL PATH; consumes wizard selections + sim image
             │
             ├── APPENG-5772 (noVNC/streaming)     ◀── needs running simulation
             ├── APPENG-5774 (Multi-robot)          ◀── scales from single robot
@@ -246,6 +256,7 @@ A Miro board would be useful for a team kickoff/planning session where people ne
 | ✅ | APPENG-5768 | Sub-task | APPENG-5764 | Scaffold Podman Desktop extension with TypeScript/Svelte boilerplate |
 | 🟡 | APPENG-5769 | Sub-task | APPENG-5764 | Build and publish ROS2 Jazzy base image to Quay |
 | ✅ | APPENG-5770 | Sub-task | APPENG-5764 | Implement image catalog UI with pull and status indicators |
+| ⚪ | TBD | Sub-task | APPENG-5764 | Project creation wizard and simulation image setup |
 | ⚪ | APPENG-5771 | Sub-task | APPENG-5765 | Container orchestration for ROS2 + Gazebo launch via Podman pod |
 | ⚪ | APPENG-5772 | Sub-task | APPENG-5765 | Integrate noVNC or web-based video stream for simulation visualization |
 | ⚪ | APPENG-5773 | Sub-task | APPENG-5765 | Build topic monitor panel showing active ROS2 topics and message rates |

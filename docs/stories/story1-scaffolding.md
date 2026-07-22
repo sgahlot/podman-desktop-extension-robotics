@@ -13,6 +13,7 @@
 | ✅ | APPENG-5768 | Scaffold Podman Desktop extension with TypeScript/Svelte boilerplate |
 | 🟡 | APPENG-5769 | Build and publish ROS2 Jazzy base image to Quay |
 | ✅ | APPENG-5770 | Implement image catalog UI with pull and status indicators |
+| ⚪ | TBD | Project creation wizard and simulation image setup |
 
 ---
 
@@ -159,3 +160,66 @@ packages/shared/src/types/ImageCatalog.ts   # Shared types (QuayRepository, Quay
 - Podman Desktop webview does NOT deliver unsolicited backend-to-frontend messages — use polling instead of pub/sub
 - Svelte 5 reactivity with Map/Set requires passing the collection as an explicit template argument
 - Tailwind CSS classes don't render in Podman Desktop webviews — use inline styles
+
+---
+
+## TBD: Project Creation Wizard and Simulation Image Setup — ⚪ Not Started
+
+**Description:** Build a wizard UI for selecting robot type, ROS distro, middleware, and simulation engine. Create corresponding simulation Containerfiles. Persist selections for Story 2 (APPENG-5771) to consume when launching simulations.
+
+### Implementation Parts
+
+| Status | Part | Summary |
+|--------|------|---------|
+| ✅ | Part 1 | Simulation Containerfile |
+| ✅ | Part 2 | Wizard UI |
+| ✅ | Part 3 | Wire Build & Push |
+
+---
+
+#### Part 1 — Simulation Containerfile (TurtleBot3 + Gazebo)
+
+Create `containers/ros2-humble-turtlebot3/Containerfile` baking in the manual setup from `side-work/`:
+- Base: `ghcr.io/sloretz/ros:humble-desktop`
+- Install Gazebo packages, ros-gz bridge, nav2 (from `setup-01.sh`)
+- Clone TurtleBot3 repos: core, msgs, DynamixelSDK, simulations (from `setup-02.sh`)
+- Run `colcon build` with COLCON_IGNORE on turtlebot3_gazebo (from `build.sh`)
+- Entrypoint sourcing ROS2 Humble setup
+
+Bundle in `packages/backend/assets/ros2-humble-turtlebot3/` for extension access (same pattern as ros2-jazzy-base).
+
+**Source material** — manual scripts in `podman-work/side-work/`:
+- `setup-01.sh` — Gazebo repo setup + apt install ros-humble-ros-gz, ros-humble-nav2-bringup
+- `setup-02.sh` — git clone turtlebot3, turtlebot3_msgs, DynamixelSDK, turtlebot3_simulations (all humble branch)
+- `build.sh` — colcon build with COLCON_IGNORE on turtlebot3_gazebo, parallel-workers 2
+- `podman.txt` — `podman run` with `--ipc=host --net=host`, volume mount to host workspace
+
+---
+
+#### Part 2 — Wizard UI (extension page)
+
+- New "Simulation Setup" page accessible from Dashboard
+- Selection options:
+  - **Robot type:** TurtleBot3 (initial), extensible to other robots later
+  - **ROS distro:** Humble (for simulation/desktop), Jazzy (for base/headless)
+  - **Middleware:** DDS (default), Zenoh (future)
+  - **Simulation engine:** Gazebo (initial)
+- Persist selections via extension configuration (PD Configuration API)
+- Dashboard card linking to the new page
+- Selections feed into Story 2's one-click launch (APPENG-5771)
+
+---
+
+#### Part 3 — Wire Build & Push
+
+- Backend API method to build the simulation image using the TurtleBot3 Containerfile
+- Update Build & Push page to support multiple image types (base image vs simulation image), or add build/push controls directly to the wizard page
+- Reuse existing build progress polling and push flow
+
+---
+
+### Relationship to Story 2
+
+- This task creates the **image and UI** for selecting a simulation setup
+- APPENG-5771 (Story 2) **consumes** the wizard selections and image to orchestrate the one-click launch
+- APPENG-5772 (Story 2) provides the **visualization** of the running simulation
