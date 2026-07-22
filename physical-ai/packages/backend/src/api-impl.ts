@@ -3,6 +3,7 @@ import * as extensionApi from '@podman-desktop/api';
 import type { PhysicalAiApi } from '/@shared/src/PhysicalAiApi';
 import type { QuayRepository, QuayTag, PullProgress, BuildProgress, PushProgress } from '/@shared/src/types/ImageCatalog';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
+import { formatSimulationConfig, resolveSimulationProfile } from '/@shared/src/types/SimulationProfiles';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
 
@@ -11,6 +12,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   private activePulls = new Map<string, PullProgress>();
   private layerProgress = new Map<string, Map<string, { current: number; total: number }>>();
   private activeBuilds = new Map<string, BuildProgress>();
+  private buildAbortControllers = new Map<string, AbortController>();
   private activePushes = new Map<string, PushProgress>();
 
   constructor(extensionContext: ExtensionContext) {
@@ -89,6 +91,16 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       this.extensionContext.extensionUri, 'assets', assetDir,
     ).fsPath;
 
+    // Replace any in-flight build for this tag
+    const existing = this.buildAbortControllers.get(tag);
+    if (existing) {
+      existing.abort();
+      this.buildAbortControllers.delete(tag);
+    }
+
+    const abortController = new AbortController();
+    this.buildAbortControllers.set(tag, abortController);
+
     this.activeBuilds.set(tag, {
       tag,
       status: 'Starting...',
@@ -99,7 +111,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       contextDir,
       (eventName: string, data: string) => {
         const progress = this.activeBuilds.get(tag);
-        if (!progress) return;
+        if (!progress || progress.done) return;
 
         if (eventName === 'stream') {
           const line = data.trim();
@@ -121,23 +133,66 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         containerFile: 'Containerfile',
         tag,
         provider: podmanConnection.connection,
+        abortController,
       },
     ).then(() => {
+      this.buildAbortControllers.delete(tag);
       const progress = this.activeBuilds.get(tag);
-      if (progress) {
-        progress.status = 'Complete';
-        progress.done = true;
+      if (progress && !progress.done) {
+        if (abortController.signal.aborted || progress.cancelled) {
+          progress.status = 'Cancelled';
+          progress.cancelled = true;
+          progress.done = true;
+          progress.error = 'Build cancelled';
+          progress.logs.push('Build cancelled by user');
+        } else {
+          progress.status = 'Complete';
+          progress.done = true;
+        }
       }
       setTimeout(() => this.activeBuilds.delete(tag), 30000);
     }).catch((err: unknown) => {
+      this.buildAbortControllers.delete(tag);
       const progress = this.activeBuilds.get(tag);
-      if (progress) {
-        progress.status = 'Failed';
-        progress.done = true;
-        progress.error = err instanceof Error ? err.message : String(err);
+      if (progress && !progress.done) {
+        if (abortController.signal.aborted || progress.cancelled) {
+          progress.status = 'Cancelled';
+          progress.cancelled = true;
+          progress.done = true;
+          progress.error = 'Build cancelled';
+          progress.logs.push('Build cancelled by user');
+        } else {
+          progress.status = 'Failed';
+          progress.done = true;
+          progress.error = err instanceof Error ? err.message : String(err);
+        }
       }
       setTimeout(() => this.activeBuilds.delete(tag), 30000);
     });
+  }
+
+  async cancelBuild(tag: string): Promise<void> {
+    const abortController = this.buildAbortControllers.get(tag);
+    const progress = this.activeBuilds.get(tag);
+
+    if (!progress || progress.done) {
+      return;
+    }
+
+    // Mark done immediately so the UI can leave "Cancelling..." even if Podman
+    // takes a while (or forever) to settle the buildImage promise mid-RUN.
+    progress.cancelled = true;
+    progress.done = true;
+    progress.status = 'Cancelled';
+    progress.error = 'Build cancelled';
+    progress.logs.push('Cancel requested — build aborted');
+
+    if (abortController) {
+      this.buildAbortControllers.delete(tag);
+      abortController.abort();
+    }
+
+    setTimeout(() => this.activeBuilds.delete(tag), 30000);
   }
 
   async pullImage(fullImageName: string, tag: string): Promise<void> {
@@ -202,8 +257,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     this.startImageBuild(tag, 'ros2-jazzy-base');
   }
 
-  async buildSimulationImage(tag: string): Promise<void> {
-    this.startImageBuild(tag, 'ros2-humble-turtlebot3');
+  async buildSimulationImage(tag: string, config: SimulationConfig): Promise<void> {
+    const profile = resolveSimulationProfile(config);
+    if (!profile) {
+      throw new Error(
+        `No simulation image available for ${formatSimulationConfig(config)}. ` +
+          'Supported: humble/turtlebot3/dds/gazebo.',
+      );
+    }
+    this.startImageBuild(tag, profile.assetDir);
   }
 
   async getPushProgress(tag: string): Promise<PushProgress | null> {

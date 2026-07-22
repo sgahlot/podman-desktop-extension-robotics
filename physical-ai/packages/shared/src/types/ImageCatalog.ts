@@ -32,6 +32,7 @@ export interface BuildProgress {
   logs: string[];
   done?: boolean;
   error?: string;
+  cancelled?: boolean;
 }
 
 export interface PushProgress {

@@ -17,6 +17,8 @@ let imageExistsLocally = false;
 let building = false;
 let buildDone = false;
 let buildError = '';
+let buildCancelled = false;
+let cancelling = false;
 let currentStep = 0;
 let totalSteps = 0;
 let logs: string[] = [];
@@ -58,6 +60,8 @@ async function startBuild() {
   building = true;
   buildDone = false;
   buildError = '';
+  buildCancelled = false;
+  cancelling = false;
   currentStep = 0;
   totalSteps = 0;
   logs = [];
@@ -70,6 +74,25 @@ async function startBuild() {
   } catch (e) {
     building = false;
     buildError = e instanceof Error ? e.message : typeof e === 'string' ? e : 'Build failed to start';
+  }
+}
+
+async function cancelBuild() {
+  if (!inputValue || cancelling || !building) return;
+  cancelling = true;
+  try {
+    await physicalAiClient.cancelBuild(inputValue);
+    // Don't wait for the Podman promise — backend marks the build done on cancel.
+    stopPolling();
+    building = false;
+    buildDone = true;
+    buildCancelled = true;
+    buildError = 'Build cancelled';
+    cancelling = false;
+    logs = [...logs, 'Cancel requested — build aborted'];
+  } catch (e) {
+    cancelling = false;
+    buildError = e instanceof Error ? e.message : typeof e === 'string' ? e : 'Failed to cancel build';
   }
 }
 
@@ -105,6 +128,8 @@ function startPolling(mode: 'build' | 'push') {
             stopPolling();
             building = false;
             buildDone = true;
+            cancelling = false;
+            buildCancelled = !!progress.cancelled;
             if (progress.error) {
               buildError = progress.error;
             } else {
@@ -149,6 +174,8 @@ function stopPolling() {
 function reset() {
   buildDone = false;
   buildError = '';
+  buildCancelled = false;
+  cancelling = false;
   logs = [];
   currentStep = 0;
   totalSteps = 0;
@@ -212,6 +239,15 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
       >
         {imageExistsLocally ? 'Rebuild' : 'Build'}
       </button>
+    {:else if building}
+      <button
+        on:click={cancelBuild}
+        disabled={cancelling}
+        class="px-4 py-1.5 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed"
+        style="background-color: #dc2626; color: #ffffff;"
+      >
+        {cancelling ? 'Cancelling...' : 'Cancel'}
+      </button>
     {/if}
   </div>
 
@@ -265,7 +301,11 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
 
       {#if buildDone}
         <div class="flex flex-row items-center gap-3">
-          {#if buildError}
+          {#if buildCancelled}
+            <div class="text-sm p-3 rounded" style="background-color: #fff7ed; color: #9a3412;">
+              Build cancelled
+            </div>
+          {:else if buildError}
             <div class="text-sm p-3 rounded" style="background-color: #fef2f2; color: #991b1b;">
               Build failed: {buildError}
             </div>

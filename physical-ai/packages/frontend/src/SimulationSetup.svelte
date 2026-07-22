@@ -3,6 +3,11 @@ import { physicalAiClient } from './api/client';
 import { onMount } from 'svelte';
 import { router } from 'tinro';
 import BuildPushPanel from './lib/BuildPushPanel.svelte';
+import {
+  resolveSimulationProfile,
+  simulationImageTag,
+} from '/@shared/src/types/SimulationProfiles';
+import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 
 let robot = 'turtlebot3';
 let distro = 'humble';
@@ -16,9 +21,16 @@ let saveError = '';
 
 let ns = 'ecosystem-appeng';
 let tag = '';
+let lastConfigKey = '';
 
-function updateTag() {
-  tag = `quay.io/${ns}/ros2-${distro}-${robot}:latest`;
+$: currentConfig = { robot, distro, middleware, engine } as SimulationConfig;
+$: profile = resolveSimulationProfile(currentConfig);
+$: {
+  const key = `${ns}|${robot}|${distro}|${middleware}|${engine}`;
+  if (key !== lastConfigKey) {
+    lastConfigKey = key;
+    tag = simulationImageTag(ns, currentConfig) ?? '';
+  }
 }
 
 onMount(async () => {
@@ -37,7 +49,6 @@ onMount(async () => {
     // defaults are fine
   } finally {
     loading = false;
-    updateTag();
   }
 });
 
@@ -47,9 +58,8 @@ async function save() {
   saveError = '';
 
   try {
-    await physicalAiClient.saveSimulationConfig({ robot, distro, middleware, engine });
+    await physicalAiClient.saveSimulationConfig(currentConfig);
     saveSuccess = true;
-    updateTag();
     setTimeout(() => { saveSuccess = false; }, 3000);
   } catch (e) {
     saveError = e instanceof Error ? e.message : 'Failed to save';
@@ -95,7 +105,7 @@ async function save() {
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
         >
           <option value="humble">Humble (simulation/desktop)</option>
-          <option value="jazzy">Jazzy (base/headless)</option>
+          <option value="jazzy" disabled>Jazzy (no simulation image yet — use Build Base Image)</option>
         </select>
       </div>
 
@@ -149,21 +159,40 @@ async function save() {
         <div><strong>Distro:</strong> ROS2 {distro}</div>
         <div><strong>Middleware:</strong> {middleware.toUpperCase()}</div>
         <div><strong>Engine:</strong> {engine}</div>
+        {#if profile}
+          <div class="mt-1" style="color: #16a34a;">
+            &#10003; Buildable: {profile.label}
+          </div>
+        {:else}
+          <div class="mt-1" style="color: #dc2626;">
+            No bundled simulation image for this combination yet.
+          </div>
+        {/if}
       </div>
     </div>
 
     <hr class="border-[var(--pd-content-card-border)] my-2" />
 
     <h2 class="text-xl text-[var(--pd-content-header)]">Build & Push Simulation Image</h2>
-    <p class="text-sm text-[var(--pd-content-text)]">
-      Build the simulation image locally from the bundled Containerfile and optionally push to a registry.
-    </p>
 
-    <BuildPushPanel
-      bind:tag
-      buildImage={t => physicalAiClient.buildSimulationImage(t)}
-      tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-humble-turtlebot3:latest"
-      tagInputId="simTag"
-    />
+    {#if profile && tag}
+      <p class="text-sm text-[var(--pd-content-text)]">
+        Builds <span class="font-mono">{profile.assetDir}</span> from the bundled Containerfile
+        using your current wizard selection (Save is optional for build; required for Story 2 launch later).
+      </p>
+
+      <BuildPushPanel
+        bind:tag
+        buildImage={t => physicalAiClient.buildSimulationImage(t, currentConfig)}
+        tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-humble-turtlebot3:latest"
+        tagInputId="simTag"
+      />
+    {:else}
+      <p class="text-sm p-3 rounded" style="background-color: #fef2f2; color: #991b1b;">
+        Cannot build: no simulation Containerfile is bundled for
+        <span class="font-mono">{distro}/{robot}/{middleware}/{engine}</span>.
+        Choose a supported combination (currently Humble + TurtleBot3 + DDS + Gazebo).
+      </p>
+    {/if}
   {/if}
 </div>

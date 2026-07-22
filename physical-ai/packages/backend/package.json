@@ -33,7 +33,7 @@
         "physical-ai.simulationDistro": {
           "type": "string",
           "default": "humble",
-          "description": "ROS distro for simulation (humble or jazzy)"
+          "description": "ROS distro for simulation (currently only humble has a bundled simulation image)"
         },
         "physical-ai.simulationMiddleware": {
           "type": "string",

@@ -388,19 +388,54 @@ describe('PhysicalAiApiImpl', () => {
           containerFile: 'Containerfile',
           tag: 'my-tag:latest',
           provider: mockConnection.connection,
+          abortController: expect.any(AbortController),
         },
       );
+    });
+
+    it('cancelBuild marks the build cancelled immediately without waiting for Podman', async () => {
+      const mockConnection = createMockConnection();
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([mockConnection] as any);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as any);
+
+      // Promise never settles — simulates a hung apt-get RUN step
+      let aborted = false;
+      vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation(
+        (_ctx: any, _cb: any, opts: any) =>
+          new Promise(() => {
+            opts.abortController.signal.addEventListener('abort', () => {
+              aborted = true;
+            });
+          }),
+      );
+
+      await api.buildBaseImage('my-tag:latest');
+      await api.cancelBuild('my-tag:latest');
+
+      const progress = await api.getBuildProgress('my-tag:latest');
+      expect(aborted).toBe(true);
+      expect(progress!.cancelled).toBe(true);
+      expect(progress!.done).toBe(true);
+      expect(progress!.status).toBe('Cancelled');
+      expect(progress!.error).toBe('Build cancelled');
     });
   });
 
   describe('buildSimulationImage', () => {
+    const supportedConfig = {
+      robot: 'turtlebot3',
+      distro: 'humble',
+      middleware: 'dds',
+      engine: 'gazebo',
+    };
+
     it('builds from the turtlebot3 simulation asset directory', async () => {
       const mockConnection = createMockConnection();
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([mockConnection] as any);
       vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets/ros2-humble-turtlebot3' } as any);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
 
-      await api.buildSimulationImage('sim-tag:latest');
+      await api.buildSimulationImage('sim-tag:latest', supportedConfig);
 
       expect(extensionApi.Uri.joinPath).toHaveBeenCalledWith(
         MOCK_CONTEXT.extensionUri,
@@ -414,8 +449,16 @@ describe('PhysicalAiApiImpl', () => {
           containerFile: 'Containerfile',
           tag: 'sim-tag:latest',
           provider: mockConnection.connection,
+          abortController: expect.any(AbortController),
         },
       );
+    });
+
+    it('rejects unsupported wizard combinations', async () => {
+      await expect(
+        api.buildSimulationImage('sim-tag:latest', { ...supportedConfig, distro: 'jazzy' }),
+      ).rejects.toThrow(/No simulation image available for jazzy\/turtlebot3\/dds\/gazebo/);
+      expect(extensionApi.containerEngine.buildImage).not.toHaveBeenCalled();
     });
   });
 
