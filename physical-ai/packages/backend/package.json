@@ -24,6 +24,26 @@
           "type": "string",
           "default": "ecosystem-appeng",
           "description": "Default Quay.io namespace for browsing and building images"
+        },
+        "physical-ai.simulationRobot": {
+          "type": "string",
+          "default": "turtlebot3",
+          "description": "Robot type for simulation (e.g. turtlebot3)"
+        },
+        "physical-ai.simulationDistro": {
+          "type": "string",
+          "default": "humble",
+          "description": "ROS distro for simulation (humble or jazzy)"
+        },
+        "physical-ai.simulationMiddleware": {
+          "type": "string",
+          "default": "dds",
+          "description": "Middleware for simulation (dds or zenoh)"
+        },
+        "physical-ai.simulationEngine": {
+          "type": "string",
+          "default": "gazebo",
+          "description": "Simulation engine (e.g. gazebo)"
         }
       }
     }

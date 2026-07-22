@@ -2,6 +2,7 @@ import type { ExtensionContext } from '@podman-desktop/api';
 import * as extensionApi from '@podman-desktop/api';
 import type { PhysicalAiApi } from '/@shared/src/PhysicalAiApi';
 import type { QuayRepository, QuayTag, PullProgress, BuildProgress, PushProgress } from '/@shared/src/types/ImageCatalog';
+import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
 
@@ -205,6 +206,24 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   async getDefaultNamespace(): Promise<string> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
     return config.get<string>('defaultNamespace') ?? 'ecosystem-appeng';
+  }
+
+  async getSimulationConfig(): Promise<SimulationConfig> {
+    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    return {
+      robot: config.get<string>('simulationRobot') ?? 'turtlebot3',
+      distro: config.get<string>('simulationDistro') ?? 'humble',
+      middleware: config.get<string>('simulationMiddleware') ?? 'dds',
+      engine: config.get<string>('simulationEngine') ?? 'gazebo',
+    };
+  }
+
+  async saveSimulationConfig(config: SimulationConfig): Promise<void> {
+    const pdConfig = extensionApi.configuration.getConfiguration('physical-ai');
+    await pdConfig.update('simulationRobot', config.robot);
+    await pdConfig.update('simulationDistro', config.distro);
+    await pdConfig.update('simulationMiddleware', config.middleware);
+    await pdConfig.update('simulationEngine', config.engine);
   }
 
   async pushImage(tag: string): Promise<void> {

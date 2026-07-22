@@ -57,11 +57,13 @@ onMount(async () => {
         <span class="tooltip-text">Browse and pull container images</span>
         <div class="text-lg">Image Catalog</div>
       </button>
-      <div class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)]">
-        <span class="tooltip-text">Launch ROS2 + Gazebo simulations</span>
-        <div class="text-lg">Simulation</div>
-        <div class="text-xs text-gray-900 mt-2">Coming soon</div>
-      </div>
+      <button
+        on:click={() => router.goto('/simulation')}
+        class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left hover:border-purple-500 cursor-pointer"
+      >
+        <span class="tooltip-text">Configure robot simulation environment</span>
+        <div class="text-lg">Simulation Setup</div>
+      </button>
       <div class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)]">
         <span class="tooltip-text">Scale to multi-robot local fleet</span>
         <div class="text-lg">Fleet</div>

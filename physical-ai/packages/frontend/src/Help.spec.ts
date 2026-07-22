@@ -32,8 +32,12 @@ describe('Help', () => {
 
   it('mentions key features in coming soon section', () => {
     render(Help);
-    expect(screen.getByText(/Simulation/)).toBeTruthy();
-    expect(screen.getByText(/Fleet/)).toBeTruthy();
+    expect(screen.getByText('Coming Soon')).toBeTruthy();
     expect(screen.getByText(/OpenShift Bridge/)).toBeTruthy();
+  });
+
+  it('renders Simulation Setup section', () => {
+    render(Help);
+    expect(screen.getByText('Simulation Setup')).toBeTruthy();
   });
 });

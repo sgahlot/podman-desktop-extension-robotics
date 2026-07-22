@@ -70,6 +70,21 @@ import { router } from 'tinro';
     </div>
 
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
+      <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Simulation Setup</h2>
+      <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
+        <div>
+          <strong>Configure</strong> — Select your robot type (TurtleBot3), ROS distro (Humble or Jazzy), middleware (DDS), and simulation engine (Gazebo). Click Save to persist your selections.
+        </div>
+        <div>
+          <strong>Selections persist</strong> — Your configuration is saved in Podman Desktop settings and will be remembered across sessions. You can also view and edit these values in Settings &rarr; Preferences &rarr; Physical AI.
+        </div>
+        <div>
+          <strong>Coming soon</strong> — Zenoh middleware support and additional robot types will be added in future updates. Saved selections will be used by the one-click simulation launch (Story 2).
+        </div>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Tips</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-1">
         <p>&#8226; The progress percentage may start low and adjust upward as new image layers are discovered during download — this is normal.</p>
