@@ -149,6 +149,30 @@ describe('RpcExtension', () => {
       const result = await rpcExt.methods.get('getValue')!();
       expect(result).toBe('hello');
     });
+
+    it('does not register JavaScript private (#) methods', () => {
+      class TestApi {
+        async publicMethod(): Promise<string> {
+          return 'public';
+        }
+        #hidden(): Promise<string> {
+          return Promise.resolve('secret');
+        }
+        callHidden(): Promise<string> {
+          return this.#hidden();
+        }
+      }
+
+      const instance = new TestApi();
+      rpcExt.registerInstance(TestApi, instance);
+
+      expect(rpcExt.methods.has('publicMethod')).toBe(true);
+      expect(rpcExt.methods.has('callHidden')).toBe(true);
+      expect(rpcExt.methods.has('#hidden')).toBe(false);
+      expect(
+        Object.getOwnPropertyNames(TestApi.prototype).some(n => n.includes('hidden')),
+      ).toBe(false);
+    });
   });
 });
 

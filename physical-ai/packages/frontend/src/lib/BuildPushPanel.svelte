@@ -4,10 +4,12 @@ import { onMount, onDestroy } from 'svelte';
 
 /** Called to start a build for the current tag (fire-and-forget; progress via polling). */
 export let buildImage: (tag: string) => Promise<void>;
-/** Image tag — bind from parent. Parent updates are adopted when not mid-edit. */
+/** Image tag — bind from parent. Parent updates are adopted when idle (not building/pushing). */
 export let tag = '';
 export let tagPlaceholder = 'e.g. quay.io/org/image:latest';
 export let tagInputId = 'image-tag';
+/** True while a build or push is in progress — bind from parent to freeze wizard controls. */
+export let busy = false;
 
 let inputValue = tag;
 let lastSyncedTag = tag;
@@ -195,13 +197,14 @@ onDestroy(() => {
   stopPolling();
 });
 
-// Adopt parent-driven tag changes (e.g. wizard save) without reacting to every keystroke
-$: if (tag !== lastSyncedTag) {
+// Adopt parent-driven tag changes only when idle (avoid mid-build poll key desync)
+$: if (tag !== lastSyncedTag && !building && !pushing) {
   inputValue = tag;
   lastSyncedTag = tag;
   checkLocalImage(tag);
 }
 
+$: busy = building || pushing;
 $: progressPercent = totalSteps > 0 ? Math.round((currentStep / totalSteps) * 100) : 0;
 $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !pushDone;
 </script>

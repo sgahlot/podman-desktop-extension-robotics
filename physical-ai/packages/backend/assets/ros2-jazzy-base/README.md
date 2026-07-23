@@ -20,9 +20,14 @@ Development base image for ROS2 Jazzy robotics workloads.
 
 ## Build
 
+Prefer building from the Podman Desktop extension (**Build & Push Base Image**).
+For a local CLI build of the same context:
+
 ```bash
-podman build -t quay.io/ecosystem-appeng/ros2-jazzy-base:latest containers/ros2-jazzy-base/
+podman build -t quay.io/ecosystem-appeng/ros2-jazzy-base:latest packages/backend/assets/ros2-jazzy-base/
 ```
+
+Base image is digest-pinned in the Containerfile (`ros:jazzy-ros-base@sha256:…`).
 
 ## Run
 

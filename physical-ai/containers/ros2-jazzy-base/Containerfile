@@ -1,4 +1,4 @@
-FROM ros:jazzy-ros-base
+FROM docker.io/library/ros:jazzy-ros-base@sha256:31daab66eef9139933379fb67159449944f4e2dcf2e22c2d12cc715f29873e0f
 
 LABEL org.opencontainers.image.title="ROS2 Jazzy Base" \
       org.opencontainers.image.description="Fedora-targeted ROS2 Jazzy development base image (Ubuntu interim)" \

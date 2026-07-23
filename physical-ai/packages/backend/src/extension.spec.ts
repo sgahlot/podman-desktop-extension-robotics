@@ -46,7 +46,7 @@ import { activate, deactivate } from './extension';
 
 const MOCK_CONTEXT = {
   extensionUri: { fsPath: '/fake/extension' },
-  subscriptions: [] as any[],
+  subscriptions: [] as { dispose(): void }[],
 } as unknown as ExtensionContext;
 
 function mockPanel() {
@@ -66,7 +66,7 @@ function mockPanel() {
 describe('extension', () => {
   beforeEach(async () => {
     vi.resetAllMocks();
-    MOCK_CONTEXT.subscriptions = [];
+    (MOCK_CONTEXT as { subscriptions: unknown[] }).subscriptions = [];
     await deactivate();
 
     vi.mocked(extensionApi.window.createWebviewPanel).mockImplementation(() => mockPanel() as any);

@@ -75,6 +75,10 @@
   color: var(--pai-success);
 }
 
+.pai-text-error {
+  color: var(--pai-error);
+}
+
 .pai-text-warning {
   color: var(--pai-warning-text);
 }

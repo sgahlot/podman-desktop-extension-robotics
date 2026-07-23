@@ -29,13 +29,14 @@ let saveError = '';
 let ns = 'ecosystem-appeng';
 let tag = '';
 let lastConfigKey = '';
+let buildBusy = false;
 
 $: currentConfig = { robot, distro, middleware, engine, baseImage } as SimulationConfig;
 $: profile = resolveSimulationProfile(currentConfig);
 $: basePreset = resolveSimulationBaseImage(baseImage);
 $: {
   const key = `${ns}|${robot}|${distro}|${middleware}|${engine}|${baseImage}`;
-  if (key !== lastConfigKey) {
+  if (!buildBusy && key !== lastConfigKey) {
     lastConfigKey = key;
     tag = simulationImageTag(ns, currentConfig) ?? '';
   }
@@ -97,6 +98,7 @@ async function save() {
         <select
           id="robot"
           bind:value={robot}
+          disabled={buildBusy}
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
         >
           <option value="turtlebot3">TurtleBot3</option>
@@ -108,6 +110,7 @@ async function save() {
         <select
           id="distro"
           bind:value={distro}
+          disabled={buildBusy}
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
         >
           <option value="humble">Humble (simulation/desktop)</option>
@@ -120,6 +123,7 @@ async function save() {
         <select
           id="middleware"
           bind:value={middleware}
+          disabled={buildBusy}
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
         >
           <option value="dds">DDS (default)</option>
@@ -132,6 +136,7 @@ async function save() {
         <select
           id="engine"
           bind:value={engine}
+          disabled={buildBusy}
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
         >
           <option value="gazebo">Gazebo</option>
@@ -143,6 +148,7 @@ async function save() {
         <select
           id="baseImage"
           bind:value={baseImage}
+          disabled={buildBusy}
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
         >
           {#each SIMULATION_BASE_IMAGES as preset}
@@ -158,7 +164,7 @@ async function save() {
       </div>
 
       <div class="flex flex-row items-center gap-3 mt-2">
-        <button on:click={save} disabled={saving} class="pai-btn pai-btn-primary">
+        <button on:click={save} disabled={saving || buildBusy} class="pai-btn pai-btn-primary">
           {saving ? 'Saving...' : 'Save'}
         </button>
 
@@ -206,6 +212,7 @@ async function save() {
 
       <BuildPushPanel
         bind:tag
+        bind:busy={buildBusy}
         buildImage={t => physicalAiClient.buildSimulationImage(t, currentConfig)}
         tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-humble-turtlebot3:latest"
         tagInputId="simTag"

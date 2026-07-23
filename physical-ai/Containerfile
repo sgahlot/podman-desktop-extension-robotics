@@ -6,7 +6,7 @@ COPY packages/backend/media/ /extension/media
 COPY packages/backend/assets/ /extension/assets
 COPY LICENSE /extension/
 COPY packages/backend/icon.png /extension/
-COPY README.md /extension/
+COPY packages/backend/README.md /extension/
 
 FROM scratch
 

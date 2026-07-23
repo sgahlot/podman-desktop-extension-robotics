@@ -47,7 +47,10 @@
         },
         "physical-ai.simulationBaseImage": {
           "type": "string",
-          "enum": ["sloretz", "osrf"],
+          "enum": [
+            "sloretz",
+            "osrf"
+          ],
           "enumDescriptions": [
             "ghcr.io/sloretz multi-arch Humble desktop (recommended on Apple Silicon)",
             "docker.io/osrf official Humble desktop (amd64 only)"
@@ -65,7 +68,7 @@
     "watch": "vite --mode development build -w"
   },
   "devDependencies": {
-    "@podman-desktop/api": "1.12.0",
+    "@podman-desktop/api": "1.28.3",
     "@types/node": "^20",
     "@vitest/coverage-v8": "^4.1.0",
     "typescript": "5.5.4",

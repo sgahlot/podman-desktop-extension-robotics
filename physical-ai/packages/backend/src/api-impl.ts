@@ -76,7 +76,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return images.flatMap(img => img.RepoTags ?? []);
   }
 
-  private getRunningPodmanConnection() {
+  #getRunningPodmanConnection() {
     const connections = extensionApi.provider.getContainerConnections();
     const podmanConnection = connections.find(
       c => c.connection.type === 'podman' && c.connection.status() === 'started',
@@ -90,7 +90,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   /** Drop completed progress after a short window; clears any prior timer for the same key. */
-  private scheduleProgressCleanup<T>(map: Map<string, T>, key: string, scope: string): void {
+  #scheduleProgressCleanup<T>(map: Map<string, T>, key: string, scope: string): void {
     const timerKey = `${scope}:${key}`;
     const existing = this.progressCleanupTimers.get(timerKey);
     if (existing) {
@@ -103,12 +103,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     this.progressCleanupTimers.set(timerKey, timer);
   }
 
-  private startImageBuild(
+  #startImageBuild(
     tag: string,
     assetDir: string,
     buildargs?: { [key: string]: string },
   ): void {
-    const podmanConnection = this.getRunningPodmanConnection();
+    const podmanConnection = this.#getRunningPodmanConnection();
 
     const contextDir = extensionApi.Uri.joinPath(
       this.extensionContext.extensionUri, 'assets', assetDir,
@@ -168,7 +168,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
             appendProgressLog(progress.logs, data?.trim() ? data.trim() : 'Build finished');
           }
           this.buildAbortControllers.delete(tag);
-          this.scheduleProgressCleanup(this.activeBuilds, tag, 'build');
+          this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
         }
       },
       {
@@ -193,7 +193,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
           progress.done = true;
         }
       }
-      this.scheduleProgressCleanup(this.activeBuilds, tag, 'build');
+      this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
     }).catch((err: unknown) => {
       this.buildAbortControllers.delete(tag);
       const progress = this.activeBuilds.get(tag);
@@ -210,7 +210,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
           progress.error = err instanceof Error ? err.message : String(err);
         }
       }
-      this.scheduleProgressCleanup(this.activeBuilds, tag, 'build');
+      this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
     });
   }
 
@@ -235,11 +235,11 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       abortController.abort();
     }
 
-    this.scheduleProgressCleanup(this.activeBuilds, tag, 'build');
+    this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
   }
 
   async pullImage(fullImageName: string, tag: string): Promise<void> {
-    const podmanConnection = this.getRunningPodmanConnection();
+    const podmanConnection = this.#getRunningPodmanConnection();
 
     const imageToPull = `quay.io/${fullImageName}:${tag}`;
     this.activePulls.set(imageToPull, { image: imageToPull, status: 'Starting...' });
@@ -279,7 +279,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     ).then(() => {
       this.layerProgress.delete(imageToPull);
       this.activePulls.set(imageToPull, { image: imageToPull, status: 'Complete', done: true });
-      this.scheduleProgressCleanup(this.activePulls, imageToPull, 'pull');
+      this.#scheduleProgressCleanup(this.activePulls, imageToPull, 'pull');
     }).catch((err: unknown) => {
       this.layerProgress.delete(imageToPull);
       this.activePulls.set(imageToPull, {
@@ -288,7 +288,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         done: true,
         error: err instanceof Error ? err.message : String(err),
       });
-      this.scheduleProgressCleanup(this.activePulls, imageToPull, 'pull');
+      this.#scheduleProgressCleanup(this.activePulls, imageToPull, 'pull');
     });
   }
 
@@ -297,7 +297,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async buildBaseImage(tag: string): Promise<void> {
-    this.startImageBuild(tag, 'ros2-jazzy-base');
+    this.#startImageBuild(tag, 'ros2-jazzy-base');
   }
 
   async buildSimulationImage(tag: string, config: SimulationConfig): Promise<void> {
@@ -309,7 +309,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       );
     }
     const baseImage = resolveSimulationBaseImage(config.baseImage);
-    this.startImageBuild(tag, profile.assetDir, {
+    this.#startImageBuild(tag, profile.assetDir, {
       ROS_BASE_IMAGE: baseImage.imageRef,
     });
   }
@@ -393,7 +393,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         progress.status = 'Complete';
         progress.done = true;
       }
-      this.scheduleProgressCleanup(this.activePushes, tag, 'push');
+      this.#scheduleProgressCleanup(this.activePushes, tag, 'push');
     }).catch((err: unknown) => {
       const progress = this.activePushes.get(tag);
       if (progress) {
@@ -401,7 +401,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         progress.done = true;
         progress.error = err instanceof Error ? err.message : String(err);
       }
-      this.scheduleProgressCleanup(this.activePushes, tag, 'push');
+      this.#scheduleProgressCleanup(this.activePushes, tag, 'push');
     });
   }
 }
