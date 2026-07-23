@@ -13,10 +13,7 @@ onMount(async () => {
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
-  <button
-    on:click={() => router.goto('/')}
-    class="text-sm text-purple-500 hover:underline self-start cursor-pointer"
-  >
+  <button on:click={() => router.goto('/')} class="pai-link self-start">
     &larr; Back to Dashboard
   </button>
   <h1 class="text-3xl text-[var(--pd-content-header)]">Build & Push Base Image</h1>

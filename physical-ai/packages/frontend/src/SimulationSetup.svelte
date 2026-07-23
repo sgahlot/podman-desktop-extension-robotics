@@ -79,10 +79,7 @@ async function save() {
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
-  <button
-    on:click={() => router.goto('/')}
-    class="text-sm text-purple-500 hover:underline self-start cursor-pointer"
-  >
+  <button on:click={() => router.goto('/')} class="pai-link self-start">
     &larr; Back to Dashboard
   </button>
   <h1 class="text-3xl text-[var(--pd-content-header)]">Simulation Setup</h1>
@@ -154,27 +151,22 @@ async function save() {
         </select>
         <span class="text-xs text-[var(--pd-content-text)] opacity-80">{basePreset.description}</span>
         {#if !basePreset.architectures.includes('arm64')}
-          <span class="text-xs" style="color: #9a3412;">
+          <span class="text-xs pai-text-warning">
             Warning: this preset is amd64-only. On Apple Silicon the build may fail or use slow emulation.
           </span>
         {/if}
       </div>
 
       <div class="flex flex-row items-center gap-3 mt-2">
-        <button
-          on:click={save}
-          disabled={saving}
-          class="px-4 py-1.5 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed"
-          style="background-color: #7c3aed; color: #ffffff;"
-        >
+        <button on:click={save} disabled={saving} class="pai-btn pai-btn-primary">
           {saving ? 'Saving...' : 'Save'}
         </button>
 
         {#if saveSuccess}
-          <span class="text-sm" style="color: #16a34a;">Configuration saved</span>
+          <span class="text-sm pai-text-success">Configuration saved</span>
         {/if}
         {#if saveError}
-          <span class="text-sm" style="color: #dc2626;">{saveError}</span>
+          <span class="text-sm pai-text-error">{saveError}</span>
         {/if}
       </div>
 
@@ -190,11 +182,11 @@ async function save() {
         <div><strong>Base image:</strong> {basePreset.label}</div>
         <div class="font-mono break-all opacity-80">{basePreset.imageRef}</div>
         {#if profile}
-          <div class="mt-1" style="color: #16a34a;">
+          <div class="mt-1 pai-text-success">
             &#10003; Buildable: {profile.label}
           </div>
         {:else}
-          <div class="mt-1" style="color: #dc2626;">
+          <div class="mt-1 pai-text-error">
             No bundled simulation image for this combination yet.
           </div>
         {/if}
@@ -219,7 +211,7 @@ async function save() {
         tagInputId="simTag"
       />
     {:else}
-      <p class="text-sm p-3 rounded" style="background-color: #fef2f2; color: #991b1b;">
+      <p class="text-sm p-3 rounded pai-banner-error">
         Cannot build: no simulation Containerfile is bundled for
         <span class="font-mono">{distro}/{robot}/{middleware}/{engine}</span>.
         Choose a supported combination (currently Humble + TurtleBot3 + DDS + Gazebo).

@@ -234,8 +234,7 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
       <button
         on:click={startBuild}
         disabled={!inputValue}
-        class="px-4 py-1.5 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed"
-        style="background-color: #7c3aed; color: #ffffff;"
+        class="pai-btn pai-btn-primary"
       >
         {imageExistsLocally ? 'Rebuild' : 'Build'}
       </button>
@@ -243,8 +242,7 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
       <button
         on:click={cancelBuild}
         disabled={cancelling}
-        class="px-4 py-1.5 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed"
-        style="background-color: #dc2626; color: #ffffff;"
+        class="pai-btn pai-btn-danger"
       >
         {cancelling ? 'Cancelling...' : 'Cancel'}
       </button>
@@ -252,7 +250,7 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
   </div>
 
   {#if imageExistsLocally && !building && !buildDone}
-    <div class="text-xs" style="color: #16a34a;">
+    <div class="text-xs pai-text-success">
       &#10003; Image exists locally: <span class="font-mono">{inputValue}</span>
     </div>
   {/if}
@@ -268,18 +266,21 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
               Step {currentStep}/{totalSteps}
             {/if}
           </div>
-          <div style="background-color: #e5e7eb; border-radius: 4px; height: 8px; width: 100%; max-width: 400px; overflow: hidden;">
-            <div style="background-color: {buildError ? '#dc2626' : '#7c3aed'}; height: 100%; width: {buildDone && !buildError ? 100 : progressPercent}%; transition: width 0.3s;"></div>
+          <div class="pai-progress-track">
+            <div
+              class="pai-progress-fill {buildError ? 'pai-progress-fill-error' : ''}"
+              style="width: {buildDone && !buildError ? 100 : progressPercent}%;"
+            ></div>
           </div>
         </div>
       {:else if building}
-        <div class="text-xs" style="color: #7c3aed;">Starting build...</div>
+        <div class="text-xs pai-text-accent">Starting build...</div>
       {/if}
 
       <div class="flex flex-col gap-1">
         <button
           on:click={() => buildLogsExpanded = !buildLogsExpanded}
-          class="text-xs text-[var(--pd-content-text)] self-start cursor-pointer hover:underline"
+          class="pai-link pai-link-sm self-start"
         >
           {buildLogsExpanded ? '▼' : '▶'} Build logs ({logs.length} lines)
         </button>
@@ -293,7 +294,7 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
               <div>{line}</div>
             {/each}
             {#if building && logs.length === 0}
-              <div style="color: #7c3aed;">Waiting for build output...</div>
+              <div class="pai-text-accent">Waiting for build output...</div>
             {/if}
           </div>
         {/if}
@@ -302,23 +303,19 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
       {#if buildDone}
         <div class="flex flex-row items-center gap-3">
           {#if buildCancelled}
-            <div class="text-sm p-3 rounded" style="background-color: #fff7ed; color: #9a3412;">
+            <div class="text-sm p-3 rounded pai-banner-warning">
               Build cancelled
             </div>
           {:else if buildError}
-            <div class="text-sm p-3 rounded" style="background-color: #fef2f2; color: #991b1b;">
+            <div class="text-sm p-3 rounded pai-banner-error">
               Build failed: {buildError}
             </div>
           {:else}
-            <div class="text-sm" style="color: #16a34a;">
+            <div class="text-sm pai-text-success">
               Image built successfully: <span class="font-mono">{inputValue}</span>
             </div>
           {/if}
-          <button
-            on:click={reset}
-            class="text-xs cursor-pointer hover:underline"
-            style="color: #7c3aed;"
-          >
+          <button on:click={reset} class="pai-link pai-link-sm">
             Build again
           </button>
         </div>
@@ -328,11 +325,7 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
 
   {#if canPush}
     <div class="flex flex-row items-center gap-3 mt-2">
-      <button
-        on:click={startPush}
-        class="px-4 py-1.5 text-sm rounded"
-        style="background-color: #7c3aed; color: #ffffff;"
-      >
+      <button on:click={startPush} class="pai-btn pai-btn-primary">
         Push to Registry
       </button>
       <span class="text-xs text-[var(--pd-content-text)]">Push <span class="font-mono">{inputValue}</span> to the registry</span>
@@ -342,30 +335,26 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
   {#if pushing || pushDone}
     <div class="flex flex-col gap-3 mt-2">
       {#if pushing}
-        <div class="text-xs" style="color: #7c3aed;">{pushStatus}</div>
-        <div style="background-color: #e5e7eb; border-radius: 4px; height: 8px; width: 100%; max-width: 400px; overflow: hidden;">
-          <div class="push-progress-bar" style="background-color: #7c3aed; height: 100%; width: 30%;"></div>
+        <div class="text-xs pai-text-accent">{pushStatus}</div>
+        <div class="pai-progress-track">
+          <div class="push-progress-bar pai-progress-fill" style="width: 30%;"></div>
         </div>
       {/if}
 
       {#if pushDone}
         <div class="flex flex-row items-center gap-3">
           {#if pushError}
-            <div class="text-sm p-3 rounded" style="background-color: #fef2f2; color: #991b1b;">
+            <div class="text-sm p-3 rounded pai-banner-error">
               Push failed: {pushError}
             </div>
-            <button
-              on:click={startPush}
-              class="text-xs cursor-pointer hover:underline"
-              style="color: #7c3aed;"
-            >
+            <button on:click={startPush} class="pai-link pai-link-sm">
               Retry push
             </button>
           {:else}
-            <div class="text-sm" style="color: #16a34a;">
+            <div class="text-sm pai-text-success">
               Image pushed successfully to registry
               {#if pushDigest}
-                <div class="text-xs mt-1" style="color: #4b5563;">
+                <div class="text-xs mt-1 pai-text-muted">
                   <span class="font-mono">{inputValue}</span>
                   <br />
                   Digest: <span class="font-mono">{pushDigest}</span>

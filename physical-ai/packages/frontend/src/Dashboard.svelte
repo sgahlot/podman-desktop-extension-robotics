@@ -28,8 +28,8 @@ onMount(async () => {
     border-radius: 4px;
     font-size: 12px;
     white-space: nowrap;
-    background-color: #1f2937;
-    color: #ffffff;
+    background-color: var(--pai-tooltip-bg);
+    color: var(--pai-tooltip-text);
     pointer-events: none;
     transition: opacity 0.15s;
     margin-bottom: 4px;
@@ -52,41 +52,41 @@ onMount(async () => {
     <div class="grid grid-cols-3 gap-4">
       <button
         on:click={() => router.goto('/images')}
-        class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left hover:border-purple-500 cursor-pointer"
+        class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer"
       >
         <span class="tooltip-text">Browse and pull container images</span>
-        <div class="text-lg">Image Catalog</div>
+        <div class="text-lg text-[var(--pd-content-header)]">Image Catalog</div>
       </button>
       <button
         on:click={() => router.goto('/simulation')}
-        class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left hover:border-purple-500 cursor-pointer"
+        class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer"
       >
         <span class="tooltip-text">Configure robot simulation environment</span>
-        <div class="text-lg">Simulation Setup</div>
+        <div class="text-lg text-[var(--pd-content-header)]">Simulation Setup</div>
       </button>
       <div class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)]">
         <span class="tooltip-text">Scale to multi-robot local fleet</span>
-        <div class="text-lg">Fleet</div>
-        <div class="text-xs text-gray-900 mt-2">Coming soon</div>
+        <div class="text-lg text-[var(--pd-content-header)]">Fleet</div>
+        <div class="text-xs pai-text-muted mt-2">Coming soon</div>
       </div>
       <button
         on:click={() => router.goto('/build')}
-        class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left hover:border-purple-500 cursor-pointer"
+        class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer"
       >
         <span class="tooltip-text">Build and push ROS2 Jazzy base image</span>
-        <div class="text-lg">Build &amp; Push Base Image</div>
+        <div class="text-lg text-[var(--pd-content-header)]">Build &amp; Push Base Image</div>
       </button>
       <button
         on:click={() => router.goto('/help')}
-        class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left hover:border-purple-500 cursor-pointer"
+        class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer"
       >
         <span class="tooltip-text">Guide to using this extension</span>
-        <div class="text-lg">Help</div>
+        <div class="text-lg text-[var(--pd-content-header)]">Help</div>
       </button>
     </div>
   </div>
 
-  <div class="text-xs text-gray-900 mt-4">
+  <div class="text-xs pai-text-muted mt-4">
     Status: {status}
   </div>
 </div>

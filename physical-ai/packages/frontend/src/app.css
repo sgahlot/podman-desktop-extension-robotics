@@ -1,3 +1,126 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * Physical AI theme tokens.
+ * Prefer Podman Desktop --pd-* variables so light/dark themes stay consistent.
+ * Fallbacks match the previous hardcoded palette when a host var is missing.
+ */
+:root {
+  --pai-accent: var(--pd-button-primary-bg, #7c3aed);
+  --pai-accent-hover: var(--pd-button-primary-hover-bg, #6d28d9);
+  --pai-accent-text: var(--pd-button-text, #ffffff);
+  --pai-link: var(--pd-button-link-text, var(--pd-button-primary-bg, #7c3aed));
+  --pai-danger-bg: var(--pd-button-danger-bg, #dc2626);
+  --pai-danger-text: var(--pd-button-danger-text, #ffffff);
+  --pai-success: var(--pd-status-success, #16a34a);
+  --pai-error: var(--pd-status-error, #dc2626);
+  --pai-warning-bg: var(--pd-status-warning-bg, #fff7ed);
+  --pai-warning-text: var(--pd-status-warning, #9a3412);
+  --pai-error-bg: var(--pd-status-error-bg, #fef2f2);
+  --pai-error-text: var(--pd-status-error, #991b1b);
+  --pai-progress-track: var(--pd-content-card-border, #e5e7eb);
+  --pai-tooltip-bg: var(--pd-tooltip-bg, #1f2937);
+  --pai-tooltip-text: var(--pd-tooltip-text, #ffffff);
+}
+
+.pai-btn {
+  padding: 0.375rem 1rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  border-radius: 0.25rem;
+  border: none;
+  cursor: pointer;
+}
+
+.pai-btn-sm {
+  padding: 0.125rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.pai-btn-primary {
+  background-color: var(--pai-accent);
+  color: var(--pai-accent-text);
+}
+
+.pai-btn-primary:hover:not(:disabled) {
+  background-color: var(--pai-accent-hover);
+}
+
+.pai-btn-danger {
+  background-color: var(--pai-danger-bg);
+  color: var(--pai-danger-text);
+}
+
+.pai-link {
+  color: var(--pai-link);
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.875rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.pai-link:hover {
+  text-decoration: underline;
+}
+
+.pai-link-sm {
+  font-size: 0.75rem;
+}
+
+.pai-text-success {
+  color: var(--pai-success);
+}
+
+.pai-text-warning {
+  color: var(--pai-warning-text);
+}
+
+.pai-text-accent {
+  color: var(--pai-accent);
+}
+
+.pai-text-muted {
+  color: var(--pd-content-text);
+  opacity: 0.7;
+}
+
+.pai-banner-warning {
+  background-color: var(--pai-warning-bg);
+  color: var(--pai-warning-text);
+}
+
+.pai-banner-error {
+  background-color: var(--pai-error-bg);
+  color: var(--pai-error-text);
+}
+
+.pai-progress-track {
+  background-color: var(--pai-progress-track);
+  border-radius: 4px;
+  height: 8px;
+  width: 100%;
+  max-width: 400px;
+  overflow: hidden;
+}
+
+.pai-progress-fill {
+  height: 100%;
+  transition: width 0.3s;
+  background-color: var(--pai-accent);
+}
+
+.pai-progress-fill-error {
+  background-color: var(--pai-error);
+}
+
+.pai-card-interactive:hover {
+  border-color: var(--pai-accent);
+}
+
+.pai-accent-name {
+  color: var(--pai-accent);
+}

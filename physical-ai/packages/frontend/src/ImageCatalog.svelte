@@ -192,10 +192,7 @@ onDestroy(() => {
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
-  <button
-    on:click={() => router.goto('/')}
-    class="text-sm text-purple-500 hover:underline self-start cursor-pointer"
-  >
+  <button on:click={() => router.goto('/')} class="pai-link self-start">
     &larr; Back to Dashboard
   </button>
   <h1 class="text-3xl text-[var(--pd-content-header)]">Image Catalog</h1>
@@ -217,8 +214,7 @@ onDestroy(() => {
     <button
       on:click={loadRepos}
       disabled={loading || !namespace}
-      class="px-4 py-1.5 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed"
-      style="background-color: #7c3aed; color: #ffffff;"
+      class="pai-btn pai-btn-primary"
     >
       {loading ? 'Loading...' : 'Load'}
     </button>
@@ -234,16 +230,17 @@ onDestroy(() => {
           {localSectionExpanded ? '▼' : '▶'}
         </span>
         <div class="flex flex-row items-center gap-2">
-          <span class="text-sm font-medium" style="color: #16a34a;">Locally Available ({localImagesForNamespace.length})</span>
+          <span class="text-sm font-medium pai-text-success">Locally Available ({localImagesForNamespace.length})</span>
         </div>
       </button>
       <button
         on:click|stopPropagation={() => refreshLocalImages()}
-        class="p-3 text-xs hover:bg-[var(--pd-content-bg)] rounded-r-lg cursor-pointer"
-        style="color: #7c3aed;"
+        class="pai-link pai-link-sm hover:bg-[var(--pd-content-bg)] rounded-r-lg"
+        style="padding: 12px 20px 12px 12px;"
         title="Refresh local images"
+        aria-label="Refresh local images"
       >
-        ↻ Refresh
+        ↻
       </button>
     </div>
     {#if localSectionExpanded && localImagesForNamespace.length > 0}
@@ -251,7 +248,7 @@ onDestroy(() => {
         <div class="flex flex-col gap-1">
           {#each localImagesForNamespace as img}
             <div class="flex flex-row items-center gap-2 text-xs text-[var(--pd-content-text)]">
-              <span style="color: #16a34a;">&#10003;</span>
+              <span class="pai-text-success">&#10003;</span>
               <span class="font-mono">{img}</span>
             </div>
           {/each}
@@ -278,7 +275,7 @@ onDestroy(() => {
   {/if}
 
   {#if error}
-    <div class="p-3 rounded text-sm" style="background-color: #fef2f2; color: #991b1b;">{error}</div>
+    <div class="p-3 rounded text-sm pai-banner-error">{error}</div>
   {/if}
 
   {#if loading}
@@ -301,7 +298,7 @@ onDestroy(() => {
             </span>
             <div class="flex flex-col flex-1 min-w-0">
               <div class="text-sm font-medium text-[var(--pd-content-header)]">
-                {repo.namespace} / <span class="text-purple-500">{repo.name}</span>
+                {repo.namespace} / <span class="pai-accent-name">{repo.name}</span>
               </div>
               {#if repo.description}
                 <div class="text-xs text-[var(--pd-content-text)] truncate">{repo.description}</div>
@@ -314,7 +311,7 @@ onDestroy(() => {
               {#if loadingTags}
                 <div class="text-xs text-[var(--pd-content-text)]">Loading tags...</div>
               {:else if tagError}
-                <div class="text-xs p-2 rounded" style="background-color: #fef2f2; color: #991b1b;">
+                <div class="text-xs p-2 rounded pai-banner-error">
                   Failed to load tags: {tagError}
                 </div>
               {:else if tags.length === 0}
@@ -343,10 +340,13 @@ onDestroy(() => {
                         <td class="py-2 min-w-[260px]">
                           {#if pullingImages.has(pullKey)}
                             <div class="flex flex-col gap-1">
-                              <div style="background-color: #e5e7eb; border-radius: 4px; height: 6px; width: 180px; overflow: hidden;">
-                                <div style="background-color: #7c3aed; height: 100%; width: {progress?.percent ?? 0}%; transition: width 0.3s;"></div>
+                              <div class="pai-progress-track" style="max-width: 180px; height: 6px;">
+                                <div
+                                  class="pai-progress-fill"
+                                  style="width: {progress?.percent ?? 0}%;"
+                                ></div>
                               </div>
-                              <span class="text-xs" style="color: #7c3aed;">
+                              <span class="text-xs pai-text-accent">
                                 {progress?.text ?? 'Pulling...'}
                               </span>
                             </div>
@@ -354,22 +354,20 @@ onDestroy(() => {
                             {@const result = pullResults.get(pullKey)}
                             <div class="flex flex-row items-center gap-2">
                               {#if result?.success}
-                                <span class="text-xs" style="color: #16a34a;">Pulled</span>
+                                <span class="text-xs pai-text-success">Pulled</span>
                                 <button
                                   on:click|stopPropagation={() => resetPullResult(pullKey)}
-                                  class="text-xs cursor-pointer hover:underline"
-                                  style="color: #7c3aed;"
+                                  class="pai-link pai-link-sm"
                                 >
                                   Pull again
                                 </button>
                               {:else}
-                                <span class="text-xs" style="color: #dc2626;" title={result?.message}>
+                                <span class="text-xs pai-text-error" title={result?.message}>
                                   {truncateError(result?.message ?? 'Pull failed')}
                                 </span>
                                 <button
                                   on:click|stopPropagation={() => resetPullResult(pullKey)}
-                                  class="text-xs cursor-pointer hover:underline"
-                                  style="color: #7c3aed;"
+                                  class="pai-link pai-link-sm"
                                 >
                                   Retry
                                 </button>
@@ -377,11 +375,10 @@ onDestroy(() => {
                             </div>
                           {:else if tagIsLocal}
                             <div class="flex flex-row items-center gap-2">
-                              <span class="text-xs" style="color: #16a34a;">&#10003; Local</span>
+                              <span class="text-xs pai-text-success">&#10003; Local</span>
                               <button
                                 on:click|stopPropagation={() => pullImage(repo, tag)}
-                                class="text-xs cursor-pointer hover:underline"
-                                style="color: #7c3aed;"
+                                class="pai-link pai-link-sm"
                               >
                                 Pull again
                               </button>
@@ -389,8 +386,7 @@ onDestroy(() => {
                           {:else}
                             <button
                               on:click|stopPropagation={() => pullImage(repo, tag)}
-                              class="px-2 py-0.5 rounded text-xs"
-                              style="background-color: #7c3aed; color: #ffffff;"
+                              class="pai-btn pai-btn-sm pai-btn-primary"
                             >
                               Pull
                             </button>

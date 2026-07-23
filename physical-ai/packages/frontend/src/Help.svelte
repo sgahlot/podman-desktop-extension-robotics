@@ -3,10 +3,7 @@ import { router } from 'tinro';
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
-  <button
-    on:click={() => router.goto('/')}
-    class="text-sm text-purple-500 hover:underline self-start cursor-pointer"
-  >
+  <button on:click={() => router.goto('/')} class="pai-link self-start">
     &larr; Back to Dashboard
   </button>
   <h1 class="text-3xl text-[var(--pd-content-header)]">Help</h1>
@@ -34,7 +31,7 @@ import { router } from 'tinro';
           <strong>Filter</strong> — Use the "Filter by name" field to narrow the repository list. This filters the repo list only, not the Locally Available section.
         </div>
         <div>
-          <strong>Pull images</strong> — Click the purple Pull button on any tag. A progress bar shows real-time download status with percentage. The bar tracks aggregated progress across all image layers.
+          <strong>Pull images</strong> — Click the Pull button on any tag. A progress bar shows real-time download status with percentage. The bar tracks aggregated progress across all image layers.
         </div>
         <div>
           <strong>Locally Available</strong> — The collapsible section at the top shows images from the current namespace that are already in your local Podman registry. Tags that exist locally display a green "&#10003; Local" badge with a "Pull again" option.
