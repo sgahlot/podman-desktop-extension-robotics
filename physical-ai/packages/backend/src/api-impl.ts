@@ -5,8 +5,11 @@ import type { QuayRepository, QuayTag, PullProgress, BuildProgress, PushProgress
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import { formatSimulationConfig, resolveSimulationProfile } from '/@shared/src/types/SimulationProfiles';
 import { resolveSimulationBaseImage } from '/@shared/src/types/SimulationBaseImages';
+import { appendProgressLog } from './progressLogs';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
+/** How long completed progress entries stay queryable for the UI. */
+const PROGRESS_RETENTION_MS = 30_000;
 
 export class PhysicalAiApiImpl implements PhysicalAiApi {
   private extensionContext: ExtensionContext;
@@ -15,6 +18,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   private activeBuilds = new Map<string, BuildProgress>();
   private buildAbortControllers = new Map<string, AbortController>();
   private activePushes = new Map<string, PushProgress>();
+  private progressCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(extensionContext: ExtensionContext) {
     this.extensionContext = extensionContext;
@@ -85,6 +89,20 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return podmanConnection;
   }
 
+  /** Drop completed progress after a short window; clears any prior timer for the same key. */
+  private scheduleProgressCleanup<T>(map: Map<string, T>, key: string, scope: string): void {
+    const timerKey = `${scope}:${key}`;
+    const existing = this.progressCleanupTimers.get(timerKey);
+    if (existing) {
+      clearTimeout(existing);
+    }
+    const timer = setTimeout(() => {
+      map.delete(key);
+      this.progressCleanupTimers.delete(timerKey);
+    }, PROGRESS_RETENTION_MS);
+    this.progressCleanupTimers.set(timerKey, timer);
+  }
+
   private startImageBuild(
     tag: string,
     assetDir: string,
@@ -121,7 +139,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         if (eventName === 'stream') {
           const line = data.trim();
           if (line) {
-            progress.logs.push(line);
+            appendProgressLog(progress.logs, line);
             const stepMatch = line.match(/^STEP\s+(\d+)\/(\d+)/i);
             if (stepMatch) {
               progress.currentStep = parseInt(stepMatch[1], 10);
@@ -130,8 +148,27 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
             }
           }
         } else if (eventName === 'error') {
-          progress.logs.push(`ERROR: ${data}`);
+          appendProgressLog(progress.logs, `ERROR: ${data}`);
           progress.error = data;
+        } else if (eventName === 'finish') {
+          // Podman Desktop may emit finish before/without the Promise settling promptly.
+          // Mark complete here so the UI does not stay stuck on Cancel.
+          if (progress.cancelled || abortController.signal.aborted) {
+            progress.status = 'Cancelled';
+            progress.cancelled = true;
+            progress.done = true;
+            progress.error = 'Build cancelled';
+            appendProgressLog(progress.logs, 'Build cancelled by user');
+          } else {
+            progress.status = 'Complete';
+            progress.done = true;
+            if (progress.totalSteps) {
+              progress.currentStep = progress.totalSteps;
+            }
+            appendProgressLog(progress.logs, data?.trim() ? data.trim() : 'Build finished');
+          }
+          this.buildAbortControllers.delete(tag);
+          this.scheduleProgressCleanup(this.activeBuilds, tag, 'build');
         }
       },
       {
@@ -150,13 +187,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
           progress.cancelled = true;
           progress.done = true;
           progress.error = 'Build cancelled';
-          progress.logs.push('Build cancelled by user');
+          appendProgressLog(progress.logs, 'Build cancelled by user');
         } else {
           progress.status = 'Complete';
           progress.done = true;
         }
       }
-      setTimeout(() => this.activeBuilds.delete(tag), 30000);
+      this.scheduleProgressCleanup(this.activeBuilds, tag, 'build');
     }).catch((err: unknown) => {
       this.buildAbortControllers.delete(tag);
       const progress = this.activeBuilds.get(tag);
@@ -166,14 +203,14 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
           progress.cancelled = true;
           progress.done = true;
           progress.error = 'Build cancelled';
-          progress.logs.push('Build cancelled by user');
+          appendProgressLog(progress.logs, 'Build cancelled by user');
         } else {
           progress.status = 'Failed';
           progress.done = true;
           progress.error = err instanceof Error ? err.message : String(err);
         }
       }
-      setTimeout(() => this.activeBuilds.delete(tag), 30000);
+      this.scheduleProgressCleanup(this.activeBuilds, tag, 'build');
     });
   }
 
@@ -191,14 +228,14 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     progress.done = true;
     progress.status = 'Cancelled';
     progress.error = 'Build cancelled';
-    progress.logs.push('Cancel requested — build aborted');
+    appendProgressLog(progress.logs, 'Cancel requested — build aborted');
 
     if (abortController) {
       this.buildAbortControllers.delete(tag);
       abortController.abort();
     }
 
-    setTimeout(() => this.activeBuilds.delete(tag), 30000);
+    this.scheduleProgressCleanup(this.activeBuilds, tag, 'build');
   }
 
   async pullImage(fullImageName: string, tag: string): Promise<void> {
@@ -242,7 +279,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     ).then(() => {
       this.layerProgress.delete(imageToPull);
       this.activePulls.set(imageToPull, { image: imageToPull, status: 'Complete', done: true });
-      setTimeout(() => this.activePulls.delete(imageToPull), 30000);
+      this.scheduleProgressCleanup(this.activePulls, imageToPull, 'pull');
     }).catch((err: unknown) => {
       this.layerProgress.delete(imageToPull);
       this.activePulls.set(imageToPull, {
@@ -251,7 +288,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         done: true,
         error: err instanceof Error ? err.message : String(err),
       });
-      setTimeout(() => this.activePulls.delete(imageToPull), 30000);
+      this.scheduleProgressCleanup(this.activePulls, imageToPull, 'pull');
     });
   }
 
@@ -341,11 +378,11 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
             const parsed = JSON.parse(trimmed);
             const msg = parsed.status || parsed.stream || parsed.error;
             if (msg) {
-              progress.logs.push(msg);
+              appendProgressLog(progress.logs, msg);
               progress.status = msg;
             }
           } catch {
-            progress.logs.push(trimmed);
+            appendProgressLog(progress.logs, trimmed);
             progress.status = trimmed;
           }
         }
@@ -356,7 +393,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         progress.status = 'Complete';
         progress.done = true;
       }
-      setTimeout(() => this.activePushes.delete(tag), 30000);
+      this.scheduleProgressCleanup(this.activePushes, tag, 'push');
     }).catch((err: unknown) => {
       const progress = this.activePushes.get(tag);
       if (progress) {
@@ -364,7 +401,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         progress.done = true;
         progress.error = err instanceof Error ? err.message : String(err);
       }
-      setTimeout(() => this.activePushes.delete(tag), 30000);
+      this.scheduleProgressCleanup(this.activePushes, tag, 'push');
     });
   }
 }

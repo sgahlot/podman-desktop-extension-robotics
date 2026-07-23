@@ -419,6 +419,31 @@ describe('PhysicalAiApiImpl', () => {
       expect(progress!.status).toBe('Cancelled');
       expect(progress!.error).toBe('Build cancelled');
     });
+
+    it('marks build complete on finish event even if the Promise has not settled', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as any);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as any);
+
+      let buildCallback: Function;
+      vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation(
+        (_ctx: any, cb: any, _opts: any) => {
+          buildCallback = cb;
+          return new Promise(() => {}); // never settles
+        },
+      );
+
+      await api.buildBaseImage('my-tag:latest');
+      buildCallback!('stream', 'STEP 7/17: RUN apt-get update');
+      buildCallback!('finish', '');
+
+      const progress = await api.getBuildProgress('my-tag:latest');
+      expect(progress!.done).toBe(true);
+      expect(progress!.status).toBe('Complete');
+      expect(progress!.currentStep).toBe(17);
+      expect(progress!.totalSteps).toBe(17);
+    });
   });
 
   describe('buildSimulationImage', () => {
