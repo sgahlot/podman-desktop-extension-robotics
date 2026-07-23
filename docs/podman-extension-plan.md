@@ -40,20 +40,20 @@ Drivers:
 
 | Story | Summary | Status | Sub-tasks |
 |-------|---------|--------|-----------|
-| APPENG-5764 | Extension scaffolding and base image catalog | 🟡 Almost Done | 3/3 done + 2 follow-ups |
+| APPENG-5764 | Extension scaffolding and base image catalog | ✅ Done | 4/4 done, 2 follow-ups parked |
 | APPENG-5765 | Single robot simulation workflow | ⚪ Not Started | 0/3 done |
 | APPENG-5766 | Multi-robot local scaling *(stretch)* | ⚪ Not Started | 0/3 done |
 | APPENG-5767 | OpenShift deployment bridge *(stretch)* | ⚪ Not Started | 0/3 done |
 
 > **Legend:** ✅ Done · 🟡 In Progress / Almost Done · ⚪ Not Started
 
-**Last updated:** 2026-07-21
+**Last updated:** 2026-07-22
 
 ---
 
 ## Work Breakdown
 
-### Story 1: Extension scaffolding and base image catalog — 🟡 Almost Done
+### Story 1: Extension scaffolding and base image catalog — ✅ Done
 
 > Detail doc: [story1-scaffolding.md](stories/story1-scaffolding.md)
 
@@ -68,9 +68,9 @@ Drivers:
 | Status | Key | Summary | Description |
 |--------|-----|---------|-------------|
 | ✅ | APPENG-5768 | Scaffold Podman Desktop extension with TypeScript/Svelte boilerplate | Set up the Podman Desktop extension project structure, registration, and basic navigation shell. |
-| 🟡 | APPENG-5769 | Build and publish ROS2 Jazzy base image to Quay | Built with Ubuntu 24.04 interim base (Fedora migration tracked separately). Includes build & push UI in extension. |
+| ✅ | APPENG-5769 | Build and publish ROS2 Jazzy base image to Quay | Built with Ubuntu 24.04 interim base (Fedora migration tracked separately). Includes build & push UI in extension. Follow-ups parked. |
 | ✅ | APPENG-5770 | Implement image catalog UI with pull and status indicators | Build the UI within the extension to browse curated base images, pull them from Quay, and show download/status indicators. |
-| ⚪ | TBD | Project creation wizard and simulation image setup | Build a wizard UI for selecting robot type (e.g. TurtleBot3), ROS distro (Humble/Jazzy), middleware (Zenoh/DDS), and simulation engine (Gazebo). Create corresponding simulation Containerfiles (starting with ROS2 Humble + TurtleBot3 + Gazebo). Persist selections for Story 2 to consume. See implementation parts below. |
+| ✅ | TBD | Project creation wizard and simulation image setup | Build a wizard UI for selecting robot type (e.g. TurtleBot3), ROS distro (Humble/Jazzy), middleware (Zenoh/DDS), and simulation engine (Gazebo). Create corresponding simulation Containerfiles (starting with ROS2 Humble + TurtleBot3 + Gazebo). Persist selections for Story 2 to consume. See implementation parts below. |
 
 ##### TBD Implementation Parts
 
@@ -84,8 +84,8 @@ Drivers:
 
 | Status | Key | Summary | Description |
 |--------|-----|---------|-------------|
-| ⚪ | APPENG-5769-01 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora | Replace Ubuntu 24.04 base with Fedora once ROS2 Jazzy Fedora packaging matures (COPR repos or source build). |
-| ⚪ | APPENG-5769-02 | Add rviz2/desktop variant of the base image | Create a separate image variant with rviz2 and GUI dependencies (OpenGL, Qt5, X11) for visualization. |
+| 🅿️ | APPENG-5769-01 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora | **Parked.** ROS2 Jazzy has no official Fedora packages. Options (COPR repos, source build) carry significant risk and maintenance burden. Revisit when official Fedora packaging matures. |
+| 🅿️ | APPENG-5769-02 | Add rviz2/desktop variant of the base image | **Parked.** rviz2 requires a full desktop stack (OpenGL, Qt5, X11), making the image very large. The visualization use case overlaps with Story 2's noVNC/web streaming (APPENG-5772), which may provide a better path. Revisit after Story 2 to determine if a standalone rviz2 image is still needed. |
 
 ---
 
@@ -249,14 +249,14 @@ A Miro board would be useful for a team kickoff/planning session where people ne
 | Status | Key | Issue Type | Parent | Summary |
 |--------|-----|------------|--------|---------|
 | 🟡 | APPENG-5763 | Epic | — | Podman Desktop Extension for Physical AI Robotics Development |
-| 🟡 | APPENG-5764 | Story | APPENG-5763 | Extension scaffolding and base image catalog |
+| ✅ | APPENG-5764 | Story | APPENG-5763 | Extension scaffolding and base image catalog |
 | ⚪ | APPENG-5765 | Story | APPENG-5763 | Single robot simulation workflow |
 | ⚪ | APPENG-5766 | Story | APPENG-5763 | Multi-robot local scaling |
 | ⚪ | APPENG-5767 | Story | APPENG-5763 | OpenShift deployment bridge |
 | ✅ | APPENG-5768 | Sub-task | APPENG-5764 | Scaffold Podman Desktop extension with TypeScript/Svelte boilerplate |
-| 🟡 | APPENG-5769 | Sub-task | APPENG-5764 | Build and publish ROS2 Jazzy base image to Quay |
+| ✅ | APPENG-5769 | Sub-task | APPENG-5764 | Build and publish ROS2 Jazzy base image to Quay |
 | ✅ | APPENG-5770 | Sub-task | APPENG-5764 | Implement image catalog UI with pull and status indicators |
-| ⚪ | TBD | Sub-task | APPENG-5764 | Project creation wizard and simulation image setup |
+| ✅ | TBD | Sub-task | APPENG-5764 | Project creation wizard and simulation image setup |
 | ⚪ | APPENG-5771 | Sub-task | APPENG-5765 | Container orchestration for ROS2 + Gazebo launch via Podman pod |
 | ⚪ | APPENG-5772 | Sub-task | APPENG-5765 | Integrate noVNC or web-based video stream for simulation visualization |
 | ⚪ | APPENG-5773 | Sub-task | APPENG-5765 | Build topic monitor panel showing active ROS2 topics and message rates |
@@ -266,8 +266,8 @@ A Miro board would be useful for a team kickoff/planning session where people ne
 | ⚪ | APPENG-5777 | Sub-task | APPENG-5767 | Generate K8s manifests from running Podman pod configuration |
 | ⚪ | APPENG-5778 | Sub-task | APPENG-5767 | Kind cluster integration for local validation |
 | ⚪ | APPENG-5779 | Sub-task | APPENG-5767 | Getting-started guide for the full workflow |
-| ⚪ | APPENG-5769-01 | Follow-up | APPENG-5764 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora |
-| ⚪ | APPENG-5769-02 | Follow-up | APPENG-5764 | Add rviz2/desktop variant of the base image |
+| 🅿️ | APPENG-5769-01 | Follow-up | APPENG-5764 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora |
+| 🅿️ | APPENG-5769-02 | Follow-up | APPENG-5764 | Add rviz2/desktop variant of the base image |
 
 ---
 
@@ -306,6 +306,19 @@ Captured during initial scaffold implementation.
 - [Extension templates](https://podman-desktop.io/docs/extensions/templates)
 - [Full template repo](https://github.com/podman-desktop/podman-desktop-extension-full-template)
 - [Existing built-in extensions](https://github.com/podman-desktop/podman-desktop/tree/main/extensions)
+
+---
+
+## Wishlist / Good to Have
+
+Items that improve polish or operability but are **not** required for the ROSCon MVP. Promote to a tracked sub-task when someone picks them up.
+
+| Status | Area | Item | Notes |
+|--------|------|------|-------|
+| 💡 | Build / push UI | **Download full build log** | Build/push progress in the UI keeps only the newest ~500 log lines (memory safety). A true “Download full log” needs uncapped logs written to a temp file during the build, plus a download action and cleanup on cancel/complete/reload. Do **not** expose a Settings toggle for “full vs capped” display — prefer download of the full file when this is implemented. |
+| 💡 | Build / push UI | Persist progress across extension reload | Progress Maps are in-memory today; reloading the extension clears build/push/pull state. Nice-to-have later if long builds + reload becomes a common pain. |
+
+> **Legend:** 💡 Wishlist · promote to 🅿️ follow-up or a Jira sub-task when scheduled
 
 ---
 

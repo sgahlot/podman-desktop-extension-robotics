@@ -22,8 +22,8 @@ For work breakdown and progress tracking, see the link:podman-extension-plan.md[
 | Zero-CLI robotics dev
 | Robotics engineers should be able to go from "install extension" to "running simulation" without touching a terminal
 
-| Ubuntu-to-Fedora bridge
-| Provide curated Fedora/ROS2 base images as a migration path from Ubuntu-based robotics workflows
+| Container-first robotics
+| Provide curated ROS2 base images (currently Ubuntu 24.04) with a migration path toward Fedora/RHEL as official ROS2 packaging matures
 
 | Local-to-cluster path
 | Enable the transition from local Podman development to OpenShift deployment
@@ -82,8 +82,11 @@ The backend is the entry point loaded by Podman Desktop. It manages the extensio
 * Extension activation/deactivation (`activate()` / `deactivate()`)
 * Webview panel creation and media asset loading
 * RPC bridge registration via `RpcExtension`
-* Podman Engine interaction (container/pod lifecycle)
-* Image pull orchestration from Quay registry
+* Command registration (`physical-ai.open` — reopens the dashboard panel)
+* Podman Engine interaction (image build/push/pull, container/pod lifecycle)
+* Image build orchestration with `AbortController`-based cancellation
+* Build/push progress tracking via in-memory `Map` instances
+* Quay.io registry API queries
 
 ==== Key Files
 
@@ -91,22 +94,27 @@ The backend is the entry point loaded by Podman Desktop. It manages the extensio
 |===
 | File | Role
 
-| `src/extension.ts` | Entry point — creates webview panel, wires RPC
-| `src/api-impl.ts` | `PhysicalAiApiImpl` — implements the API interface
-| `package.json` | Extension manifest (contributes, engines, commands)
+| `src/extension.ts` | Entry point — creates webview panel, wires RPC, registers `physical-ai.open` command
+| `src/api-impl.ts` | `PhysicalAiApiImpl` — implements all 15 API methods; private helpers use JS `#private` syntax (not RPC-callable)
+| `src/progressLogs.ts` | `appendProgressLog()` — capped at 500 lines with truncation marker
+| `package.json` | Extension manifest (contributes: commands, configuration with 6 properties)
 | `vite.config.js` | Builds to CJS, externalizes `@podman-desktop/api`
+| `assets/ros2-jazzy-base/` | Bundled Containerfile + entrypoint for base image builds
+| `assets/ros2-humble-turtlebot3/` | Bundled Containerfile + entrypoint for simulation image builds
 |===
 
 === Extension Frontend (`packages/frontend`)
 
-The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. It uses TailwindCSS for styling and `@podman-desktop/ui-svelte` for consistent look and feel.
+The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. It uses TailwindCSS for layout and `.pai-*` CSS classes (defined in `app.css`) for theming that adapts to Podman Desktop's light/dark mode.
 
 ==== Responsibilities
 
-* Dashboard landing page
-* Image catalog browser _(APPENG-5770)_
-* Simulation launch and visualization _(APPENG-5772)_
-* ROS2 topic monitor _(APPENG-5773)_
+* Dashboard landing page with feature cards
+* Image catalog browser with pull progress _(APPENG-5770, done)_
+* Build & Push for base and simulation images _(done)_
+* Simulation Setup wizard _(done — config + build; launch is Story 2)_
+* In-extension Help page _(done)_
+* ROS2 topic monitor _(APPENG-5773, planned)_
 * Fleet status dashboard _(APPENG-5776, stretch)_
 
 ==== Key Files
@@ -117,13 +125,19 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 
 | `src/App.svelte` | Root component, hash-based routing via tinro
 | `src/Dashboard.svelte` | Landing page with quick-link cards
+| `src/ImageCatalog.svelte` | Browse Quay repos, pull images, show local images
+| `src/BuildBaseImage.svelte` | Build & push the ROS2 Jazzy base image
+| `src/SimulationSetup.svelte` | Wizard for robot/distro/middleware/engine selection + build & push simulation image
+| `src/Help.svelte` | In-extension documentation
+| `src/lib/BuildPushPanel.svelte` | Shared component for build/push/cancel lifecycle with polling (used by BuildBaseImage and SimulationSetup)
+| `src/app.css` | `.pai-*` theme classes (buttons, links, text colors, cards, progress bars) using `--pd-*` CSS variables
 | `src/api/client.ts` | RPC client — creates proxy to backend API
 | `src/lib/Route.svelte` | Route component with state persistence
 |===
 
 === Shared Layer (`packages/shared`)
 
-The shared package defines the API contract between frontend and backend and provides the RPC transport.
+The shared package defines the API contract between frontend and backend, provides the RPC transport, and contains shared type definitions.
 
 ==== MessageProxy RPC Bridge
 
@@ -142,24 +156,56 @@ Frontend (RpcBrowser)                    Backend (RpcExtension)
 * Backend `RpcExtension` dispatches to the registered method on `PhysicalAiApiImpl`
 * Response is sent back as `IMessageResponse` with status `success` or `error`
 * 10-second timeout per request
+* Podman Desktop webview does NOT deliver unsolicited backend-to-frontend messages — the frontend polls for progress updates instead of receiving push notifications
 
 ==== API Interface
 
 The `PhysicalAiApi` abstract class defines the contract. Both the frontend proxy and backend implementation conform to it.
 
-.Current API (scaffold)
+.Current API (15 methods)
 [source,typescript]
 ----
 export abstract class PhysicalAiApi {
+  // Status
   abstract getStatus(): Promise<string>;
+
+  // Image Catalog
+  abstract listCatalogImages(namespace: string): Promise<QuayRepository[]>;
+  abstract getImageTags(namespace: string, name: string): Promise<QuayTag[]>;
+  abstract pullImage(fullImageName: string, tag: string): Promise<void>;
+  abstract getPullProgress(image: string): Promise<PullProgress | null>;
+  abstract listLocalImages(): Promise<string[]>;
+
+  // Build & Push
+  abstract buildBaseImage(tag: string): Promise<void>;
+  abstract buildSimulationImage(tag: string, config: SimulationConfig): Promise<void>;
+  abstract cancelBuild(tag: string): Promise<void>;
+  abstract getBuildProgress(tag: string): Promise<BuildProgress | null>;
+  abstract pushImage(tag: string): Promise<void>;
+  abstract getPushProgress(tag: string): Promise<PushProgress | null>;
+
+  // Configuration
+  abstract getDefaultNamespace(): Promise<string>;
+  abstract getSimulationConfig(): Promise<SimulationConfig>;
+  abstract saveSimulationConfig(config: SimulationConfig): Promise<void>;
 }
 ----
 
-This will grow as features are added (image catalog, simulation control, topic monitoring, etc.).
+==== Shared Types
+
+[cols="1,2"]
+|===
+| File | Contents
+
+| `types/ImageCatalog.ts` | `QuayRepository`, `QuayTag`, `PullProgress`, `BuildProgress`, `PushProgress`
+| `types/SimulationConfig.ts` | `SimulationConfig` — persisted wizard selections (robot, distro, middleware, engine, baseImage)
+| `types/SimulationProfiles.ts` | `SimulationProfile`, `SIMULATION_PROFILES`, `resolveSimulationProfile()`, `simulationImageTag()`
+| `types/SimulationBaseImages.ts` | `SimulationBaseImageId`, digest-pinned presets (sloretz multi-arch, osrf amd64-only), `resolveSimulationBaseImage()`
+|===
 
 == Data Flow
 
-=== Image Catalog (planned)
+=== Image Catalog
 
 [source]
 ----
@@ -167,10 +213,46 @@ User browses catalog ──► Frontend requests image list ──► Backend qu
                                                                     │
 User clicks "Pull"   ──► Frontend sends pull request  ──► Backend calls Podman pull
                                                                     │
-                         Frontend shows progress      ◄── Backend streams status
+                         Frontend polls getPullProgress ◄── Backend returns PullProgress
+                         (every 500ms while active)         { status, layers, percent }
 ----
 
-=== Simulation Launch (planned)
+=== Build & Push (Base Image and Simulation Image)
+
+[source]
+----
+User clicks "Build"  ──► Frontend sends buildBaseImage/buildSimulationImage
+                                │
+                                ├── Backend resolves Containerfile asset directory
+                                ├── (simulation) resolves SimulationProfile → assetDir
+                                ├── (simulation) resolves SimulationBaseImage → ROS_BASE_IMAGE build-arg
+                                ├── Backend calls containerEngine.buildImage() with AbortController
+                                │
+                         Frontend polls getBuildProgress ◄── Backend returns BuildProgress
+                         (every 500ms while active)         { step, totalSteps, log, done }
+
+User clicks "Cancel" ──► Frontend calls cancelBuild(tag) ──► Backend aborts AbortController
+                                                              Progress marked done immediately
+
+User clicks "Push"   ──► Frontend sends pushImage(tag)
+                                │
+                         Frontend polls getPushProgress  ◄── Backend returns PushProgress
+                         (every 500ms while active)          { status, digest }
+----
+
+=== Simulation Setup (wizard + build)
+
+[source]
+----
+User configures wizard ──► Frontend shows dropdowns for robot/distro/middleware/engine/base image
+                           Tag derived reactively from selections
+User clicks "Save"     ──► Frontend calls saveSimulationConfig(config)
+                           ──► Backend persists to Podman Desktop configuration API
+
+Build & Push           ──► Same flow as above (buildSimulationImage)
+----
+
+=== Simulation Launch (Story 2, planned)
 
 [source]
 ----
@@ -187,15 +269,15 @@ User clicks "Launch" ──► Frontend sends launch request ──► Backend c
 
 == Container Architecture
 
-=== Single Robot Pod (planned)
+=== Single Robot Pod (Story 2, planned)
 
 [source]
 ----
 ┌─── Podman Pod: physical-ai-sim ───────────────────┐
 │                                                     │
 │  ┌─────────────┐  ┌──────────┐  ┌──────────────┐  │
-│  │ ROS2 Jazzy  │  │  Gazebo  │  │    noVNC     │  │
-│  │  + robot    │  │  server  │  │  (web viz)   │  │
+│  │ ROS2 Humble │  │  Gazebo  │  │    noVNC     │  │
+│  │  + TBot3    │  │  server  │  │  (web viz)   │  │
 │  │  packages   │  │          │  │              │  │
 │  └──────┬──────┘  └────┬─────┘  └──────┬───────┘  │
 │         │              │               │           │
@@ -222,6 +304,22 @@ User clicks "Launch" ──► Frontend sends launch request ──► Backend c
          └───────────────┘
 ----
 
+== Configuration Properties
+
+The extension contributes 6 settings under **Settings → Preferences → Physical AI**:
+
+[cols="2,1,1,2"]
+|===
+| Property | Type | Default | Description
+
+| `physical-ai.defaultNamespace` | string | `ecosystem-appeng` | Quay.io namespace for catalog browsing and image tags
+| `physical-ai.simulationRobot` | string | `turtlebot3` | Robot type for simulation
+| `physical-ai.simulationDistro` | string | `humble` | ROS distro (only `humble` has a bundled simulation image currently)
+| `physical-ai.simulationMiddleware` | string | `dds` | Middleware (`dds` or `zenoh`)
+| `physical-ai.simulationEngine` | string | `gazebo` | Simulation engine
+| `physical-ai.simulationBaseImage` | enum | `sloretz` | Base image preset: `sloretz` (multi-arch) or `osrf` (amd64 only)
+|===
+
 == Key Technical Decisions
 
 [cols="1,2,2"]
@@ -230,15 +328,15 @@ User clicks "Launch" ──► Frontend sends launch request ──► Backend c
 
 | Extension template
 | Full template (3-package)
-| Extension will have substantial UI — catalog, dashboards, panels
+| Extension has substantial UI — catalog, dashboards, panels
 
 | Frontend framework
 | Svelte 5 + TailwindCSS
-| Podman Desktop standard; `@podman-desktop/ui-svelte` provides consistent components
+| Podman Desktop standard; layout via Tailwind, theming via `.pai-*` classes in `app.css` using `--pd-*` CSS variables
 
 | Frontend-backend communication
-| MessageProxy RPC
-| Type-safe, proxy-based — frontend calls look like regular async method calls
+| MessageProxy RPC with frontend polling
+| Podman Desktop webview does not deliver unsolicited backend-to-frontend messages, so frontend polls for progress (every 500ms while active)
 
 | Routing
 | tinro (hash mode)
@@ -248,13 +346,29 @@ User clicks "Launch" ──► Frontend sends launch request ──► Backend c
 | Vite 8
 | Fast builds, native TypeScript support, matches Podman Desktop ecosystem
 
-| Container base
-| Fedora + ROS2 Jazzy
-| Aligns with Red Hat ecosystem; migration path from Ubuntu
+| Container base (Jazzy)
+| Ubuntu 24.04 (interim)
+| ROS2 Jazzy has no official Fedora packages; Ubuntu is the official ROS2 platform. Fedora migration parked until official packaging matures (see APPENG-5769-01)
+
+| Container base (simulation)
+| Digest-pinned presets (sloretz multi-arch, osrf amd64-only)
+| Presets ensure reproducible builds. sloretz default enables Apple Silicon / Podman on Mac. Pinned digests in `SimulationBaseImages.ts`, bumped deliberately.
 
 | Middleware
-| Zenoh with DDS bridge
-| Enables cross-container ROS2 communication without shared network namespace
+| DDS (default); Zenoh planned
+| DDS is the ROS2 default and is implemented now. Zenoh with DDS bridge is planned for multi-robot fleet communication (Story 3)
+
+| Build cancellation
+| `AbortController` per build tag
+| Enables cancel-in-flight with double-completion guards; progress marked done immediately on cancel
+
+| Build/push UI
+| Shared `BuildPushPanel.svelte` component
+| Extracted from duplicated code; handles full build/push/cancel lifecycle with polling; used by both BuildBaseImage and SimulationSetup pages
+
+| Progress log capping
+| 500-line cap via `appendProgressLog()`
+| Prevents memory bloat from long builds; truncation marker shown
 
 | Package manager
 | npm with workspaces
@@ -263,12 +377,14 @@ User clicks "Launch" ──► Frontend sends launch request ──► Backend c
 | Min Podman Desktop
 | >= 1.28.0
 | User's current version; webview API is stable at this version
+
+| API version
+| `@podman-desktop/api@1.28.3`
+| Bumped for current API surface
 |===
 
 == Open Questions
 
-* **Base image registry:** Should we use a dedicated Quay org or publish under an existing Red Hat org?
-* **Simulation fidelity:** What Gazebo worlds/robots should be included in the MVP demo?
 * **noVNC vs alternatives:** noVNC is the default assumption — are there lighter-weight browser streaming options worth evaluating?
 * **GPU passthrough:** Will the demo require GPU access for Gazebo rendering inside containers?
 

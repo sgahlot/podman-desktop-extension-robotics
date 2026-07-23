@@ -5,8 +5,8 @@ Podman Desktop extension for Physical AI robotics development. Provides a GUI-dr
 ## Features
 
 - **Image Catalog** — Browse and pull curated ROS2 base images from Quay.io with real-time download progress
-- **Build & Push Base Image** — Build the ROS2 Jazzy base image locally from a bundled Containerfile and push it to a registry
-- **Simulation Setup** — Configure robot/distro/middleware/base image and build a TurtleBot3 + Gazebo simulation image
+- **Build & Push Base Image** — Build the ROS2 Jazzy base image locally from a bundled Containerfile and push it to a registry. Cancel in-progress builds at any time.
+- **Simulation Setup** — Configure robot/distro/middleware/base image and build a TurtleBot3 + Gazebo simulation image. Cancel in-progress builds at any time.
 - **Help** — In-extension documentation covering all features
 
 ## Getting Started
@@ -20,8 +20,14 @@ Podman Desktop extension for Physical AI robotics development. Provides a GUI-dr
 
 Configure under **Settings → Preferences → Physical AI**:
 
-- **Default Namespace** (default: `ecosystem-appeng`) — Quay.io namespace for catalog and image tags
-- Simulation wizard defaults (robot, distro, middleware, engine, base image preset)
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Default Namespace | `ecosystem-appeng` | Quay.io namespace for catalog browsing and image tags |
+| Simulation Robot | `turtlebot3` | Robot type for simulation |
+| Simulation Distro | `humble` | ROS distro (only `humble` has a bundled simulation image) |
+| Simulation Middleware | `dds` | Middleware (`dds` or `zenoh`) |
+| Simulation Engine | `gazebo` | Simulation engine |
+| Simulation Base Image | `sloretz` | Base image preset: `sloretz` (multi-arch) or `osrf` (amd64 only) |
 
 ## Coming Soon
 

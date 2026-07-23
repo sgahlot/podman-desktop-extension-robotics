@@ -1,4 +1,4 @@
-# Story 1: Extension Scaffolding and Base Image Catalog — 🟡 Almost Done
+# Story 1: Extension Scaffolding and Base Image Catalog — ✅ Done
 
 **Jira:** APPENG-5764 | **Parent:** APPENG-5763 (Epic)
 
@@ -11,9 +11,9 @@
 | Status | Key | Summary |
 |--------|-----|---------|
 | ✅ | APPENG-5768 | Scaffold Podman Desktop extension with TypeScript/Svelte boilerplate |
-| 🟡 | APPENG-5769 | Build and publish ROS2 Jazzy base image to Quay |
+| ✅ | APPENG-5769 | Build and publish ROS2 Jazzy base image to Quay |
 | ✅ | APPENG-5770 | Implement image catalog UI with pull and status indicators |
-| ⚪ | TBD | Project creation wizard and simulation image setup |
+| ✅ | TBD | Project creation wizard and simulation image setup |
 
 ---
 
@@ -54,7 +54,7 @@ See [Decisions and Directions](../podman-extension-plan.md#decisions-and-directi
 
 ---
 
-## APPENG-5769: Build ROS2 Jazzy Base Image — 🟡 Almost Done
+## APPENG-5769: Build ROS2 Jazzy Base Image — ✅ Done
 
 **Description:** Build a container image with ROS2 Jazzy core runtime and convenience tools (colcon, rosdep). Publish to Quay registry.
 
@@ -119,11 +119,11 @@ Containerfile                                     # Updated to COPY assets into 
 
 | Status | Key | Summary |
 |--------|-----|---------|
-| ⚪ | APPENG-5769-01 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora |
-| ⚪ | APPENG-5769-02 | Add rviz2/desktop variant of the base image |
+| 🅿️ | APPENG-5769-01 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora |
+| 🅿️ | APPENG-5769-02 | Add rviz2/desktop variant of the base image |
 
-- **APPENG-5769-01:** Replace Ubuntu 24.04 base with Fedora once ROS2 Jazzy Fedora packaging matures (COPR repos or source build). Update Containerfile, bundled assets, and extension build.
-- **APPENG-5769-02:** Create a separate "desktop" image variant that includes rviz2 and GUI dependencies (OpenGL, Qt5, X11) for visualization workflows.
+- **APPENG-5769-01 (Parked):** ROS2 Jazzy has no official Fedora packages. Available options (COPR repos, building from source) carry significant risk and ongoing maintenance burden. Not viable for MVP. Revisit when official Fedora packaging matures.
+- **APPENG-5769-02 (Parked):** Including rviz2 requires a full desktop stack (OpenGL, Qt5, X11), resulting in a very large image. More importantly, the visualization use case overlaps with Story 2's noVNC/web streaming approach (APPENG-5772), which may render a standalone rviz2 image unnecessary. Revisit after Story 2 to determine if this variant is still needed.
 
 ---
 
@@ -159,11 +159,11 @@ packages/shared/src/types/ImageCatalog.ts   # Shared types (QuayRepository, Quay
 
 - Podman Desktop webview does NOT deliver unsolicited backend-to-frontend messages — use polling instead of pub/sub
 - Svelte 5 reactivity with Map/Set requires passing the collection as an explicit template argument
-- Tailwind CSS classes don't render in Podman Desktop webviews — use inline styles
+- Tailwind layout utilities (flex, gap, padding) work via the built CSS bundle; Tailwind *color* utilities (e.g. `text-purple-500`, `text-gray-900`) do not theme with Podman Desktop. Prefer `--pd-*` variables and shared `.pai-*` classes in `app.css` for colors and buttons. Full adoption of `@podman-desktop/ui-svelte` remains optional.
 
 ---
 
-## TBD: Project Creation Wizard and Simulation Image Setup — ⚪ Not Started
+## TBD: Project Creation Wizard and Simulation Image Setup — ✅ Done
 
 **Description:** Build a wizard UI for selecting robot type, ROS distro, middleware, and simulation engine. Create corresponding simulation Containerfiles. Persist selections for Story 2 (APPENG-5771) to consume when launching simulations.
 

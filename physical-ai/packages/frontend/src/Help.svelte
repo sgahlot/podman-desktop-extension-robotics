@@ -17,7 +17,7 @@ import { router } from 'tinro';
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Getting Started</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-1">
         <p>Physical AI gives robotics developers a GUI-driven path from local development to OpenShift deployment — no terminal required.</p>
-        <p>Start by browsing and pulling curated Fedora/ROS2 base images from the <strong>Image Catalog</strong>.</p>
+        <p>Start by browsing and pulling curated ROS2 base images from the <strong>Image Catalog</strong>.</p>
       </div>
     </div>
 
@@ -52,6 +52,9 @@ import { router } from 'tinro';
           <strong>Build</strong> — Enter an image tag (default: <span class="font-mono">quay.io/ecosystem-appeng/ros2-jazzy-base:latest</span>) and click Build. The extension builds a ROS2 Jazzy base image (Ubuntu 24.04) locally using the bundled Containerfile. A step progress bar and collapsible build logs show real-time status.
         </div>
         <div>
+          <strong>Cancel</strong> — Click Cancel to abort an in-progress build at any time.
+        </div>
+        <div>
           <strong>Rebuild</strong> — If the image already exists locally, the button changes to "Rebuild" so you can build a fresh copy.
         </div>
         <div>
@@ -77,6 +80,9 @@ import { router } from 'tinro';
         </div>
         <div>
           <strong>Build</strong> — After saving your configuration, scroll down to the "Build &amp; Push Simulation Image" section. The image tag is derived from your selections (e.g. <span class="font-mono">ros2-humble-turtlebot3</span>). Click Build to build the simulation image locally from the bundled Containerfile. A step progress bar and collapsible build logs show real-time status.
+        </div>
+        <div>
+          <strong>Cancel</strong> — Click Cancel to abort an in-progress simulation build at any time.
         </div>
         <div>
           <strong>Push</strong> — After a successful build, or if the image already exists locally, click "Push to Registry" to push it. Registry authentication must be configured via Podman Desktop &rarr; Settings &rarr; Registries.
