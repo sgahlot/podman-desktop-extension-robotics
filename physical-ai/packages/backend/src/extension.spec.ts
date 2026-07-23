@@ -12,11 +12,13 @@ vi.mock('@podman-desktop/api', () => {
   const mockPanel = {
     webview: mockWebview,
     dispose: vi.fn(),
+    reveal: vi.fn(),
+    onDidDispose: vi.fn(),
   };
   return {
     provider: { createProvider: vi.fn(), getContainerConnections: vi.fn() },
     window: { createWebviewPanel: vi.fn(() => mockPanel), showInformationMessage: vi.fn() },
-    commands: { registerCommand: vi.fn() },
+    commands: { registerCommand: vi.fn(() => ({ dispose: vi.fn() })) },
     containerEngine: { listImages: vi.fn(), pullImage: vi.fn(), buildImage: vi.fn(), pushImage: vi.fn() },
     configuration: { getConfiguration: vi.fn() },
     Uri: { joinPath: vi.fn((...parts: any[]) => ({ fsPath: parts.map((p: any) => p.fsPath ?? p).join('/') })) },
@@ -47,20 +49,28 @@ const MOCK_CONTEXT = {
   subscriptions: [] as any[],
 } as unknown as ExtensionContext;
 
+function mockPanel() {
+  return {
+    webview: {
+      html: '',
+      asWebviewUri: vi.fn((uri: any) => ({ toString: () => `webview-uri:${uri.fsPath}` })),
+      onDidReceiveMessage: vi.fn(),
+      postMessage: vi.fn(),
+    },
+    dispose: vi.fn(),
+    reveal: vi.fn(),
+    onDidDispose: vi.fn(),
+  };
+}
+
 describe('extension', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetAllMocks();
     MOCK_CONTEXT.subscriptions = [];
+    await deactivate();
 
-    vi.mocked(extensionApi.window.createWebviewPanel).mockReturnValue({
-      webview: {
-        html: '',
-        asWebviewUri: vi.fn((uri: any) => ({ toString: () => `webview-uri:${uri.fsPath}` })),
-        onDidReceiveMessage: vi.fn(),
-        postMessage: vi.fn(),
-      },
-      dispose: vi.fn(),
-    } as any);
+    vi.mocked(extensionApi.window.createWebviewPanel).mockImplementation(() => mockPanel() as any);
+    vi.mocked(extensionApi.commands.registerCommand).mockReturnValue({ dispose: vi.fn() } as any);
 
     vi.mocked(extensionApi.Uri.joinPath).mockImplementation(
       (...parts: any[]) => ({ fsPath: parts.map((p: any) => p.fsPath ?? p).join('/') }) as any,
@@ -80,12 +90,43 @@ describe('extension', () => {
       );
     });
 
-    it('adds panel to subscriptions for disposal', async () => {
+    it('registers physical-ai.open and adds panel + command to subscriptions', async () => {
       vi.mocked(fs.promises.readFile).mockResolvedValue('<html></html>');
 
       await activate(MOCK_CONTEXT);
 
-      expect(MOCK_CONTEXT.subscriptions).toHaveLength(1);
+      expect(extensionApi.commands.registerCommand).toHaveBeenCalledWith(
+        'physical-ai.open',
+        expect.any(Function),
+      );
+      expect(MOCK_CONTEXT.subscriptions).toHaveLength(2);
+    });
+
+    it('reveals existing panel when physical-ai.open runs again', async () => {
+      vi.mocked(fs.promises.readFile).mockResolvedValue('<html></html>');
+
+      await activate(MOCK_CONTEXT);
+      const panel = vi.mocked(extensionApi.window.createWebviewPanel).mock.results[0].value;
+      const openHandler = vi.mocked(extensionApi.commands.registerCommand).mock.calls[0][1];
+
+      await openHandler();
+
+      expect(panel.reveal).toHaveBeenCalled();
+      expect(extensionApi.window.createWebviewPanel).toHaveBeenCalledTimes(1);
+    });
+
+    it('recreates panel after dispose when physical-ai.open runs', async () => {
+      vi.mocked(fs.promises.readFile).mockResolvedValue('<html></html>');
+
+      await activate(MOCK_CONTEXT);
+      const firstPanel = vi.mocked(extensionApi.window.createWebviewPanel).mock.results[0].value;
+      const disposeHandler = vi.mocked(firstPanel.onDidDispose).mock.calls[0][0];
+      disposeHandler();
+
+      const openHandler = vi.mocked(extensionApi.commands.registerCommand).mock.calls[0][1];
+      await openHandler();
+
+      expect(extensionApi.window.createWebviewPanel).toHaveBeenCalledTimes(2);
     });
 
     it('reads index.html from media directory', async () => {
