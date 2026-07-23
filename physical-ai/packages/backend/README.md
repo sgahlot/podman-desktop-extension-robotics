@@ -20,14 +20,12 @@ Podman Desktop extension for Physical AI robotics development. Provides a GUI-dr
 
 Configure under **Settings → Preferences → Physical AI**:
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| Default Namespace | `ecosystem-appeng` | Quay.io namespace for catalog browsing and image tags |
-| Simulation Robot | `turtlebot3` | Robot type for simulation |
-| Simulation Distro | `humble` | ROS distro (only `humble` has a bundled simulation image) |
-| Simulation Middleware | `dds` | Middleware (`dds` or `zenoh`) |
-| Simulation Engine | `gazebo` | Simulation engine |
-| Simulation Base Image | `sloretz` | Base image preset: `sloretz` (multi-arch) or `osrf` (amd64 only) |
+- **Default Namespace** (`ecosystem-appeng`) — Quay.io namespace for catalog browsing and image tags
+- **Simulation Robot** (`turtlebot3`) — Robot type for simulation
+- **Simulation Distro** (`humble`) — ROS distro (only `humble` has a bundled simulation image)
+- **Simulation Middleware** (`dds`) — Middleware (`dds` or `zenoh`)
+- **Simulation Engine** (`gazebo`) — Simulation engine
+- **Simulation Base Image** (`sloretz`) — Base image preset: `sloretz` (multi-arch) or `osrf` (amd64 only)
 
 ## Coming Soon
 
