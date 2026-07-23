@@ -26,7 +26,7 @@ Official OSRF Humble desktop is **amd64-only**. The sloretz rebuild is multi-arc
 podman build \
   --build-arg ROS_BASE_IMAGE='docker.io/osrf/ros:humble-desktop@sha256:3d87cf339919a85cff7743ec9ba5e7ec81ccc26c9f722f1c7a6af5008dfdc128' \
   -t quay.io/ecosystem-appeng/ros2-humble-turtlebot3:osrf \
-  containers/ros2-humble-turtlebot3/
+  packages/backend/assets/ros2-humble-turtlebot3/
 ```
 
 ## Source pins (ROBOTIS-GIT, humble)
@@ -38,18 +38,13 @@ podman build \
 | DynamixelSDK | `0d3403df29561890eb168652b2ed234dd6728bb2` |
 | turtlebot3_simulations | `a35a56c8b04877dc89772b598084d8ce648a9023` |
 
-Update pins deliberately in the Containerfile (and keep `containers/` and `packages/backend/assets/` in sync).
-
-## Layout
-
-- `containers/ros2-humble-turtlebot3/` — CLI / local `podman build`
-- `packages/backend/assets/ros2-humble-turtlebot3/` — bundled for the Podman Desktop extension Build UI
+Update pins deliberately in the Containerfile.
 
 ## Build (CLI, default sloretz base)
 
 ```bash
 podman build -t quay.io/ecosystem-appeng/ros2-humble-turtlebot3:latest \
-  containers/ros2-humble-turtlebot3/
+  packages/backend/assets/ros2-humble-turtlebot3/
 ```
 
 ## Run
