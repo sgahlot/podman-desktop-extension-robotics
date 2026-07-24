@@ -51,6 +51,13 @@ onMount(async () => {
     <div class="text-lg text-[var(--pd-content-header)]">Quick Links</div>
     <div class="grid grid-cols-3 gap-4">
       <button
+        on:click={() => router.goto('/build')}
+        class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer"
+      >
+        <span class="tooltip-text">Build and push ROS2 Jazzy base image</span>
+        <div class="text-lg text-[var(--pd-content-header)]">Build &amp; Push Base Image</div>
+      </button>
+      <button
         on:click={() => router.goto('/images')}
         class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer"
       >
@@ -69,13 +76,6 @@ onMount(async () => {
         <div class="text-lg text-[var(--pd-content-header)]">Fleet</div>
         <div class="text-xs pai-text-muted mt-2">Coming soon</div>
       </div>
-      <button
-        on:click={() => router.goto('/build')}
-        class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer"
-      >
-        <span class="tooltip-text">Build and push ROS2 Jazzy base image</span>
-        <div class="text-lg text-[var(--pd-content-header)]">Build &amp; Push Base Image</div>
-      </button>
       <button
         on:click={() => router.goto('/help')}
         class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer"

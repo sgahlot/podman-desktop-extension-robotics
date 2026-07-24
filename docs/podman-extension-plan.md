@@ -70,9 +70,9 @@ Drivers:
 | ✅ | APPENG-5768 | Scaffold Podman Desktop extension with TypeScript/Svelte boilerplate | Set up the Podman Desktop extension project structure, registration, and basic navigation shell. |
 | ✅ | APPENG-5769 | Build and publish ROS2 Jazzy base image to Quay | Built with Ubuntu 24.04 interim base (Fedora migration tracked separately). Includes build & push UI in extension. Follow-ups parked. |
 | ✅ | APPENG-5770 | Implement image catalog UI with pull and status indicators | Build the UI within the extension to browse curated base images, pull them from Quay, and show download/status indicators. |
-| ✅ | TBD | Project creation wizard and simulation image setup | Build a wizard UI for selecting robot type (e.g. TurtleBot3), ROS distro (Humble/Jazzy), middleware (Zenoh/DDS), and simulation engine (Gazebo). Create corresponding simulation Containerfiles (starting with ROS2 Humble + TurtleBot3 + Gazebo). Persist selections for Story 2 to consume. See implementation parts below. |
+| ✅ | APPENG-5808 | Project creation wizard and simulation image setup | Build a wizard UI for selecting robot type (e.g. TurtleBot3), ROS distro (Humble/Jazzy), middleware (Zenoh/DDS), and simulation engine (Gazebo). Create corresponding simulation Containerfiles (starting with ROS2 Humble + TurtleBot3 + Gazebo). Persist selections for Story 2 to consume. See implementation parts below. |
 
-##### TBD Implementation Parts
+##### APPENG-5808 Implementation Parts
 
 | Status | Part | Summary |
 |--------|------|---------|
@@ -84,8 +84,33 @@ Drivers:
 
 | Status | Key | Summary | Description |
 |--------|-----|---------|-------------|
-| 🅿️ | APPENG-5769-01 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora | **Parked.** ROS2 Jazzy has no official Fedora packages. Options (COPR repos, source build) carry significant risk and maintenance burden. Revisit when official Fedora packaging matures. |
-| 🅿️ | APPENG-5769-02 | Add rviz2/desktop variant of the base image | **Parked.** rviz2 requires a full desktop stack (OpenGL, Qt5, X11), making the image very large. The visualization use case overlaps with Story 2's noVNC/web streaming (APPENG-5772), which may provide a better path. Revisit after Story 2 to determine if a standalone rviz2 image is still needed. |
+| 🅿️ | APPENG-5809 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora | **Parked.** Jazzy has no official Fedora packages ([REP 2000](https://reps.openrobotics.org/rep-2000/) platforms are Ubuntu Noble Tier 1, Windows, RHEL 9 Tier 2 — not Fedora). Community COPRs / from-source builds are development-only and a maintenance sink for MVP. Interim Ubuntu (`ros:jazzy-ros-base`) remains correct. Revisit on concrete triggers (below), not vague “when packaging matures.” |
+| 🅿️ | APPENG-5810 | Add rviz2/desktop variant of the base image | **Parked.** rviz2 pulls a full GUI stack (OpenGL, Qt, X11), so desktop images are much larger than `ros-base`. Story 2’s Gazebo + noVNC path (APPENG-5772) is the better ROSCon demo bet, but it is **not identical** to rviz2 (sim viz vs TF/sensor/robot-state debug). Revisit after APPENG-5772 once the demo viz path is proven. |
+
+##### Research notes (park rationale, Jul 2026)
+
+**APPENG-5809 — Ubuntu → Fedora**
+
+- **Park decision stands.** Official Open Robotics binary packages for Jazzy do **not** target Fedora.
+- **Nuance — Red Hat path ≠ Fedora path:** Official Jazzy RPMs already exist for **RHEL 9** via [`packages.ros.org`](https://docs.ros.org/en/jazzy/Installation/RHEL-Install-RPMs.html). If the goal is leaving Ubuntu for the Red Hat ecosystem, a **UBI/RHEL-based** image is closer than waiting on Fedora.
+- **Community Fedora options exist but are not production-grade:** e.g. [`hellaenergy/ros2-jazzy`](https://copr.fedorainfracloud.org/coprs/hellaenergy/ros2-jazzy) / [nickschuetz/ros2-rpm](https://github.com/nickschuetz/ros2-rpm) — explicitly development-only, not vendor-supported or CVE-tracked. Those COPRs also note Open Robotics Fedora work is oriented around **Lyrical Luth**, not back-porting first-class Fedora binaries for Jazzy.
+- **Lyrical does not magically make Fedora Tier 1 today:** Lyrical binary install docs list Ubuntu / RHEL 10 / Windows; Fedora remains largely source-build / community ([Lyrical installation](https://docs.ros.org/en/lyrical/Installation.html), [Lyrical release announcement](https://discourse.openrobotics.org/t/ros-2-lyrical-luth-released/55021)).
+- **Concrete revisit triggers (any one):** (1) official Fedora binary packages from Open Robotics; (2) a Red Hat–blessed COPR / Fedora Robotics SIG path suitable for demos; (3) deliberate strategy change to **RHEL/UBI + official Jazzy RPMs** (available now).
+
+**APPENG-5810 — rviz2 / desktop variant**
+
+- **Park decision stands.** Official Docker guidance keeps `desktop` images separate because they pull heavy GUI deps; `osrf/ros:*-desktop*` is in the multi‑GB class vs leaner `ros-base` ([Docker Hub `library/ros`](https://hub.docker.com/_/ros), [osrf/ros desktop tags](https://hub.docker.com/r/osrf/ros/tags)).
+- **Overlap with APPENG-5772 is partial:** browser Gazebo/noVNC covers simulation visualization for the demo; rviz2 remains useful for robot-state / TF / sensor debugging — decide after Story 2 whether a standalone desktop image is still needed.
+- **Extra constraint on Fedora+Jazzy:** community Jazzy COPRs often **do not ship rviz2** (Ogre/Assimp build blockers); see [ros2-rpm known limitations](https://github.com/nickschuetz/ros2-rpm/blob/main/README.md). That makes “Fedora Jazzy + rviz2” doubly hard versus Ubuntu desktop images.
+
+**Sources**
+
+- [REP 2000 — ROS 2 releases and target platforms](https://reps.openrobotics.org/rep-2000/) (Jazzy: Ubuntu Noble Tier 1, RHEL 9 Tier 2; no Fedora)
+- [ROS 2 Jazzy RHEL RPM install](https://docs.ros.org/en/jazzy/Installation/RHEL-Install-RPMs.html)
+- [ROS 2 Lyrical installation](https://docs.ros.org/en/lyrical/Installation.html) / [Lyrical release announcement](https://discourse.openrobotics.org/t/ros-2-lyrical-luth-released/55021)
+- [nickschuetz/ros2-rpm (COPR landscape + limitations)](https://github.com/nickschuetz/ros2-rpm)
+- [Fedora Robotics SIG / fedros](https://gitlab.com/fedora/sigs/robotics/src/fedros)
+- [Docker Hub official `ros` image (desktop kept separate)](https://hub.docker.com/_/ros)
 
 ---
 
@@ -184,7 +209,7 @@ Now that the scaffold (APPENG-5768) is complete, sub-tasks have fine-grained dep
     │
     ├── APPENG-5769 (Base image)         ◀── independent, no code dependency
     ├── APPENG-5770 (Image catalog UI)   ◀── independent, can use mock data
-    ├── TBD (Wizard + sim images)        ◀── wizard UI + TurtleBot3 Containerfile; feeds into 5771
+    ├── APPENG-5808 (Wizard + sim images) ◀── wizard UI + TurtleBot3 Containerfile; feeds into 5771
     ├── APPENG-5773 (Topic monitor UI)   ◀── independent, can use mock data
     │
     └── APPENG-5771 (ROS2+Gazebo orchestration)  ◀── CRITICAL PATH; consumes wizard selections + sim image
@@ -256,7 +281,7 @@ A Miro board would be useful for a team kickoff/planning session where people ne
 | ✅ | APPENG-5768 | Sub-task | APPENG-5764 | Scaffold Podman Desktop extension with TypeScript/Svelte boilerplate |
 | ✅ | APPENG-5769 | Sub-task | APPENG-5764 | Build and publish ROS2 Jazzy base image to Quay |
 | ✅ | APPENG-5770 | Sub-task | APPENG-5764 | Implement image catalog UI with pull and status indicators |
-| ✅ | TBD | Sub-task | APPENG-5764 | Project creation wizard and simulation image setup |
+| ✅ | APPENG-5808 | Sub-task | APPENG-5764 | Project creation wizard and simulation image setup |
 | ⚪ | APPENG-5771 | Sub-task | APPENG-5765 | Container orchestration for ROS2 + Gazebo launch via Podman pod |
 | ⚪ | APPENG-5772 | Sub-task | APPENG-5765 | Integrate noVNC or web-based video stream for simulation visualization |
 | ⚪ | APPENG-5773 | Sub-task | APPENG-5765 | Build topic monitor panel showing active ROS2 topics and message rates |
@@ -266,8 +291,8 @@ A Miro board would be useful for a team kickoff/planning session where people ne
 | ⚪ | APPENG-5777 | Sub-task | APPENG-5767 | Generate K8s manifests from running Podman pod configuration |
 | ⚪ | APPENG-5778 | Sub-task | APPENG-5767 | Kind cluster integration for local validation |
 | ⚪ | APPENG-5779 | Sub-task | APPENG-5767 | Getting-started guide for the full workflow |
-| 🅿️ | APPENG-5769-01 | Follow-up | APPENG-5764 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora |
-| 🅿️ | APPENG-5769-02 | Follow-up | APPENG-5764 | Add rviz2/desktop variant of the base image |
+| 🅿️ | APPENG-5809 | Sub-task | APPENG-5764 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora |
+| 🅿️ | APPENG-5810 | Sub-task | APPENG-5764 | Add rviz2/desktop variant of the base image |
 
 ---
 

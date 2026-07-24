@@ -13,7 +13,7 @@
 | ✅ | APPENG-5768 | Scaffold Podman Desktop extension with TypeScript/Svelte boilerplate |
 | ✅ | APPENG-5769 | Build and publish ROS2 Jazzy base image to Quay |
 | ✅ | APPENG-5770 | Implement image catalog UI with pull and status indicators |
-| ✅ | TBD | Project creation wizard and simulation image setup |
+| ✅ | APPENG-5808 | Project creation wizard and simulation image setup |
 
 ---
 
@@ -119,11 +119,11 @@ Containerfile                                     # Updated to COPY assets into 
 
 | Status | Key | Summary |
 |--------|-----|---------|
-| 🅿️ | APPENG-5769-01 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora |
-| 🅿️ | APPENG-5769-02 | Add rviz2/desktop variant of the base image |
+| 🅿️ | APPENG-5809 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora |
+| 🅿️ | APPENG-5810 | Add rviz2/desktop variant of the base image |
 
-- **APPENG-5769-01 (Parked):** ROS2 Jazzy has no official Fedora packages. Available options (COPR repos, building from source) carry significant risk and ongoing maintenance burden. Not viable for MVP. Revisit when official Fedora packaging matures.
-- **APPENG-5769-02 (Parked):** Including rviz2 requires a full desktop stack (OpenGL, Qt5, X11), resulting in a very large image. More importantly, the visualization use case overlaps with Story 2's noVNC/web streaming approach (APPENG-5772), which may render a standalone rviz2 image unnecessary. Revisit after Story 2 to determine if this variant is still needed.
+- **APPENG-5809 (Parked):** Jazzy has no official Fedora packages ([REP 2000](https://reps.openrobotics.org/rep-2000/) — Ubuntu Noble Tier 1, RHEL 9 Tier 2). COPR/from-source is development-only. Note: official Jazzy RPMs **do** exist for RHEL 9 — a UBI/RHEL base is closer to a Red Hat path than waiting on Fedora. Revisit on concrete triggers (official Fedora binaries, Red Hat–blessed COPR/SIG, or deliberate RHEL/UBI strategy). Full notes + sources: [podman-extension-plan.md](../podman-extension-plan.md#follow-up-tasks-from-appeng-5769-scope-adjustments).
+- **APPENG-5810 (Parked):** rviz2 needs a full GUI stack and a much larger image. Partial overlap with Story 2 noVNC/Gazebo (APPENG-5772) — sim viz ≠ TF/sensor debug. Revisit after APPENG-5772. Community Fedora Jazzy COPRs often omit rviz2 entirely.
 
 ---
 
@@ -163,7 +163,7 @@ packages/shared/src/types/ImageCatalog.ts   # Shared types (QuayRepository, Quay
 
 ---
 
-## TBD: Project Creation Wizard and Simulation Image Setup — ✅ Done
+## APPENG-5808: Project Creation Wizard and Simulation Image Setup — ✅ Done
 
 **Description:** Build a wizard UI for selecting robot type, ROS distro, middleware, and simulation engine. Create corresponding simulation Containerfiles. Persist selections for Story 2 (APPENG-5771) to consume when launching simulations.
 

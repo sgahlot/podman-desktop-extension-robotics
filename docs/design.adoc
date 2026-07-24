@@ -348,7 +348,7 @@ The extension contributes 6 settings under **Settings → Preferences → Physic
 
 | Container base (Jazzy)
 | Ubuntu 24.04 (interim)
-| ROS2 Jazzy has no official Fedora packages; Ubuntu is the official ROS2 platform. Fedora migration parked until official packaging matures (see APPENG-5769-01)
+| Jazzy has no official Fedora packages (REP 2000: Ubuntu Noble Tier 1, RHEL 9 Tier 2). Official Jazzy RPMs exist for RHEL — UBI/RHEL is a nearer Red Hat path than Fedora. Migration parked; see APPENG-5809 and plan research notes.
 
 | Container base (simulation)
 | Digest-pinned presets (sloretz multi-arch, osrf amd64-only)
