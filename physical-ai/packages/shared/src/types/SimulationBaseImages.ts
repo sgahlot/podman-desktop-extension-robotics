@@ -4,7 +4,7 @@
  *
  * Preset ids are short so Podman Desktop Settings enum dropdowns don't truncate.
  */
-export type SimulationBaseImageId = 'sloretz' | 'osrf';
+export type SimulationBaseImageId = 'sloretz' | 'osrf' | 'jazzy';
 
 export interface SimulationBaseImagePreset {
   id: SimulationBaseImageId;
@@ -17,6 +17,8 @@ export interface SimulationBaseImagePreset {
    * Passed as Containerfile build-arg ROS_BASE_IMAGE.
    */
   imageRef: string;
+  /** ROS distro this preset applies to */
+  distro: string;
   /** Architectures this preset is known to support */
   architectures: readonly ('amd64' | 'arm64')[];
   /** Image tag suffix when pushing (empty = :latest) */
@@ -26,6 +28,7 @@ export interface SimulationBaseImagePreset {
 export const SIMULATION_BASE_IMAGES: readonly SimulationBaseImagePreset[] = [
   {
     id: 'sloretz',
+    distro: 'humble',
     label: 'ghcr.io/sloretz (multi-arch, Apple Silicon)',
     description:
       'Third-party multi-arch Humble desktop rebuild. Best default for arm64 / Podman on Mac.',
@@ -36,6 +39,7 @@ export const SIMULATION_BASE_IMAGES: readonly SimulationBaseImagePreset[] = [
   },
   {
     id: 'osrf',
+    distro: 'humble',
     label: 'docker.io/osrf (official, amd64)',
     description:
       'Official OSRF Humble desktop image. amd64 only — may not run on Apple Silicon without emulation.',
@@ -43,6 +47,17 @@ export const SIMULATION_BASE_IMAGES: readonly SimulationBaseImagePreset[] = [
       'docker.io/osrf/ros:humble-desktop@sha256:3d87cf339919a85cff7743ec9ba5e7ec81ccc26c9f722f1c7a6af5008dfdc128',
     architectures: ['amd64'],
     imageTag: 'osrf',
+  },
+  {
+    id: 'jazzy',
+    distro: 'jazzy',
+    label: 'docker.io/ros (official Jazzy, amd64)',
+    description:
+      'Official ROS Jazzy base image. amd64 only — may not run on Apple Silicon without emulation.',
+    imageRef:
+      'docker.io/library/ros:jazzy-ros-base@sha256:31daab66eef9139933379fb67159449944f4e2dcf2e22c2d12cc715f29873e0f',
+    architectures: ['amd64'],
+    imageTag: 'latest',
   },
 ];
 
@@ -60,4 +75,13 @@ export function resolveSimulationBaseImage(
   const normalized = id ? (LEGACY_BASE_IMAGE_IDS[id] ?? id) : undefined;
   const preset = SIMULATION_BASE_IMAGES.find(p => p.id === normalized);
   return preset ?? SIMULATION_BASE_IMAGES.find(p => p.id === DEFAULT_SIMULATION_BASE_IMAGE)!;
+}
+
+export function baseImagesForDistro(distro: string): readonly SimulationBaseImagePreset[] {
+  return SIMULATION_BASE_IMAGES.filter(p => p.distro === distro);
+}
+
+export function defaultBaseImageForDistro(distro: string): SimulationBaseImageId {
+  const presets = baseImagesForDistro(distro);
+  return presets.length > 0 ? presets[0].id : DEFAULT_SIMULATION_BASE_IMAGE;
 }

@@ -18,7 +18,7 @@ describe('Help', () => {
     render(Help);
     expect(screen.getByText('Getting Started')).toBeTruthy();
     expect(screen.getAllByText('Image Catalog').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('Build & Push Base Image')).toBeTruthy();
+    expect(screen.getByText('Image Builder')).toBeTruthy();
     expect(screen.getByText('Tips')).toBeTruthy();
     expect(screen.getByText('Coming Soon')).toBeTruthy();
   });
@@ -36,8 +36,8 @@ describe('Help', () => {
     expect(screen.getByText(/OpenShift Bridge/)).toBeTruthy();
   });
 
-  it('renders Simulation Setup section', () => {
+  it('renders Image Builder section', () => {
     render(Help);
-    expect(screen.getByText('Simulation Setup')).toBeTruthy();
+    expect(screen.getByText('Image Builder')).toBeTruthy();
   });
 });

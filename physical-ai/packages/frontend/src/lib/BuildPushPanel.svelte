@@ -10,6 +10,10 @@ export let tagPlaceholder = 'e.g. quay.io/org/image:latest';
 export let tagInputId = 'image-tag';
 /** True while a build or push is in progress — bind from parent to freeze wizard controls. */
 export let busy = false;
+/** Called when a build completes successfully (no error). */
+export let onBuildComplete: (() => void) | undefined = undefined;
+/** When true, the Build button is disabled (e.g. waiting for a prerequisite). */
+export let disabled = false;
 
 let inputValue = tag;
 let lastSyncedTag = tag;
@@ -136,6 +140,7 @@ function startPolling(mode: 'build' | 'push') {
               buildError = progress.error;
             } else {
               imageExistsLocally = true;
+              onBuildComplete?.();
             }
           }
         }
@@ -227,7 +232,7 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
         id={tagInputId}
         type="text"
         bind:value={inputValue}
-        disabled={building || pushing}
+        disabled={building || pushing || disabled}
         on:change={commitTag}
         class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] w-96"
         placeholder={tagPlaceholder}
@@ -236,7 +241,7 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
     {#if !building && !pushing}
       <button
         on:click={startBuild}
-        disabled={!inputValue}
+        disabled={!inputValue || disabled}
         class="pai-btn pai-btn-primary"
       >
         {imageExistsLocally ? 'Rebuild' : 'Build'}

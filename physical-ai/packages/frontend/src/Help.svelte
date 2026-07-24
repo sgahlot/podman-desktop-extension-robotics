@@ -46,49 +46,25 @@ import { router } from 'tinro';
     </div>
 
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
-      <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Build &amp; Push Base Image</h2>
+      <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Image Builder</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
         <div>
-          <strong>Build</strong> — Enter an image tag (default: <span class="font-mono">quay.io/ecosystem-appeng/ros2-jazzy-base:latest</span>) and click Build. The extension builds a ROS2 Jazzy base image (Ubuntu 24.04) locally using the bundled Containerfile. A step progress bar and collapsible build logs show real-time status.
-        </div>
-        <div>
-          <strong>Cancel</strong> — Click Cancel to abort an in-progress build at any time.
-        </div>
-        <div>
-          <strong>Rebuild</strong> — If the image already exists locally, the button changes to "Rebuild" so you can build a fresh copy.
-        </div>
-        <div>
-          <strong>Push</strong> — After a successful build, or if the image already exists locally, a "Push to Registry" button appears. Click it to push the image to the registry specified in the tag. An animated progress bar is shown during the push.
-        </div>
-        <div>
-          <strong>Registry authentication</strong> — Push requires registry credentials. Log in via Podman Desktop &rarr; Settings &rarr; Registries (not <span class="font-mono">podman login</span> from the CLI).
-        </div>
-        <div>
-          <strong>Completion</strong> — On success, the image tag and full digest (SHA256) are displayed.
-        </div>
-      </div>
-    </div>
-
-    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
-      <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Simulation Setup</h2>
-      <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
-        <div>
-          <strong>Configure</strong> — Select your robot type (TurtleBot3), ROS distro (Humble or Jazzy), middleware (DDS), and simulation engine (Gazebo). Click Save to persist your selections.
+          <strong>Configure</strong> — Select your ROS distro (Humble or Jazzy), robot type, middleware, simulation engine, and base image preset. Click Save to persist your selections.
         </div>
         <div>
           <strong>Selections persist</strong> — Your configuration is saved in Podman Desktop settings and will be remembered across sessions. You can also view and edit these values in Settings &rarr; Preferences &rarr; Physical AI.
         </div>
         <div>
-          <strong>Build</strong> — After saving your configuration, scroll down to the "Build &amp; Push Simulation Image" section. The image tag is derived from your selections (e.g. <span class="font-mono">ros2-humble-turtlebot3</span>). Click Build to build the simulation image locally from the bundled Containerfile. A step progress bar and collapsible build logs show real-time status.
+          <strong>Phase 1: Base Image</strong> — Build the ROS2 base image (build tools, rosdep, colcon). Available for both Humble and Jazzy. Click Build, then optionally Push to Registry.
         </div>
         <div>
-          <strong>Cancel</strong> — Click Cancel to abort an in-progress simulation build at any time.
+          <strong>Phase 2: Simulation Image</strong> — Once the base image exists locally, build the simulation image on top of it (adds Gazebo, Nav2, TurtleBot3). Currently available for Humble only. The Build button is disabled until Phase 1 completes.
+        </div>
+        <div>
+          <strong>Cancel</strong> — Click Cancel to abort an in-progress build at any time.
         </div>
         <div>
           <strong>Push</strong> — After a successful build, or if the image already exists locally, click "Push to Registry" to push it. Registry authentication must be configured via Podman Desktop &rarr; Settings &rarr; Registries.
-        </div>
-        <div>
-          <strong>Coming soon</strong> — Zenoh middleware support and additional robot types will be added in future updates. Saved selections will be used by the one-click simulation launch (Story 2).
         </div>
       </div>
     </div>

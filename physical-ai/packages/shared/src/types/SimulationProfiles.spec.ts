@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   resolveSimulationProfile,
+  hasSimulationSupport,
   simulationImageTag,
   formatSimulationConfig,
   SIMULATION_PROFILES,
@@ -25,11 +26,28 @@ describe('SimulationProfiles', () => {
 
   it('returns undefined for unsupported combinations', () => {
     expect(
-      resolveSimulationProfile({ ...supported, distro: 'jazzy' }),
-    ).toBeUndefined();
-    expect(
       resolveSimulationProfile({ ...supported, middleware: 'zenoh' }),
     ).toBeUndefined();
+    expect(
+      resolveSimulationProfile({ ...supported, distro: 'rolling' }),
+    ).toBeUndefined();
+  });
+
+  it('resolves the jazzy base-only profile', () => {
+    const profile = resolveSimulationProfile({ ...supported, distro: 'jazzy', baseImage: 'jazzy' });
+    expect(profile).toBeDefined();
+    expect(profile!.baseAssetDir).toBe('ros2-jazzy-base');
+    expect(profile!.baseImageName).toBe('ros2-jazzy-base');
+    expect(profile!.assetDir).toBeUndefined();
+    expect(profile!.imageName).toBeUndefined();
+  });
+
+  it('reports simulation support correctly', () => {
+    const humble = resolveSimulationProfile(supported)!;
+    expect(hasSimulationSupport(humble)).toBe(true);
+
+    const jazzy = resolveSimulationProfile({ ...supported, distro: 'jazzy', baseImage: 'jazzy' })!;
+    expect(hasSimulationSupport(jazzy)).toBe(false);
   });
 
   it('builds the image tag from the profile and base image preset', () => {
@@ -39,7 +57,7 @@ describe('SimulationProfiles', () => {
     expect(
       simulationImageTag('ecosystem-appeng', { ...supported, baseImage: 'osrf' }),
     ).toBe('quay.io/ecosystem-appeng/ros2-humble-turtlebot3:osrf');
-    expect(simulationImageTag('ecosystem-appeng', { ...supported, distro: 'jazzy' })).toBeUndefined();
+    expect(simulationImageTag('ecosystem-appeng', { ...supported, distro: 'jazzy', baseImage: 'jazzy' })).toBeUndefined();
   });
 
   it('formats config for error messages', () => {

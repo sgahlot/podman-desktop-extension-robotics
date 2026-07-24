@@ -54,8 +54,8 @@ onMount(async () => {
         on:click={() => router.goto('/build')}
         class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer"
       >
-        <span class="tooltip-text">Build and push ROS2 Jazzy base image</span>
-        <div class="text-lg text-[var(--pd-content-header)]">Build &amp; Push Base Image</div>
+        <span class="tooltip-text">Build and push ROS2 base and simulation images</span>
+        <div class="text-lg text-[var(--pd-content-header)]">Image Builder</div>
       </button>
       <button
         on:click={() => router.goto('/images')}
@@ -64,13 +64,11 @@ onMount(async () => {
         <span class="tooltip-text">Browse and pull container images</span>
         <div class="text-lg text-[var(--pd-content-header)]">Image Catalog</div>
       </button>
-      <button
-        on:click={() => router.goto('/simulation')}
-        class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer"
-      >
-        <span class="tooltip-text">Configure robot simulation environment</span>
-        <div class="text-lg text-[var(--pd-content-header)]">Simulation Setup</div>
-      </button>
+      <div class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)]">
+        <span class="tooltip-text">Launch and manage robot simulations</span>
+        <div class="text-lg text-[var(--pd-content-header)]">Simulation</div>
+        <div class="text-xs pai-text-muted mt-2">Coming soon</div>
+      </div>
       <div class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)]">
         <span class="tooltip-text">Scale to multi-robot local fleet</span>
         <div class="text-lg text-[var(--pd-content-header)]">Fleet</div>

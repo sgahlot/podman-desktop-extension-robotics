@@ -296,8 +296,18 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return this.activeBuilds.get(tag) || null;
   }
 
-  async buildBaseImage(tag: string): Promise<void> {
-    this.#startImageBuild(tag, 'ros2-jazzy-base');
+  async buildBaseImage(tag: string, config: SimulationConfig): Promise<void> {
+    const profile = resolveSimulationProfile(config);
+    if (!profile) {
+      throw new Error(
+        `No base image profile for ${formatSimulationConfig(config)}. ` +
+          'Supported: humble/turtlebot3/dds/gazebo.',
+      );
+    }
+    const baseImage = resolveSimulationBaseImage(config.baseImage);
+    this.#startImageBuild(tag, profile.baseAssetDir, {
+      ROS_BASE_IMAGE: baseImage.imageRef,
+    });
   }
 
   async buildSimulationImage(tag: string, config: SimulationConfig): Promise<void> {
@@ -308,14 +318,26 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
           'Supported: humble/turtlebot3/dds/gazebo.',
       );
     }
+    if (!profile.assetDir) {
+      throw new Error(
+        `Simulation images are not yet available for ${config.distro}. ` +
+          'Only the base image can be built for this distro.',
+      );
+    }
+    const ns = await this.getDefaultNamespace();
     const baseImage = resolveSimulationBaseImage(config.baseImage);
+    const localBaseTag = `quay.io/${ns}/${profile.baseImageName}:${baseImage.imageTag}`;
     this.#startImageBuild(tag, profile.assetDir, {
-      ROS_BASE_IMAGE: baseImage.imageRef,
+      LOCAL_BASE_IMAGE: localBaseTag,
     });
   }
 
   async getPushProgress(tag: string): Promise<PushProgress | null> {
     return this.activePushes.get(tag) || null;
+  }
+
+  async getHostArch(): Promise<string> {
+    return process.arch === 'arm64' ? 'arm64' : 'amd64';
   }
 
   async getDefaultNamespace(): Promise<string> {

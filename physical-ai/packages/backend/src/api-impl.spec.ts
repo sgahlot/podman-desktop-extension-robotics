@@ -268,10 +268,50 @@ describe('PhysicalAiApiImpl', () => {
   });
 
   describe('buildBaseImage', () => {
+    const baseConfig = {
+      robot: 'turtlebot3',
+      distro: 'humble',
+      middleware: 'dds',
+      engine: 'gazebo',
+      baseImage: 'sloretz' as const,
+    };
+
     it('throws when no Podman connection found', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([]);
 
-      await expect(api.buildBaseImage('my-tag:latest')).rejects.toThrow('No running Podman connection found');
+      await expect(api.buildBaseImage('my-tag:latest', baseConfig)).rejects.toThrow('No running Podman connection found');
+    });
+
+    it('rejects unsupported wizard combinations', async () => {
+      await expect(
+        api.buildBaseImage('my-tag:latest', { ...baseConfig, distro: 'rolling' }),
+      ).rejects.toThrow(/No base image profile for rolling\/turtlebot3\/dds\/gazebo/);
+      expect(extensionApi.containerEngine.buildImage).not.toHaveBeenCalled();
+    });
+
+    it('builds jazzy base image with correct asset dir and build-arg', async () => {
+      const mockConnection = createMockConnection();
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([mockConnection] as any);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets/ros2-jazzy-base' } as any);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
+
+      await api.buildBaseImage('my-tag:latest', { ...baseConfig, distro: 'jazzy', baseImage: 'jazzy' as any });
+
+      expect(extensionApi.Uri.joinPath).toHaveBeenCalledWith(
+        MOCK_CONTEXT.extensionUri,
+        'assets',
+        'ros2-jazzy-base',
+      );
+      expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
+        '/fake/assets/ros2-jazzy-base',
+        expect.any(Function),
+        expect.objectContaining({
+          buildargs: {
+            ROS_BASE_IMAGE:
+              'docker.io/library/ros:jazzy-ros-base@sha256:31daab66eef9139933379fb67159449944f4e2dcf2e22c2d12cc715f29873e0f',
+          },
+        }),
+      );
     });
 
     it('initiates build and sets initial progress', async () => {
@@ -281,7 +321,7 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as any);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
 
-      await api.buildBaseImage('my-tag:latest');
+      await api.buildBaseImage('my-tag:latest', baseConfig);
 
       const progress = await api.getBuildProgress('my-tag:latest');
       expect(progress).toEqual({
@@ -305,7 +345,7 @@ describe('PhysicalAiApiImpl', () => {
         },
       );
 
-      await api.buildBaseImage('my-tag:latest');
+      await api.buildBaseImage('my-tag:latest', baseConfig);
 
       buildCallback!('stream', 'STEP 3/8: RUN apt-get update');
 
@@ -330,7 +370,7 @@ describe('PhysicalAiApiImpl', () => {
         },
       );
 
-      await api.buildBaseImage('my-tag:latest');
+      await api.buildBaseImage('my-tag:latest', baseConfig);
       buildCallback!('error', 'something broke');
 
       const progress = await api.getBuildProgress('my-tag:latest');
@@ -345,7 +385,7 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as any);
       vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined as any);
 
-      await api.buildBaseImage('my-tag:latest');
+      await api.buildBaseImage('my-tag:latest', baseConfig);
       await vi.advanceTimersByTimeAsync(0);
 
       const progress = await api.getBuildProgress('my-tag:latest');
@@ -360,7 +400,7 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as any);
       vi.mocked(extensionApi.containerEngine.buildImage).mockRejectedValue(new Error('build failed'));
 
-      await api.buildBaseImage('my-tag:latest');
+      await api.buildBaseImage('my-tag:latest', baseConfig);
       await vi.advanceTimersByTimeAsync(0);
 
       const progress = await api.getBuildProgress('my-tag:latest');
@@ -368,28 +408,32 @@ describe('PhysicalAiApiImpl', () => {
       expect(progress!.error).toBe('build failed');
     });
 
-    it('passes correct build options', async () => {
+    it('passes correct build options with ROS_BASE_IMAGE build-arg', async () => {
       const mockConnection = createMockConnection();
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([mockConnection] as any);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets/ros2-jazzy-base' } as any);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets/ros2-humble-base' } as any);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
 
-      await api.buildBaseImage('my-tag:latest');
+      await api.buildBaseImage('my-tag:latest', baseConfig);
 
       expect(extensionApi.Uri.joinPath).toHaveBeenCalledWith(
         MOCK_CONTEXT.extensionUri,
         'assets',
-        'ros2-jazzy-base',
+        'ros2-humble-base',
       );
       expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
-        '/fake/assets/ros2-jazzy-base',
+        '/fake/assets/ros2-humble-base',
         expect.any(Function),
-        {
+        expect.objectContaining({
           containerFile: 'Containerfile',
           tag: 'my-tag:latest',
           provider: mockConnection.connection,
           abortController: expect.any(AbortController),
-        },
+          buildargs: {
+            ROS_BASE_IMAGE:
+              'ghcr.io/sloretz/ros:humble-desktop@sha256:970146e40f7aaa818c5783e28ed5302489bc72f61efe92438a1613fcf90b7d5c',
+          },
+        }),
       );
     });
 
@@ -398,7 +442,6 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([mockConnection] as any);
       vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as any);
 
-      // Promise never settles — simulates a hung apt-get RUN step
       let aborted = false;
       vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation(
         (_ctx: any, _cb: any, opts: any) =>
@@ -409,7 +452,7 @@ describe('PhysicalAiApiImpl', () => {
           }),
       );
 
-      await api.buildBaseImage('my-tag:latest');
+      await api.buildBaseImage('my-tag:latest', baseConfig);
       await api.cancelBuild('my-tag:latest');
 
       const progress = await api.getBuildProgress('my-tag:latest');
@@ -430,11 +473,11 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation(
         (_ctx: any, cb: any, _opts: any) => {
           buildCallback = cb;
-          return new Promise(() => {}); // never settles
+          return new Promise(() => {});
         },
       );
 
-      await api.buildBaseImage('my-tag:latest');
+      await api.buildBaseImage('my-tag:latest', baseConfig);
       buildCallback!('stream', 'STEP 7/17: RUN apt-get update');
       buildCallback!('finish', '');
 
@@ -455,11 +498,14 @@ describe('PhysicalAiApiImpl', () => {
       baseImage: 'sloretz' as const,
     };
 
-    it('builds from the turtlebot3 simulation asset directory with base image build-arg', async () => {
+    it('builds from the turtlebot3 simulation asset directory with LOCAL_BASE_IMAGE build-arg', async () => {
       const mockConnection = createMockConnection();
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([mockConnection] as any);
       vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets/ros2-humble-turtlebot3' } as any);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue('ecosystem-appeng'),
+      } as any);
 
       await api.buildSimulationImage('sim-tag:latest', supportedConfig);
 
@@ -477,18 +523,20 @@ describe('PhysicalAiApiImpl', () => {
           provider: mockConnection.connection,
           abortController: expect.any(AbortController),
           buildargs: {
-            ROS_BASE_IMAGE:
-              'ghcr.io/sloretz/ros:humble-desktop@sha256:970146e40f7aaa818c5783e28ed5302489bc72f61efe92438a1613fcf90b7d5c',
+            LOCAL_BASE_IMAGE: 'quay.io/ecosystem-appeng/ros2-humble-base:latest',
           },
         }),
       );
     });
 
-    it('passes the official OSRF base image when selected', async () => {
+    it('computes LOCAL_BASE_IMAGE tag from osrf preset', async () => {
       const mockConnection = createMockConnection();
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([mockConnection] as any);
       vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets/ros2-humble-turtlebot3' } as any);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue('ecosystem-appeng'),
+      } as any);
 
       await api.buildSimulationImage('sim-tag:osrf', {
         ...supportedConfig,
@@ -500,8 +548,7 @@ describe('PhysicalAiApiImpl', () => {
         expect.any(Function),
         expect.objectContaining({
           buildargs: {
-            ROS_BASE_IMAGE:
-              'docker.io/osrf/ros:humble-desktop@sha256:3d87cf339919a85cff7743ec9ba5e7ec81ccc26c9f722f1c7a6af5008dfdc128',
+            LOCAL_BASE_IMAGE: 'quay.io/ecosystem-appeng/ros2-humble-base:osrf',
           },
         }),
       );
@@ -509,8 +556,15 @@ describe('PhysicalAiApiImpl', () => {
 
     it('rejects unsupported wizard combinations', async () => {
       await expect(
-        api.buildSimulationImage('sim-tag:latest', { ...supportedConfig, distro: 'jazzy' }),
-      ).rejects.toThrow(/No simulation image available for jazzy\/turtlebot3\/dds\/gazebo/);
+        api.buildSimulationImage('sim-tag:latest', { ...supportedConfig, distro: 'rolling' }),
+      ).rejects.toThrow(/No simulation image available for rolling\/turtlebot3\/dds\/gazebo/);
+      expect(extensionApi.containerEngine.buildImage).not.toHaveBeenCalled();
+    });
+
+    it('rejects jazzy simulation build with descriptive error', async () => {
+      await expect(
+        api.buildSimulationImage('sim-tag:latest', { ...supportedConfig, distro: 'jazzy', baseImage: 'jazzy' as any }),
+      ).rejects.toThrow(/Simulation images are not yet available for jazzy/);
       expect(extensionApi.containerEngine.buildImage).not.toHaveBeenCalled();
     });
   });

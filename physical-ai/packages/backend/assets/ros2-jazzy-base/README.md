@@ -1,52 +1,24 @@
 # ROS2 Jazzy Base Image
 
-Development base image for ROS2 Jazzy robotics workloads.
-
-> **Note:** This image currently uses Ubuntu 24.04 as the base (official `ros:jazzy-ros-base`).
-> Migration to Fedora is planned once ROS2 Jazzy Fedora packaging matures (COPR or source build).
+Base layer for future Jazzy simulation images. Provides ROS2 Jazzy with common build tools.
 
 ## What's included
 
-- ROS2 Jazzy core runtime
-- **colcon** — ROS2 build tool
-- **rosdep** — dependency resolver (pre-initialized)
-- **vcstool** — workspace version control
-- cmake, build-essential, git
+- ROS2 Jazzy (`ros-base`) from the official `docker.io/library/ros` image
+- Build tools: colcon, rosdep, vcstool, cmake, git
+- Entrypoint sources `/opt/ros/jazzy/setup.bash`
 
-## What's NOT included (future variants)
+## Preset
 
-- **rviz2** and GUI dependencies — planned as a separate "desktop" variant
-- **Gazebo** — will be added as a simulation-specific image
+- **jazzy** — `docker.io/library/ros:jazzy-ros-base` (amd64 only)
 
-## Build
-
-Prefer building from the Podman Desktop extension (**Build & Push Base Image**).
-For a local CLI build of the same context:
+## Build manually
 
 ```bash
-podman build -t quay.io/ecosystem-appeng/ros2-jazzy-base:latest packages/backend/assets/ros2-jazzy-base/
+podman build -t quay.io/ecosystem-appeng/ros2-jazzy-base:latest .
 ```
 
-Base image is digest-pinned in the Containerfile (`ros:jazzy-ros-base@sha256:…`).
+## Notes
 
-## Run
-
-```bash
-podman run --rm -it quay.io/ecosystem-appeng/ros2-jazzy-base:latest
-```
-
-The entrypoint automatically sources the ROS2 Jazzy environment.
-
-## Verify
-
-```bash
-podman run --rm quay.io/ecosystem-appeng/ros2-jazzy-base:latest ros2 --help
-podman run --rm quay.io/ecosystem-appeng/ros2-jazzy-base:latest colcon --help
-podman run --rm quay.io/ecosystem-appeng/ros2-jazzy-base:latest rosdep --help
-```
-
-## Publish
-
-```bash
-podman push quay.io/ecosystem-appeng/ros2-jazzy-base:latest
-```
+- Simulation images for Jazzy are not yet available. This base image is provided as a foundation for future simulation support.
+- The image is amd64-only. On Apple Silicon it may require emulation.

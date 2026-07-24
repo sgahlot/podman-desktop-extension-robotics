@@ -33,7 +33,7 @@
         "physical-ai.simulationDistro": {
           "type": "string",
           "default": "humble",
-          "description": "ROS distro for simulation (currently only humble has a bundled simulation image)"
+          "description": "ROS distro for simulation (humble has full simulation support; jazzy has base image only)"
         },
         "physical-ai.simulationMiddleware": {
           "type": "string",
@@ -49,11 +49,13 @@
           "type": "string",
           "enum": [
             "sloretz",
-            "osrf"
+            "osrf",
+            "jazzy"
           ],
           "enumDescriptions": [
             "ghcr.io/sloretz multi-arch Humble desktop (recommended on Apple Silicon)",
-            "docker.io/osrf official Humble desktop (amd64 only)"
+            "docker.io/osrf official Humble desktop (amd64 only)",
+            "docker.io/ros official Jazzy base (amd64 only)"
           ],
           "default": "sloretz",
           "description": "Base image preset for simulation builds"

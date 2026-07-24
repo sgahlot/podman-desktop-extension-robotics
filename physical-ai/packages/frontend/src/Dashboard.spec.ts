@@ -28,10 +28,10 @@ describe('Dashboard', () => {
 
   it('renders quick link cards', () => {
     render(Dashboard);
+    expect(screen.getByText('Image Builder')).toBeTruthy();
     expect(screen.getByText('Image Catalog')).toBeTruthy();
-    expect(screen.getByText('Simulation Setup')).toBeTruthy();
+    expect(screen.getByText('Simulation')).toBeTruthy();
     expect(screen.getByText('Fleet')).toBeTruthy();
-    expect(screen.getByText('Build & Push Base Image')).toBeTruthy();
     expect(screen.getByText('Help')).toBeTruthy();
   });
 
@@ -55,13 +55,6 @@ describe('Dashboard', () => {
     expect(mockGoto).toHaveBeenCalledWith('/images');
   });
 
-  it('navigates to Build & Push on click', async () => {
-    render(Dashboard);
-    const btn = screen.getByText('Build & Push Base Image');
-    await fireEvent.click(btn);
-    expect(mockGoto).toHaveBeenCalledWith('/build');
-  });
-
   it('navigates to Help on click', async () => {
     render(Dashboard);
     const btn = screen.getByText('Help');
@@ -72,13 +65,13 @@ describe('Dashboard', () => {
   it('marks Fleet as coming soon', () => {
     render(Dashboard);
     const comingSoon = screen.getAllByText('Coming soon');
-    expect(comingSoon).toHaveLength(1);
+    expect(comingSoon).toHaveLength(2);
   });
 
-  it('navigates to Simulation Setup on click', async () => {
+  it('navigates to Image Builder on click', async () => {
     render(Dashboard);
-    const btn = screen.getByText('Simulation Setup');
+    const btn = screen.getByText('Image Builder');
     await fireEvent.click(btn);
-    expect(mockGoto).toHaveBeenCalledWith('/simulation');
+    expect(mockGoto).toHaveBeenCalledWith('/build');
   });
 });

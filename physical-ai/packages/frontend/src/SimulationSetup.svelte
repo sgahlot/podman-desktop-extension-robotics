@@ -5,12 +5,15 @@ import { router } from 'tinro';
 import BuildPushPanel from './lib/BuildPushPanel.svelte';
 import {
   resolveSimulationProfile,
+  hasSimulationSupport,
   simulationImageTag,
+  baseImageTag,
 } from '/@shared/src/types/SimulationProfiles';
 import {
-  SIMULATION_BASE_IMAGES,
   resolveSimulationBaseImage,
   DEFAULT_SIMULATION_BASE_IMAGE,
+  baseImagesForDistro,
+  defaultBaseImageForDistro,
 } from '/@shared/src/types/SimulationBaseImages';
 import type { SimulationBaseImageId } from '/@shared/src/types/SimulationBaseImages';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
@@ -27,24 +30,53 @@ let saveSuccess = false;
 let saveError = '';
 
 let ns = 'ecosystem-appeng';
-let tag = '';
+let hostArch = 'amd64';
+let baseTag = '';
+let simTag = '';
 let lastConfigKey = '';
-let buildBusy = false;
+let baseBusy = false;
+let simBusy = false;
+let baseImageExists = false;
 
+$: buildBusy = baseBusy || simBusy;
 $: currentConfig = { robot, distro, middleware, engine, baseImage } as SimulationConfig;
 $: profile = resolveSimulationProfile(currentConfig);
+$: simSupported = profile ? hasSimulationSupport(profile) : false;
+$: availableBaseImages = baseImagesForDistro(distro);
 $: basePreset = resolveSimulationBaseImage(baseImage);
+$: {
+  const validForDistro = availableBaseImages.find(p => p.id === baseImage);
+  if (!validForDistro && !buildBusy) {
+    baseImage = defaultBaseImageForDistro(distro);
+  }
+}
 $: {
   const key = `${ns}|${robot}|${distro}|${middleware}|${engine}|${baseImage}`;
   if (!buildBusy && key !== lastConfigKey) {
     lastConfigKey = key;
-    tag = simulationImageTag(ns, currentConfig) ?? '';
+    baseTag = baseImageTag(ns, currentConfig) ?? '';
+    simTag = simulationImageTag(ns, currentConfig) ?? '';
+  }
+}
+
+async function checkBaseImageExists() {
+  if (!baseTag) { baseImageExists = false; return; }
+  try {
+    const local = await physicalAiClient.listLocalImages();
+    baseImageExists = local.includes(baseTag);
+  } catch {
+    baseImageExists = false;
   }
 }
 
 onMount(async () => {
   try {
     ns = await physicalAiClient.getDefaultNamespace();
+  } catch {
+    // default is fine
+  }
+  try {
+    hostArch = await physicalAiClient.getHostArch();
   } catch {
     // default is fine
   }
@@ -59,6 +91,7 @@ onMount(async () => {
     // defaults are fine
   } finally {
     loading = false;
+    checkBaseImageExists();
   }
 });
 
@@ -83,9 +116,9 @@ async function save() {
   <button on:click={() => router.goto('/')} class="pai-link self-start">
     &larr; Back to Dashboard
   </button>
-  <h1 class="text-3xl text-[var(--pd-content-header)]">Simulation Setup</h1>
+  <h1 class="text-3xl text-[var(--pd-content-header)]">Image Builder</h1>
   <p class="text-sm text-[var(--pd-content-text)]">
-    Configure your robot simulation environment. These selections will be used when launching simulations.
+    Configure, build, and push ROS2 base and simulation container images.
   </p>
 
   {#if loading}
@@ -98,11 +131,14 @@ async function save() {
         <select
           id="robot"
           bind:value={robot}
-          disabled={buildBusy}
+          disabled={buildBusy || !simSupported}
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
         >
           <option value="turtlebot3">TurtleBot3</option>
         </select>
+        {#if !simSupported}
+          <span class="text-xs pai-text-muted">Not applicable — simulation not available for {distro}</span>
+        {/if}
       </div>
 
       <div class="flex flex-col gap-1">
@@ -114,7 +150,7 @@ async function save() {
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
         >
           <option value="humble">Humble (simulation/desktop)</option>
-          <option value="jazzy" disabled>Jazzy (no simulation image yet — use Build Base Image)</option>
+          <option value="jazzy">Jazzy (base image only)</option>
         </select>
       </div>
 
@@ -123,12 +159,15 @@ async function save() {
         <select
           id="middleware"
           bind:value={middleware}
-          disabled={buildBusy}
+          disabled={buildBusy || !simSupported}
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
         >
           <option value="dds">DDS (default)</option>
           <option value="zenoh" disabled>Zenoh (coming soon)</option>
         </select>
+        {#if !simSupported}
+          <span class="text-xs pai-text-muted">Not applicable — simulation not available for {distro}</span>
+        {/if}
       </div>
 
       <div class="flex flex-col gap-1">
@@ -136,11 +175,14 @@ async function save() {
         <select
           id="engine"
           bind:value={engine}
-          disabled={buildBusy}
+          disabled={buildBusy || !simSupported}
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
         >
           <option value="gazebo">Gazebo</option>
         </select>
+        {#if !simSupported}
+          <span class="text-xs pai-text-muted">Not applicable — simulation not available for {distro}</span>
+        {/if}
       </div>
 
       <div class="flex flex-col gap-1">
@@ -151,14 +193,14 @@ async function save() {
           disabled={buildBusy}
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
         >
-          {#each SIMULATION_BASE_IMAGES as preset}
+          {#each availableBaseImages as preset}
             <option value={preset.id}>{preset.label}</option>
           {/each}
         </select>
         <span class="text-xs text-[var(--pd-content-text)] opacity-80">{basePreset.description}</span>
-        {#if !basePreset.architectures.includes('arm64')}
+        {#if !basePreset.architectures.includes(hostArch)}
           <span class="text-xs pai-text-warning">
-            Warning: this preset is amd64-only. On Apple Silicon the build may fail or use slow emulation.
+            Warning: this preset does not support {hostArch}. The build may fail or use slow emulation.
           </span>
         {/if}
       </div>
@@ -189,11 +231,20 @@ async function save() {
         <div class="font-mono break-all opacity-80">{basePreset.imageRef}</div>
         {#if profile}
           <div class="mt-1 pai-text-success">
-            &#10003; Buildable: {profile.label}
+            &#10003; Base image: buildable ({profile.baseAssetDir})
           </div>
+          {#if simSupported}
+            <div class="mt-1 pai-text-success">
+              &#10003; Simulation image: buildable ({profile.assetDir})
+            </div>
+          {:else}
+            <div class="mt-1 pai-text-warning">
+              &#9888; Simulation image: not yet available for {distro}
+            </div>
+          {/if}
         {:else}
           <div class="mt-1 pai-text-error">
-            No bundled simulation image for this combination yet.
+            No bundled image for this combination yet.
           </div>
         {/if}
       </div>
@@ -201,27 +252,68 @@ async function save() {
 
     <hr class="border-[var(--pd-content-card-border)] my-2" />
 
-    <h2 class="text-xl text-[var(--pd-content-header)]">Build & Push Simulation Image</h2>
+    <h2 class="text-xl text-[var(--pd-content-header)]">Phase 1: Build & Push Base Image</h2>
 
-    {#if profile && tag}
+    {#if profile && baseTag}
       <p class="text-sm text-[var(--pd-content-text)]">
-        Builds <span class="font-mono">{profile.assetDir}</span> from the bundled Containerfile
-        with base <span class="font-mono">{basePreset.id}</span>
-        (Save is optional for build; required for Story 2 launch later).
+        Builds <span class="font-mono">{profile.baseAssetDir}</span> — ROS2 {distro} + build tools.
+        {#if simSupported}
+          This is the FROM layer for the simulation image below.
+        {:else}
+          Simulation images for {distro} are not yet available.
+        {/if}
       </p>
 
       <BuildPushPanel
-        bind:tag
-        bind:busy={buildBusy}
+        bind:tag={baseTag}
+        bind:busy={baseBusy}
+        buildImage={t => physicalAiClient.buildBaseImage(t, currentConfig)}
+        onBuildComplete={() => { baseImageExists = true; }}
+        tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-humble-base:latest"
+        tagInputId="baseTag"
+      />
+    {:else}
+      <p class="text-sm p-3 rounded pai-banner-error">
+        Cannot build: no base image Containerfile is bundled for
+        <span class="font-mono">{distro}/{robot}/{middleware}/{engine}</span>.
+        Choose a supported combination (currently Humble + TurtleBot3 + DDS + Gazebo).
+      </p>
+    {/if}
+
+    <hr class="border-[var(--pd-content-card-border)] my-2" />
+
+    <h2 class="text-xl text-[var(--pd-content-header)]">Phase 2: Build & Push Simulation Image</h2>
+
+    {#if profile && simSupported && simTag}
+      {#if !baseImageExists}
+        <p class="text-sm p-3 rounded pai-banner-warning">
+          Build the base image (Phase 1) first — the simulation image depends on it.
+        </p>
+      {:else}
+        <p class="text-sm text-[var(--pd-content-text)]">
+          Builds <span class="font-mono">{profile.assetDir}</span> on top of the base image —
+          adds Gazebo, Nav2, and TurtleBot3.
+        </p>
+      {/if}
+
+      <BuildPushPanel
+        bind:tag={simTag}
+        bind:busy={simBusy}
         buildImage={t => physicalAiClient.buildSimulationImage(t, currentConfig)}
         tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-humble-turtlebot3:latest"
         tagInputId="simTag"
+        disabled={!baseImageExists}
       />
+    {:else if profile && !simSupported}
+      <p class="text-sm p-3 rounded pai-banner-warning">
+        <strong>Not available yet.</strong> Simulation images (Gazebo, Nav2, TurtleBot3) are not yet
+        available for ROS2 {distro}. Only the base image can be built at this time.
+      </p>
     {:else}
       <p class="text-sm p-3 rounded pai-banner-error">
         Cannot build: no simulation Containerfile is bundled for
         <span class="font-mono">{distro}/{robot}/{middleware}/{engine}</span>.
-        Choose a supported combination (currently Humble + TurtleBot3 + DDS + Gazebo).
+        Choose a supported combination.
       </p>
     {/if}
   {/if}
