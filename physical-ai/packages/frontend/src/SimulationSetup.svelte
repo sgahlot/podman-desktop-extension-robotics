@@ -269,7 +269,7 @@ async function save() {
         bind:busy={baseBusy}
         buildImage={t => physicalAiClient.buildBaseImage(t, currentConfig)}
         onBuildComplete={() => { baseImageExists = true; }}
-        tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-humble-base:latest"
+        tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-humble-base:sloretz"
         tagInputId="baseTag"
       />
     {:else}
@@ -300,7 +300,7 @@ async function save() {
         bind:tag={simTag}
         bind:busy={simBusy}
         buildImage={t => physicalAiClient.buildSimulationImage(t, currentConfig)}
-        tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-humble-turtlebot3:latest"
+        tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-humble-turtlebot3:sloretz"
         tagInputId="simTag"
         disabled={!baseImageExists}
       />

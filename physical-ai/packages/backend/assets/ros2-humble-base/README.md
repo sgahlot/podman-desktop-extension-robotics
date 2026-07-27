@@ -12,10 +12,10 @@ Base layer for Physical AI simulation images. Adds build tools to a ROS2 Humble 
 The Containerfile takes `ROS_BASE_IMAGE` as a build-arg (digest-pinned). The extension
 exposes a dropdown with two presets:
 
-| Preset id | Image | Arch |
-|-----------|--------|------|
-| `sloretz` (default) | `ghcr.io/sloretz/ros:humble-desktop@sha256:970146e…` | amd64, arm64 |
-| `osrf` | `docker.io/osrf/ros:humble-desktop@sha256:3d87cf3…` | amd64 only |
+| Preset id | Image | Arch | Output tag |
+|-----------|--------|------|------------|
+| `sloretz` (default) | `ghcr.io/sloretz/ros:humble-desktop@sha256:970146e…` | amd64, arm64 | `:sloretz` |
+| `osrf` | `docker.io/osrf/ros:humble-desktop@sha256:3d87cf3…` | amd64 only | `:osrf` |
 
 Digests are stored in `packages/shared/src/types/SimulationBaseImages.ts` and bumped deliberately.
 
@@ -27,12 +27,12 @@ add robot-specific packages, simulation engines, and workspace builds on top.
 ## Build (CLI)
 
 ```bash
-podman build -t quay.io/ecosystem-appeng/ros2-humble-base:latest \
+podman build -t quay.io/ecosystem-appeng/ros2-humble-base:sloretz \
   packages/backend/assets/ros2-humble-base/
 ```
 
 ## Run
 
 ```bash
-podman run --rm -it quay.io/ecosystem-appeng/ros2-humble-base:latest
+podman run --rm -it quay.io/ecosystem-appeng/ros2-humble-base:sloretz
 ```

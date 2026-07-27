@@ -18,9 +18,10 @@ describe('Help', () => {
     render(Help);
     expect(screen.getByText('Getting Started')).toBeTruthy();
     expect(screen.getAllByText('Image Catalog').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('Image Builder')).toBeTruthy();
+    expect(screen.getAllByText('Image Builder').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Tips')).toBeTruthy();
     expect(screen.getByText('Coming Soon')).toBeTruthy();
+    expect(screen.getByText('Golden Quay images')).toBeTruthy();
   });
 
   it('navigates back to dashboard on click', async () => {
@@ -38,6 +39,6 @@ describe('Help', () => {
 
   it('renders Image Builder section', () => {
     render(Help);
-    expect(screen.getByText('Image Builder')).toBeTruthy();
+    expect(screen.getAllByText('Image Builder').length).toBeGreaterThanOrEqual(1);
   });
 });

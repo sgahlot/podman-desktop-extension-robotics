@@ -345,6 +345,22 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return config.get<string>('defaultNamespace') ?? 'ecosystem-appeng';
   }
 
+  async getCatalogViewMode(): Promise<'all' | 'curated'> {
+    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const mode = config.get<string>('catalogViewMode');
+    return mode === 'curated' ? 'curated' : 'all';
+  }
+
+  async setCatalogViewMode(mode: 'all' | 'curated'): Promise<void> {
+    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    await config.update('catalogViewMode', mode);
+  }
+
+  async getCatalogCuratedAllowlist(): Promise<string> {
+    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    return config.get<string>('catalogCuratedAllowlist') ?? 'ros2-*-base,ros2-*-turtlebot3';
+  }
+
   async getSimulationConfig(): Promise<SimulationConfig> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
     const rawBase = config.get<string>('simulationBaseImage');

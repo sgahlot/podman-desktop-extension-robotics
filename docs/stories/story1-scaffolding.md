@@ -2,7 +2,7 @@
 
 **Jira:** APPENG-5764 | **Parent:** APPENG-5763 (Epic)
 
-**Description:** Build the Podman Desktop extension shell (registration, navigation, branding). Integrate a curated catalog of Fedora/ROS2 base images pullable from Quay. Include a project creation wizard to select robot type, middleware (Zenoh/DDS), and simulation engine.
+**Description:** Build the Podman Desktop extension shell (registration, navigation, branding). Integrate a catalog of ROS2 images pullable from Quay (Ubuntu interim bases; Fedora/RHEL parked). Include Image Builder to select robot/middleware/engine and build/push base + simulation images.
 
 ---
 
@@ -129,13 +129,14 @@ Containerfile                                     # Updated to COPY assets into 
 
 ## APPENG-5770: Image Catalog UI — ✅ Done
 
-**Description:** Build the UI within the extension to browse curated base images, pull them from Quay, and show download/status indicators.
+**Description:** Browse Quay repositories, pull images, and show local status. **All** (default) lists the whole namespace; **Curated** filters by a comma-separated allowlist of repo name patterns (wildcards with `*`), editable in Preferences.
 
-**Completed:** 2026-07-21
+**Completed:** 2026-07-21 (curated prefs / default All added later)
 
 ### What was done
 
 - Image Catalog page browsing Quay.io namespace with paginated repository listing
+- **All | Curated** view toggle (default **All**); curated allowlist preference (`ros2-*-base,ros2-*-turtlebot3` by default)
 - Client-side name filter for repositories
 - Expandable repo rows showing tags with size, date, and digest
 - Pull images from Quay via Podman with real-time progress bar (fire-and-forget + polling pattern)
@@ -149,10 +150,11 @@ Containerfile                                     # Updated to COPY assets into 
 ### Key files
 
 ```
-packages/frontend/src/ImageCatalog.svelte   # Full catalog page (browse, pull, progress, local detection)
-packages/backend/src/api-impl.ts            # Backend: Quay API, pull with progress, local image listing
-packages/shared/src/PhysicalAiApi.ts        # API contract (10 methods)
-packages/shared/src/types/ImageCatalog.ts   # Shared types (QuayRepository, QuayTag, PullProgress)
+packages/frontend/src/ImageCatalog.svelte   # Catalog page + All/Curated toggle
+packages/shared/src/types/CatalogCurated.ts # Allowlist pattern matching
+packages/backend/src/api-impl.ts            # Quay API, pull, prefs getters/setters
+packages/shared/src/PhysicalAiApi.ts        # API contract
+packages/shared/src/types/ImageCatalog.ts   # Shared types
 ```
 
 ### Key learnings
@@ -163,63 +165,24 @@ packages/shared/src/types/ImageCatalog.ts   # Shared types (QuayRepository, Quay
 
 ---
 
-## APPENG-5808: Project Creation Wizard and Simulation Image Setup — ✅ Done
+## APPENG-5808: Image Builder and Simulation Image Setup — ✅ Done
 
-**Description:** Build a wizard UI for selecting robot type, ROS distro, middleware, and simulation engine. Create corresponding simulation Containerfiles. Persist selections for Story 2 (APPENG-5771) to consume when launching simulations.
+**Description:** Image Builder UI for selecting robot type, ROS distro, middleware, and simulation engine; two-phase build/push (base then simulation). Persist selections for Story 2 (APPENG-5771).
 
 ### Implementation Parts
 
 | Status | Part | Summary |
 |--------|------|---------|
-| ✅ | Part 1 | Simulation Containerfile |
-| ✅ | Part 2 | Wizard UI |
-| ✅ | Part 3 | Wire Build & Push |
+| ✅ | Part 1 | Base + simulation Containerfiles under `packages/backend/assets/` |
+| ✅ | Part 2 | Image Builder UI (was “Simulation Setup”) |
+| ✅ | Part 3 | Wire Phase 1 / Phase 2 build & push |
 
----
-
-#### Part 1 — Simulation Containerfile (TurtleBot3 + Gazebo)
-
-Create `containers/ros2-humble-turtlebot3/Containerfile` baking in the manual setup from `side-work/`:
-- Base: `ghcr.io/sloretz/ros:humble-desktop`
-- Install Gazebo packages, ros-gz bridge, nav2 (from `setup-01.sh`)
-- Clone TurtleBot3 repos: core, msgs, DynamixelSDK, simulations (from `setup-02.sh`)
-- Run `colcon build` with COLCON_IGNORE on turtlebot3_gazebo (from `build.sh`)
-- Entrypoint sourcing ROS2 Humble setup
-
-Bundle in `packages/backend/assets/ros2-humble-turtlebot3/` for extension access (same pattern as ros2-jazzy-base).
-
-**Source material** — manual scripts in `podman-work/side-work/`:
-- `setup-01.sh` — Gazebo repo setup + apt install ros-humble-ros-gz, ros-humble-nav2-bringup
-- `setup-02.sh` — git clone turtlebot3, turtlebot3_msgs, DynamixelSDK, turtlebot3_simulations (all humble branch)
-- `build.sh` — colcon build with COLCON_IGNORE on turtlebot3_gazebo, parallel-workers 2
-- `podman.txt` — `podman run` with `--ipc=host --net=host`, volume mount to host workspace
-
----
-
-#### Part 2 — Wizard UI (extension page)
-
-- New "Simulation Setup" page accessible from Dashboard
-- Selection options:
-  - **Robot type:** TurtleBot3 (initial), extensible to other robots later
-  - **ROS distro:** Humble (for simulation/desktop), Jazzy (for base/headless)
-  - **Middleware:** DDS (default), Zenoh (future)
-  - **Simulation engine:** Gazebo (initial)
-- Persist selections via extension configuration (PD Configuration API)
-- Dashboard card linking to the new page
-- Selections feed into Story 2's one-click launch (APPENG-5771)
-
----
-
-#### Part 3 — Wire Build & Push
-
-- Backend API method to build the simulation image using the TurtleBot3 Containerfile
-- Update Build & Push page to support multiple image types (base image vs simulation image), or add build/push controls directly to the wizard page
-- Reuse existing build progress polling and push flow
+**Current reality:** Humble = base (`:sloretz` / `:osrf`) + TurtleBot3 sim; Jazzy = base only. Additional robots are future work (see plan). Simulation **launch** is Story 2.
 
 ---
 
 ### Relationship to Story 2
 
-- This task creates the **image and UI** for selecting a simulation setup
-- APPENG-5771 (Story 2) **consumes** the wizard selections and image to orchestrate the one-click launch
-- APPENG-5772 (Story 2) provides the **visualization** of the running simulation
+- Story 1 creates the **images and build UI**
+- APPENG-5771 **consumes** saved selections + sim image to launch
+- APPENG-5772 provides **visualization**

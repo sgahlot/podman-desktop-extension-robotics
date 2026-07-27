@@ -523,7 +523,7 @@ describe('PhysicalAiApiImpl', () => {
           provider: mockConnection.connection,
           abortController: expect.any(AbortController),
           buildargs: {
-            LOCAL_BASE_IMAGE: 'quay.io/ecosystem-appeng/ros2-humble-base:latest',
+            LOCAL_BASE_IMAGE: 'quay.io/ecosystem-appeng/ros2-humble-base:sloretz',
           },
         }),
       );

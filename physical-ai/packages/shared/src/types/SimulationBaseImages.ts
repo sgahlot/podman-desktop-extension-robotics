@@ -21,7 +21,7 @@ export interface SimulationBaseImagePreset {
   distro: string;
   /** Architectures this preset is known to support */
   architectures: readonly ('amd64' | 'arm64')[];
-  /** Image tag suffix when pushing (empty = :latest) */
+  /** Image tag suffix when pushing (e.g. sloretz, osrf, latest) */
   imageTag: string;
 }
 
@@ -35,7 +35,7 @@ export const SIMULATION_BASE_IMAGES: readonly SimulationBaseImagePreset[] = [
     imageRef:
       'ghcr.io/sloretz/ros:humble-desktop@sha256:970146e40f7aaa818c5783e28ed5302489bc72f61efe92438a1613fcf90b7d5c',
     architectures: ['amd64', 'arm64'],
-    imageTag: 'latest',
+    imageTag: 'sloretz',
   },
   {
     id: 'osrf',

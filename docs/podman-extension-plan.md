@@ -6,7 +6,7 @@
 
 ## Overview
 
-Build a Podman Desktop extension that gives robotics developers a GUI-driven path from local development to OpenShift deployment. Target audience: robotics engineers unfamiliar with containers, CLI, or enterprise Linux. The extension provides curated Fedora/ROS2 base images, one-click simulation launch, and a bridge toward cluster deployment.
+Build a Podman Desktop extension that gives robotics developers a GUI-driven path from local development to OpenShift deployment. Target audience: robotics engineers unfamiliar with containers, CLI, or enterprise Linux. The extension provides curated ROS2 base and simulation images (Ubuntu interim today; Fedora/RHEL path parked), one-click simulation launch (Story 2), and a bridge toward cluster deployment.
 
 **MVP target:** ROSCon Toronto demo, September 2026
 
@@ -27,7 +27,7 @@ Build a Podman Desktop extension that gives robotics developers a GUI-driven pat
 | **Created** | 2026/07/16 |
 | **Summary** | Podman Desktop Extension for Physical AI Robotics Development |
 
-**Description:** Build a Podman Desktop extension that gives robotics developers a GUI-driven path from local development to OpenShift deployment. Target audience: robotics engineers unfamiliar with containers, CLI, or enterprise Linux. The extension provides curated Fedora/ROS2 base images, one-click simulation launch, and a bridge toward cluster deployment. MVP targeting ROSCon Toronto demo in September 2026.
+**Description:** Build a Podman Desktop extension that gives robotics developers a GUI-driven path from local development to OpenShift deployment. Target audience: robotics engineers unfamiliar with containers, CLI, or enterprise Linux. The extension provides ROS2 base and simulation images (Ubuntu interim today; Fedora/RHEL path parked), one-click simulation launch (Story 2), and a bridge toward cluster deployment. MVP targeting ROSCon Toronto demo in September 2026.
 
 Drivers:
 1. Push the workloads to OpenShift and the Red Hat ecosystem
@@ -61,24 +61,38 @@ Drivers:
 |-----|--------|------------|---------|---------|
 | APPENG-5764 | APPENG-5763 | Story | 2026/07/16 | Extension scaffolding and base image catalog |
 
-**Description:** Build the Podman Desktop extension shell (registration, navigation, branding). Integrate a curated catalog of Fedora/ROS2 base images pullable from Quay. Include a project creation wizard to select robot type, middleware (Zenoh/DDS), and simulation engine.
+**Description:** Build the Podman Desktop extension shell (registration, navigation, branding). Integrate a catalog of ROS2 base/simulation images pullable from Quay (Ubuntu interim bases today; Fedora/RHEL path parked). Include an Image Builder to select robot type, middleware (Zenoh/DDS), and simulation engine, then build/push base and simulation images.
 
 #### Sub-tasks
 
 | Status | Key | Summary | Description |
 |--------|-----|---------|-------------|
 | ✅ | APPENG-5768 | Scaffold Podman Desktop extension with TypeScript/Svelte boilerplate | Set up the Podman Desktop extension project structure, registration, and basic navigation shell. |
-| ✅ | APPENG-5769 | Build and publish ROS2 Jazzy base image to Quay | Built with Ubuntu 24.04 interim base (Fedora migration tracked separately). Includes build & push UI in extension. Follow-ups parked. |
-| ✅ | APPENG-5770 | Implement image catalog UI with pull and status indicators | Build the UI within the extension to browse curated base images, pull them from Quay, and show download/status indicators. |
-| ✅ | APPENG-5808 | Project creation wizard and simulation image setup | Build a wizard UI for selecting robot type (e.g. TurtleBot3), ROS distro (Humble/Jazzy), middleware (Zenoh/DDS), and simulation engine (Gazebo). Create corresponding simulation Containerfiles (starting with ROS2 Humble + TurtleBot3 + Gazebo). Persist selections for Story 2 to consume. See implementation parts below. |
+| ✅ | APPENG-5769 | Build and publish ROS2 Jazzy base image to Quay | Ubuntu 24.04 interim (`ros:jazzy-ros-base`). Build/push via Image Builder Phase 1. Follow-ups parked (5809/5810). |
+| ✅ | APPENG-5770 | Implement image catalog UI with pull and status indicators | Browse Quay namespace; All (default) or Curated view; allowlist in Preferences; pull + local status. |
+| ✅ | APPENG-5808 | Project creation wizard and simulation image setup | Image Builder: two-phase build (Humble base+sim / Jazzy base-only). TurtleBot3 + Gazebo for Humble. Persist selections for Story 2. |
 
 ##### APPENG-5808 Implementation Parts
 
 | Status | Part | Summary |
 |--------|------|---------|
-| ✅ | Part 1 | Simulation Containerfile — create `containers/ros2-humble-turtlebot3/` with Containerfile + entrypoint from side-work scripts; copy to `packages/backend/assets/` |
-| ✅ | Part 2 | Wizard UI — new "Simulation Setup" page with dropdowns for robot/distro/middleware/engine; Dashboard card; persist selections via PD configuration |
-| ✅ | Part 3 | Wire Build & Push — backend `buildSimulationImage()` API; build/push controls added to Simulation Setup page |
+| ✅ | Part 1 | Simulation + base Containerfiles under `packages/backend/assets/` (`ros2-humble-base`, `ros2-humble-turtlebot3`, `ros2-jazzy-base`) |
+| ✅ | Part 2 | Image Builder UI — dropdowns for robot/distro/middleware/engine/base preset; Dashboard card first; prefs persistence |
+| ✅ | Part 3 | Wire Build & Push — Phase 1 base + Phase 2 simulation (`FROM` local base); progress/cancel/push |
+
+##### Story 1 publish checklist (golden Quay images)
+
+| Tag | Role |
+|-----|------|
+| `quay.io/<ns>/ros2-humble-base:sloretz` | Mac / multi-arch Humble base |
+| `quay.io/<ns>/ros2-humble-base:osrf` | Linux amd64 Humble base |
+| `quay.io/<ns>/ros2-jazzy-base:latest` | Jazzy headless base |
+| `quay.io/<ns>/ros2-humble-turtlebot3:sloretz` | Humble sim (layered on sloretz base) |
+
+##### Future (not blocking Story 1)
+
+- **Additional robot types** beyond TurtleBot3 — same Image Builder pattern (`SimulationProfiles` + `assets/ros2-humble-<robot>/` + curated allowlist entry). Spike package availability on Humble (e.g. TurtleBot4) before enabling UI options.
+- Simulation **launch** wizard — Story 2 (APPENG-5771+), not Story 1.
 
 #### Follow-up tasks (from APPENG-5769 scope adjustments)
 
@@ -229,16 +243,15 @@ Now that the scaffold (APPENG-5768) is complete, sub-tasks have fine-grained dep
 
 ### Ready Now (no blockers)
 
-These can be picked up by team members immediately and worked on in parallel:
+Story 1 is complete. Next pick-ups are Story 2:
 
 | Key | Summary | Skills needed |
 |-----|---------|---------------|
-| APPENG-5769 | Build Fedora + ROS2 Jazzy base image | Container builds, ROS2 packaging |
-| APPENG-5770 | Image catalog UI | Svelte/TypeScript frontend |
-| APPENG-5771 | ROS2 + Gazebo container orchestration | Podman pods, ROS2, Gazebo |
-| APPENG-5773 | Topic monitor panel | Svelte/TypeScript frontend |
+| APPENG-5771 | ROS2 + Gazebo orchestration (one-click launch) | Podman pods/containers, ROS2 launch |
+| APPENG-5772 | noVNC / web streaming for sim viz | Web streaming, container networking |
+| APPENG-5773 | Topic monitor panel | Svelte frontend, ROS2 topic APIs (or mocks) |
 
-> A team of 3–4 people can work in parallel right now.
+**Story 1 follow-ons (optional polish):** additional robot types in Image Builder; curated Catalog demos against published golden Quay tags.
 
 ### Blocked — waiting on APPENG-5771 (critical path)
 

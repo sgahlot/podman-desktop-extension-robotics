@@ -3,12 +3,22 @@ import { physicalAiClient } from './api/client';
 import { onMount, onDestroy } from 'svelte';
 import { router } from 'tinro';
 import type { QuayRepository, QuayTag, PullProgress } from '/@shared/src/types/ImageCatalog';
+import {
+  filterCuratedRepos,
+  type CatalogViewMode,
+  DEFAULT_CURATED_ALLOWLIST,
+} from '/@shared/src/types/CatalogCurated';
 
 let namespace = '';
 let filter = '';
 let repos: QuayRepository[] = [];
 let loading = false;
 let error = '';
+/** True after default namespace / prefs are applied — avoids a flash of "required" on first paint. */
+let catalogReady = false;
+
+let viewMode: CatalogViewMode = 'all';
+let curatedAllowlist = DEFAULT_CURATED_ALLOWLIST;
 
 let expandedRepo: string | null = null;
 let tags: QuayTag[] = [];
@@ -23,13 +33,35 @@ let pullProgress: Map<string, PullProgress> = new Map();
 let pullResults: Map<string, { success: boolean; message: string }> = new Map();
 let pollTimers: Map<string, number> = new Map();
 
-$: filteredRepos = repos.filter(r =>
+$: hasNamespace = namespace.trim().length > 0;
+$: namespaceMissing = catalogReady && !hasNamespace;
+
+$: scopedRepos = viewMode === 'curated' ? filterCuratedRepos(repos, curatedAllowlist) : repos;
+$: filteredRepos = scopedRepos.filter(r =>
   r.name.toLowerCase().includes(filter.toLowerCase()),
 );
 
-$: localImagesForNamespace = Array.from(localImages).filter(
-  img => img.startsWith(`quay.io/${namespace}/`),
-);
+$: localImagesForNamespace = hasNamespace
+  ? Array.from(localImages).filter(img => img.startsWith(`quay.io/${namespace.trim()}/`))
+  : [];
+
+/** Clearing the namespace must drop stale results from the last Load (do not re-query with empty ns). */
+$: if (!hasNamespace && repos.length > 0) {
+  repos = [];
+  expandedRepo = null;
+  tags = [];
+  tagError = '';
+  error = '';
+}
+
+async function setViewMode(mode: CatalogViewMode) {
+  viewMode = mode;
+  try {
+    await physicalAiClient.setCatalogViewMode(mode);
+  } catch {
+    // preference persist is best-effort
+  }
+}
 
 async function refreshLocalImages() {
   try {
@@ -84,6 +116,12 @@ function stopPolling(imageKey: string) {
 }
 
 async function loadRepos() {
+  const ns = namespace.trim();
+  if (!ns) {
+    repos = [];
+    return;
+  }
+
   loading = true;
   error = '';
   repos = [];
@@ -92,7 +130,7 @@ async function loadRepos() {
   tagError = '';
 
   try {
-    repos = await physicalAiClient.listCatalogImages(namespace);
+    repos = await physicalAiClient.listCatalogImages(ns);
   } catch (e) {
     error = e instanceof Error ? e.message : 'Failed to load repositories';
   } finally {
@@ -179,9 +217,21 @@ function formatDate(dateStr: string): string {
 }
 
 onMount(async () => {
-  namespace = await physicalAiClient.getDefaultNamespace();
-  refreshLocalImages();
-  loadRepos();
+  try {
+    namespace = await physicalAiClient.getDefaultNamespace();
+    try {
+      viewMode = await physicalAiClient.getCatalogViewMode();
+      curatedAllowlist = await physicalAiClient.getCatalogCuratedAllowlist();
+    } catch {
+      // defaults are fine
+    }
+    refreshLocalImages();
+    if (namespace.trim()) {
+      await loadRepos();
+    }
+  } finally {
+    catalogReady = true;
+  }
 });
 
 onDestroy(() => {
@@ -197,28 +247,70 @@ onDestroy(() => {
   </button>
   <h1 class="text-3xl text-[var(--pd-content-header)]">Image Catalog</h1>
   <p class="text-sm text-[var(--pd-content-text)]">
-    Browse and pull container images from a Quay.io organization.
+    Browse and pull ROS2 container images from a Quay.io organization.
+    Bases are Ubuntu interim today (Fedora/RHEL migration is tracked separately).
   </p>
 
-  <div class="flex flex-row gap-3 items-end">
+  <div class="flex flex-row gap-3 items-end flex-wrap">
     <div class="flex flex-col gap-1">
       <label for="namespace" class="text-xs text-[var(--pd-content-text)]">Quay.io namespace</label>
       <input
         id="namespace"
         type="text"
         bind:value={namespace}
-        class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] w-64"
+        class="px-3 py-1.5 text-sm rounded border bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] w-64 {namespaceMissing
+          ? 'pai-input-error'
+          : 'border-[var(--pd-content-card-border)]'}"
         placeholder="e.g. ecosystem-appeng"
+        aria-invalid={namespaceMissing}
+        aria-describedby={namespaceMissing ? 'namespace-error' : undefined}
+        required
       />
+      {#if namespaceMissing}
+        <p id="namespace-error" class="text-xs pai-text-error" role="alert">
+          Namespace is required.
+        </p>
+      {/if}
     </div>
     <button
       on:click={loadRepos}
-      disabled={loading || !namespace}
+      disabled={loading || !hasNamespace}
       class="pai-btn pai-btn-primary"
     >
       {loading ? 'Loading...' : 'Load'}
     </button>
+    <div class="flex flex-col gap-1">
+      <span class="text-xs text-[var(--pd-content-text)]">View</span>
+      <div class="flex flex-row rounded border border-[var(--pd-content-card-border)] overflow-hidden">
+        <button
+          type="button"
+          class="px-3 py-1.5 text-sm cursor-pointer"
+          style={viewMode === 'all'
+            ? 'background-color: var(--pai-accent); color: var(--pai-accent-text);'
+            : 'background-color: var(--pd-content-card-bg); color: var(--pd-content-text);'}
+          on:click={() => setViewMode('all')}
+        >
+          All
+        </button>
+        <button
+          type="button"
+          class="px-3 py-1.5 text-sm cursor-pointer border-l border-[var(--pd-content-card-border)]"
+          style={viewMode === 'curated'
+            ? 'background-color: var(--pai-accent); color: var(--pai-accent-text);'
+            : 'background-color: var(--pd-content-card-bg); color: var(--pd-content-text);'}
+          on:click={() => setViewMode('curated')}
+          title="Patterns: {curatedAllowlist}"
+        >
+          Curated
+        </button>
+      </div>
+    </div>
   </div>
+  {#if viewMode === 'curated'}
+    <p class="text-xs pai-text-muted">
+      Curated patterns (Settings → Preferences → Physical AI): <span class="font-mono">{curatedAllowlist}</span>
+    </p>
+  {/if}
 
   <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)]">
     <div class="flex flex-row items-center">
@@ -256,7 +348,11 @@ onDestroy(() => {
       </div>
     {:else if localSectionExpanded}
       <div class="border-t border-[var(--pd-content-card-border)] px-3 py-2">
-        <span class="text-xs text-[var(--pd-content-text)]">No local images for this namespace</span>
+        {#if !hasNamespace}
+          <span class="text-xs text-[var(--pd-content-text)]">Enter a namespace to list local images.</span>
+        {:else}
+          <span class="text-xs text-[var(--pd-content-text)]">No local images for this namespace</span>
+        {/if}
       </div>
     {/if}
   </div>
@@ -269,7 +365,7 @@ onDestroy(() => {
         type="text"
         bind:value={filter}
         class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] w-64"
-        placeholder="e.g. aiobs-"
+        placeholder="e.g. ros2-"
       />
     </div>
   {/if}
@@ -282,8 +378,23 @@ onDestroy(() => {
     <div class="text-sm text-[var(--pd-content-text)]">Loading repositories...</div>
   {:else if repos.length > 0}
     <div class="text-xs text-[var(--pd-content-text)]">
-      Showing {filteredRepos.length} of {repos.length} repositories
+      {#if viewMode === 'curated'}
+        Showing {filteredRepos.length} curated of {repos.length} repositories
+      {:else}
+        Showing {filteredRepos.length} of {repos.length} repositories
+      {/if}
     </div>
+
+    {#if filteredRepos.length === 0}
+      <div class="text-sm p-3 rounded pai-banner-warning">
+        {#if viewMode === 'curated'}
+          No curated repositories matched <span class="font-mono">{curatedAllowlist}</span> in this namespace.
+          Switch to All, or push the golden images (see Help), or edit the allowlist in Preferences.
+        {:else}
+          No repositories match the name filter.
+        {/if}
+      </div>
+    {/if}
 
     <div class="flex flex-col gap-2">
       {#each filteredRepos as repo}
@@ -402,9 +513,9 @@ onDestroy(() => {
         </div>
       {/each}
     </div>
-  {:else if !error}
+  {:else if !error && hasNamespace}
     <div class="text-sm text-[var(--pd-content-text)]">
-      Enter a Quay.io namespace and click Load to browse images.
+      Click Load to browse images for this namespace.
     </div>
   {/if}
 </div>

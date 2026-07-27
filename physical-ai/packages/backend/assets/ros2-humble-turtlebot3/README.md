@@ -9,7 +9,7 @@ exposes a **dropdown** (not free text) with two presets:
 
 | Preset id | Image | Arch | Output tag |
 |-----------|--------|------|------------|
-| `sloretz` (default) | `ghcr.io/sloretz/ros:humble-desktop@sha256:970146e…` | amd64, arm64 | `:latest` |
+| `sloretz` (default) | `ghcr.io/sloretz/ros:humble-desktop@sha256:970146e…` | amd64, arm64 | `:sloretz` |
 | `osrf` | `docker.io/osrf/ros:humble-desktop@sha256:3d87cf3…` | amd64 only | `:osrf` |
 
 > There is no `docker.io/library/ros:humble-desktop` tag. Official desktop images live under **`docker.io/osrf/ros`**.
@@ -43,7 +43,7 @@ Update pins deliberately in the Containerfile.
 ## Build (CLI, default sloretz base)
 
 ```bash
-podman build -t quay.io/ecosystem-appeng/ros2-humble-turtlebot3:latest \
+podman build -t quay.io/ecosystem-appeng/ros2-humble-turtlebot3:sloretz \
   packages/backend/assets/ros2-humble-turtlebot3/
 ```
 
@@ -51,5 +51,5 @@ podman build -t quay.io/ecosystem-appeng/ros2-humble-turtlebot3:latest \
 
 ```bash
 podman run --rm -it --ipc=host --net=host \
-  quay.io/ecosystem-appeng/ros2-humble-turtlebot3:latest
+  quay.io/ecosystem-appeng/ros2-humble-turtlebot3:sloretz
 ```

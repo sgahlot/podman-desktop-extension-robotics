@@ -102,6 +102,10 @@
   color: var(--pai-error-text);
 }
 
+.pai-input-error {
+  border-color: var(--pai-error);
+}
+
 .pai-progress-track {
   background-color: var(--pai-progress-track);
   border-radius: 4px;

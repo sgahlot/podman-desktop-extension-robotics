@@ -58,7 +58,25 @@
             "docker.io/ros official Jazzy base (amd64 only)"
           ],
           "default": "sloretz",
-          "description": "Base image preset for simulation builds"
+          "description": "Base image preset for Image Builder builds"
+        },
+        "physical-ai.catalogViewMode": {
+          "type": "string",
+          "enum": [
+            "all",
+            "curated"
+          ],
+          "enumDescriptions": [
+            "Show all public repositories in the namespace",
+            "Show only repositories matching the curated allowlist"
+          ],
+          "default": "all",
+          "description": "Default Image Catalog view mode"
+        },
+        "physical-ai.catalogCuratedAllowlist": {
+          "type": "string",
+          "default": "ros2-*-base,ros2-*-turtlebot3",
+          "description": "Comma-separated Quay repository name patterns for Curated catalog view. Use * as a wildcard (e.g. ros2-*-base,ros2-humble-turtlebot3)."
         }
       }
     }

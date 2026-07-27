@@ -99,8 +99,9 @@ The backend is the entry point loaded by Podman Desktop. It manages the extensio
 | `src/progressLogs.ts` | `appendProgressLog()` — capped at 500 lines with truncation marker
 | `package.json` | Extension manifest (contributes: commands, configuration with 6 properties)
 | `vite.config.js` | Builds to CJS, externalizes `@podman-desktop/api`
-| `assets/ros2-jazzy-base/` | Bundled Containerfile + entrypoint for base image builds
-| `assets/ros2-humble-turtlebot3/` | Bundled Containerfile + entrypoint for simulation image builds
+| `assets/ros2-jazzy-base/` | Bundled Containerfile + entrypoint for Jazzy base builds
+| `assets/ros2-humble-base/` | Bundled Containerfile for Humble base builds
+| `assets/ros2-humble-turtlebot3/` | Bundled Containerfile + entrypoint for Humble simulation builds
 |===
 
 === Extension Frontend (`packages/frontend`)
@@ -110,9 +111,8 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 ==== Responsibilities
 
 * Dashboard landing page with feature cards
-* Image catalog browser with pull progress _(APPENG-5770, done)_
-* Build & Push for base and simulation images _(done)_
-* Simulation Setup wizard _(done — config + build; launch is Story 2)_
+* Image catalog browser with All/Curated views and pull progress _(APPENG-5770, done)_
+* Image Builder for base and simulation images _(done — config + build; launch is Story 2)_
 * In-extension Help page _(done)_
 * ROS2 topic monitor _(APPENG-5773, planned)_
 * Fleet status dashboard _(APPENG-5776, stretch)_
@@ -125,11 +125,10 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 
 | `src/App.svelte` | Root component, hash-based routing via tinro
 | `src/Dashboard.svelte` | Landing page with quick-link cards
-| `src/ImageCatalog.svelte` | Browse Quay repos, pull images, show local images
-| `src/BuildBaseImage.svelte` | Build & push the ROS2 Jazzy base image
-| `src/SimulationSetup.svelte` | Wizard for robot/distro/middleware/engine selection + build & push simulation image
+| `src/ImageCatalog.svelte` | Browse Quay repos (All/Curated), pull images, show local images
+| `src/SimulationSetup.svelte` | Image Builder — configure + build/push base and simulation images
 | `src/Help.svelte` | In-extension documentation
-| `src/lib/BuildPushPanel.svelte` | Shared component for build/push/cancel lifecycle with polling (used by BuildBaseImage and SimulationSetup)
+| `src/lib/BuildPushPanel.svelte` | Shared component for build/push/cancel lifecycle with polling
 | `src/app.css` | `.pai-*` theme classes (buttons, links, text colors, cards, progress bars) using `--pd-*` CSS variables
 | `src/api/client.ts` | RPC client — creates proxy to backend API
 | `src/lib/Route.svelte` | Route component with state persistence
@@ -240,16 +239,27 @@ User clicks "Push"   ──► Frontend sends pushImage(tag)
                          (every 500ms while active)          { status, digest }
 ----
 
-=== Simulation Setup (wizard + build)
+=== Image Builder (wizard + build)
 
 [source]
 ----
-User configures wizard ──► Frontend shows dropdowns for robot/distro/middleware/engine/base image
-                           Tag derived reactively from selections
+User configures Image Builder ──► Frontend shows dropdowns for robot/distro/middleware/engine/base preset
+                           Tag derived reactively from selections (:sloretz / :osrf / :latest)
 User clicks "Save"     ──► Frontend calls saveSimulationConfig(config)
                            ──► Backend persists to Podman Desktop configuration API
 
-Build & Push           ──► Same flow as above (buildSimulationImage)
+Phase 1 Build & Push   ──► buildBaseImage (same progress/cancel/push flow as base builds)
+Phase 2 Build & Push   ──► buildSimulationImage (FROM local base; Humble TurtleBot3 today)
+----
+
+=== Image Catalog (All / Curated)
+
+[source]
+----
+Default view mode = All (preference: physical-ai.catalogViewMode)
+Curated allowlist   = comma-separated patterns (preference: physical-ai.catalogCuratedAllowlist)
+                      default: ros2-*-base,ros2-*-turtlebot3
+Toggle in UI        ──► setCatalogViewMode; filter via CatalogCurated helpers
 ----
 
 === Simulation Launch (Story 2, planned)
@@ -364,7 +374,7 @@ The extension contributes 6 settings under **Settings → Preferences → Physic
 
 | Build/push UI
 | Shared `BuildPushPanel.svelte` component
-| Extracted from duplicated code; handles full build/push/cancel lifecycle with polling; used by both BuildBaseImage and SimulationSetup pages
+| Extracted from duplicated code; handles full build/push/cancel lifecycle with polling; used by Image Builder (SimulationSetup)
 
 | Progress log capping
 | 500-line cap via `appendProgressLog()`

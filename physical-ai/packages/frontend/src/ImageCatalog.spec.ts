@@ -8,6 +8,9 @@ const mockListLocalImages = vi.fn();
 const mockPullImage = vi.fn();
 const mockGetPullProgress = vi.fn();
 const mockGetDefaultNamespace = vi.fn();
+const mockGetCatalogViewMode = vi.fn();
+const mockSetCatalogViewMode = vi.fn();
+const mockGetCatalogCuratedAllowlist = vi.fn();
 const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
@@ -18,6 +21,9 @@ vi.mock('./api/client', () => ({
     pullImage: (...args: any[]) => mockPullImage(...args),
     getPullProgress: (...args: any[]) => mockGetPullProgress(...args),
     getDefaultNamespace: (...args: any[]) => mockGetDefaultNamespace(...args),
+    getCatalogViewMode: (...args: any[]) => mockGetCatalogViewMode(...args),
+    setCatalogViewMode: (...args: any[]) => mockSetCatalogViewMode(...args),
+    getCatalogCuratedAllowlist: (...args: any[]) => mockGetCatalogCuratedAllowlist(...args),
   },
 }));
 
@@ -29,6 +35,9 @@ describe('ImageCatalog', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mockGetDefaultNamespace.mockResolvedValue('ecosystem-appeng');
+    mockGetCatalogViewMode.mockResolvedValue('all');
+    mockGetCatalogCuratedAllowlist.mockResolvedValue('ros2-*-base,ros2-*-turtlebot3');
+    mockSetCatalogViewMode.mockResolvedValue(undefined);
     mockListLocalImages.mockResolvedValue([]);
     mockListCatalogImages.mockResolvedValue([]);
   });
@@ -139,6 +148,55 @@ describe('ImageCatalog', () => {
     await fireEvent.click(screen.getByText(/ros2-base/));
     await waitFor(() => {
       expect(screen.getByText('Pull')).toBeTruthy();
+    });
+  });
+
+  it('filters to curated allowlist when Curated is selected', async () => {
+    mockListCatalogImages.mockResolvedValue([
+      { name: 'ros2-humble-base', namespace: 'ns' },
+      { name: 'other-tool', namespace: 'ns' },
+      { name: 'ros2-humble-turtlebot3', namespace: 'ns' },
+    ]);
+    render(ImageCatalog);
+    await waitFor(() => {
+      expect(screen.getByText(/Showing 3 of 3/)).toBeTruthy();
+    });
+    await fireEvent.click(screen.getByText('Curated'));
+    await waitFor(() => {
+      expect(mockSetCatalogViewMode).toHaveBeenCalledWith('curated');
+      expect(screen.getByText(/Showing 2 curated of 3/)).toBeTruthy();
+      expect(screen.queryByText('other-tool')).toBeNull();
+    });
+  });
+
+  it('clears stale results when namespace is emptied', async () => {
+    mockListCatalogImages.mockResolvedValue([
+      { name: 'ros2-base', namespace: 'ecosystem-appeng' },
+    ]);
+    render(ImageCatalog);
+    await waitFor(() => {
+      expect(screen.getByText(/ros2-base/)).toBeTruthy();
+    });
+    const input = screen.getByLabelText('Quay.io namespace') as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: '' } });
+    await waitFor(() => {
+      expect(screen.queryByText(/ros2-base/)).toBeNull();
+      expect(screen.getByText(/Namespace is required/)).toBeTruthy();
+      expect(screen.queryByText(/Click Load to browse/)).toBeNull();
+    });
+  });
+
+  it('prompts to click Load when a namespace is entered but not loaded', async () => {
+    mockListCatalogImages.mockResolvedValue([]);
+    render(ImageCatalog);
+    await waitFor(() => {
+      expect(screen.getByLabelText('Quay.io namespace')).toBeTruthy();
+    });
+    const input = screen.getByLabelText('Quay.io namespace') as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: 'a' } });
+    await waitFor(() => {
+      expect(screen.queryByText(/Namespace is required/)).toBeNull();
+      expect(screen.getByText(/Click Load to browse images for this namespace/)).toBeTruthy();
     });
   });
 });

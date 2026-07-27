@@ -16,6 +16,9 @@ export abstract class PhysicalAiApi {
   abstract getPushProgress(tag: string): Promise<PushProgress | null>;
   abstract getDefaultNamespace(): Promise<string>;
   abstract getHostArch(): Promise<string>;
+  abstract getCatalogViewMode(): Promise<'all' | 'curated'>;
+  abstract setCatalogViewMode(mode: 'all' | 'curated'): Promise<void>;
+  abstract getCatalogCuratedAllowlist(): Promise<string>;
   abstract getSimulationConfig(): Promise<SimulationConfig>;
   abstract saveSimulationConfig(config: SimulationConfig): Promise<void>;
 }

@@ -52,7 +52,7 @@ describe('SimulationProfiles', () => {
 
   it('builds the image tag from the profile and base image preset', () => {
     expect(simulationImageTag('ecosystem-appeng', supported)).toBe(
-      'quay.io/ecosystem-appeng/ros2-humble-turtlebot3:latest',
+      'quay.io/ecosystem-appeng/ros2-humble-turtlebot3:sloretz',
     );
     expect(
       simulationImageTag('ecosystem-appeng', { ...supported, baseImage: 'osrf' }),

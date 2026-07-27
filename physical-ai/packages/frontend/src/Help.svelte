@@ -17,7 +17,7 @@ import { router } from 'tinro';
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Getting Started</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-1">
         <p>Physical AI gives robotics developers a GUI-driven path from local development to OpenShift deployment — no terminal required.</p>
-        <p>Start by browsing and pulling curated ROS2 base images from the <strong>Image Catalog</strong>.</p>
+        <p>Start with <strong>Image Builder</strong> to build/push ROS2 images, or <strong>Image Catalog</strong> to pull from Quay. Container bases are <strong>Ubuntu interim</strong> today; Fedora/RHEL migration is tracked separately.</p>
       </div>
     </div>
 
@@ -25,22 +25,19 @@ import { router } from 'tinro';
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Image Catalog</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
         <div>
-          <strong>Browse repositories</strong> — Enter a Quay.io namespace (default: <span class="font-mono">ecosystem-appeng</span>) and click Load. Expand any repository to see its available tags with size, date, and digest.
+          <strong>Browse repositories</strong> — Enter a Quay.io namespace and click Load. Expand any repository to see tags with size, date, and digest.
         </div>
         <div>
-          <strong>Filter</strong> — Use the "Filter by name" field to narrow the repository list. This filters the repo list only, not the Locally Available section.
+          <strong>All vs Curated</strong> — Default view is <strong>All</strong> (every public repo in the namespace). Switch to <strong>Curated</strong> to show only names matching the allowlist (default <span class="font-mono">ros2-*-base,ros2-*-turtlebot3</span>). Both the default view and the allowlist are configurable under Settings &rarr; Preferences &rarr; Physical AI (comma-separated patterns; <span class="font-mono">*</span> is a wildcard).
         </div>
         <div>
-          <strong>Pull images</strong> — Click the Pull button on any tag. A progress bar shows real-time download status with percentage. The bar tracks aggregated progress across all image layers.
+          <strong>Filter</strong> — Use "Filter by name" to further narrow the list.
         </div>
         <div>
-          <strong>Locally Available</strong> — The collapsible section at the top shows images from the current namespace that are already in your local Podman registry. Tags that exist locally display a green "&#10003; Local" badge with a "Pull again" option.
+          <strong>Pull images</strong> — Click Pull on any tag. Progress shows aggregated layer download status.
         </div>
         <div>
-          <strong>Refresh</strong> — Click the "&#8635; Refresh" button in the Locally Available header to re-check which images exist locally. Useful after deleting images from the CLI.
-        </div>
-        <div>
-          <strong>Errors</strong> — If a pull fails, the error is shown inline with a Retry link.
+          <strong>Locally Available</strong> — Collapsible section lists images from this namespace already present locally.
         </div>
       </div>
     </div>
@@ -49,42 +46,47 @@ import { router } from 'tinro';
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Image Builder</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
         <div>
-          <strong>Configure</strong> — Select your ROS distro (Humble or Jazzy), robot type, middleware, simulation engine, and base image preset. Click Save to persist your selections.
+          <strong>Configure</strong> — Select ROS distro (Humble = base + simulation; Jazzy = base only), robot, middleware, engine, and base preset. Unsupported controls are greyed out with a short explanation. Save persists to Preferences.
         </div>
         <div>
-          <strong>Selections persist</strong> — Your configuration is saved in Podman Desktop settings and will be remembered across sessions. You can also view and edit these values in Settings &rarr; Preferences &rarr; Physical AI.
+          <strong>Phase 1: Base Image</strong> — Builds tools on top of a digest-pinned upstream. Humble presets: <span class="font-mono">sloretz</span> (multi-arch, tag <span class="font-mono">:sloretz</span>) or <span class="font-mono">osrf</span> (amd64, tag <span class="font-mono">:osrf</span>). Jazzy uses official <span class="font-mono">ros:jazzy-ros-base</span> (tag <span class="font-mono">:latest</span>).
         </div>
         <div>
-          <strong>Phase 1: Base Image</strong> — Build the ROS2 base image (build tools, rosdep, colcon). Available for both Humble and Jazzy. Click Build, then optionally Push to Registry.
+          <strong>Phase 2: Simulation Image</strong> — Humble only today (Gazebo, Nav2, TurtleBot3), layered <span class="font-mono">FROM</span> your Phase 1 local base. Disabled until the base image exists locally.
         </div>
         <div>
-          <strong>Phase 2: Simulation Image</strong> — Once the base image exists locally, build the simulation image on top of it (adds Gazebo, Nav2, TurtleBot3). Currently available for Humble only. The Build button is disabled until Phase 1 completes.
+          <strong>Cancel / Push</strong> — Cancel aborts an in-progress build. Push requires registry login via Podman Desktop &rarr; Settings &rarr; Registries.
         </div>
-        <div>
-          <strong>Cancel</strong> — Click Cancel to abort an in-progress build at any time.
-        </div>
-        <div>
-          <strong>Push</strong> — After a successful build, or if the image already exists locally, click "Push to Registry" to push it. Registry authentication must be configured via Podman Desktop &rarr; Settings &rarr; Registries.
-        </div>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
+      <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Golden Quay images</h2>
+      <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-1">
+        <p>Recommended set to publish for Catalog demos (replace <span class="font-mono">&lt;ns&gt;</span> with your namespace):</p>
+        <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-humble-base:sloretz</p>
+        <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-humble-base:osrf</p>
+        <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-jazzy-base:latest</p>
+        <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-humble-turtlebot3:sloretz</p>
       </div>
     </div>
 
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Tips</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-1">
-        <p>&#8226; The progress percentage may start low and adjust upward as new image layers are discovered during download — this is normal.</p>
-        <p>&#8226; After a successful pull, the Locally Available section and tag badges update automatically.</p>
-        <p>&#8226; You can pull multiple images at the same time — each tracks progress independently.</p>
-        <p>&#8226; The extension remembers your last visited page, so you'll return to where you left off.</p>
+        <p>&#8226; Arch warnings appear only when the selected preset does not support your host architecture.</p>
+        <p>&#8226; Pull progress may jump as layers are discovered — that is normal.</p>
+        <p>&#8226; The extension remembers your last visited page.</p>
       </div>
     </div>
 
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Coming Soon</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-1">
-        <p><strong>Simulation</strong> — One-click launch of ROS2 + Gazebo simulations with browser-based visualization.</p>
-        <p><strong>Fleet</strong> — Scale to multi-robot local fleets with Zenoh middleware and a fleet status dashboard.</p>
-        <p><strong>OpenShift Bridge</strong> — Export Podman configurations to Kubernetes manifests and deploy to OpenShift.</p>
+        <p><strong>Simulation</strong> — One-click launch of ROS2 + Gazebo with browser-based visualization (Story 2).</p>
+        <p><strong>Additional robots</strong> — Beyond TurtleBot3 (planned; see project plan).</p>
+        <p><strong>Fleet</strong> — Multi-robot local fleets with Zenoh.</p>
+        <p><strong>OpenShift Bridge</strong> — Export to Kubernetes / OpenShift.</p>
       </div>
     </div>
 

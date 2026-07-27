@@ -4,35 +4,42 @@ Podman Desktop extension for Physical AI robotics development. Provides a GUI-dr
 
 ## Features
 
-- **Image Catalog** — Browse and pull curated ROS2 base images from Quay.io with real-time download progress
-- **Build & Push Base Image** — Build the ROS2 Jazzy base image locally from a bundled Containerfile and push it to a registry. Cancel in-progress builds at any time.
-- **Simulation Setup** — Configure robot/distro/middleware/base image and build a TurtleBot3 + Gazebo simulation image. Cancel in-progress builds at any time.
-- **Help** — In-extension documentation covering all features
+- **Image Catalog** — Browse and pull ROS2 images from Quay.io (All or Curated view; allowlist configurable in Preferences)
+- **Image Builder** — Two-phase configure / build / push: Phase 1 base image (Humble or Jazzy), Phase 2 simulation image (Humble + TurtleBot3 + Gazebo today)
+- **Help** — In-extension documentation
+
+Current container bases are **Ubuntu interim** (official `ros` / OSRF / sloretz images). Fedora/RHEL migration is parked (APPENG-5809).
 
 ## Getting Started
 
 1. Install / load the extension in Podman Desktop
-2. Open **Physical AI** from the UI, or press **F1** and run **Physical AI: Open Dashboard**
-3. Browse the **Image Catalog**, use **Build & Push Base Image**, or configure **Simulation Setup**
-4. Adjust defaults under **Settings → Preferences → Physical AI** if needed
+2. Open **Physical AI**, or press **F1** → **Physical AI: Open Dashboard**
+3. Use **Image Builder** to build/push, and **Image Catalog** to browse/pull
+4. Adjust defaults under **Settings → Preferences → Physical AI**
 
 ## Settings
 
-Configure under **Settings → Preferences → Physical AI**:
+- **Default Namespace** — Quay.io namespace for catalog and image tags
+- **Catalog view mode** — `all` (default) or `curated`
+- **Catalog curated allowlist** — comma-separated repo name patterns (`*` wildcard), default `ros2-*-base,ros2-*-turtlebot3`
+- Image Builder wizard defaults (robot, distro, middleware, engine, base preset)
 
-- **Default Namespace** (`ecosystem-appeng`) — Quay.io namespace for catalog browsing and image tags
-- **Simulation Robot** (`turtlebot3`) — Robot type for simulation
-- **Simulation Distro** (`humble`) — ROS distro (only `humble` has a bundled simulation image)
-- **Simulation Middleware** (`dds`) — Middleware (`dds` or `zenoh`)
-- **Simulation Engine** (`gazebo`) — Simulation engine
-- **Simulation Base Image** (`sloretz`) — Base image preset: `sloretz` (multi-arch) or `osrf` (amd64 only)
+## Golden images to publish (demo / personal Quay)
+
+Build via Image Builder (or CLI against `assets/`), then push:
+
+| Role | Image |
+|------|--------|
+| Mac / multi-arch Humble base | `quay.io/<ns>/ros2-humble-base:sloretz` |
+| Linux amd64 Humble base | `quay.io/<ns>/ros2-humble-base:osrf` |
+| Jazzy headless base | `quay.io/<ns>/ros2-jazzy-base:latest` |
+| Humble sim (FROM sloretz base) | `quay.io/<ns>/ros2-humble-turtlebot3:sloretz` |
 
 ## Coming Soon
 
-- **Simulation launch** — One-click ROS2 + Gazebo with browser-based visualization (Story 2)
-- **Fleet** — Multi-robot local fleet with Zenoh middleware and status dashboard
-- **OpenShift Bridge** — Export Podman configurations to Kubernetes manifests and deploy to OpenShift
+- **Simulation** — One-click launch + browser viz (Story 2)
+- **Fleet** / **OpenShift Bridge** (stretch)
 
 ## Packaging note
 
-Bundled Containerfile contexts for in-extension builds live under `assets/` in this package.
+Bundled Containerfile contexts live under `assets/` in this package.
