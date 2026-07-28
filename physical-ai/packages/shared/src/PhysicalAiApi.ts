@@ -1,5 +1,6 @@
 import type { QuayRepository, QuayTag, PullProgress, BuildProgress, PushProgress } from './types/ImageCatalog';
 import type { SimulationConfig } from './types/SimulationConfig';
+import type { SimLaunchOptions, SimContainerInfo, ExecResult } from './types/SimulationContainer';
 
 export abstract class PhysicalAiApi {
   abstract getStatus(): Promise<string>;
@@ -13,6 +14,7 @@ export abstract class PhysicalAiApi {
   abstract cancelBuild(tag: string): Promise<void>;
   abstract getBuildProgress(tag: string): Promise<BuildProgress | null>;
   abstract pushImage(tag: string): Promise<void>;
+  abstract cancelPush(tag: string): Promise<void>;
   abstract getPushProgress(tag: string): Promise<PushProgress | null>;
   abstract getDefaultNamespace(): Promise<string>;
   abstract getHostArch(): Promise<string>;
@@ -21,4 +23,10 @@ export abstract class PhysicalAiApi {
   abstract getCatalogCuratedAllowlist(): Promise<string>;
   abstract getSimulationConfig(): Promise<SimulationConfig>;
   abstract saveSimulationConfig(config: SimulationConfig): Promise<void>;
+  abstract launchSimulation(imageTag: string, containerName: string, options?: SimLaunchOptions): Promise<string>;
+  abstract stopSimulation(containerId: string): Promise<void>;
+  abstract deleteSimulation(containerId: string): Promise<void>;
+  abstract listSimulationContainers(): Promise<SimContainerInfo[]>;
+  abstract execInSimulation(containerId: string, command: string[]): Promise<ExecResult>;
+  abstract openSimulationInBrowser(port: number): Promise<void>;
 }

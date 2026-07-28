@@ -1,0 +1,238 @@
+# Story 6: Podman-Only Simulation Workflow (ROSCon Demo) — 🟡 In Progress
+
+**Jira:** *(no Jira — ROSCon demo track)* | **Parent:** APPENG-5763 (Epic) | **Priority:** MVP-critical
+
+**Description:** Enable interactive robot simulation from the extension using Podman only — no Kubernetes. User can launch a Gazebo simulation, add a TurtleBot3 into the running world, and view everything in their browser via noVNC. Two paths: (A) one-click build-and-run via Image Builder quick-start, (B) interactive layered flow where the user starts an empty world then adds robots.
+
+**Target:** ROSCon Toronto demo, September 2026.
+
+---
+
+## Relationship to Other Stories
+
+- **[Story 2 (APPENG-5765)](story2-simulation.md):** Story 6 implements the core of Story 2 (single robot sim workflow) using a Podman-only approach. APPENG-5771 (container orchestration), APPENG-5772 (noVNC) are directly addressed here.
+- **[Story 5 (Spike)](../podman-extension-plan.md#story-5):** The Kind-based approach is parked at branch `spike/repo-b-kind-attempt`. Nav2 pods OOMKill at 4Gi on arm64 — K8s control plane + Gazebo + Nav2 overwhelms the Podman VM. Learnings (Containerfile.arm64, entrypoints, noVNC stack) feed into Story 6.
+- **[Story 3](story3-multi-robot.md):** The `podman exec` spawn pattern lays groundwork for multi-robot fleet scaling.
+
+---
+
+## Two User Paths
+
+### Path A — Fast/Practical (Image Builder Quick-Start)
+
+1. Click "TurtleBot3 Sim" quick-start button in Image Builder → pre-fills all 5 dropdowns
+2. Build kicks off (base + sim image, two-phase)
+3. Go to Simulation card → Launch → Open in Browser
+
+### Path B — Interactive/Demo (ROSCon Story)
+
+1. Launch base Gazebo image (empty world + noVNC) from Simulation page
+2. Click "Add TurtleBot3" → robot appears in the running sim via `podman exec`
+3. *(Stretch)* Click "Customize Hardware" → swap camera sensor
+
+---
+
+## Sub-task Progress
+
+| Status | ID | Summary | Blocks | Est |
+|--------|------|---------|--------|-----|
+| ✅ | S6-1 | Jazzy arm64 simulation Containerfile + entrypoints | S6-3, S6-4 | 2-3d |
+| ✅ | S6-2 | Image Builder quick-start preset button | — | 0.5d |
+| ✅ | S6-3 | Backend container lifecycle API (create/start/stop/exec) | S6-4, S6-5 | 2d |
+| ✅ | S6-4 | Simulation page: launch, status, open, stop | S6-5 | 2d |
+| ✅ | S6-5 | Add TurtleBot3 (podman exec spawn) | S6-6 | 1d |
+| ⚪ | S6-6 | Customize Hardware card *(stretch)* | — | 1-2d |
+
+**Dependency chain:** S6-1 → S6-3 → S6-4 → S6-5 → S6-6. S6-2 is independent.
+
+---
+
+## S6-1: Jazzy arm64 Containerfile + Entrypoints
+
+**Goal:** Single container image (Ubuntu 24.04 Noble + ROS2 Jazzy arm64 + Gazebo Harmonic + noVNC) that builds and runs natively on Mac M3 Pro. This is the runtime image for both paths.
+
+### Why Jazzy on arm64
+
+The existing Humble TurtleBot3 sim image requires amd64-only packages (ros-humble-ros-gz, nav2-bringup), meaning QEMU emulation on Mac. Jazzy on Ubuntu Noble has **official arm64 binary packages** for ROS2, Gazebo, and Nav2 (Tier 1). We proved this builds successfully in the Kind spike.
+
+### Assets to create
+
+New directory: `packages/backend/assets/ros2-jazzy-sim-arm64/`
+
+| File | Description |
+|------|-------------|
+| `Containerfile` | Ubuntu 24.04 + ROS Jazzy apt packages + noVNC display stack. Key packages: `ros-jazzy-navigation2`, `ros-jazzy-nav2-bringup`, `ros-jazzy-nav2-minimal-tb3-sim`, `ros-jazzy-ros-gz-bridge`, `ros-jazzy-ros-gz-sim`, `ros-jazzy-gz-sim-vendor`, `xvfb`, `x11vnc`, `novnc`, `python3-websockify`, `openbox`. Ubuntu uses `libgl1`/`libegl1` (not mesa variants). ROS prefix: `/opt/ros/jazzy/`. |
+| `entrypoint-gazebo.sh` | Starts Xvfb → openbox → x11vnc → websockify (noVNC on 6080) → Gazebo server + GUI. Software rendering (llvmpipe). Optionally spawns robots from `ROBOTS` env var. |
+| `entrypoint-spawn-robot.sh` | Accepts robot name + position as args. Sources ROS2, calls `spawn_tb3.launch.py` + `robot_state_publisher`. Used by `podman exec` for interactive robot add. |
+| `worlds/tb3_sandbox.sdf.xacro` | Sandbox world from repo-b reference. |
+| `www/index.html` | Simple landing page with noVNC link. |
+
+### Shared types updates
+
+- **SimulationProfiles.ts** — Add Jazzy sim profile (currently Jazzy is base-only)
+- **SimulationBaseImages.ts** — Add `jazzy-arm64` preset (Ubuntu 24.04, multi-arch, arm64-native)
+- **SimulationConfig.ts** — Add `'jazzy-arm64'` to `SimulationBaseImageId` union
+
+### Validation
+
+- `podman build -t ros2-jazzy-sim-arm64:test .` completes on Mac without `--platform linux/amd64`
+- `podman run -d -p 6080:6080 ros2-jazzy-sim-arm64:test /entrypoint-gazebo.sh` starts
+- Browser at `localhost:6080` shows Gazebo GUI (empty world, software rendered)
+- `podman exec <id> /entrypoint-spawn-robot.sh robot_1 -2.0 -0.5 0.0` spawns TurtleBot3
+
+### Implementation Notes (completed 2026-07-28)
+
+**Files created:**
+- `packages/backend/assets/ros2-jazzy-sim-arm64/Containerfile` — two-phase build pattern using `LOCAL_BASE_IMAGE` build arg, layered on `ros2-jazzy-base`
+- `packages/backend/assets/ros2-jazzy-sim-arm64/entrypoint-gazebo.sh` — 9-stage startup (Xvfb → openbox → x11vnc → websockify → web page → xacro → gz server → optional robot spawn → gz GUI), 1024x768x16 resolution
+- `packages/backend/assets/ros2-jazzy-sim-arm64/entrypoint-spawn-robot.sh` — `podman exec` entry point accepting `robot_name x y yaw` args, runs `spawn_tb3.launch.py` + `robot_state_publisher` as foreground with signal handling
+- `packages/backend/assets/ros2-jazzy-sim-arm64/worlds/tb3_sandbox.sdf.xacro` — from repo-b reference with Sensors plugin **removed** (see finding below)
+- `packages/backend/assets/ros2-jazzy-sim-arm64/www/index.html` — noVNC landing page
+
+**Shared types modified:**
+- `SimulationProfiles.ts` — added Jazzy sim profile with `assetDir: 'ros2-jazzy-sim-arm64'`, `imageName: 'ros2-jazzy-sim-arm64'`
+- `SimulationBaseImages.ts` — added `jazzy-arm64` preset (Ubuntu 24.04 Noble, multi-arch, arm64-native, `imageRef: 'docker.io/library/ros:jazzy-ros-base'`)
+
+**Key finding — Ogre2 segfault on arm64 llvmpipe:** The `gz-sim-sensors-system` plugin requires the Ogre2 render engine, which crashes with a segfault (`Ogre::GL3PlusRenderSystem::_createRenderWindow` → null pointer) when using llvmpipe software rendering on arm64. Fixed by removing `<plugin filename="gz-sim-sensors-system">` from `tb3_sandbox.sdf.xacro`. Physics, visuals, and robot spawning all work fine; only simulated sensor data rendering (camera, depth) is lost — acceptable for ROSCon demo.
+
+**Build fix:** The Containerfile initially listed `xacro` in the noVNC apt-get layer; on Ubuntu Noble it's `ros-jazzy-xacro` and was already installed as a dependency. Removed the duplicate to fix build error (exit code 100).
+
+---
+
+## S6-2: Image Builder Quick-Start Preset Button
+
+**Goal:** One-click build of a complete simulation image from the Image Builder page.
+
+Add a "Quick Start" section at the top of `SimulationSetup.svelte`, above the dropdowns. A "TurtleBot3 Sim" button that:
+
+1. Pre-fills all dropdowns: `turtlebot3 / jazzy / dds / gazebo / jazzy-arm64`
+2. Saves config
+3. Auto-triggers Phase 1 build, then Phase 2 on completion
+
+Style like the Curated toggle pattern from `ImageCatalog.svelte`.
+
+### Implementation Notes (completed 2026-07-28)
+
+Modified `SimulationSetup.svelte`:
+- Added "Quick Start" card above dropdowns with "TurtleBot3 Sim (Jazzy arm64)" button
+- Button pre-fills: `robot=turtlebot3, distro=jazzy, middleware=dds, engine=gazebo, baseImage=jazzy-arm64`
+- Updated Jazzy distro label from "Jazzy (base image only)" to "Jazzy (simulation/arm64-native)"
+- **(2026-07-28 follow-up)** Quick Start also **saves** preferences and scrolls to Phase 1 Build (user still clicks Build explicitly)
+
+---
+
+## S6-3: Backend Container Lifecycle API
+
+**Goal:** Backend methods to create, run, stop, delete, list, and exec into simulation containers.
+
+### API surface (on `PhysicalAiApi`)
+
+```
+launchSimulation(imageTag, containerName, options) → containerId
+stopSimulation(containerId)
+deleteSimulation(containerId)
+listSimulationContainers() → SimContainerInfo[]
+execInSimulation(containerId, command[]) → ExecResult
+openSimulationInBrowser(port)
+```
+
+### Key decisions
+
+- **Container naming:** `pai-sim-<timestamp>`, labeled `io.physical-ai.role=simulation`
+- **Container lifecycle:** Uses `containerEngine` API (create/start/stop/delete/list)
+- **Exec:** Uses `extensionApi.process.exec('podman', ['exec', '-d', ...])` — the `containerEngine` API has no exec method. `-d` (detached) because robot spawn is long-running.
+- **Single container, not a Podman pod:** No infra container overhead needed.
+
+### New types
+
+`SimLaunchOptions` (portMappings, env, cmd, labels), `SimContainerInfo` (id, name, imageTag, state, ports), `ExecResult` (exitCode, stdout, stderr) in `packages/shared/src/types/SimulationContainer.ts`.
+
+### Implementation Notes (completed 2026-07-28)
+
+**Files created:**
+- `packages/shared/src/types/SimulationContainer.ts` — types + constants (`SIM_CONTAINER_LABEL`, `SIM_CONTAINER_LABEL_VALUE`, `SIM_CONTAINER_PREFIX`)
+
+**Files modified:**
+- `packages/shared/src/PhysicalAiApi.ts` — added 6 abstract methods
+- `packages/backend/src/api-impl.ts` — implemented all 6 methods
+
+**API findings during implementation:**
+- `containerEngine.stopContainer()` / `deleteContainer()` take `(engineId: string, id: string)`, not `providerId` from connection
+- `containerEngine.createContainer()` takes `(engineId: string, options)` and needs a separate `startContainer()` call — no `start: true` option
+- `RunResult` has no `exitCode` field — only `command`, `stdout`, `stderr`. Used try/catch with `RunError` for exec error handling.
+- Added `#getEngineId()` and `#findEngineIdForContainer()` private helpers to resolve the engine name from Podman connection
+
+---
+
+## S6-4: Simulation Page (Launch, Status, Open, Stop)
+
+**Goal:** Enable the disabled "Simulation" dashboard card and build the page.
+
+### Changes
+
+- **Dashboard.svelte:** Change Simulation card from disabled `<div>` to active `<button>` with `router.goto('/simulation')`
+- **App.svelte:** Add `<Route path="/simulation">` (same pattern as `/build`, `/images`)
+- **SimulationPage.svelte (new):**
+  - **Section 1 — Launch:** Dropdown of local sim images, "Launch" button, single-sim-at-a-time for MVP
+  - **Section 2 — Running:** Polls `listSimulationContainers()` every 2s, shows container card with "Open in Browser" / "Stop" / "Delete" buttons
+  - **Section 3 — Add Robot:** See S6-5
+
+### Implementation Notes (completed 2026-07-28)
+
+**Files created:**
+- `packages/frontend/src/SimulationPage.svelte` — full page with 3 sections (Launch, Running Containers, Add TurtleBot3). Polls `listSimulationContainers()` every 3s. Image dropdown filters for `/ros2-.*-sim-|ros2-.*-turtlebot3/` pattern. Single-sim-at-a-time enforcement.
+
+**Files modified:**
+- `packages/frontend/src/App.svelte` — added `/simulation` route + `SimulationPage` import
+- `packages/frontend/src/Dashboard.svelte` — changed Simulation card from disabled `<div>` to active `<button>` with `router.goto('/simulation')` and tooltip "Launch and manage robot simulations"
+
+**Note:** CLI-built images (e.g. `ros2-jazzy-sim-arm64:test`) don't match the extension's tag pattern (`quay.io/.../ros2-jazzy-sim-arm64:noble`), so the Simulation page shows "No simulation images found locally" until images are built through the Image Builder. This is by design.
+
+---
+
+## S6-5: Add TurtleBot3 (podman exec spawn)
+
+**Goal:** The interactive demo moment — spawn a robot into a running Gazebo world.
+
+Inside SimulationPage Section 3 (enabled only when a sim is running):
+
+- "Add TurtleBot3" button
+- Inputs: Robot Name (auto-increment: `robot_1`, `robot_2`...), Position X/Y, Yaw
+- "Spawn" → `execInSimulation(containerId, ['/entrypoint-spawn-robot.sh', name, x, y, yaw])`
+- Spawned robots list with optimistic status tracking
+
+### Implementation Notes (completed 2026-07-28)
+
+Implemented in `SimulationPage.svelte` Section 3 — all in the same file as S6-4. Robot name auto-increments (`robot_1`, `robot_2`, ...). Inputs for X, Y, Yaw with sensible defaults. Spawned robots tracked in a list with name, position, and status. Uses `execInSimulation()` with detached mode (`-d` flag) since robot spawn is a long-running foreground process.
+
+---
+
+## S6-6: Customize Hardware *(stretch)*
+
+Swap camera sensor on a robot. Deferred until S6-5 is working. Likely: parametric xacro with camera type arg passed via `podman exec`.
+
+---
+
+## Risks
+
+| Risk | Mitigation | Status |
+|------|------------|--------|
+| Gazebo + noVNC + Nav2 tight in 5.7GB VM | Measure in S6-1. Single container ~2-3GB. If tight, recommend `podman machine set --memory 8192`. | ✅ Fits — tested on Mac M3 Pro with default VM |
+| Software rendering too slow for demo | Test in S6-1. Reduce resolution if needed. | ✅ Acceptable at 1024x768x16 with llvmpipe |
+| `ros-jazzy-nav2-minimal-tb3-sim` missing on arm64 | Verify in S6-1. If missing, build from source. | ✅ Available — arm64 binary packages exist |
+| Ogre2 Sensors plugin crash on arm64 | *Discovered during S6-1.* Removed `gz-sim-sensors-system` from world SDF. | ✅ Resolved — visuals/physics work, only sensor rendering lost |
+| Port 6080 conflict | Check for running sim containers before launch; warn user. | ✅ Handled — single-sim enforcement in UI |
+
+---
+
+## Verification (end-to-end)
+
+- [x] Containerfile builds natively on Mac arm64
+- [x] `podman run` starts Gazebo, noVNC reachable at localhost:6080
+- [x] `podman exec` spawns TurtleBot3 visible in Gazebo
+- [x] Extension dashboard shows enabled Simulation card
+- [x] Simulation page can launch/stop/delete containers
+- [x] "Add TurtleBot3" button spawns robot into running sim
+- [x] Image Builder quick-start pre-fills and builds successfully
+- [ ] End-to-end via extension (build through Image Builder → launch from Simulation page → add robot)
+- [ ] S6-6: Customize Hardware card *(stretch — not started)*

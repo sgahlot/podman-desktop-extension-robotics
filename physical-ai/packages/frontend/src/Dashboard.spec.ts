@@ -65,7 +65,14 @@ describe('Dashboard', () => {
   it('marks Fleet as coming soon', () => {
     render(Dashboard);
     const comingSoon = screen.getAllByText('Coming soon');
-    expect(comingSoon).toHaveLength(2);
+    expect(comingSoon).toHaveLength(1);
+  });
+
+  it('navigates to Simulation on click', async () => {
+    render(Dashboard);
+    const btn = screen.getByText('Simulation');
+    await fireEvent.click(btn);
+    expect(mockGoto).toHaveBeenCalledWith('/simulation');
   });
 
   it('navigates to Image Builder on click', async () => {

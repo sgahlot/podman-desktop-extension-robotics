@@ -8,6 +8,7 @@ import Dashboard from './Dashboard.svelte';
 import ImageCatalog from './ImageCatalog.svelte';
 import Help from './Help.svelte';
 import ImageBuilder from './SimulationSetup.svelte';
+import SimulationPage from './SimulationPage.svelte';
 
 router.mode.hash();
 
@@ -33,6 +34,9 @@ onMount(() => {
       </Route>
       <Route path="/build" breadcrumb="Image Builder">
         <ImageBuilder />
+      </Route>
+      <Route path="/simulation" breadcrumb="Simulation">
+        <SimulationPage />
       </Route>
     </div>
   </main>

@@ -8,12 +8,16 @@ import {
 } from './SimulationBaseImages';
 
 describe('SimulationBaseImages', () => {
-  it('defines all presets with digest-pinned image refs', () => {
-    expect(SIMULATION_BASE_IMAGES).toHaveLength(3);
+  it('defines presets with image refs and tags', () => {
+    expect(SIMULATION_BASE_IMAGES.length).toBeGreaterThanOrEqual(4);
     for (const preset of SIMULATION_BASE_IMAGES) {
-      expect(preset.imageRef).toMatch(/@sha256:[a-f0-9]{64}$/);
-      expect(preset.id.length).toBeLessThanOrEqual(8);
+      expect(preset.imageRef.length).toBeGreaterThan(0);
+      expect(preset.imageTag.length).toBeGreaterThan(0);
       expect(preset.distro).toBeTruthy();
+      // Digest-pinned presets end with @sha256:…; jazzy-arm64 may use a floating tag for multi-arch.
+      if (preset.id !== 'jazzy-arm64') {
+        expect(preset.imageRef).toMatch(/@sha256:[a-f0-9]{64}$/);
+      }
     }
   });
 
@@ -37,12 +41,20 @@ describe('SimulationBaseImages', () => {
     expect(resolveSimulationBaseImage('sloretz').architectures).toContain('arm64');
   });
 
-  it('resolves the jazzy preset', () => {
+  it('resolves the jazzy amd64 preset', () => {
     const preset = resolveSimulationBaseImage('jazzy');
     expect(preset.id).toBe('jazzy');
     expect(preset.distro).toBe('jazzy');
     expect(preset.imageRef).toContain('ros:jazzy-ros-base');
     expect(preset.architectures).toEqual(['amd64']);
+    expect(preset.imageTag).toBe('latest');
+  });
+
+  it('resolves the jazzy-arm64 noble preset', () => {
+    const preset = resolveSimulationBaseImage('jazzy-arm64');
+    expect(preset.id).toBe('jazzy-arm64');
+    expect(preset.architectures).toContain('arm64');
+    expect(preset.imageTag).toBe('noble');
   });
 
   it('filters presets by distro', () => {
@@ -51,15 +63,15 @@ describe('SimulationBaseImages', () => {
     expect(humble.every(p => p.distro === 'humble')).toBe(true);
 
     const jazzy = baseImagesForDistro('jazzy');
-    expect(jazzy).toHaveLength(1);
-    expect(jazzy[0].id).toBe('jazzy');
+    expect(jazzy).toHaveLength(2);
+    expect(jazzy.map(p => p.id)).toEqual(['jazzy-arm64', 'jazzy']);
 
     expect(baseImagesForDistro('rolling')).toHaveLength(0);
   });
 
   it('returns distro-appropriate default base image', () => {
     expect(defaultBaseImageForDistro('humble')).toBe('sloretz');
-    expect(defaultBaseImageForDistro('jazzy')).toBe('jazzy');
+    expect(defaultBaseImageForDistro('jazzy')).toBe('jazzy-arm64');
     expect(defaultBaseImageForDistro('rolling')).toBe(DEFAULT_SIMULATION_BASE_IMAGE);
   });
 });

@@ -14,6 +14,8 @@
 | ⚪ | APPENG-5772 | Integrate noVNC or web-based video stream for simulation visualization |
 | ⚪ | APPENG-5773 | Build topic monitor panel showing active ROS2 topics and message rates |
 
+> **See also:** [Story 6 (Podman-only simulation)](story6-podman-sim.md) implements the core of this story (APPENG-5771 container orchestration + APPENG-5772 noVNC) using a Podman-only approach for the ROSCon demo.
+
 ---
 
 ## APPENG-5771: Container Orchestration for ROS2 + Gazebo — ⚪ Not Started

@@ -41,5 +41,6 @@ export interface PushProgress {
   logs: string[];
   done?: boolean;
   error?: string;
+  cancelled?: boolean;
 }
 

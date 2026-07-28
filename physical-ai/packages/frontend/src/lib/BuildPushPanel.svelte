@@ -19,6 +19,9 @@ let inputValue = tag;
 let lastSyncedTag = tag;
 
 let imageExistsLocally = false;
+/** null = not checked / N/A; true/false = Quay tag presence for quay.io refs */
+let imageExistsInRegistry: boolean | null = null;
+let registryCheckError = false;
 
 let building = false;
 let buildDone = false;
@@ -32,6 +35,8 @@ let logs: string[] = [];
 let pushing = false;
 let pushDone = false;
 let pushError = '';
+let pushCancelled = false;
+let pushCancelling = false;
 let pushStatus = 'Pushing...';
 let pushDigest = '';
 
@@ -43,6 +48,8 @@ let logContainer: HTMLDivElement;
 async function checkLocalImage(imageTag: string = inputValue) {
   if (!imageTag) {
     imageExistsLocally = false;
+    imageExistsInRegistry = null;
+    registryCheckError = false;
     return;
   }
   try {
@@ -50,6 +57,32 @@ async function checkLocalImage(imageTag: string = inputValue) {
     imageExistsLocally = localImages.includes(imageTag);
   } catch {
     imageExistsLocally = false;
+  }
+  await checkRegistryImage(imageTag);
+}
+
+/** Parse quay.io/ns/name:tag — other registries are not checked. */
+function parseQuayRef(imageTag: string): { namespace: string; name: string; tag: string } | null {
+  const match = imageTag.match(/^quay\.io\/([^/]+)\/([^:]+):(.+)$/);
+  if (!match) return null;
+  return { namespace: match[1], name: match[2], tag: match[3] };
+}
+
+async function checkRegistryImage(imageTag: string = inputValue) {
+  const ref = parseQuayRef(imageTag);
+  if (!ref) {
+    imageExistsInRegistry = null;
+    registryCheckError = false;
+    return;
+  }
+  try {
+    const tags = await physicalAiClient.getImageTags(ref.namespace, ref.name);
+    imageExistsInRegistry = tags.some(t => t.name === ref.tag);
+    registryCheckError = false;
+  } catch {
+    // Private repos or network errors — Quay public API often returns 401/404
+    imageExistsInRegistry = null;
+    registryCheckError = true;
   }
 }
 
@@ -106,6 +139,8 @@ async function startPush() {
   pushing = true;
   pushDone = false;
   pushError = '';
+  pushCancelled = false;
+  pushCancelling = false;
   pushDigest = '';
   pushStatus = 'Pushing...';
 
@@ -115,6 +150,23 @@ async function startPush() {
   } catch (e) {
     pushing = false;
     pushError = e instanceof Error ? e.message : typeof e === 'string' ? e : 'Push failed to start';
+  }
+}
+
+async function cancelPush() {
+  if (!inputValue || pushCancelling || !pushing) return;
+  pushCancelling = true;
+  try {
+    await physicalAiClient.cancelPush(inputValue);
+    stopPolling();
+    pushing = false;
+    pushDone = true;
+    pushCancelled = true;
+    pushError = 'Push cancelled';
+    pushCancelling = false;
+  } catch (e) {
+    pushCancelling = false;
+    pushError = e instanceof Error ? e.message : typeof e === 'string' ? e : 'Failed to cancel push';
   }
 }
 
@@ -153,9 +205,13 @@ function startPolling(mode: 'build' | 'push') {
             stopPolling();
             pushing = false;
             pushDone = true;
+            pushCancelling = false;
+            pushCancelled = !!progress.cancelled;
             if (progress.error) {
               pushError = progress.error;
             } else {
+              imageExistsInRegistry = true;
+              registryCheckError = false;
               const digestLine = progress.logs.find(l => l.includes('digest:'));
               if (digestLine) {
                 const match = digestLine.match(/digest:\s*(sha256:\w+)/);
@@ -188,6 +244,8 @@ function reset() {
   totalSteps = 0;
   pushDone = false;
   pushError = '';
+  pushCancelled = false;
+  pushCancelling = false;
   pushDigest = '';
   checkLocalImage();
 }
@@ -261,6 +319,22 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
     <div class="text-xs pai-text-success">
       &#10003; Image exists locally: <span class="font-mono">{inputValue}</span>
     </div>
+  {/if}
+
+  {#if !building && !pushing}
+    {#if imageExistsInRegistry === true}
+      <div class="text-xs pai-text-success">
+        &#10003; Image exists in registry: <span class="font-mono">{inputValue}</span>
+      </div>
+    {:else if imageExistsInRegistry === false}
+      <div class="text-xs pai-text-muted">
+        Not found in registry yet — push when ready
+      </div>
+    {:else if registryCheckError}
+      <div class="text-xs pai-text-muted">
+        Registry status unavailable (private repo or Quay unreachable)
+      </div>
+    {/if}
   {/if}
 
   {#if building || buildDone}
@@ -343,7 +417,16 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
   {#if pushing || pushDone}
     <div class="flex flex-col gap-3 mt-2">
       {#if pushing}
-        <div class="text-xs pai-text-accent">{pushStatus}</div>
+        <div class="flex flex-row items-center gap-3">
+          <button
+            on:click={cancelPush}
+            disabled={pushCancelling}
+            class="pai-btn pai-btn-danger"
+          >
+            {pushCancelling ? 'Cancelling...' : 'Cancel push'}
+          </button>
+          <span class="text-xs pai-text-accent">{pushStatus}</span>
+        </div>
         <div class="pai-progress-track">
           <div class="push-progress-bar pai-progress-fill" style="width: 30%;"></div>
         </div>
@@ -351,7 +434,14 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
 
       {#if pushDone}
         <div class="flex flex-row items-center gap-3">
-          {#if pushError}
+          {#if pushCancelled}
+            <div class="text-sm p-3 rounded pai-banner-warning">
+              Push cancelled
+            </div>
+            <button on:click={startPush} class="pai-link pai-link-sm">
+              Retry push
+            </button>
+          {:else if pushError}
             <div class="text-sm p-3 rounded pai-banner-error">
               Push failed: {pushError}
             </div>

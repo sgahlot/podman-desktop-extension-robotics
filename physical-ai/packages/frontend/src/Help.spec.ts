@@ -19,6 +19,7 @@ describe('Help', () => {
     expect(screen.getByText('Getting Started')).toBeTruthy();
     expect(screen.getAllByText('Image Catalog').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('Image Builder').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Simulation').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Tips')).toBeTruthy();
     expect(screen.getByText('Coming Soon')).toBeTruthy();
     expect(screen.getByText('Golden Quay images')).toBeTruthy();

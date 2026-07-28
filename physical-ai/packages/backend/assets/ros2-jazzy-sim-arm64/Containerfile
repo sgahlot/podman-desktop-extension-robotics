@@ -1,0 +1,68 @@
+# Jazzy arm64-native simulation image: TurtleBot3 + Gazebo Harmonic + Nav2 + noVNC.
+# Builds on top of the locally-built ros2-jazzy-base image.
+#
+# LOCAL_BASE_IMAGE must point to a locally-built ros2-jazzy-base tag.
+# The extension passes this automatically during the two-phase build.
+ARG LOCAL_BASE_IMAGE
+FROM ${LOCAL_BASE_IMAGE}
+
+LABEL org.opencontainers.image.title="ROS2 Jazzy TurtleBot3 Simulation (arm64)" \
+      org.opencontainers.image.description="ROS2 Jazzy with TurtleBot3, Gazebo Harmonic, Nav2, and noVNC for simulation" \
+      org.opencontainers.image.vendor="Red Hat" \
+      org.opencontainers.image.source="https://github.com/redhat-appeng/physical-ai"
+
+# Gazebo Harmonic package repository (Ubuntu Noble)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    lsb-release wget gnupg \
+    && wget -q https://packages.osrfoundation.org/gazebo.gpg \
+         -O /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] http://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" \
+         > /etc/apt/sources.list.d/gazebo-stable.list \
+    && rm -rf /var/lib/apt/lists/*
+
+# ROS2 Jazzy simulation + Nav2 packages (Tier 1 arm64 binaries on Ubuntu Noble)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-jazzy-navigation2 \
+    ros-jazzy-nav2-bringup \
+    ros-jazzy-nav2-minimal-tb3-sim \
+    ros-jazzy-teleop-twist-keyboard \
+    ros-jazzy-ros-gz-bridge \
+    ros-jazzy-ros-gz-sim \
+    ros-jazzy-gz-sim-vendor \
+    && rm -rf /var/lib/apt/lists/*
+
+# noVNC display stack: Xvfb + x11vnc + websockify + openbox
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libegl1 \
+    mesa-utils \
+    xvfb \
+    x11vnc \
+    novnc \
+    python3-websockify \
+    openbox \
+    xterm \
+    python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
+
+# noVNC auto-connect landing page
+RUN printf '<!DOCTYPE html>\n<html><head><meta http-equiv="refresh" content="0;url=vnc_lite.html?autoconnect=true&resize=scale"></head></html>\n' \
+    > /usr/share/novnc/index.html
+
+WORKDIR /opt/ros2-demo
+
+COPY entrypoint-gazebo.sh /entrypoint-gazebo.sh
+COPY entrypoint-spawn-robot.sh /entrypoint-spawn-robot.sh
+COPY worlds/ /opt/ros2-demo/worlds/
+COPY www/ /opt/ros2-demo/www/
+
+RUN chmod +x /entrypoint-gazebo.sh /entrypoint-spawn-robot.sh
+
+ENV TURTLEBOT3_MODEL=waffle
+
+EXPOSE 6080 8080
+
+ENTRYPOINT ["/bin/bash"]
+CMD ["bash"]

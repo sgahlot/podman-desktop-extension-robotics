@@ -8,7 +8,7 @@ Podman Desktop extension for Physical AI robotics development.
 | `packages/frontend` | Svelte webview UI |
 | `packages/shared` | Shared types and RPC helpers |
 
-Current ROS bases are **Ubuntu interim** (not Fedora yet). See backend README for Image Builder / Catalog and the four golden Quay images.
+Current ROS bases are **Ubuntu interim** (not Fedora yet). See backend README for Image Builder / Catalog / Simulation and the golden Quay images (including `ros2-jazzy-sim-arm64:noble`).
 
 ## Development
 

@@ -8,9 +8,10 @@ import {
 
 describe('CatalogCurated', () => {
   it('parses comma-separated patterns with trimming', () => {
-    expect(parseCuratedAllowlist(' ros2-*-base , ros2-*-turtlebot3 ')).toEqual([
+    expect(parseCuratedAllowlist(' ros2-*-base , ros2-*-turtlebot3 , ros2-*-sim-* ')).toEqual([
       'ros2-*-base',
       'ros2-*-turtlebot3',
+      'ros2-*-sim-*',
     ]);
   });
 
@@ -24,6 +25,7 @@ describe('CatalogCurated', () => {
     expect(repoMatchesAllowlist('ros2-humble-base', patterns)).toBe(true);
     expect(repoMatchesAllowlist('ros2-jazzy-base', patterns)).toBe(true);
     expect(repoMatchesAllowlist('ros2-humble-turtlebot3', patterns)).toBe(true);
+    expect(repoMatchesAllowlist('ros2-jazzy-sim-arm64', patterns)).toBe(true);
     expect(repoMatchesAllowlist('aiobs-foo', patterns)).toBe(false);
   });
 
@@ -32,10 +34,12 @@ describe('CatalogCurated', () => {
       { name: 'ros2-humble-base' },
       { name: 'other-tool' },
       { name: 'ros2-humble-turtlebot3' },
+      { name: 'ros2-jazzy-sim-arm64' },
     ];
     expect(filterCuratedRepos(repos, DEFAULT_CURATED_ALLOWLIST).map(r => r.name)).toEqual([
       'ros2-humble-base',
       'ros2-humble-turtlebot3',
+      'ros2-jazzy-sim-arm64',
     ]);
   });
 });

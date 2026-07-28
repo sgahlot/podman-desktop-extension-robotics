@@ -3,6 +3,8 @@ import * as extensionApi from '@podman-desktop/api';
 import type { PhysicalAiApi } from '/@shared/src/PhysicalAiApi';
 import type { QuayRepository, QuayTag, PullProgress, BuildProgress, PushProgress } from '/@shared/src/types/ImageCatalog';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
+import type { SimLaunchOptions, SimContainerInfo, ExecResult } from '/@shared/src/types/SimulationContainer';
+import { SIM_CONTAINER_LABEL, SIM_CONTAINER_LABEL_VALUE, SIM_CONTAINER_PREFIX } from '/@shared/src/types/SimulationContainer';
 import { formatSimulationConfig, resolveSimulationProfile } from '/@shared/src/types/SimulationProfiles';
 import { resolveSimulationBaseImage } from '/@shared/src/types/SimulationBaseImages';
 import { appendProgressLog } from './progressLogs';
@@ -18,7 +20,20 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   private activeBuilds = new Map<string, BuildProgress>();
   private buildAbortControllers = new Map<string, AbortController>();
   private activePushes = new Map<string, PushProgress>();
+  private pushAbortControllers = new Map<string, AbortController>();
   private progressCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /**
+   * Podman Desktop hosts accept an optional AbortController as the 5th pushImage
+   * argument (abortSignal on the registry stream). The published API types omit it.
+   */
+  static readonly #pushImageWithAbort = extensionApi.containerEngine.pushImage as (
+    engineId: string,
+    imageId: string,
+    callback: (name: string, data: string) => void,
+    authInfo?: unknown,
+    abortController?: AbortController,
+  ) => Promise<void>;
 
   constructor(extensionContext: ExtensionContext) {
     this.extensionContext = extensionContext;
@@ -72,8 +87,43 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async listLocalImages(): Promise<string[]> {
-    const images = await extensionApi.containerEngine.listImages();
-    return images.flatMap(img => img.RepoTags ?? []);
+    const fromEngine = await this.#listLocalImagesFromEngine();
+    // Always merge CLI listing. Podman 5 / PD often return ImageInfo with null RepoTags
+    // and without Names, so engine-only listing looks empty even when `podman images` is not.
+    const fromCli = await this.#listLocalImagesFromPodmanCli();
+    return [...new Set([...fromEngine, ...fromCli])];
+  }
+
+  async #listLocalImagesFromEngine(): Promise<string[]> {
+    try {
+      const images = await extensionApi.containerEngine.listImages();
+      const tags = images.flatMap(img => {
+        const repoTags = img.RepoTags?.filter(Boolean) ?? [];
+        if (repoTags.length > 0) return repoTags;
+        const names = (img as { Names?: string[] | null }).Names;
+        return names?.filter(Boolean) ?? [];
+      });
+      return [...new Set(tags)];
+    } catch {
+      return [];
+    }
+  }
+
+  async #listLocalImagesFromPodmanCli(): Promise<string[]> {
+    try {
+      const result = await extensionApi.process.exec('podman', [
+        'images',
+        '--format',
+        '{{.Repository}}:{{.Tag}}',
+      ]);
+      const lines = (result.stdout ?? '')
+        .split('\n')
+        .map(l => l.trim())
+        .filter(l => l.length > 0 && !l.includes('<none>'));
+      return [...new Set(lines)];
+    } catch {
+      return [];
+    }
   }
 
   #getRunningPodmanConnection() {
@@ -301,7 +351,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     if (!profile) {
       throw new Error(
         `No base image profile for ${formatSimulationConfig(config)}. ` +
-          'Supported: humble/turtlebot3/dds/gazebo.',
+          'Supported: humble/turtlebot3/dds/gazebo and jazzy/turtlebot3/dds/gazebo.',
       );
     }
     const baseImage = resolveSimulationBaseImage(config.baseImage);
@@ -315,7 +365,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     if (!profile) {
       throw new Error(
         `No simulation image available for ${formatSimulationConfig(config)}. ` +
-          'Supported: humble/turtlebot3/dds/gazebo.',
+          'Supported: humble/turtlebot3/dds/gazebo and jazzy/turtlebot3/dds/gazebo.',
       );
     }
     if (!profile.assetDir) {
@@ -358,7 +408,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async getCatalogCuratedAllowlist(): Promise<string> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    return config.get<string>('catalogCuratedAllowlist') ?? 'ros2-*-base,ros2-*-turtlebot3';
+    return config.get<string>('catalogCuratedAllowlist') ?? 'ros2-*-base,ros2-*-turtlebot3,ros2-*-sim-*';
   }
 
   async getSimulationConfig(): Promise<SimulationConfig> {
@@ -383,6 +433,118 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     await pdConfig.update('simulationBaseImage', config.baseImage);
   }
 
+  #getEngineId(): string {
+    const podmanConnection = this.#getRunningPodmanConnection();
+    return podmanConnection.connection.name;
+  }
+
+  async launchSimulation(imageTag: string, containerName: string, options?: SimLaunchOptions): Promise<string> {
+    const engineId = this.#getEngineId();
+    const name = containerName || `${SIM_CONTAINER_PREFIX}${Date.now()}`;
+    const labels: Record<string, string> = {
+      [SIM_CONTAINER_LABEL]: SIM_CONTAINER_LABEL_VALUE,
+      ...options?.labels,
+    };
+
+    const portMappings = options?.portMappings ?? [
+      { hostPort: 6080, containerPort: 6080 },
+      { hostPort: 8080, containerPort: 8080 },
+    ];
+
+    const env: Record<string, string> = {
+      LIBGL_ALWAYS_SOFTWARE: '1',
+      GALLIUM_DRIVER: 'llvmpipe',
+      ...options?.env,
+    };
+
+    const envArray = Object.entries(env).map(([k, v]) => `${k}=${v}`);
+
+    const createResult = await extensionApi.containerEngine.createContainer(
+      engineId,
+      {
+        name,
+        Image: imageTag,
+        Cmd: options?.cmd ?? ['/entrypoint-gazebo.sh'],
+        Env: envArray,
+        Labels: labels,
+        HostConfig: {
+          PortBindings: Object.fromEntries(
+            portMappings.map(p => [
+              `${p.containerPort}/${p.protocol ?? 'tcp'}`,
+              [{ HostPort: String(p.hostPort) }],
+            ]),
+          ),
+        },
+      },
+    );
+
+    await extensionApi.containerEngine.startContainer(engineId, createResult.id);
+    return createResult.id;
+  }
+
+  async stopSimulation(containerId: string): Promise<void> {
+    const engineId = await this.#findEngineIdForContainer(containerId);
+    await extensionApi.containerEngine.stopContainer(engineId, containerId);
+  }
+
+  async deleteSimulation(containerId: string): Promise<void> {
+    const engineId = await this.#findEngineIdForContainer(containerId);
+    try {
+      await extensionApi.containerEngine.stopContainer(engineId, containerId);
+    } catch {
+      // already stopped
+    }
+    await extensionApi.containerEngine.deleteContainer(engineId, containerId);
+  }
+
+  async #findEngineIdForContainer(containerId: string): Promise<string> {
+    const containers = await extensionApi.containerEngine.listContainers();
+    const match = containers.find(c => c.Id === containerId || c.Id.startsWith(containerId));
+    if (match) return match.engineId;
+    return this.#getEngineId();
+  }
+
+  async listSimulationContainers(): Promise<SimContainerInfo[]> {
+    const containers = await extensionApi.containerEngine.listContainers();
+    return containers
+      .filter(c => c.Labels?.[SIM_CONTAINER_LABEL] === SIM_CONTAINER_LABEL_VALUE)
+      .map(c => ({
+        id: c.Id,
+        name: c.Names?.[0]?.replace(/^\//, '') ?? c.Id.slice(0, 12),
+        imageTag: c.Image ?? '',
+        state: (c.State === 'running' ? 'running'
+          : c.State === 'exited' ? 'exited'
+          : c.State === 'stopped' ? 'stopped'
+          : 'unknown') as SimContainerInfo['state'],
+        ports: (c.Ports ?? []).map(
+          p => `${p.PublicPort ?? ''}:${p.PrivatePort ?? ''}/${p.Type ?? 'tcp'}`,
+        ),
+        labels: c.Labels ?? {},
+      }));
+  }
+
+  async execInSimulation(containerId: string, command: string[]): Promise<ExecResult> {
+    try {
+      const result = await extensionApi.process.exec('podman', ['exec', '-d', containerId, ...command]);
+      return {
+        exitCode: 0,
+        stdout: result.stdout ?? '',
+        stderr: result.stderr ?? '',
+      };
+    } catch (err: unknown) {
+      const runErr = err as { exitCode?: number; stdout?: string; stderr?: string; message?: string };
+      return {
+        exitCode: runErr.exitCode ?? 1,
+        stdout: runErr.stdout ?? '',
+        stderr: runErr.stderr ?? runErr.message ?? String(err),
+      };
+    }
+  }
+
+  async openSimulationInBrowser(port: number): Promise<void> {
+    await extensionApi.env.openExternal(extensionApi.Uri.parse(`http://localhost:${port}`));
+  }
+
   async pushImage(tag: string): Promise<void> {
     const images = await extensionApi.containerEngine.listImages();
     const imageInfo = images.find(img => img.RepoTags?.includes(tag));
@@ -391,18 +553,27 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       throw new Error(`Image not found locally: ${tag}`);
     }
 
+    const existing = this.pushAbortControllers.get(tag);
+    if (existing) {
+      existing.abort();
+      this.pushAbortControllers.delete(tag);
+    }
+
+    const abortController = new AbortController();
+    this.pushAbortControllers.set(tag, abortController);
+
     this.activePushes.set(tag, {
       tag,
       status: 'Pushing...',
       logs: [],
     });
 
-    extensionApi.containerEngine.pushImage(
+    PhysicalAiApiImpl.#pushImageWithAbort(
       imageInfo.engineId,
       tag,
       (name: string, data: string) => {
         const progress = this.activePushes.get(tag);
-        if (!progress) return;
+        if (!progress || progress.done) return;
 
         if (name === 'end' || name === 'first-message') return;
 
@@ -425,21 +596,63 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
           }
         }
       },
+      undefined,
+      abortController,
     ).then(() => {
+      this.pushAbortControllers.delete(tag);
       const progress = this.activePushes.get(tag);
-      if (progress) {
-        progress.status = 'Complete';
-        progress.done = true;
+      if (progress && !progress.done) {
+        if (abortController.signal.aborted || progress.cancelled) {
+          progress.status = 'Cancelled';
+          progress.cancelled = true;
+          progress.done = true;
+          progress.error = 'Push cancelled';
+          appendProgressLog(progress.logs, 'Push cancelled by user');
+        } else {
+          progress.status = 'Complete';
+          progress.done = true;
+        }
       }
       this.#scheduleProgressCleanup(this.activePushes, tag, 'push');
     }).catch((err: unknown) => {
+      this.pushAbortControllers.delete(tag);
       const progress = this.activePushes.get(tag);
-      if (progress) {
-        progress.status = 'Failed';
-        progress.done = true;
-        progress.error = err instanceof Error ? err.message : String(err);
+      if (progress && !progress.done) {
+        if (abortController.signal.aborted || progress.cancelled) {
+          progress.status = 'Cancelled';
+          progress.cancelled = true;
+          progress.done = true;
+          progress.error = 'Push cancelled';
+          appendProgressLog(progress.logs, 'Push cancelled by user');
+        } else {
+          progress.status = 'Failed';
+          progress.done = true;
+          progress.error = err instanceof Error ? err.message : String(err);
+        }
       }
       this.#scheduleProgressCleanup(this.activePushes, tag, 'push');
     });
+  }
+
+  async cancelPush(tag: string): Promise<void> {
+    const abortController = this.pushAbortControllers.get(tag);
+    const progress = this.activePushes.get(tag);
+
+    if (!progress || progress.done) {
+      return;
+    }
+
+    progress.cancelled = true;
+    progress.done = true;
+    progress.status = 'Cancelled';
+    progress.error = 'Push cancelled';
+    appendProgressLog(progress.logs, 'Cancel requested — push aborted');
+
+    if (abortController) {
+      this.pushAbortControllers.delete(tag);
+      abortController.abort();
+    }
+
+    this.#scheduleProgressCleanup(this.activePushes, tag, 'push');
   }
 }

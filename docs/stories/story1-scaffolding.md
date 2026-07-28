@@ -136,7 +136,7 @@ Containerfile                                     # Updated to COPY assets into 
 ### What was done
 
 - Image Catalog page browsing Quay.io namespace with paginated repository listing
-- **All | Curated** view toggle (default **All**); curated allowlist preference (`ros2-*-base,ros2-*-turtlebot3` by default)
+- **All | Curated** view toggle (default **All**); curated allowlist preference (`ros2-*-base,ros2-*-turtlebot3,ros2-*-sim-*` by default)
 - Client-side name filter for repositories
 - Expandable repo rows showing tags with size, date, and digest
 - Pull images from Quay via Podman with real-time progress bar (fire-and-forget + polling pattern)

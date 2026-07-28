@@ -3,6 +3,7 @@ import {
   resolveSimulationProfile,
   hasSimulationSupport,
   simulationImageTag,
+  baseImageTag,
   formatSimulationConfig,
   SIMULATION_PROFILES,
 } from './SimulationProfiles';
@@ -33,21 +34,29 @@ describe('SimulationProfiles', () => {
     ).toBeUndefined();
   });
 
-  it('resolves the jazzy base-only profile', () => {
-    const profile = resolveSimulationProfile({ ...supported, distro: 'jazzy', baseImage: 'jazzy' });
+  it('resolves the jazzy simulation profile', () => {
+    const profile = resolveSimulationProfile({
+      ...supported,
+      distro: 'jazzy',
+      baseImage: 'jazzy-arm64',
+    });
     expect(profile).toBeDefined();
     expect(profile!.baseAssetDir).toBe('ros2-jazzy-base');
     expect(profile!.baseImageName).toBe('ros2-jazzy-base');
-    expect(profile!.assetDir).toBeUndefined();
-    expect(profile!.imageName).toBeUndefined();
+    expect(profile!.assetDir).toBe('ros2-jazzy-sim-arm64');
+    expect(profile!.imageName).toBe('ros2-jazzy-sim-arm64');
   });
 
   it('reports simulation support correctly', () => {
     const humble = resolveSimulationProfile(supported)!;
     expect(hasSimulationSupport(humble)).toBe(true);
 
-    const jazzy = resolveSimulationProfile({ ...supported, distro: 'jazzy', baseImage: 'jazzy' })!;
-    expect(hasSimulationSupport(jazzy)).toBe(false);
+    const jazzy = resolveSimulationProfile({
+      ...supported,
+      distro: 'jazzy',
+      baseImage: 'jazzy-arm64',
+    })!;
+    expect(hasSimulationSupport(jazzy)).toBe(true);
   });
 
   it('builds the image tag from the profile and base image preset', () => {
@@ -57,7 +66,20 @@ describe('SimulationProfiles', () => {
     expect(
       simulationImageTag('ecosystem-appeng', { ...supported, baseImage: 'osrf' }),
     ).toBe('quay.io/ecosystem-appeng/ros2-humble-turtlebot3:osrf');
-    expect(simulationImageTag('ecosystem-appeng', { ...supported, distro: 'jazzy', baseImage: 'jazzy' })).toBeUndefined();
+    expect(
+      simulationImageTag('ecosystem-appeng', {
+        ...supported,
+        distro: 'jazzy',
+        baseImage: 'jazzy-arm64',
+      }),
+    ).toBe('quay.io/ecosystem-appeng/ros2-jazzy-sim-arm64:noble');
+    expect(
+      baseImageTag('ecosystem-appeng', {
+        ...supported,
+        distro: 'jazzy',
+        baseImage: 'jazzy-arm64',
+      }),
+    ).toBe('quay.io/ecosystem-appeng/ros2-jazzy-base:noble');
   });
 
   it('formats config for error messages', () => {

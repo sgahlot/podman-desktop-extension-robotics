@@ -40,7 +40,9 @@ export const SIMULATION_PROFILES: readonly SimulationProfile[] = [
     engine: 'gazebo',
     baseAssetDir: 'ros2-jazzy-base',
     baseImageName: 'ros2-jazzy-base',
-    label: 'ROS2 Jazzy Base (simulation not yet available)',
+    assetDir: 'ros2-jazzy-sim-arm64',
+    imageName: 'ros2-jazzy-sim-arm64',
+    label: 'ROS2 Jazzy + TurtleBot3 + Gazebo + noVNC (arm64-native)',
   },
 ];
 

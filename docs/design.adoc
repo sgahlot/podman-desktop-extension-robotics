@@ -258,7 +258,7 @@ Phase 2 Build & Push   ──► buildSimulationImage (FROM local base; Humble T
 ----
 Default view mode = All (preference: physical-ai.catalogViewMode)
 Curated allowlist   = comma-separated patterns (preference: physical-ai.catalogCuratedAllowlist)
-                      default: ros2-*-base,ros2-*-turtlebot3
+                      default: ros2-*-base,ros2-*-turtlebot3,ros2-*-sim-*
 Toggle in UI        ──► setCatalogViewMode; filter via CatalogCurated helpers
 ----
 

@@ -20,6 +20,9 @@ vi.mock('@podman-desktop/api', () => ({
     buildImage: vi.fn(),
     pushImage: vi.fn(),
   },
+  process: {
+    exec: vi.fn(),
+  },
   configuration: {
     getConfiguration: vi.fn(),
   },
@@ -139,6 +142,10 @@ describe('PhysicalAiApiImpl', () => {
   });
 
   describe('listLocalImages', () => {
+    beforeEach(() => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({ stdout: '', stderr: '', command: 'podman' } as any);
+    });
+
     it('returns flattened RepoTags from all images', async () => {
       vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
         { RepoTags: ['quay.io/ns/img1:latest', 'quay.io/ns/img1:v1'] },
@@ -161,6 +168,52 @@ describe('PhysicalAiApiImpl', () => {
 
       const result = await api.listLocalImages();
       expect(result).toEqual(['quay.io/ns/img:latest']);
+    });
+
+    it('falls back to Names when RepoTags is null (Podman 5)', async () => {
+      vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
+        {
+          RepoTags: null,
+          Names: ['quay.io/sgahlot/ros2-jazzy-base:latest'],
+        },
+        {
+          RepoTags: undefined,
+          Names: [
+            'quay.io/sgahlot/ros2-humble-turtlebot3:latest',
+            'quay.io/ecosystem-appeng/ros2-humble-turtlebot3:latest',
+          ],
+        },
+      ] as any);
+
+      const result = await api.listLocalImages();
+      expect(result).toEqual([
+        'quay.io/sgahlot/ros2-jazzy-base:latest',
+        'quay.io/sgahlot/ros2-humble-turtlebot3:latest',
+        'quay.io/ecosystem-appeng/ros2-humble-turtlebot3:latest',
+      ]);
+    });
+
+    it('merges podman CLI image list when engine tags are empty', async () => {
+      vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
+        { RepoTags: null },
+        { RepoTags: [] },
+      ] as any);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: 'quay.io/sgahlot/ros2-jazzy-base:latest\nquay.io/sgahlot/ros2-humble-turtlebot3:latest\n',
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      const result = await api.listLocalImages();
+      expect(result).toEqual([
+        'quay.io/sgahlot/ros2-jazzy-base:latest',
+        'quay.io/sgahlot/ros2-humble-turtlebot3:latest',
+      ]);
+      expect(extensionApi.process.exec).toHaveBeenCalledWith('podman', [
+        'images',
+        '--format',
+        '{{.Repository}}:{{.Tag}}',
+      ]);
     });
   });
 
@@ -561,11 +614,32 @@ describe('PhysicalAiApiImpl', () => {
       expect(extensionApi.containerEngine.buildImage).not.toHaveBeenCalled();
     });
 
-    it('rejects jazzy simulation build with descriptive error', async () => {
-      await expect(
-        api.buildSimulationImage('sim-tag:latest', { ...supportedConfig, distro: 'jazzy', baseImage: 'jazzy' as any }),
-      ).rejects.toThrow(/Simulation images are not yet available for jazzy/);
-      expect(extensionApi.containerEngine.buildImage).not.toHaveBeenCalled();
+    it('builds jazzy simulation image with LOCAL_BASE_IMAGE :noble', async () => {
+      const mockConnection = createMockConnection();
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([mockConnection] as any);
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue('ecosystem-appeng'),
+      } as any);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({
+        fsPath: '/fake/assets/ros2-jazzy-sim-arm64',
+      } as any);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
+
+      await api.buildSimulationImage('sim-tag:noble', {
+        ...supportedConfig,
+        distro: 'jazzy',
+        baseImage: 'jazzy-arm64' as any,
+      });
+
+      expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
+        '/fake/assets/ros2-jazzy-sim-arm64',
+        expect.any(Function),
+        expect.objectContaining({
+          buildargs: {
+            LOCAL_BASE_IMAGE: 'quay.io/ecosystem-appeng/ros2-jazzy-base:noble',
+          },
+        }),
+      );
     });
   });
 
@@ -598,7 +672,7 @@ describe('PhysicalAiApiImpl', () => {
       });
     });
 
-    it('passes engineId and tag to pushImage', async () => {
+    it('passes engineId, tag, and AbortController to pushImage', async () => {
       vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
         { engineId: 'eng1', RepoTags: ['my-img:latest'] },
       ] as any);
@@ -610,7 +684,35 @@ describe('PhysicalAiApiImpl', () => {
         'eng1',
         'my-img:latest',
         expect.any(Function),
+        undefined,
+        expect.any(AbortController),
       );
+    });
+
+    it('cancelPush marks the push cancelled immediately and aborts', async () => {
+      vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
+        { engineId: 'eng1', RepoTags: ['my-img:latest'] },
+      ] as any);
+
+      let aborted = false;
+      vi.mocked(extensionApi.containerEngine.pushImage).mockImplementation(
+        (_eng: any, _tag: any, _cb: any, _auth: any, abortController?: AbortController) =>
+          new Promise(() => {
+            abortController?.signal.addEventListener('abort', () => {
+              aborted = true;
+            });
+          }),
+      );
+
+      await api.pushImage('my-img:latest');
+      await api.cancelPush('my-img:latest');
+
+      const progress = await api.getPushProgress('my-img:latest');
+      expect(aborted).toBe(true);
+      expect(progress!.cancelled).toBe(true);
+      expect(progress!.done).toBe(true);
+      expect(progress!.status).toBe('Cancelled');
+      expect(progress!.error).toBe('Push cancelled');
     });
 
     it('parses JSON status from callback data', async () => {

@@ -389,7 +389,8 @@ onDestroy(() => {
       <div class="text-sm p-3 rounded pai-banner-warning">
         {#if viewMode === 'curated'}
           No curated repositories matched <span class="font-mono">{curatedAllowlist}</span> in this namespace.
-          Switch to All, or push the golden images (see Help), or edit the allowlist in Preferences.
+          Switch to All, or push <strong>public</strong> golden images (see Help), or edit the allowlist in Preferences.
+          Private Quay repos are not listed (Catalog uses the public Quay API).
         {:else}
           No repositories match the name filter.
         {/if}

@@ -1,6 +1,6 @@
 <script lang="ts">
 import { physicalAiClient } from './api/client';
-import { onMount } from 'svelte';
+import { onMount, tick } from 'svelte';
 import { router } from 'tinro';
 import BuildPushPanel from './lib/BuildPushPanel.svelte';
 import {
@@ -110,6 +110,18 @@ async function save() {
     saving = false;
   }
 }
+
+async function applyQuickStart() {
+  robot = 'turtlebot3';
+  distro = 'jazzy';
+  middleware = 'dds';
+  engine = 'gazebo';
+  baseImage = 'jazzy-arm64';
+  // Let reactive tags update before save
+  await tick();
+  await save();
+  document.getElementById('phase1-build')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
@@ -124,6 +136,20 @@ async function save() {
   {#if loading}
     <div class="text-sm text-[var(--pd-content-text)]">Loading configuration...</div>
   {:else}
+    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-md">
+      <h2 class="text-sm font-medium text-[var(--pd-content-header)] mb-2">Quick Start</h2>
+      <p class="text-xs text-[var(--pd-content-text)] mb-3">
+        Configure TurtleBot3 + Jazzy arm64, save preferences, and jump to Phase 1 Build.
+      </p>
+      <button
+        on:click={applyQuickStart}
+        disabled={buildBusy || saving}
+        class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] cursor-pointer hover:border-[var(--pd-content-header)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        TurtleBot3 Sim (Jazzy arm64)
+      </button>
+    </div>
+
     <div class="flex flex-col gap-4 max-w-md">
 
       <div class="flex flex-col gap-1">
@@ -150,7 +176,7 @@ async function save() {
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
         >
           <option value="humble">Humble (simulation/desktop)</option>
-          <option value="jazzy">Jazzy (base image only)</option>
+          <option value="jazzy">Jazzy (simulation/arm64-native)</option>
         </select>
       </div>
 
@@ -252,15 +278,13 @@ async function save() {
 
     <hr class="border-[var(--pd-content-card-border)] my-2" />
 
-    <h2 class="text-xl text-[var(--pd-content-header)]">Phase 1: Build & Push Base Image</h2>
+    <h2 id="phase1-build" class="text-xl text-[var(--pd-content-header)]">Phase 1: Build & Push Base Image</h2>
 
     {#if profile && baseTag}
       <p class="text-sm text-[var(--pd-content-text)]">
         Builds <span class="font-mono">{profile.baseAssetDir}</span> — ROS2 {distro} + build tools.
         {#if simSupported}
           This is the FROM layer for the simulation image below.
-        {:else}
-          Simulation images for {distro} are not yet available.
         {/if}
       </p>
 
@@ -269,14 +293,14 @@ async function save() {
         bind:busy={baseBusy}
         buildImage={t => physicalAiClient.buildBaseImage(t, currentConfig)}
         onBuildComplete={() => { baseImageExists = true; }}
-        tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-humble-base:sloretz"
+        tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-base:noble"
         tagInputId="baseTag"
       />
     {:else}
       <p class="text-sm p-3 rounded pai-banner-error">
         Cannot build: no base image Containerfile is bundled for
         <span class="font-mono">{distro}/{robot}/{middleware}/{engine}</span>.
-        Choose a supported combination (currently Humble + TurtleBot3 + DDS + Gazebo).
+        Choose a supported combination (Humble or Jazzy + TurtleBot3 + DDS + Gazebo).
       </p>
     {/if}
 
@@ -292,7 +316,7 @@ async function save() {
       {:else}
         <p class="text-sm text-[var(--pd-content-text)]">
           Builds <span class="font-mono">{profile.assetDir}</span> on top of the base image —
-          adds Gazebo, Nav2, and TurtleBot3.
+          Gazebo, Nav2, TurtleBot3 packages, and noVNC. Launch starts an empty world; add robots from the Simulation page.
         </p>
       {/if}
 
@@ -300,7 +324,7 @@ async function save() {
         bind:tag={simTag}
         bind:busy={simBusy}
         buildImage={t => physicalAiClient.buildSimulationImage(t, currentConfig)}
-        tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-humble-turtlebot3:sloretz"
+        tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-sim-arm64:noble"
         tagInputId="simTag"
         disabled={!baseImageExists}
       />

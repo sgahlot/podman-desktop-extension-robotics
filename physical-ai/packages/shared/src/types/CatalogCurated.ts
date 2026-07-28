@@ -8,7 +8,7 @@ export const DEFAULT_CATALOG_VIEW_MODE = 'all' as const;
 export type CatalogViewMode = 'all' | 'curated';
 
 export const DEFAULT_CURATED_ALLOWLIST =
-  'ros2-*-base,ros2-*-turtlebot3';
+  'ros2-*-base,ros2-*-turtlebot3,ros2-*-sim-*';
 
 export function parseCuratedAllowlist(raw: string | undefined | null): string[] {
   if (!raw?.trim()) {
