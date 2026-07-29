@@ -38,6 +38,9 @@ async function loadImages() {
 async function pollContainers() {
   try {
     containers = await physicalAiClient.listSimulationContainers();
+    if (containers.some(c => c.state === 'running')) {
+      launchError = '';
+    }
   } catch {
     // keep previous state
   }
@@ -54,7 +57,7 @@ onDestroy(() => {
 });
 
 async function launchSim() {
-  if (!selectedImage) return;
+  if (!selectedImage || hasRunning) return;
   launching = true;
   launchError = '';
   try {
@@ -64,7 +67,12 @@ async function launchSim() {
     robotName = 'robot_1';
     await pollContainers();
   } catch (e) {
-    launchError = e instanceof Error ? e.message : String(e);
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/already started|304/.test(msg)) {
+      await pollContainers();
+    } else {
+      launchError = msg;
+    }
   } finally {
     launching = false;
   }

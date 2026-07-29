@@ -433,13 +433,19 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     await pdConfig.update('simulationBaseImage', config.baseImage);
   }
 
-  #getEngineId(): string {
-    const podmanConnection = this.#getRunningPodmanConnection();
-    return podmanConnection.connection.name;
+  async #getEngineId(imageTag?: string): Promise<string> {
+    if (imageTag) {
+      const images = await extensionApi.containerEngine.listImages();
+      const match = images.find(img => img.RepoTags?.includes(imageTag));
+      if (match) return match.engineId;
+    }
+    const containers = await extensionApi.containerEngine.listContainers();
+    if (containers.length > 0) return containers[0].engineId;
+    throw new Error('no engine matching this container');
   }
 
   async launchSimulation(imageTag: string, containerName: string, options?: SimLaunchOptions): Promise<string> {
-    const engineId = this.#getEngineId();
+    const engineId = await this.#getEngineId(imageTag);
     const name = containerName || `${SIM_CONTAINER_PREFIX}${Date.now()}`;
     const labels: Record<string, string> = {
       [SIM_CONTAINER_LABEL]: SIM_CONTAINER_LABEL_VALUE,
