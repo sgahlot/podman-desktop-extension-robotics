@@ -316,7 +316,7 @@ async function applyQuickStart() {
       {:else}
         <p class="text-sm text-[var(--pd-content-text)]">
           Builds <span class="font-mono">{profile.assetDir}</span> on top of the base image —
-          Gazebo, Nav2, TurtleBot3 packages, and noVNC. Launch starts an empty world; add robots from the Simulation page.
+          Gazebo, Nav2, and TurtleBot3 packages (plus noVNC for Jazzy arm64). Launch starts an empty world; add robots from the Simulation page.
         </p>
       {/if}
 

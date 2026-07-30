@@ -35,7 +35,7 @@ import { router } from 'tinro';
           <strong>Browse repositories</strong> — Enter a Quay.io namespace and click Load. Expand any repository to see tags with size, date, and digest.
         </div>
         <div>
-          <strong>All vs Curated</strong> — Default view is <strong>All</strong> (every public repo in the namespace). Switch to <strong>Curated</strong> to show only names matching the allowlist (default <span class="font-mono">ros2-*-base,ros2-*-turtlebot3,ros2-*-sim-*</span>). Both the default view and the allowlist are configurable under Settings &rarr; Preferences &rarr; Physical AI (comma-separated patterns; <span class="font-mono">*</span> is a wildcard).
+          <strong>All vs Curated</strong> — Default view is <strong>All</strong> (every <strong>public</strong> repo in the namespace; private Quay repos are not listed without auth). Switch to <strong>Curated</strong> to show only names matching the allowlist (default <span class="font-mono">ros2-*-base,ros2-*-turtlebot3,ros2-*-sim-*</span>). Both the default view and the allowlist are configurable under Settings &rarr; Preferences &rarr; Physical AI (comma-separated patterns; <span class="font-mono">*</span> is a wildcard).
         </div>
         <div>
           <strong>Filter</strong> — Use "Filter by name" to further narrow the list.
@@ -44,7 +44,7 @@ import { router } from 'tinro';
           <strong>Pull images</strong> — Click Pull on any tag. Progress shows aggregated layer download status.
         </div>
         <div>
-          <strong>Locally Available</strong> — Collapsible section lists images from this namespace already present locally.
+          <strong>Locally Available</strong> — Collapsible section lists images from this namespace already present locally (engine listing plus <span class="font-mono">podman images</span> merge so Podman 5 empty <span class="font-mono">RepoTags</span> still show up).
         </div>
       </div>
     </div>
@@ -65,7 +65,7 @@ import { router } from 'tinro';
           <strong>Phase 2: Simulation Image</strong> — Layers Gazebo, Nav2, TurtleBot3 (and noVNC for Jazzy arm64) on your Phase 1 local base. Disabled until the base exists locally.
         </div>
         <div>
-          <strong>Cancel / Push</strong> — Cancel aborts an in-progress build. Push requires registry login via Podman Desktop &rarr; Settings &rarr; Registries.
+          <strong>Cancel / Push</strong> — Cancel aborts an in-progress <strong>build</strong> or <strong>push</strong>. Push requires registry login via Podman Desktop &rarr; Settings &rarr; Registries. Image Builder also shows whether the current <span class="font-mono">quay.io/…</span> tag exists on Quay (public repos only; private repos show as unavailable).
         </div>
       </div>
     </div>

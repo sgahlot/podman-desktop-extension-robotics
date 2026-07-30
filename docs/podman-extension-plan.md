@@ -47,9 +47,9 @@ Drivers:
 | [Spike](#story-5) | Local-first deployment of reference demos | 🅿️ Parked (Kind OOM) | 0/6 proposed |
 | [Story 6](#story-6) | Podman-only simulation workflow (ROSCon demo) | 🟡 In Progress | 5/6 done |
 
-> **Legend:** ✅ Done · 🟡 In Progress / Almost Done · ⚪ Not Started
+> **Legend:** ✅ Done · 🟡 In Progress / Almost Done · ⚪ Not Started · 🅿️ Parked
 
-**Last updated:** 2026-07-29
+**Last updated:** 2026-07-30
 
 ---
 
@@ -74,15 +74,28 @@ Drivers:
 | ✅ | APPENG-5768 | Scaffold Podman Desktop extension with TypeScript/Svelte boilerplate | Set up the Podman Desktop extension project structure, registration, and basic navigation shell. |
 | ✅ | APPENG-5769 | Build and publish ROS2 Jazzy base image to Quay | Ubuntu 24.04 interim (`ros:jazzy-ros-base`). Build/push via Image Builder Phase 1. Follow-ups parked (5809/5810). |
 | ✅ | APPENG-5770 | Implement image catalog UI with pull and status indicators | Browse Quay namespace; All (default) or Curated view; allowlist in Preferences; pull + local status. |
-| ✅ | APPENG-5808 | Project creation wizard and simulation image setup | Image Builder: two-phase build (Humble base+sim / Jazzy base-only). TurtleBot3 + Gazebo for Humble. Persist selections for Story 2. |
+| ✅ | APPENG-5808 | Project creation wizard and simulation image setup | Image Builder: two-phase build (Humble base+sim; Jazzy base + arm64 sim). TurtleBot3 + Gazebo. Persist selections for Story 2 / Story 6. |
 
 ##### APPENG-5808 Implementation Parts
 
 | Status | Part | Summary |
 |--------|------|---------|
-| ✅ | Part 1 | Simulation + base Containerfiles under `packages/backend/assets/` (`ros2-humble-base`, `ros2-humble-turtlebot3`, `ros2-jazzy-base`) |
+| ✅ | Part 1 | Simulation + base Containerfiles under `packages/backend/assets/` (`ros2-humble-base`, `ros2-humble-turtlebot3`, `ros2-jazzy-base`, `ros2-jazzy-sim-arm64`) |
 | ✅ | Part 2 | Image Builder UI — dropdowns for robot/distro/middleware/engine/base preset; Dashboard card first; prefs persistence |
 | ✅ | Part 3 | Wire Build & Push — Phase 1 base + Phase 2 simulation (`FROM` local base); progress/cancel/push |
+
+##### Why two-phase build (base + simulation)?
+
+The Image Builder splits the build into a **base image** (Phase 1) and a **simulation image** (Phase 2) that layers on top via `FROM $LOCAL_BASE_IMAGE`. This is a practical optimization, not a hard technical requirement — a single Containerfile would work.
+
+| Benefit | Detail |
+|---------|--------|
+| **Build speed** | The base image (ROS2 core, ~1–2 GB of apt packages) rarely changes. When you modify an entrypoint, world file, or noVNC config, only the sim layer rebuilds (~5 min) instead of the full ROS2 install (~15–20 min). |
+| **Shared foundation** | Multiple sim images share the same base. Today: Humble base + Humble TurtleBot3 sim, Jazzy base + Jazzy arm64 sim. Future robot types layer on the same base without rebuilding ROS2. |
+| **Smaller pushes** | If the base is already on Quay, pushing a new sim variant only transfers the diff layers (Gazebo + Nav2 + noVNC), not the entire ROS2 stack. |
+| **Non-simulation use** | The base image works standalone for headless ROS2 development, CI pipelines, or robots that don't need Gazebo/noVNC. |
+
+If you only ever build one sim image and never reuse the base, the two-phase split is overhead for no gain. It pays off with multiple images sharing a common ROS2 layer or frequent iteration on the sim layer.
 
 ##### Story 1 publish checklist (golden Quay images)
 
@@ -207,16 +220,17 @@ Stories follow a natural dependency chain:
 ```
 Story 1 (Scaffolding + images)  ──  Foundation; must be first  ✅
     │
-    ├── Story 5 (Reference demo spikes → internalize)
-    │       │       Learn from existing repos, then own everything
-    │       │       (can run in parallel with Story 2)
+    ├── Story 6 (Podman-only sim) ──  ROSCon demo path  🟡 (S6-1–S6-5 done)
+    │       └── Implements Story 2 core (APPENG-5771 / 5772)
+    │
+    ├── Story 5 (Reference demo spikes → internalize)  🅿️ Parked (Kind OOM on arm64)
+    │       │       Branch: spike/repo-b-kind-attempt — resume later for K8s/OpenShift
     │       ├── S5-1/S5-2  spike local Kind/Minikube
     │       ├── S5-3       internalize: own Containerfiles, Helm, Zenoh configs
     │       ├── S5-4       catalog our images
     │       └── S5-5/S5-6  deploy-to-local + OpenShift wizards ──► feeds Stories 3–4
     │
-    ├── Story 2 (Single robot)  ──  Core demo flow
-    │       │                       Repo B is a working reference
+    ├── Story 2 (Single robot)  ──  5771/5772 done via Story 6; 5773 (topic monitor) open
     │       ▼
     │   Story 3 (Multi-robot)   ──  Stretch; Repo A (OpenRMF) + Repo B (Zenoh) inform this
     │
@@ -225,8 +239,9 @@ Story 1 (Scaffolding + images)  ──  Foundation; must be first  ✅
 
 | Priority | Scope | Issues |
 |----------|--------|--------|
-| **MVP-critical** (ROSCon demo) | Stories 1–2 | 6 sub-tasks (`APPENG-5768`–`5773`) |
-| **High value / parallel** | Story 5 | 6 proposed tasks (S5-1 through S5-6, no Jira yet) |
+| **MVP-critical** (ROSCon demo) | Stories 1 + 6 (+ Story 2 via 5771/5772) | Image Builder, Catalog, Simulation launch/spawn/noVNC |
+| **Remaining Story 2** | APPENG-5773 | Topic monitor panel |
+| **Parked** | Story 5 | Kind spike; resume for K8s/OpenShift path |
 | **Stretch** | Stories 3–4 | 6 sub-tasks (`APPENG-5774`–`5779`), including docs |
 
 ---
@@ -245,12 +260,7 @@ Now that the scaffold (APPENG-5768) is complete, sub-tasks have fine-grained dep
     ├── ✅ APPENG-5808 (Wizard + sim images)
     ├── APPENG-5773 (Topic monitor UI)   ◀── independent, can use mock data
     │
-    ├── S5-1 (Spike: Repo B locally)     ◀── CAN START NOW, parallel with Story 2
-    │   └── S5-2 (Spike: Repo A locally) ◀── after S5-1 (apply learnings)
-    │       └── S5-3 (Internalize: own Containerfiles, Helm, Zenoh configs)
-    │           ├── S5-4 (Catalog our images)
-    │           ├── S5-5 (Deploy-to-local wizard) ──► feeds APPENG-5778 (Kind)
-    │           └── S5-6 (Deploy-to-OpenShift)    ──► feeds APPENG-5777 (K8s manifests)
+    ├── 🅿️ S5-1…S5-6 (Story 5 Kind/OpenShift spike) ── PARKED (branch spike/repo-b-kind-attempt)
     │
     └── ✅ APPENG-5771 (ROS2+Gazebo orchestration) ── DONE via Story 6
             │
@@ -276,9 +286,9 @@ Stories 1 and 6 (S6-1–S6-5) are complete. APPENG-5771 and APPENG-5772 are done
 | APPENG-5773 | Topic monitor panel | Svelte frontend, ROS2 topic APIs (or mocks) |
 | APPENG-5774 | Multi-robot orchestration | Podman, multi-container, scales from Story 6 single-robot |
 | APPENG-5777 | K8s manifest generation | Podman config export, K8s YAML |
-| S5-1 | Spike: run Repo B (multi-robot) locally on Mac/Kind | Podman, Kind, Helm, Jazzy, Zenoh; watch amd64-on-arm64 |
-| S5-2 | Spike: run Repo A (OpenRMF office) locally | Podman scripts first, then Helm/Kind; Jazzy+RMF |
 | S6-6 | Customize Hardware card (stretch) | Xacro parametric, podman exec |
+
+**Parked (not ready-now):** Story 5 S5-1…S5-6 — Kind OOM on arm64; resume from `spike/repo-b-kind-attempt` when tackling K8s/OpenShift.
 
 **Story 1 follow-ons (optional polish):** additional robot types in Image Builder; curated Catalog demos against published golden Quay tags.
 
@@ -333,12 +343,12 @@ A Miro board would be useful for a team kickoff/planning session where people ne
 | ⚪ | APPENG-5777 | Sub-task | APPENG-5767 | Generate K8s manifests from running Podman pod configuration |
 | ⚪ | APPENG-5778 | Sub-task | APPENG-5767 | Kind cluster integration for local validation |
 | ⚪ | APPENG-5779 | Sub-task | APPENG-5767 | Getting-started guide for the full workflow |
-| ⚪ | S5-1 | Sub-task | Story 5 | Spike: run Repo B (multi-robot TurtleBot3) locally on Mac |
-| ⚪ | S5-2 | Sub-task | Story 5 | Spike: run Repo A (OpenRMF demos) locally on Mac |
-| ⚪ | S5-3 | Sub-task | Story 5 | Internalize: own Containerfiles, Helm charts, entrypoints, Zenoh configs |
-| ⚪ | S5-4 | Sub-task | Story 5 | Catalog internalized images in Image Catalog |
-| ⚪ | S5-5 | Sub-task | Story 5 | Extension: deploy-to-local wizard (Kind / Minikube) |
-| ⚪ | S5-6 | Sub-task | Story 5 | Extension: deploy-to-OpenShift path |
+| 🅿️ | S5-1 | Sub-task | Story 5 | Spike: run Repo B (multi-robot TurtleBot3) locally on Mac |
+| 🅿️ | S5-2 | Sub-task | Story 5 | Spike: run Repo A (OpenRMF demos) locally on Mac |
+| 🅿️ | S5-3 | Sub-task | Story 5 | Internalize: own Containerfiles, Helm charts, entrypoints, Zenoh configs |
+| 🅿️ | S5-4 | Sub-task | Story 5 | Catalog internalized images in Image Catalog |
+| 🅿️ | S5-5 | Sub-task | Story 5 | Extension: deploy-to-local wizard (Kind / Minikube) |
+| 🅿️ | S5-6 | Sub-task | Story 5 | Extension: deploy-to-OpenShift path |
 | 🅿️ | APPENG-5809 | Sub-task | APPENG-5764 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora |
 | 🅿️ | APPENG-5810 | Sub-task | APPENG-5764 | Add rviz2/desktop variant of the base image |
 
@@ -384,9 +394,11 @@ Captured during initial scaffold implementation.
 
 <a id="story-5"></a>
 
-## Story 5: Local-first deployment of reference demos — ⚪ Not Started
+## Story 5: Local-first deployment of reference demos — 🅿️ Parked (Kind OOM)
 
-> **No Jira keys yet.** Create tasks when work begins.
+> **No Jira keys yet.** Create tasks when work resumes.
+>
+> **Status (2026-07-28):** Kind spike parked on branch `spike/repo-b-kind-attempt` after Nav2 OOMKill (~4 Gi) on arm64. **Story 6** is the ROSCon Podman-only path. Resume Story 5 when tackling K8s / OpenShift.
 >
 > **Research note (2026-07-27):** Both reference repos were reviewed independently against this story. Goal and ownership model are sound; details below incorporate corrections (especially Repo A distro) and Mac/Kind spike risks that were previously under-specified.
 
@@ -402,7 +414,7 @@ This bridges Story 2 (single-robot sim) and Story 4 (OpenShift bridge) by learni
 
 **Ownership model:** Reference repos are **learning material only** — no runtime dependency after the spikes. Internalize Helm charts, Containerfiles, entrypoints, Zenoh configs, noVNC patterns, and demo scripts into our repo (`packages/backend/assets/` and/or a top-level `deploy/`). We own build, catalog, and deploy.
 
-**Relation to Story 1:** Story 1 golden images are Ubuntu interim **Humble** (TB3 sim) / Jazzy base. These demos are primarily **Jazzy**-era stacks (see below). Treat Story 5 as a **parallel track** that informs Stories 2–4; converge images/distros only after spikes decide what we keep.
+**Relation to Story 1 / Story 6:** Story 1 golden images include Humble (TB3 sim) and Jazzy base + `ros2-jazzy-sim-arm64:noble`. Story 6 already shipped APPENG-5771/5772 on Podman using spike learnings — Story 5 internalization (S5-3) is **not** required for that path. Resume Story 5 for Kind/Helm/OpenShift; converge images/distros when those spikes decide what to keep.
 
 ### Reference Repos
 
@@ -441,12 +453,12 @@ OpenShift CNI (e.g. OVN-Kubernetes) blocks DDS multicast across pods. Pattern to
 
 | Status | ID | Summary | Description |
 |--------|-----|---------|-------------|
-| ⚪ | S5-1 | Spike: run Repo B locally on Mac | Start here (simpler: one Containerfile, one chart). Build with Podman; deploy to **Kind** (preferred) or Minikube. Adapt: gate/remove Routes; use port-forward/NodePort/Ingress; `kubectl` instead of `oc`; load images via `kind load` / Minikube image load (no Quay required for local). Document amd64-on-arm64, RAM/CPU, DDS/Zenoh, noVNC. |
-| ⚪ | S5-2 | Spike: run Repo A (office) locally on Mac | First try `office/run-podman-local.sh` (or headless + noVNC). Then Helm → Kind/Minikube with `routes.enabled=false` + port-forward. Document OpenRMF, RMF Web, fleet monitor/dispatch, SCCs (N/A on Kind). |
-| ⚪ | S5-3 | Internalize: own Containerfiles, Helm, entrypoints, Zenoh, demos | Copy/adapt learnings into `deploy/` and/or `packages/backend/assets/`. Dual-target charts (local K8s vs OpenShift). No runtime dependency on reference repos. Resolve COPR vs owned packages for any Fedora/Jazzy image we keep. |
-| ⚪ | S5-4 | Catalog internalized images | Push to our Quay namespace; curated allowlist patterns; verify Catalog pull + local status. |
-| ⚪ | S5-5 | Extension: deploy-to-local wizard | Select demo → detect Kind/Minikube/Podman → `helm upgrade --install` with **our** charts; expose noVNC URL (port-forward helper). |
-| ⚪ | S5-6 | Extension: deploy-to-OpenShift path | Same wizard against authenticated OpenShift (Routes, pull secrets). Feeds Story 4 (APPENG-5767 / 5777 / 5778). |
+| 🅿️ | S5-1 | Spike: run Repo B locally on Mac | Start here (simpler: one Containerfile, one chart). Build with Podman; deploy to **Kind** (preferred) or Minikube. Adapt: gate/remove Routes; use port-forward/NodePort/Ingress; `kubectl` instead of `oc`; load images via `kind load` / Minikube image load (no Quay required for local). Document amd64-on-arm64, RAM/CPU, DDS/Zenoh, noVNC. **Attempted — parked (Nav2 OOM on arm64).** |
+| 🅿️ | S5-2 | Spike: run Repo A (office) locally on Mac | First try `office/run-podman-local.sh` (or headless + noVNC). Then Helm → Kind/Minikube with `routes.enabled=false` + port-forward. Document OpenRMF, RMF Web, fleet monitor/dispatch, SCCs (N/A on Kind). |
+| 🅿️ | S5-3 | Internalize: own Containerfiles, Helm, entrypoints, Zenoh, demos | Copy/adapt learnings into `deploy/` and/or `packages/backend/assets/`. Dual-target charts (local K8s vs OpenShift). No runtime dependency on reference repos. Resolve COPR vs owned packages for any Fedora/Jazzy image we keep. |
+| 🅿️ | S5-4 | Catalog internalized images | Push to our Quay namespace; curated allowlist patterns; verify Catalog pull + local status. |
+| 🅿️ | S5-5 | Extension: deploy-to-local wizard | Select demo → detect Kind/Minikube/Podman → `helm upgrade --install` with **our** charts; expose noVNC URL (port-forward helper). |
+| 🅿️ | S5-6 | Extension: deploy-to-OpenShift path | Same wizard against authenticated OpenShift (Routes, pull secrets). Feeds Story 4 (APPENG-5767 / 5777 / 5778). |
 
 ### Spike exit criteria
 
@@ -482,9 +494,9 @@ Story 1 (images) ✅
     │       ├── S5-5 (deploy-to-local wizard)  ◀── feeds into Story 4 / APPENG-5778 (Kind)
     │       └── S5-6 (deploy-to-OpenShift)     ◀── feeds into Story 4 / APPENG-5777 (K8s manifests)
     │
-    ├── Story 2 (single robot sim)
-    │       └── Repo B architecture informs APPENG-5771 (orchestration)
-    │           and APPENG-5772 (noVNC) — via S5-3
+    ├── Story 2 / Story 6 (single robot sim)
+    │       └── APPENG-5771 / 5772 already done via Story 6 (Podman); Repo B
+    │           patterns still inform multi-robot / K8s when Story 5 resumes
     │
     ├── Story 3 (multi-robot)
     │       └── Repo B Zenoh + Repo A OpenRMF fleet patterns → APPENG-5775 / 5776
@@ -533,7 +545,7 @@ Items that improve polish or operability but are **not** required for the ROSCon
 
 > **Detail doc:** [stories/story6-podman-sim.md](stories/story6-podman-sim.md)
 
-**Goal:** Enable interactive robot simulation using Podman only — no Kubernetes. Replaces Story 5's Kind approach (parked due to arm64 OOM issues). Two paths: (A) one-click Image Builder quick-start, (B) interactive layered flow (launch empty Gazebo world → add TurtleBot3 via `podman exec`).
+**Goal:** Enable interactive robot simulation using Podman only — no Kubernetes. Replaces Story 5's Kind approach (parked due to arm64 OOM issues). Two paths: (A) Image Builder Quick Start (configure + save + scroll to Build; user builds Phase 1 then Phase 2), (B) interactive layered flow (launch empty Gazebo world → add TurtleBot3 via `podman exec`).
 
 **Relationship to Story 2 (APPENG-5765):** Story 6 implements the core of Story 2 (single robot sim workflow) — specifically APPENG-5771 (container orchestration) and APPENG-5772 (noVNC integration) — using a Podman-only approach instead of pods/compose.
 
@@ -560,3 +572,4 @@ Items that improve polish or operability but are **not** required for the ROSCon
 - **Story 6 (2026-07-28):** Added Podman-only simulation workflow. Story 5 Kind approach parked (Nav2 OOMKill at 4Gi on arm64). Story 6 replaces it for the ROSCon demo using `podman run` + `podman exec` instead of Kubernetes. Cross-referenced with Story 2.
 - **Story 6 (2026-07-28):** S6-1 through S6-5 implemented. Containerfile + entrypoints, Image Builder quick-start, backend lifecycle API (6 methods), Simulation page UI, and TurtleBot3 spawn button all working. Key finding: Ogre2 Sensors plugin crashes on arm64 llvmpipe — removed from world SDF (visuals/physics unaffected). S6-6 (Customize Hardware) remains as stretch.
 - **Story 6 polish (2026-07-28):** Curated allowlist includes `ros2-*-sim-*`; golden tags add `:noble` base + `ros2-jazzy-sim-arm64:noble`; Simulation empty-state + Help describe build→launch→spawn; Quick Start saves and scrolls to Phase 1.
+- **Docs / prefs sync (2026-07-30):** Removed stale “Jazzy base-only” claims; Story 5 status unified to Parked; Quick Start docs match save+scroll (no auto-build); prefs enum includes `jazzy-arm64`; Help/design cover push cancel, public Quay limits, and local image listing.

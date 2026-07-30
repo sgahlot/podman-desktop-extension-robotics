@@ -54,21 +54,20 @@ For work breakdown and progress tracking, see the link:podman-extension-plan.md[
                                                  │
                                 ┌────────────────┼────────────────┐
                                 │                │                │
-                          ┌─────▼──────┐  ┌──────▼──────┐  ┌──────▼──────┐
-                          │  Podman    │  │   Quay.io   │  │  Kind /     │
-                          │  Engine    │  │  Registry   │  │  OpenShift  │
-                          │            │  │             │  │  (stretch)  │
-                          │ ┌────────┐ │  └─────────────┘  └─────────────┘
-                          │ │ROS2 Pod│ │
-                          │ │┌──────┐│ │
-                          │ ││Gazebo││ │
-                          │ │├──────┤│ │
-                          │ ││ROS2  ││ │
-                          │ │├──────┤│ │
-                          │ ││noVNC ││ │
-                          │ │└──────┘│ │
-                          │ └────────┘ │
-                          └────────────┘
+                         ┌──────▼──────┐  ┌──────▼──────┐  ┌──────▼──────┐
+                         │   Podman    │  │   Quay.io   │  │  OpenShift  │
+                         │   Engine    │  │  Registry   │  │  (stretch)  │
+                         │             │  │             │  │             │
+                         │ ┌─────────┐ │  └─────────────┘  └─────────────┘
+                         │ │  Sim    │ │
+                         │ │Container│ │
+                         │ │┌───────┐│ │
+                         │ ││Gazebo ││ │
+                         │ ││Nav2   ││ │
+                         │ ││noVNC  ││ │
+                         │ │└───────┘│ │
+                         │ └─────────┘ │
+                         └─────────────┘
 ----
 
 == Component Design
@@ -83,7 +82,7 @@ The backend is the entry point loaded by Podman Desktop. It manages the extensio
 * Webview panel creation and media asset loading
 * RPC bridge registration via `RpcExtension`
 * Command registration (`physical-ai.open` — reopens the dashboard panel)
-* Podman Engine interaction (image build/push/pull, container/pod lifecycle)
+* Podman Engine interaction (image build/push/pull, container lifecycle, simulation management)
 * Image build orchestration with `AbortController`-based cancellation
 * Build/push progress tracking via in-memory `Map` instances
 * Quay.io registry API queries
@@ -95,11 +94,12 @@ The backend is the entry point loaded by Podman Desktop. It manages the extensio
 | File | Role
 
 | `src/extension.ts` | Entry point — creates webview panel, wires RPC, registers `physical-ai.open` command
-| `src/api-impl.ts` | `PhysicalAiApiImpl` — implements all 15 API methods; private helpers use JS `#private` syntax (not RPC-callable)
+| `src/api-impl.ts` | `PhysicalAiApiImpl` — implements all API methods; private helpers use JS `#private` syntax (not RPC-callable)
 | `src/progressLogs.ts` | `appendProgressLog()` — capped at 500 lines with truncation marker
-| `package.json` | Extension manifest (contributes: commands, configuration with 6 properties)
+| `package.json` | Extension manifest (contributes: commands, configuration with 8 properties)
 | `vite.config.js` | Builds to CJS, externalizes `@podman-desktop/api`
 | `assets/ros2-jazzy-base/` | Bundled Containerfile + entrypoint for Jazzy base builds
+| `assets/ros2-jazzy-sim-arm64/` | Jazzy simulation image: Containerfile, entrypoint-gazebo.sh, entrypoint-spawn-robot.sh, world SDF, noVNC landing page
 | `assets/ros2-humble-base/` | Bundled Containerfile for Humble base builds
 | `assets/ros2-humble-turtlebot3/` | Bundled Containerfile + entrypoint for Humble simulation builds
 |===
@@ -112,7 +112,8 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 
 * Dashboard landing page with feature cards
 * Image catalog browser with All/Curated views and pull progress _(APPENG-5770, done)_
-* Image Builder for base and simulation images _(done — config + build; launch is Story 2)_
+* Image Builder for base and simulation images with Quick Start preset _(done)_
+* Simulation page — launch, status, open in browser, stop/delete, add TurtleBot3 _(done via Story 6)_
 * In-extension Help page _(done)_
 * ROS2 topic monitor _(APPENG-5773, planned)_
 * Fleet status dashboard _(APPENG-5776, stretch)_
@@ -126,7 +127,8 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 | `src/App.svelte` | Root component, hash-based routing via tinro
 | `src/Dashboard.svelte` | Landing page with quick-link cards
 | `src/ImageCatalog.svelte` | Browse Quay repos (All/Curated), pull images, show local images
-| `src/SimulationSetup.svelte` | Image Builder — configure + build/push base and simulation images
+| `src/SimulationSetup.svelte` | Image Builder — configure + build/push base and simulation images (Quick Start card for Jazzy arm64)
+| `src/SimulationPage.svelte` | Simulation — launch containers, view status, open noVNC, add TurtleBot3
 | `src/Help.svelte` | In-extension documentation
 | `src/lib/BuildPushPanel.svelte` | Shared component for build/push/cancel lifecycle with polling
 | `src/app.css` | `.pai-*` theme classes (buttons, links, text colors, cards, progress bars) using `--pd-*` CSS variables
@@ -161,7 +163,7 @@ Frontend (RpcBrowser)                    Backend (RpcExtension)
 
 The `PhysicalAiApi` abstract class defines the contract. Both the frontend proxy and backend implementation conform to it.
 
-.Current API (15 methods)
+.Current API
 [source,typescript]
 ----
 export abstract class PhysicalAiApi {
@@ -176,17 +178,30 @@ export abstract class PhysicalAiApi {
   abstract listLocalImages(): Promise<string[]>;
 
   // Build & Push
-  abstract buildBaseImage(tag: string): Promise<void>;
+  abstract buildBaseImage(tag: string, config: SimulationConfig): Promise<void>;
   abstract buildSimulationImage(tag: string, config: SimulationConfig): Promise<void>;
   abstract cancelBuild(tag: string): Promise<void>;
   abstract getBuildProgress(tag: string): Promise<BuildProgress | null>;
   abstract pushImage(tag: string): Promise<void>;
   abstract getPushProgress(tag: string): Promise<PushProgress | null>;
+  abstract cancelPush(tag: string): Promise<void>;
 
   // Configuration
   abstract getDefaultNamespace(): Promise<string>;
+  abstract getHostArch(): Promise<string>;
+  abstract getCatalogViewMode(): Promise<'all' | 'curated'>;
+  abstract setCatalogViewMode(mode: 'all' | 'curated'): Promise<void>;
+  abstract getCatalogCuratedAllowlist(): Promise<string>;
   abstract getSimulationConfig(): Promise<SimulationConfig>;
   abstract saveSimulationConfig(config: SimulationConfig): Promise<void>;
+
+  // Simulation lifecycle (Story 6)
+  abstract launchSimulation(imageTag: string, containerName: string, options?: SimLaunchOptions): Promise<string>;
+  abstract stopSimulation(containerId: string): Promise<void>;
+  abstract deleteSimulation(containerId: string): Promise<void>;
+  abstract listSimulationContainers(): Promise<SimContainerInfo[]>;
+  abstract execInSimulation(containerId: string, command: string[]): Promise<ExecResult>;
+  abstract openSimulationInBrowser(port: number): Promise<void>;
 }
 ----
 
@@ -199,7 +214,9 @@ export abstract class PhysicalAiApi {
 | `types/ImageCatalog.ts` | `QuayRepository`, `QuayTag`, `PullProgress`, `BuildProgress`, `PushProgress`
 | `types/SimulationConfig.ts` | `SimulationConfig` — persisted wizard selections (robot, distro, middleware, engine, baseImage)
 | `types/SimulationProfiles.ts` | `SimulationProfile`, `SIMULATION_PROFILES`, `resolveSimulationProfile()`, `simulationImageTag()`
-| `types/SimulationBaseImages.ts` | `SimulationBaseImageId`, digest-pinned presets (sloretz multi-arch, osrf amd64-only), `resolveSimulationBaseImage()`
+| `types/SimulationBaseImages.ts` | `SimulationBaseImageId`, presets (sloretz, osrf, jazzy-arm64), `resolveSimulationBaseImage()`
+| `types/SimulationContainer.ts` | `SimLaunchOptions`, `SimContainerInfo`, `ExecResult`, container label constants
+| `types/CatalogCurated.ts` | `DEFAULT_CURATED_ALLOWLIST`, `parseCuratedAllowlist()`, `repoMatchesAllowlist()`, `filterCuratedRepos()` — wildcard pattern matching for curated allowlist
 |===
 
 == Data Flow
@@ -208,12 +225,17 @@ export abstract class PhysicalAiApi {
 
 [source]
 ----
-User browses catalog ──► Frontend requests image list ──► Backend queries Quay API
+User browses catalog ──► Frontend requests image list ──► Backend queries Quay API (public=true)
+                                                                    │
+                         Private repos are not listed without Quay auth
                                                                     │
 User clicks "Pull"   ──► Frontend sends pull request  ──► Backend calls Podman pull
                                                                     │
                          Frontend polls getPullProgress ◄── Backend returns PullProgress
                          (every 500ms while active)         { status, layers, percent }
+
+listLocalImages()    ──► Engine listImages (RepoTags or Names) merged with `podman images`
+                         so Podman 5 / PD empty RepoTags still appear in Locally Available
 ----
 
 === Build & Push (Base Image and Simulation Image)
@@ -233,10 +255,16 @@ User clicks "Build"  ──► Frontend sends buildBaseImage/buildSimulationImag
 User clicks "Cancel" ──► Frontend calls cancelBuild(tag) ──► Backend aborts AbortController
                                                               Progress marked done immediately
 
-User clicks "Push"   ──► Frontend sends pushImage(tag)
+User clicks "Push"   ──► Frontend sends pushImage(tag) with AbortController
                                 │
                          Frontend polls getPushProgress  ◄── Backend returns PushProgress
-                         (every 500ms while active)          { status, digest }
+                         (every 500ms while active)          { status, digest, cancelled? }
+
+User clicks "Cancel push" ──► Frontend calls cancelPush(tag) ──► Backend aborts AbortController
+                                                                  Progress marked done immediately
+
+Registry presence ──► Frontend calls getImageTags for quay.io/ns/name:tag (public API)
+                      Shows "exists in registry" / "not found" / "unavailable" (private/error)
 ----
 
 === Image Builder (wizard + build)
@@ -244,13 +272,37 @@ User clicks "Push"   ──► Frontend sends pushImage(tag)
 [source]
 ----
 User configures Image Builder ──► Frontend shows dropdowns for robot/distro/middleware/engine/base preset
-                           Tag derived reactively from selections (:sloretz / :osrf / :latest)
+                           Tag derived reactively from selections (:sloretz / :osrf / :latest / :noble)
+Quick Start (Jazzy arm64) ──► Sets dropdowns, saveSimulationConfig, scrolls to Phase 1 (no auto-build)
 User clicks "Save"     ──► Frontend calls saveSimulationConfig(config)
                            ──► Backend persists to Podman Desktop configuration API
 
 Phase 1 Build & Push   ──► buildBaseImage (same progress/cancel/push flow as base builds)
-Phase 2 Build & Push   ──► buildSimulationImage (FROM local base; Humble TurtleBot3 today)
+Phase 2 Build & Push   ──► buildSimulationImage (FROM local base via LOCAL_BASE_IMAGE build-arg)
 ----
+
+==== Why two-phase (base + simulation)?
+
+The build is split into a **base image** (Phase 1) and a **simulation image** (Phase 2) that layers on top via `FROM $LOCAL_BASE_IMAGE`. This is a practical optimization, not a hard technical requirement — a single Containerfile would work.
+
+[cols="1,3"]
+|===
+| Benefit | Detail
+
+| Build speed
+| The base image (ROS2 core, ~1–2 GB of apt packages) rarely changes. When you modify an entrypoint, world file, or noVNC config, only the sim layer rebuilds (~5 min) instead of the full ROS2 install (~15–20 min).
+
+| Shared foundation
+| Multiple simulation images can share the same base. Today: Humble base + Humble TurtleBot3 sim, Jazzy base + Jazzy arm64 sim. Future robot types (TurtleBot4, custom URDF) layer on the same base without rebuilding ROS2 each time.
+
+| Smaller pushes
+| If `ros2-jazzy-base:noble` is already on Quay, pushing a new sim variant only transfers the diff layers (Gazebo + Nav2 + noVNC), not the entire ROS2 stack again.
+
+| Non-simulation use
+| The base image works standalone for headless ROS2 development, CI pipelines, or robots that don't need Gazebo/noVNC.
+|===
+
+If you only ever build one sim image and never reuse the base, the split is overhead for no gain. It pays off when you have multiple images sharing a common ROS2 layer or iterate frequently on the sim layer.
 
 === Image Catalog (All / Curated)
 
@@ -262,51 +314,73 @@ Curated allowlist   = comma-separated patterns (preference: physical-ai.catalogC
 Toggle in UI        ──► setCatalogViewMode; filter via CatalogCurated helpers
 ----
 
-=== Simulation Launch (Story 2, planned)
+=== Simulation Launch (Story 6, implemented)
 
 [source]
 ----
-User clicks "Launch" ──► Frontend sends launch request ──► Backend creates Podman pod
-                                                                     │
-                                                              ┌──────┴──────┐
-                                                              │ ROS2 container
-                                                              │ Gazebo container
-                                                              │ noVNC container
-                                                              └──────┬──────┘
-                                                                     │
-                         Frontend renders noVNC iframe ◄── Backend returns pod info
+User clicks "Launch" ──► Frontend calls launchSimulation(imageTag, name, options)
+                                │
+                                ├── Backend resolves engineId from image listing
+                                ├── Backend calls containerEngine.createContainer() + startContainer()
+                                │   (single container, NOT a pod — labels: io.physical-ai.role=simulation)
+                                │
+                         Frontend polls listSimulationContainers ◄── Backend filters by label
+                         (every 3s)                                  Returns SimContainerInfo[]
+
+User clicks "Open"   ──► Frontend calls openSimulationInBrowser(6080)
+                         ──► Backend calls extensionApi.env.openExternal → localhost:6080 (noVNC)
+
+User clicks "Add     ──► Frontend calls execInSimulation(containerId, ['/entrypoint-spawn-robot.sh', ...])
+TurtleBot3"              ──► Backend runs podman exec -d (detached, long-running spawn process)
+
+User clicks "Stop"   ──► Frontend calls stopSimulation(containerId) ──► Backend stops container
+User clicks "Delete" ──► Frontend calls deleteSimulation(containerId) ──► Backend stops + removes
 ----
 
 == Container Architecture
 
-=== Single Robot Pod (Story 2, planned)
+=== Single Robot Container (Story 6, implemented)
+
+Uses a single Podman container (not a pod) with all components baked in. This avoids K8s/pod overhead that caused OOM on arm64 Macs.
 
 [source]
 ----
-┌─── Podman Pod: physical-ai-sim ───────────────────┐
-│                                                     │
-│  ┌─────────────┐  ┌──────────┐  ┌──────────────┐  │
-│  │ ROS2 Humble │  │  Gazebo  │  │    noVNC     │  │
-│  │  + TBot3    │  │  server  │  │  (web viz)   │  │
-│  │  packages   │  │          │  │              │  │
-│  └──────┬──────┘  └────┬─────┘  └──────┬───────┘  │
-│         │              │               │           │
-│         └──── shared network (localhost) ──────────│
-│                                                     │
-│  Exposed ports: noVNC (6080), Gazebo (11345)       │
-└─────────────────────────────────────────────────────┘
+┌─── Podman Container: pai-sim-<timestamp> ──────────────────────────┐
+│    Image: ros2-jazzy-sim-arm64:noble                               │
+│    Labels: io.physical-ai.role=simulation                          │
+│                                                                     │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  Ubuntu 24.04 + ROS2 Jazzy + Gazebo Harmonic + Nav2         │  │
+│  │                                                              │  │
+│  │  Xvfb (:99) → openbox → x11vnc → websockify (port 6080)    │  │
+│  │                              ↑                               │  │
+│  │  gz sim (server) ──► gz sim (GUI, renders to :99)            │  │
+│  │                                                              │  │
+│  │  Software rendering: LIBGL_ALWAYS_SOFTWARE=1, llvmpipe       │  │
+│  │  (Ogre2 Sensors plugin removed — segfaults on arm64)         │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│  Exposed ports: 6080 (noVNC), 8080 (landing page)                  │
+│  Robot spawn: podman exec -d → /entrypoint-spawn-robot.sh          │
+└─────────────────────────────────────────────────────────────────────┘
 ----
+
+==== Why a single container (not a pod)?
+
+The original plan (Story 2/5) used a Podman pod with separate ROS2, Gazebo, and noVNC containers. On Mac Apple Silicon (arm64), the combined memory pressure of the K8s-style setup caused Nav2 to OOMKill at 4 GiB. A single container with all components baked in eliminates infra container overhead and fits within the default Podman VM (5.7 GB). Robot spawn via `podman exec` adds TurtleBot3 instances into the running container without additional containers.
 
 === Multi-Robot Fleet (planned, stretch)
 
+NOTE: The current single-robot path uses `podman exec` to spawn additional robots into a single container. The pod-based fleet model below is speculative — it would only apply if robots need separate containers for isolation or resource limits.
+
 [source]
 ----
-┌─── Pod: robot-1 ───┐  ┌─── Pod: robot-2 ───┐
-│  ROS2 + Gazebo     │  │  ROS2 + Gazebo     │
-│  DDS bridge        │  │  DDS bridge        │
-└────────┬───────────┘  └────────┬───────────┘
-         │                       │
-         └───────┬───────────────┘
+┌─── Container: robot-1 ──┐  ┌─── Container: robot-2 ──┐
+│  ROS2 + Gazebo          │  │  ROS2 + Gazebo          │
+│  DDS bridge             │  │  DDS bridge             │
+└────────┬────────────────┘  └────────┬────────────────┘
+         │                            │
+         └───────┬────────────────────┘
                  │
          ┌───────▼───────┐
          │  Zenoh Router │
@@ -316,7 +390,7 @@ User clicks "Launch" ──► Frontend sends launch request ──► Backend c
 
 == Configuration Properties
 
-The extension contributes 6 settings under **Settings → Preferences → Physical AI**:
+The extension contributes 8 settings under **Settings → Preferences → Physical AI**:
 
 [cols="2,1,1,2"]
 |===
@@ -324,10 +398,12 @@ The extension contributes 6 settings under **Settings → Preferences → Physic
 
 | `physical-ai.defaultNamespace` | string | `ecosystem-appeng` | Quay.io namespace for catalog browsing and image tags
 | `physical-ai.simulationRobot` | string | `turtlebot3` | Robot type for simulation
-| `physical-ai.simulationDistro` | string | `humble` | ROS distro (only `humble` has a bundled simulation image currently)
+| `physical-ai.simulationDistro` | string | `humble` | ROS distro (`humble` and `jazzy` both have bundled simulation images)
 | `physical-ai.simulationMiddleware` | string | `dds` | Middleware (`dds` or `zenoh`)
 | `physical-ai.simulationEngine` | string | `gazebo` | Simulation engine
-| `physical-ai.simulationBaseImage` | enum | `sloretz` | Base image preset: `sloretz` (multi-arch) or `osrf` (amd64 only)
+| `physical-ai.simulationBaseImage` | enum | `sloretz` | Base preset: `sloretz` (multi-arch Humble), `osrf` (amd64 Humble), `jazzy-arm64` (Noble / arm64 Quick Start), or `jazzy` (amd64 Jazzy `:latest`)
+| `physical-ai.catalogViewMode` | enum | `all` | Image Catalog view: `all` (show all public repos) or `curated` (filter by allowlist)
+| `physical-ai.catalogCuratedAllowlist` | string | `ros2-*-base,ros2-*-turtlebot3,ros2-*-sim-*` | Comma-separated wildcard patterns for curated catalog view
 |===
 
 == Key Technical Decisions
@@ -361,16 +437,24 @@ The extension contributes 6 settings under **Settings → Preferences → Physic
 | Jazzy has no official Fedora packages (REP 2000: Ubuntu Noble Tier 1, RHEL 9 Tier 2). Official Jazzy RPMs exist for RHEL — UBI/RHEL is a nearer Red Hat path than Fedora. Migration parked; see APPENG-5809 and plan research notes.
 
 | Container base (simulation)
-| Digest-pinned presets (sloretz multi-arch, osrf amd64-only)
-| Presets ensure reproducible builds. sloretz default enables Apple Silicon / Podman on Mac. Pinned digests in `SimulationBaseImages.ts`, bumped deliberately.
+| Digest-pinned presets (sloretz multi-arch, osrf amd64-only, jazzy / jazzy-arm64)
+| Presets ensure reproducible builds. `jazzy-arm64` is the Mac Quick Start path. Pinned digests in `SimulationBaseImages.ts`, bumped deliberately.
 
 | Middleware
 | DDS (default); Zenoh planned
 | DDS is the ROS2 default and is implemented now. Zenoh with DDS bridge is planned for multi-robot fleet communication (Story 3)
 
-| Build cancellation
-| `AbortController` per build tag
+| Build / push cancellation
+| `AbortController` per build and push tag
 | Enables cancel-in-flight with double-completion guards; progress marked done immediately on cancel
+
+| Local image listing
+| Engine `RepoTags`/`Names` + `podman images` CLI merge
+| Podman 5 / PD often return null `RepoTags`; CLI merge keeps Catalog Locally Available accurate
+
+| Quay catalog / registry checks
+| Unauthenticated public API (`public=true`)
+| Private repos are invisible in Catalog and registry-presence checks until Quay auth is added
 
 | Build/push UI
 | Shared `BuildPushPanel.svelte` component
@@ -391,12 +475,29 @@ The extension contributes 6 settings under **Settings → Preferences → Physic
 | API version
 | `@podman-desktop/api@1.28.3`
 | Bumped for current API surface
+
+| Simulation container model
+| Single container (not pods)
+| Pod-based approach (Story 2/5) caused Nav2 OOMKill at 4 GiB on arm64. Single container with Gazebo + Nav2 + noVNC baked in fits default 5.7 GB Podman VM. See "Why a single container" in Container Architecture.
+
+| Robot spawn mechanism
+| `podman exec -d` via `process.exec()`
+| Podman Desktop `containerEngine` API has no `exec` method. `process.exec('podman', ['exec', ...])` runs `/entrypoint-spawn-robot.sh` detached in the running container.
+
+| Ogre2 Sensors on arm64
+| Removed from world SDF
+| Ogre2 `GL3PlusRenderSystem` segfaults with llvmpipe software rendering on arm64. Sensors plugin (camera, depth) removed; visuals and physics unaffected.
 |===
+
+== Resolved Questions
+
+* **noVNC vs alternatives:** noVNC chosen and implemented. Xvfb + x11vnc + websockify stack baked into the simulation image, served on port 6080. Lightweight and works without GPU.
+* **GPU passthrough:** Not needed for the demo. Software rendering via llvmpipe is sufficient at 1024x768. Ogre2 Sensors plugin crashes on arm64 llvmpipe (segfault in `GL3PlusRenderSystem`) — removed from world SDF. Visuals and physics work fine; only simulated sensor data (camera, depth) is lost.
 
 == Open Questions
 
-* **noVNC vs alternatives:** noVNC is the default assumption — are there lighter-weight browser streaming options worth evaluating?
-* **GPU passthrough:** Will the demo require GPU access for Gazebo rendering inside containers?
+* **Topic monitor:** How to expose ROS2 topic data to the extension UI — `podman exec ros2 topic list` polling, or a lightweight bridge/agent inside the container?
+* **Multi-robot resource limits:** How many TurtleBot3 instances can run in a single container before the Podman VM hits memory limits?
 
 == References
 

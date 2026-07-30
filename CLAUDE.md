@@ -15,7 +15,7 @@
 - Target: Fedora + ROS2 Jazzy ecosystem
 
 ## Environment
-- Requires Node.js >= 20.0.0 and npm >= 10.0.0 (node/npm should be available on PATH)
+- Requires Node.js >= 24.0.0 and npm >= 11.0.0 (matches Podman Desktop's own requirement; node/npm should be available on PATH)
 - Team members may use any Node version manager (fnm, nvm, brew, etc.) — the project has no dependency on a specific one
 
 ## Workflow Rules

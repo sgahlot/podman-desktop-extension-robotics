@@ -62,41 +62,33 @@ See [Decisions and Directions](../podman-extension-plan.md#decisions-and-directi
 
 ### What was done
 
-**Container image:**
-- Created `containers/ros2-jazzy-base/` with Containerfile, entrypoint, and README
+**Container image (source of truth for extension builds):**
+- `packages/backend/assets/ros2-jazzy-base/` — Containerfile, entrypoint, README
 - Based on `ros:jazzy-ros-base` (official Ubuntu 24.04 image)
 - Includes: colcon, rosdep (pre-initialized), vcstool, cmake, build-essential, git
 - Entrypoint sources `/opt/ros/jazzy/setup.bash` automatically
 - Working directory set to `/ros2_ws`
 
-**Build & Push UI in extension:**
-- "Build & Push Base Image" page accessible from Dashboard card
-- Build: fires `containerEngine.buildImage()` with bundled Containerfile assets, streams build logs, shows step progress bar (STEP N/M parsing)
-- Push: fires `containerEngine.pushImage()` with animated indeterminate progress bar (Podman Desktop push API only provides start/end callbacks, no intermediate progress)
-- Push success displays image tag and full SHA256 digest
-- Detects existing local images: shows "Rebuild" instead of "Build", enables push without rebuilding
-- Build logs are collapsible with line count
-- Registry authentication must be configured via Podman Desktop Settings → Registries (not CLI `podman login`)
-- Containerfile assets bundled in `packages/backend/assets/ros2-jazzy-base/` for runtime access via `extensionContext.extensionUri`
-- Help page updated with Build & Push documentation
-- API contract extended with `buildBaseImage()`, `getBuildProgress()`, `pushImage()`, `getPushProgress()` (10 methods total)
+> **Historical note:** An early CLI-oriented copy lived under `containers/ros2-jazzy-base/`. That tree is not used by the extension at runtime; builds use `packages/backend/assets/` only.
+
+**Build & Push UI in extension (evolved into Image Builder):**
+- Image Builder (Dashboard) — Phase 1 base / Phase 2 simulation via shared `BuildPushPanel`
+- Build: `containerEngine.buildImage()` with bundled assets, logs, STEP N/M progress, **Cancel** via `AbortController`
+- Push: `containerEngine.pushImage()` with progress + **Cancel** (`cancelPush`); registry login via Podman Desktop Settings → Registries
+- Detects local images and Quay tag presence (public repos) for the current tag
+- Assets resolved via `extensionContext.extensionUri` under `packages/backend/assets/`
 
 ### Key files
 
 ```
-containers/ros2-jazzy-base/
-├── Containerfile     # Image definition
-├── entrypoint.sh     # Sources ROS2 setup, execs CMD
-└── README.md         # Build/run/publish instructions
-
-packages/frontend/src/BuildBaseImage.svelte       # Build & push page with progress and logs
-packages/frontend/src/Dashboard.svelte            # "Build & Push Base Image" card
-packages/frontend/src/Help.svelte                 # Build & push documentation section
-packages/backend/src/api-impl.ts                  # Build and push implementation
 packages/backend/assets/ros2-jazzy-base/          # Bundled Containerfile and entrypoint for builds
-packages/shared/src/PhysicalAiApi.ts              # API contract (10 methods)
+packages/frontend/src/SimulationSetup.svelte      # Image Builder page
+packages/frontend/src/lib/BuildPushPanel.svelte   # Shared build/push/cancel UI
+packages/frontend/src/Dashboard.svelte            # Image Builder card
+packages/frontend/src/Help.svelte                 # Build & push documentation
+packages/backend/src/api-impl.ts                  # Build and push implementation
+packages/shared/src/PhysicalAiApi.ts              # API contract (catalog + build + sim lifecycle)
 packages/shared/src/types/ImageCatalog.ts         # BuildProgress, PushProgress types
-Containerfile                                     # Updated to COPY assets into extension OCI image
 ```
 
 ### Decisions made
@@ -177,12 +169,12 @@ packages/shared/src/types/ImageCatalog.ts   # Shared types
 | ✅ | Part 2 | Image Builder UI (was “Simulation Setup”) |
 | ✅ | Part 3 | Wire Phase 1 / Phase 2 build & push |
 
-**Current reality:** Humble = base (`:sloretz` / `:osrf`) + TurtleBot3 sim; Jazzy = base only. Additional robots are future work (see plan). Simulation **launch** is Story 2.
+**Current reality:** Humble = base (`:sloretz` / `:osrf`) + TurtleBot3 sim; Jazzy = base (`:latest` / `:noble`) + arm64 sim (`ros2-jazzy-sim-arm64:noble` via Story 6). Additional robots are future work (see plan). Simulation **launch** is implemented in Story 6 (APPENG-5771/5772).
 
 ---
 
-### Relationship to Story 2
+### Relationship to Story 2 / Story 6
 
 - Story 1 creates the **images and build UI**
-- APPENG-5771 **consumes** saved selections + sim image to launch
-- APPENG-5772 provides **visualization**
+- Story 6 (and APPENG-5771) **consumes** saved selections + sim image to launch
+- Story 6 (and APPENG-5772) provides **noVNC visualization**

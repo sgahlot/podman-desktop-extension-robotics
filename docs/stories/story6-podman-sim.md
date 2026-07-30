@@ -20,9 +20,9 @@
 
 ### Path A — Fast/Practical (Image Builder Quick-Start)
 
-1. Click "TurtleBot3 Sim" quick-start button in Image Builder → pre-fills all 5 dropdowns
-2. Build kicks off (base + sim image, two-phase)
-3. Go to Simulation card → Launch → Open in Browser
+1. Click "TurtleBot3 Sim (Jazzy arm64)" quick-start in Image Builder → pre-fills all 5 dropdowns, **saves** preferences, and scrolls to Phase 1 Build
+2. Click **Build** for Phase 1 (base), then Phase 2 (sim) — Quick Start does **not** auto-build
+3. Go to Simulation card → Launch → Open in Browser → Add TurtleBot3
 
 ### Path B — Interactive/Demo (ROSCon Story)
 
@@ -69,7 +69,7 @@ New directory: `packages/backend/assets/ros2-jazzy-sim-arm64/`
 
 ### Shared types updates
 
-- **SimulationProfiles.ts** — Add Jazzy sim profile (currently Jazzy is base-only)
+- **SimulationProfiles.ts** — Add Jazzy sim profile (`ros2-jazzy-sim-arm64`)
 - **SimulationBaseImages.ts** — Add `jazzy-arm64` preset (Ubuntu 24.04, multi-arch, arm64-native)
 - **SimulationConfig.ts** — Add `'jazzy-arm64'` to `SimulationBaseImageId` union
 
@@ -101,13 +101,13 @@ New directory: `packages/backend/assets/ros2-jazzy-sim-arm64/`
 
 ## S6-2: Image Builder Quick-Start Preset Button
 
-**Goal:** One-click build of a complete simulation image from the Image Builder page.
+**Goal:** One-click configure of a complete simulation image path from the Image Builder page.
 
 Add a "Quick Start" section at the top of `SimulationSetup.svelte`, above the dropdowns. A "TurtleBot3 Sim" button that:
 
 1. Pre-fills all dropdowns: `turtlebot3 / jazzy / dds / gazebo / jazzy-arm64`
-2. Saves config
-3. Auto-triggers Phase 1 build, then Phase 2 on completion
+2. Saves config to Preferences
+3. Scrolls to Phase 1 Build (user clicks Build for Phase 1 and Phase 2 explicitly)
 
 Style like the Curated toggle pattern from `ImageCatalog.svelte`.
 
@@ -117,7 +117,7 @@ Modified `SimulationSetup.svelte`:
 - Added "Quick Start" card above dropdowns with "TurtleBot3 Sim (Jazzy arm64)" button
 - Button pre-fills: `robot=turtlebot3, distro=jazzy, middleware=dds, engine=gazebo, baseImage=jazzy-arm64`
 - Updated Jazzy distro label from "Jazzy (base image only)" to "Jazzy (simulation/arm64-native)"
-- **(2026-07-28 follow-up)** Quick Start also **saves** preferences and scrolls to Phase 1 Build (user still clicks Build explicitly)
+- Quick Start **saves** preferences and scrolls to Phase 1 Build (user still clicks Build explicitly; no auto-build)
 
 ---
 
@@ -174,7 +174,7 @@ openSimulationInBrowser(port)
 - **App.svelte:** Add `<Route path="/simulation">` (same pattern as `/build`, `/images`)
 - **SimulationPage.svelte (new):**
   - **Section 1 — Launch:** Dropdown of local sim images, "Launch" button, single-sim-at-a-time for MVP
-  - **Section 2 — Running:** Polls `listSimulationContainers()` every 2s, shows container card with "Open in Browser" / "Stop" / "Delete" buttons
+  - **Section 2 — Running:** Polls `listSimulationContainers()` every 3s, shows container card with "Open in Browser" / "Stop" / "Delete" buttons
   - **Section 3 — Add Robot:** See S6-5
 
 ### Implementation Notes (completed 2026-07-28)
@@ -233,6 +233,6 @@ Swap camera sensor on a robot. Deferred until S6-5 is working. Likely: parametri
 - [x] Extension dashboard shows enabled Simulation card
 - [x] Simulation page can launch/stop/delete containers
 - [x] "Add TurtleBot3" button spawns robot into running sim
-- [x] Image Builder quick-start pre-fills and builds successfully
+- [x] Image Builder quick-start pre-fills, saves, and scrolls to Phase 1 (user builds explicitly)
 - [ ] End-to-end via extension (build through Image Builder → launch from Simulation page → add robot)
 - [ ] S6-6: Customize Hardware card *(stretch — not started)*
