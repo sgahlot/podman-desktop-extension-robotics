@@ -33,7 +33,7 @@
         "physical-ai.simulationDistro": {
           "type": "string",
           "default": "humble",
-          "description": "ROS distro for simulation (humble: TurtleBot3 sim; jazzy: arm64-native sim + noVNC via jazzy-arm64 preset)"
+          "description": "ROS distro for simulation (humble: TurtleBot3 sim; jazzy: sim + noVNC via jazzy-noble preset)"
         },
         "physical-ai.simulationMiddleware": {
           "type": "string",
@@ -50,13 +50,13 @@
           "enum": [
             "sloretz",
             "osrf",
-            "jazzy-arm64",
+            "jazzy-noble",
             "jazzy"
           ],
           "enumDescriptions": [
             "ghcr.io/sloretz multi-arch Humble desktop (recommended on Apple Silicon)",
             "docker.io/osrf official Humble desktop (amd64 only)",
-            "docker.io/library/ros:jazzy-ros-base on Ubuntu Noble (arm64-native Quick Start)",
+            "docker.io/library/ros:jazzy-ros-base on Ubuntu Noble (multi-arch Quick Start)",
             "docker.io/ros official Jazzy base (amd64 preset, tag :latest)"
           ],
           "default": "sloretz",
@@ -77,7 +77,7 @@
         },
         "physical-ai.catalogCuratedAllowlist": {
           "type": "string",
-          "default": "ros2-*-base,ros2-*-turtlebot3,ros2-*-sim-*",
+          "default": "ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*",
           "description": "Comma-separated Quay repository name patterns for Curated catalog view. Use * as a wildcard (e.g. ros2-*-base,ros2-*-sim-*,ros2-humble-turtlebot3)."
         }
       }

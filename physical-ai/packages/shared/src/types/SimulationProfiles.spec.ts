@@ -38,13 +38,13 @@ describe('SimulationProfiles', () => {
     const profile = resolveSimulationProfile({
       ...supported,
       distro: 'jazzy',
-      baseImage: 'jazzy-arm64',
+      baseImage: 'jazzy-noble',
     });
     expect(profile).toBeDefined();
     expect(profile!.baseAssetDir).toBe('ros2-jazzy-base');
     expect(profile!.baseImageName).toBe('ros2-jazzy-base');
-    expect(profile!.assetDir).toBe('ros2-jazzy-sim-arm64');
-    expect(profile!.imageName).toBe('ros2-jazzy-sim-arm64');
+    expect(profile!.assetDir).toBe('ros2-jazzy-sim');
+    expect(profile!.imageName).toBe('ros2-jazzy-sim');
   });
 
   it('reports simulation support correctly', () => {
@@ -54,7 +54,7 @@ describe('SimulationProfiles', () => {
     const jazzy = resolveSimulationProfile({
       ...supported,
       distro: 'jazzy',
-      baseImage: 'jazzy-arm64',
+      baseImage: 'jazzy-noble',
     })!;
     expect(hasSimulationSupport(jazzy)).toBe(true);
   });
@@ -70,14 +70,14 @@ describe('SimulationProfiles', () => {
       simulationImageTag('ecosystem-appeng', {
         ...supported,
         distro: 'jazzy',
-        baseImage: 'jazzy-arm64',
+        baseImage: 'jazzy-noble',
       }),
-    ).toBe('quay.io/ecosystem-appeng/ros2-jazzy-sim-arm64:noble');
+    ).toBe('quay.io/ecosystem-appeng/ros2-jazzy-sim:noble');
     expect(
       baseImageTag('ecosystem-appeng', {
         ...supported,
         distro: 'jazzy',
-        baseImage: 'jazzy-arm64',
+        baseImage: 'jazzy-noble',
       }),
     ).toBe('quay.io/ecosystem-appeng/ros2-jazzy-base:noble');
   });

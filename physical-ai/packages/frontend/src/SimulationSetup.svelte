@@ -116,7 +116,7 @@ async function applyQuickStart() {
   distro = 'jazzy';
   middleware = 'dds';
   engine = 'gazebo';
-  baseImage = 'jazzy-arm64';
+  baseImage = 'jazzy-noble';
   // Let reactive tags update before save
   await tick();
   await save();
@@ -139,14 +139,14 @@ async function applyQuickStart() {
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-md">
       <h2 class="text-sm font-medium text-[var(--pd-content-header)] mb-2">Quick Start</h2>
       <p class="text-xs text-[var(--pd-content-text)] mb-3">
-        Configure TurtleBot3 + Jazzy arm64, save preferences, and jump to Phase 1 Build.
+        Configure TurtleBot3 + Jazzy, save preferences, and jump to Phase 1 Build.
       </p>
       <button
         on:click={applyQuickStart}
         disabled={buildBusy || saving}
         class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] cursor-pointer hover:border-[var(--pd-content-header)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        TurtleBot3 Sim (Jazzy arm64)
+        TurtleBot3 Sim (Jazzy)
       </button>
     </div>
 
@@ -176,7 +176,7 @@ async function applyQuickStart() {
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
         >
           <option value="humble">Humble (simulation/desktop)</option>
-          <option value="jazzy">Jazzy (simulation/arm64-native)</option>
+          <option value="jazzy">Jazzy (simulation)</option>
         </select>
       </div>
 
@@ -316,7 +316,7 @@ async function applyQuickStart() {
       {:else}
         <p class="text-sm text-[var(--pd-content-text)]">
           Builds <span class="font-mono">{profile.assetDir}</span> on top of the base image —
-          Gazebo, Nav2, and TurtleBot3 packages (plus noVNC for Jazzy arm64). Launch starts an empty world; add robots from the Simulation page.
+          Gazebo, Nav2, and TurtleBot3 packages (plus noVNC for Jazzy). Launch starts an empty world; add robots from the Simulation page.
         </p>
       {/if}
 
@@ -324,7 +324,7 @@ async function applyQuickStart() {
         bind:tag={simTag}
         bind:busy={simBusy}
         buildImage={t => physicalAiClient.buildSimulationImage(t, currentConfig)}
-        tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-sim-arm64:noble"
+        tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-sim:noble"
         tagInputId="simTag"
         disabled={!baseImageExists}
       />

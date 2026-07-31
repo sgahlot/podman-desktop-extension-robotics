@@ -169,7 +169,7 @@ packages/shared/src/types/ImageCatalog.ts   # Shared types
 | ✅ | Part 2 | Image Builder UI (was “Simulation Setup”) |
 | ✅ | Part 3 | Wire Phase 1 / Phase 2 build & push |
 
-**Current reality:** Humble = base (`:sloretz` / `:osrf`) + TurtleBot3 sim; Jazzy = base (`:latest` / `:noble`) + arm64 sim (`ros2-jazzy-sim-arm64:noble` via Story 6). Additional robots are future work (see plan). Simulation **launch** is implemented in Story 6 (APPENG-5771/5772).
+**Current reality:** Humble = base (`:sloretz` / `:osrf`) + TurtleBot3 sim; Jazzy = base (`:latest` / `:noble`) + sim (`ros2-jazzy-sim:noble` via Story 6). Additional robots are future work (see plan). Simulation **launch** is implemented in Story 6 (APPENG-5771/5772).
 
 ---
 

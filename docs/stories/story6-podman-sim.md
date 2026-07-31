@@ -20,7 +20,7 @@
 
 ### Path A — Fast/Practical (Image Builder Quick-Start)
 
-1. Click "TurtleBot3 Sim (Jazzy arm64)" quick-start in Image Builder → pre-fills all 5 dropdowns, **saves** preferences, and scrolls to Phase 1 Build
+1. Click "TurtleBot3 Sim (Jazzy)" quick-start in Image Builder → pre-fills all 5 dropdowns, **saves** preferences, and scrolls to Phase 1 Build
 2. Click **Build** for Phase 1 (base), then Phase 2 (sim) — Quick Start does **not** auto-build
 3. Go to Simulation card → Launch → Open in Browser → Add TurtleBot3
 
@@ -57,7 +57,7 @@ The existing Humble TurtleBot3 sim image requires amd64-only packages (ros-humbl
 
 ### Assets to create
 
-New directory: `packages/backend/assets/ros2-jazzy-sim-arm64/`
+New directory: `packages/backend/assets/ros2-jazzy-sim/`
 
 | File | Description |
 |------|-------------|
@@ -69,29 +69,29 @@ New directory: `packages/backend/assets/ros2-jazzy-sim-arm64/`
 
 ### Shared types updates
 
-- **SimulationProfiles.ts** — Add Jazzy sim profile (`ros2-jazzy-sim-arm64`)
-- **SimulationBaseImages.ts** — Add `jazzy-arm64` preset (Ubuntu 24.04, multi-arch, arm64-native)
-- **SimulationConfig.ts** — Add `'jazzy-arm64'` to `SimulationBaseImageId` union
+- **SimulationProfiles.ts** — Add Jazzy sim profile (`ros2-jazzy-sim`)
+- **SimulationBaseImages.ts** — Add `jazzy-noble` preset (Ubuntu 24.04, multi-arch)
+- **SimulationConfig.ts** — Add `'jazzy-noble'` to `SimulationBaseImageId` union
 
 ### Validation
 
-- `podman build -t ros2-jazzy-sim-arm64:test .` completes on Mac without `--platform linux/amd64`
-- `podman run -d -p 6080:6080 ros2-jazzy-sim-arm64:test /entrypoint-gazebo.sh` starts
+- `podman build -t ros2-jazzy-sim:test .` completes on Mac without `--platform linux/amd64`
+- `podman run -d -p 6080:6080 ros2-jazzy-sim:test /entrypoint-gazebo.sh` starts
 - Browser at `localhost:6080` shows Gazebo GUI (empty world, software rendered)
 - `podman exec <id> /entrypoint-spawn-robot.sh robot_1 -2.0 -0.5 0.0` spawns TurtleBot3
 
 ### Implementation Notes (completed 2026-07-28)
 
 **Files created:**
-- `packages/backend/assets/ros2-jazzy-sim-arm64/Containerfile` — two-phase build pattern using `LOCAL_BASE_IMAGE` build arg, layered on `ros2-jazzy-base`
-- `packages/backend/assets/ros2-jazzy-sim-arm64/entrypoint-gazebo.sh` — 9-stage startup (Xvfb → openbox → x11vnc → websockify → web page → xacro → gz server → optional robot spawn → gz GUI), 1024x768x16 resolution
-- `packages/backend/assets/ros2-jazzy-sim-arm64/entrypoint-spawn-robot.sh` — `podman exec` entry point accepting `robot_name x y yaw` args, runs `spawn_tb3.launch.py` + `robot_state_publisher` as foreground with signal handling
-- `packages/backend/assets/ros2-jazzy-sim-arm64/worlds/tb3_sandbox.sdf.xacro` — from repo-b reference with Sensors plugin **removed** (see finding below)
-- `packages/backend/assets/ros2-jazzy-sim-arm64/www/index.html` — noVNC landing page
+- `packages/backend/assets/ros2-jazzy-sim/Containerfile` — two-phase build pattern using `LOCAL_BASE_IMAGE` build arg, layered on `ros2-jazzy-base`
+- `packages/backend/assets/ros2-jazzy-sim/entrypoint-gazebo.sh` — 9-stage startup (Xvfb → openbox → x11vnc → websockify → web page → xacro → gz server → optional robot spawn → gz GUI), 1024x768x16 resolution
+- `packages/backend/assets/ros2-jazzy-sim/entrypoint-spawn-robot.sh` — `podman exec` entry point accepting `robot_name x y yaw` args, runs `spawn_tb3.launch.py` + `robot_state_publisher` as foreground with signal handling
+- `packages/backend/assets/ros2-jazzy-sim/worlds/tb3_sandbox.sdf.xacro` — from repo-b reference with Sensors plugin **removed** (see finding below)
+- `packages/backend/assets/ros2-jazzy-sim/www/index.html` — noVNC landing page
 
 **Shared types modified:**
-- `SimulationProfiles.ts` — added Jazzy sim profile with `assetDir: 'ros2-jazzy-sim-arm64'`, `imageName: 'ros2-jazzy-sim-arm64'`
-- `SimulationBaseImages.ts` — added `jazzy-arm64` preset (Ubuntu 24.04 Noble, multi-arch, arm64-native, `imageRef: 'docker.io/library/ros:jazzy-ros-base'`)
+- `SimulationProfiles.ts` — added Jazzy sim profile with `assetDir: 'ros2-jazzy-sim'`, `imageName: 'ros2-jazzy-sim'`
+- `SimulationBaseImages.ts` — added `jazzy-noble` preset (Ubuntu 24.04 Noble, multi-arch, `imageRef: 'docker.io/library/ros:jazzy-ros-base'`)
 
 **Key finding — Ogre2 segfault on arm64 llvmpipe:** The `gz-sim-sensors-system` plugin requires the Ogre2 render engine, which crashes with a segfault (`Ogre::GL3PlusRenderSystem::_createRenderWindow` → null pointer) when using llvmpipe software rendering on arm64. Fixed by removing `<plugin filename="gz-sim-sensors-system">` from `tb3_sandbox.sdf.xacro`. Physics, visuals, and robot spawning all work fine; only simulated sensor data rendering (camera, depth) is lost — acceptable for ROSCon demo.
 
@@ -105,7 +105,7 @@ New directory: `packages/backend/assets/ros2-jazzy-sim-arm64/`
 
 Add a "Quick Start" section at the top of `SimulationSetup.svelte`, above the dropdowns. A "TurtleBot3 Sim" button that:
 
-1. Pre-fills all dropdowns: `turtlebot3 / jazzy / dds / gazebo / jazzy-arm64`
+1. Pre-fills all dropdowns: `turtlebot3 / jazzy / dds / gazebo / jazzy-noble`
 2. Saves config to Preferences
 3. Scrolls to Phase 1 Build (user clicks Build for Phase 1 and Phase 2 explicitly)
 
@@ -114,9 +114,9 @@ Style like the Curated toggle pattern from `ImageCatalog.svelte`.
 ### Implementation Notes (completed 2026-07-28)
 
 Modified `SimulationSetup.svelte`:
-- Added "Quick Start" card above dropdowns with "TurtleBot3 Sim (Jazzy arm64)" button
-- Button pre-fills: `robot=turtlebot3, distro=jazzy, middleware=dds, engine=gazebo, baseImage=jazzy-arm64`
-- Updated Jazzy distro label from "Jazzy (base image only)" to "Jazzy (simulation/arm64-native)"
+- Added "Quick Start" card above dropdowns with "TurtleBot3 Sim (Jazzy)" button
+- Button pre-fills: `robot=turtlebot3, distro=jazzy, middleware=dds, engine=gazebo, baseImage=jazzy-noble`
+- Updated Jazzy distro label from "Jazzy (base image only)" to "Jazzy (simulation)"
 - Quick Start **saves** preferences and scrolls to Phase 1 Build (user still clicks Build explicitly; no auto-build)
 
 ---
@@ -186,7 +186,7 @@ openSimulationInBrowser(port)
 - `packages/frontend/src/App.svelte` — added `/simulation` route + `SimulationPage` import
 - `packages/frontend/src/Dashboard.svelte` — changed Simulation card from disabled `<div>` to active `<button>` with `router.goto('/simulation')` and tooltip "Launch and manage robot simulations"
 
-**Note:** CLI-built images (e.g. `ros2-jazzy-sim-arm64:test`) don't match the extension's tag pattern (`quay.io/.../ros2-jazzy-sim-arm64:noble`), so the Simulation page shows "No simulation images found locally" until images are built through the Image Builder. This is by design.
+**Note:** CLI-built images (e.g. `ros2-jazzy-sim:test`) don't match the extension's tag pattern (`quay.io/.../ros2-jazzy-sim:noble`), so the Simulation page shows "No simulation images found locally" until images are built through the Image Builder. This is by design.
 
 ---
 

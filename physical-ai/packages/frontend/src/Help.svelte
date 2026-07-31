@@ -35,7 +35,7 @@ import { router } from 'tinro';
           <strong>Browse repositories</strong> — Enter a Quay.io namespace and click Load. Expand any repository to see tags with size, date, and digest.
         </div>
         <div>
-          <strong>All vs Curated</strong> — Default view is <strong>All</strong> (every <strong>public</strong> repo in the namespace; private Quay repos are not listed without auth). Switch to <strong>Curated</strong> to show only names matching the allowlist (default <span class="font-mono">ros2-*-base,ros2-*-turtlebot3,ros2-*-sim-*</span>). Both the default view and the allowlist are configurable under Settings &rarr; Preferences &rarr; Physical AI (comma-separated patterns; <span class="font-mono">*</span> is a wildcard).
+          <strong>All vs Curated</strong> — Default view is <strong>All</strong> (every <strong>public</strong> repo in the namespace; private Quay repos are not listed without auth). Switch to <strong>Curated</strong> to show only names matching the allowlist (default <span class="font-mono">ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*</span>). Both the default view and the allowlist are configurable under Settings &rarr; Preferences &rarr; Physical AI (comma-separated patterns; <span class="font-mono">*</span> is a wildcard).
         </div>
         <div>
           <strong>Filter</strong> — Use "Filter by name" to further narrow the list.
@@ -53,16 +53,16 @@ import { router } from 'tinro';
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Image Builder</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
         <div>
-          <strong>Quick Start</strong> — <span class="font-mono">TurtleBot3 Sim (Jazzy arm64)</span> sets dropdowns, saves preferences, and scrolls to Phase 1. Then click Build for Phase 1 and Phase 2.
+          <strong>Quick Start</strong> — <span class="font-mono">TurtleBot3 Sim (Jazzy)</span> sets dropdowns, saves preferences, and scrolls to Phase 1. Then click Build for Phase 1 and Phase 2.
         </div>
         <div>
           <strong>Configure</strong> — Select ROS distro (Humble or Jazzy), robot, middleware, engine, and base preset. Save persists to Preferences.
         </div>
         <div>
-          <strong>Phase 1: Base Image</strong> — Humble: <span class="font-mono">sloretz</span> (<span class="font-mono">:sloretz</span>) or <span class="font-mono">osrf</span> (<span class="font-mono">:osrf</span>). Jazzy arm64-native: Ubuntu Noble preset (tag <span class="font-mono">:noble</span>). Official Jazzy amd64 preset uses tag <span class="font-mono">:latest</span>.
+          <strong>Phase 1: Base Image</strong> — Humble: <span class="font-mono">sloretz</span> (<span class="font-mono">:sloretz</span>) or <span class="font-mono">osrf</span> (<span class="font-mono">:osrf</span>). Jazzy: Ubuntu Noble preset (tag <span class="font-mono">:noble</span>). Official Jazzy amd64 preset uses tag <span class="font-mono">:latest</span>.
         </div>
         <div>
-          <strong>Phase 2: Simulation Image</strong> — Layers Gazebo, Nav2, TurtleBot3 (and noVNC for Jazzy arm64) on your Phase 1 local base. Disabled until the base exists locally.
+          <strong>Phase 2: Simulation Image</strong> — Layers Gazebo, Nav2, TurtleBot3 (and noVNC for Jazzy) on your Phase 1 local base. Disabled until the base exists locally.
         </div>
         <div>
           <strong>Cancel / Push</strong> — Cancel aborts an in-progress <strong>build</strong> or <strong>push</strong>. Push requires registry login via Podman Desktop &rarr; Settings &rarr; Registries. Image Builder also shows whether the current <span class="font-mono">quay.io/…</span> tag exists on Quay (public repos only; private repos show as unavailable).
@@ -74,7 +74,7 @@ import { router } from 'tinro';
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Simulation</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
         <div>
-          <strong>Launch</strong> — Pick a local sim image (tags matching <span class="font-mono">ros2-*-sim-*</span> or <span class="font-mono">ros2-*-turtlebot3</span>). The container starts Gazebo + noVNC. The world is <strong>empty</strong> until you add a robot.
+          <strong>Launch</strong> — Pick a local sim image (tags matching <span class="font-mono">ros2-*-sim*</span> or <span class="font-mono">ros2-*-turtlebot3</span>). The container starts Gazebo + noVNC. The world is <strong>empty</strong> until you add a robot.
         </div>
         <div>
           <strong>Open in Browser</strong> — Opens noVNC (default port 6080) to view Gazebo.
@@ -94,7 +94,7 @@ import { router } from 'tinro';
         <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-jazzy-base:latest</p>
         <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-jazzy-base:noble</p>
         <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-humble-turtlebot3:sloretz</p>
-        <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-jazzy-sim-arm64:noble</p>
+        <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-jazzy-sim:noble</p>
       </div>
     </div>
 
@@ -104,7 +104,7 @@ import { router } from 'tinro';
         <p>&#8226; Arch warnings appear only when the selected preset does not support your host architecture.</p>
         <p>&#8226; Pull progress may jump as layers are discovered — that is normal.</p>
         <p>&#8226; The extension remembers your last visited page.</p>
-        <p>&#8226; For Gazebo on Mac, prefer Jazzy arm64-native over Humble (avoids QEMU).</p>
+        <p>&#8226; For Gazebo on Mac, prefer Jazzy Noble over Humble (avoids QEMU).</p>
       </div>
     </div>
 

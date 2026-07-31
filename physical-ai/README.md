@@ -15,8 +15,8 @@ Current container bases are **Ubuntu 24.04** (ROS2 Jazzy and Humble). Fedora/RHE
 
 | Requirement | Minimum | Recommended |
 |-------------|---------|-------------|
-| Podman Desktop | 1.28+ | Latest |
-| Podman | 5.x | 5.8+ |
+| Podman Desktop | 1.28+ | 1.29+ (tested with 1.28.x, 1.29.x) |
+| Podman | 5.x or 6.x | 6.0+ (tested with 5.8.5, 6.0.2) |
 | Machine CPUs | 4 | 6+ |
 | Machine Memory | 4 GB | 8 GB |
 | Machine Disk | 30 GB | 50+ GB |
@@ -35,7 +35,7 @@ npm run build
 
 1. Load the extension from `packages/backend` in Podman Desktop (Settings → Extensions → Local extension)
 2. Open **Physical AI** (or **F1** → **Physical AI: Open Dashboard**)
-3. **Image Builder** → Quick Start **TurtleBot3 Sim (Jazzy arm64)** → Phase 1 Build → Phase 2 Build
+3. **Image Builder** → Quick Start **TurtleBot3 Sim (Jazzy)** → Phase 1 Build → Phase 2 Build
 4. **Simulation** → Launch → Open in Browser → Add TurtleBot3
 
 ## Project Structure

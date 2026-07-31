@@ -99,7 +99,7 @@ The backend is the entry point loaded by Podman Desktop. It manages the extensio
 | `package.json` | Extension manifest (contributes: commands, configuration with 8 properties)
 | `vite.config.js` | Builds to CJS, externalizes `@podman-desktop/api`
 | `assets/ros2-jazzy-base/` | Bundled Containerfile + entrypoint for Jazzy base builds
-| `assets/ros2-jazzy-sim-arm64/` | Jazzy simulation image: Containerfile, entrypoint-gazebo.sh, entrypoint-spawn-robot.sh, world SDF, noVNC landing page
+| `assets/ros2-jazzy-sim/` | Jazzy simulation image: Containerfile, entrypoint-gazebo.sh, entrypoint-spawn-robot.sh, world SDF, noVNC landing page
 | `assets/ros2-humble-base/` | Bundled Containerfile for Humble base builds
 | `assets/ros2-humble-turtlebot3/` | Bundled Containerfile + entrypoint for Humble simulation builds
 |===
@@ -214,7 +214,7 @@ export abstract class PhysicalAiApi {
 | `types/ImageCatalog.ts` | `QuayRepository`, `QuayTag`, `PullProgress`, `BuildProgress`, `PushProgress`
 | `types/SimulationConfig.ts` | `SimulationConfig` — persisted wizard selections (robot, distro, middleware, engine, baseImage)
 | `types/SimulationProfiles.ts` | `SimulationProfile`, `SIMULATION_PROFILES`, `resolveSimulationProfile()`, `simulationImageTag()`
-| `types/SimulationBaseImages.ts` | `SimulationBaseImageId`, presets (sloretz, osrf, jazzy-arm64), `resolveSimulationBaseImage()`
+| `types/SimulationBaseImages.ts` | `SimulationBaseImageId`, presets (sloretz, osrf, jazzy-noble), `resolveSimulationBaseImage()`
 | `types/SimulationContainer.ts` | `SimLaunchOptions`, `SimContainerInfo`, `ExecResult`, container label constants
 | `types/CatalogCurated.ts` | `DEFAULT_CURATED_ALLOWLIST`, `parseCuratedAllowlist()`, `repoMatchesAllowlist()`, `filterCuratedRepos()` — wildcard pattern matching for curated allowlist
 |===
@@ -346,7 +346,7 @@ Uses a single Podman container (not a pod) with all components baked in. This av
 [source]
 ----
 ┌─── Podman Container: pai-sim-<timestamp> ──────────────────────────┐
-│    Image: ros2-jazzy-sim-arm64:noble                               │
+│    Image: ros2-jazzy-sim:noble                                     │
 │    Labels: io.physical-ai.role=simulation                          │
 │                                                                     │
 │  ┌──────────────────────────────────────────────────────────────┐  │
@@ -401,9 +401,9 @@ The extension contributes 8 settings under **Settings → Preferences → Physic
 | `physical-ai.simulationDistro` | string | `humble` | ROS distro (`humble` and `jazzy` both have bundled simulation images)
 | `physical-ai.simulationMiddleware` | string | `dds` | Middleware (`dds` or `zenoh`)
 | `physical-ai.simulationEngine` | string | `gazebo` | Simulation engine
-| `physical-ai.simulationBaseImage` | enum | `sloretz` | Base preset: `sloretz` (multi-arch Humble), `osrf` (amd64 Humble), `jazzy-arm64` (Noble / arm64 Quick Start), or `jazzy` (amd64 Jazzy `:latest`)
+| `physical-ai.simulationBaseImage` | enum | `sloretz` | Base preset: `sloretz` (multi-arch Humble), `osrf` (amd64 Humble), `jazzy-noble` (Noble / multi-arch Quick Start), or `jazzy` (amd64 Jazzy `:latest`)
 | `physical-ai.catalogViewMode` | enum | `all` | Image Catalog view: `all` (show all public repos) or `curated` (filter by allowlist)
-| `physical-ai.catalogCuratedAllowlist` | string | `ros2-*-base,ros2-*-turtlebot3,ros2-*-sim-*` | Comma-separated wildcard patterns for curated catalog view
+| `physical-ai.catalogCuratedAllowlist` | string | `ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*` | Comma-separated wildcard patterns for curated catalog view
 |===
 
 == Key Technical Decisions
@@ -437,8 +437,8 @@ The extension contributes 8 settings under **Settings → Preferences → Physic
 | Jazzy has no official Fedora packages (REP 2000: Ubuntu Noble Tier 1, RHEL 9 Tier 2). Official Jazzy RPMs exist for RHEL — UBI/RHEL is a nearer Red Hat path than Fedora. Migration parked; see APPENG-5809 and plan research notes.
 
 | Container base (simulation)
-| Digest-pinned presets (sloretz multi-arch, osrf amd64-only, jazzy / jazzy-arm64)
-| Presets ensure reproducible builds. `jazzy-arm64` is the Mac Quick Start path. Pinned digests in `SimulationBaseImages.ts`, bumped deliberately.
+| Digest-pinned presets (sloretz multi-arch, osrf amd64-only, jazzy / jazzy-noble)
+| Presets ensure reproducible builds. `jazzy-noble` is the multi-arch Quick Start path. Pinned digests in `SimulationBaseImages.ts`, bumped deliberately.
 
 | Middleware
 | DDS (default); Zenoh planned
@@ -470,7 +470,11 @@ The extension contributes 8 settings under **Settings → Preferences → Physic
 
 | Min Podman Desktop
 | >= 1.28.0
-| User's current version; webview API is stable at this version
+| Tested with 1.28.x and 1.29.x; webview API is stable at this version
+
+| Podman versions tested
+| 5.8.5, 6.0.2
+| Major version jump (5.x → 6.x) works; Podman Machine data wipe recommended on upgrade
 
 | API version
 | `@podman-desktop/api@1.28.3`

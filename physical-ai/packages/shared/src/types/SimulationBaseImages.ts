@@ -4,7 +4,7 @@
  *
  * Preset ids are short so Podman Desktop Settings enum dropdowns don't truncate.
  */
-export type SimulationBaseImageId = 'sloretz' | 'osrf' | 'jazzy' | 'jazzy-arm64';
+export type SimulationBaseImageId = 'sloretz' | 'osrf' | 'jazzy' | 'jazzy-noble';
 
 export interface SimulationBaseImagePreset {
   id: SimulationBaseImageId;
@@ -49,11 +49,11 @@ export const SIMULATION_BASE_IMAGES: readonly SimulationBaseImagePreset[] = [
     imageTag: 'osrf',
   },
   {
-    id: 'jazzy-arm64',
+    id: 'jazzy-noble',
     distro: 'jazzy',
-    label: 'Ubuntu 24.04 Noble (multi-arch, arm64-native)',
+    label: 'Ubuntu 24.04 Noble (multi-arch)',
     description:
-      'Official Ubuntu Noble with ROS2 Jazzy. Native arm64 binary packages for Mac Apple Silicon — no emulation needed.',
+      'Official Ubuntu Noble with ROS2 Jazzy. Multi-arch — works on arm64 (Mac) and amd64 (Linux).',
     imageRef: 'docker.io/library/ros:jazzy-ros-base',
     architectures: ['amd64', 'arm64'],
     imageTag: 'noble',
@@ -77,6 +77,7 @@ export const DEFAULT_SIMULATION_BASE_IMAGE: SimulationBaseImageId = 'sloretz';
 const LEGACY_BASE_IMAGE_IDS: Record<string, SimulationBaseImageId> = {
   'sloretz-multiarch': 'sloretz',
   'osrf-official': 'osrf',
+  'jazzy-arm64': 'jazzy-noble',
 };
 
 export function resolveSimulationBaseImage(

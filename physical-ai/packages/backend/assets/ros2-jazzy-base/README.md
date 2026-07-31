@@ -1,6 +1,6 @@
 # ROS2 Jazzy Base Image
 
-Base layer for Jazzy simulation images (including `ros2-jazzy-sim-arm64`). Provides ROS2 Jazzy with common build tools.
+Base layer for Jazzy simulation images (including `ros2-jazzy-sim`). Provides ROS2 Jazzy with common build tools.
 
 ## What's included
 
@@ -12,13 +12,13 @@ Base layer for Jazzy simulation images (including `ros2-jazzy-sim-arm64`). Provi
 
 | Preset id | Image | Arch | Output tag |
 |-----------|--------|------|------------|
-| `jazzy-arm64` (default for Jazzy) | `docker.io/library/ros:jazzy-ros-base` | amd64, arm64 | `:noble` |
+| `jazzy-noble` (default for Jazzy) | `docker.io/library/ros:jazzy-ros-base` | amd64, arm64 | `:noble` |
 | `jazzy` | digest-pinned `ros:jazzy-ros-base` | amd64 only | `:latest` |
 
 ## Build manually
 
 ```bash
-# Arm64-friendly / Story 6 Quick Start tag
+# Multi-arch / Story 6 Quick Start tag
 podman build -t quay.io/ecosystem-appeng/ros2-jazzy-base:noble \
   packages/backend/assets/ros2-jazzy-base/
 
@@ -29,5 +29,5 @@ podman build -t quay.io/ecosystem-appeng/ros2-jazzy-base:latest \
 
 ## Notes
 
-- Simulation: build Phase 2 `ros2-jazzy-sim-arm64` with `LOCAL_BASE_IMAGE` pointing at this base.
-- Prefer `jazzy-arm64` / `:noble` on Apple Silicon.
+- Simulation: build Phase 2 `ros2-jazzy-sim` with `LOCAL_BASE_IMAGE` pointing at this base.
+- Prefer `jazzy-noble` / `:noble` on Apple Silicon.

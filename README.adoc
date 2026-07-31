@@ -36,8 +36,8 @@ A Podman Desktop extension that gives robotics developers a GUI-driven path from
 
 === Prerequisites
 
-* https://podman-desktop.io/[Podman Desktop] >= 1.28.0
-* Podman >= 5.x (tested with 5.8.5)
+* https://podman-desktop.io/[Podman Desktop] >= 1.28.0 (tested with 1.28.x and 1.29.x)
+* Podman >= 5.x (tested with 5.8.5 and 6.0.2)
 * Node.js >= 24.0.0, npm >= 11.0.0 (matches Podman Desktop's own Node requirement)
 
 ==== Podman Machine Requirements
@@ -97,7 +97,7 @@ podman-work/                            <1>
 │       │   │   └── api-impl.ts         # PhysicalAiApi implementation (27 methods)
 │       │   ├── assets/                 # Bundled Containerfiles + entrypoints
 │       │   │   ├── ros2-jazzy-base/
-│       │   │   ├── ros2-jazzy-sim-arm64/   # Jazzy sim: Gazebo + Nav2 + noVNC
+│       │   │   ├── ros2-jazzy-sim/          # Jazzy sim: Gazebo + Nav2 + noVNC
 │       │   │   ├── ros2-humble-base/
 │       │   │   └── ros2-humble-turtlebot3/
 │       │   └── package.json            # Extension manifest (8 config properties)

@@ -26,7 +26,7 @@ $: hasRunning = !!runningContainer;
 async function loadImages() {
   try {
     const all = await physicalAiClient.listLocalImages();
-    localSimImages = all.filter(t => /ros2-.*-sim-|ros2-.*-turtlebot3/.test(t));
+    localSimImages = all.filter(t => /ros2-.*-sim|ros2-.*-turtlebot3/.test(t));
     if (localSimImages.length > 0 && !selectedImage) {
       selectedImage = localSimImages[0];
     }
@@ -138,15 +138,15 @@ async function spawnRobot() {
       <div class="flex flex-col gap-2 text-xs text-[var(--pd-content-text)]">
         <p>
           No simulation images found locally. Tags must look like
-          <span class="font-mono">…/ros2-*-sim-*:…</span> or
+          <span class="font-mono">…/ros2-*-sim*:…</span> or
           <span class="font-mono">…/ros2-*-turtlebot3:…</span>
-          (for example <span class="font-mono">quay.io/&lt;ns&gt;/ros2-jazzy-sim-arm64:noble</span>).
+          (for example <span class="font-mono">quay.io/&lt;ns&gt;/ros2-jazzy-sim:noble</span>).
         </p>
         <ol class="list-decimal list-inside flex flex-col gap-1 pl-1">
           <li>
             Open
             <button type="button" on:click={() => router.goto('/build')} class="pai-link">Image Builder</button>
-            → Quick Start <span class="font-mono">TurtleBot3 Sim (Jazzy arm64)</span>
+            → Quick Start <span class="font-mono">TurtleBot3 Sim (Jazzy)</span>
           </li>
           <li>Build <strong>Phase 1</strong> (base), then <strong>Phase 2</strong> (sim)</li>
           <li>Return here and Launch — the world starts empty; use <strong>Add TurtleBot3</strong> below to spawn a robot</li>

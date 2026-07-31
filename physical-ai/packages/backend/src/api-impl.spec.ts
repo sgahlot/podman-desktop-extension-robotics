@@ -621,18 +621,18 @@ describe('PhysicalAiApiImpl', () => {
         get: vi.fn().mockReturnValue('ecosystem-appeng'),
       } as any);
       vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({
-        fsPath: '/fake/assets/ros2-jazzy-sim-arm64',
+        fsPath: '/fake/assets/ros2-jazzy-sim',
       } as any);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
 
       await api.buildSimulationImage('sim-tag:noble', {
         ...supportedConfig,
         distro: 'jazzy',
-        baseImage: 'jazzy-arm64' as any,
+        baseImage: 'jazzy-noble' as any,
       });
 
       expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
-        '/fake/assets/ros2-jazzy-sim-arm64',
+        '/fake/assets/ros2-jazzy-sim',
         expect.any(Function),
         expect.objectContaining({
           buildargs: {

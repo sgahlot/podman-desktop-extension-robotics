@@ -36,7 +36,7 @@ describe('ImageCatalog', () => {
     vi.resetAllMocks();
     mockGetDefaultNamespace.mockResolvedValue('ecosystem-appeng');
     mockGetCatalogViewMode.mockResolvedValue('all');
-    mockGetCatalogCuratedAllowlist.mockResolvedValue('ros2-*-base,ros2-*-turtlebot3,ros2-*-sim-*');
+    mockGetCatalogCuratedAllowlist.mockResolvedValue('ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*');
     mockSetCatalogViewMode.mockResolvedValue(undefined);
     mockListLocalImages.mockResolvedValue([]);
     mockListCatalogImages.mockResolvedValue([]);
@@ -156,7 +156,7 @@ describe('ImageCatalog', () => {
       { name: 'ros2-humble-base', namespace: 'ns' },
       { name: 'other-tool', namespace: 'ns' },
       { name: 'ros2-humble-turtlebot3', namespace: 'ns' },
-      { name: 'ros2-jazzy-sim-arm64', namespace: 'ns' },
+      { name: 'ros2-jazzy-sim', namespace: 'ns' },
     ]);
     render(ImageCatalog);
     await waitFor(() => {

@@ -46,8 +46,9 @@ Drivers:
 | [APPENG-5767](#story-4) | OpenShift deployment bridge *(stretch)* | ⚪ Not Started | 0/3 done |
 | [Spike](#story-5) | Local-first deployment of reference demos | 🅿️ Parked (Kind OOM) | 0/6 proposed |
 | [Story 6](#story-6) | Podman-only simulation workflow (ROSCon demo) | 🟡 In Progress | 5/6 done |
+| [FIX](#fix-arch-aware-sim) | Make simulation image build arch-aware | ✅ Done | Naming + labels fixed; Ogre2 Sensors deferred |
 
-> **Legend:** ✅ Done · 🟡 In Progress / Almost Done · ⚪ Not Started · 🅿️ Parked
+> **Legend:** ✅ Done · 🟡 In Progress / Almost Done · ⚪ Not Started · 🅿️ Parked · 🔴 Must fix
 
 **Last updated:** 2026-07-30
 
@@ -80,7 +81,7 @@ Drivers:
 
 | Status | Part | Summary |
 |--------|------|---------|
-| ✅ | Part 1 | Simulation + base Containerfiles under `packages/backend/assets/` (`ros2-humble-base`, `ros2-humble-turtlebot3`, `ros2-jazzy-base`, `ros2-jazzy-sim-arm64`) |
+| ✅ | Part 1 | Simulation + base Containerfiles under `packages/backend/assets/` (`ros2-humble-base`, `ros2-humble-turtlebot3`, `ros2-jazzy-base`, `ros2-jazzy-sim`) |
 | ✅ | Part 2 | Image Builder UI — dropdowns for robot/distro/middleware/engine/base preset; Dashboard card first; prefs persistence |
 | ✅ | Part 3 | Wire Build & Push — Phase 1 base + Phase 2 simulation (`FROM` local base); progress/cancel/push |
 
@@ -106,7 +107,7 @@ If you only ever build one sim image and never reuse the base, the two-phase spl
 | `quay.io/<ns>/ros2-jazzy-base:latest` | Jazzy headless base (amd64 preset) |
 | `quay.io/<ns>/ros2-jazzy-base:noble` | Jazzy base for arm64 Quick Start / Story 6 |
 | `quay.io/<ns>/ros2-humble-turtlebot3:sloretz` | Humble sim (layered on sloretz base) |
-| `quay.io/<ns>/ros2-jazzy-sim-arm64:noble` | Jazzy sim + noVNC (arm64-native; Story 6) |
+| `quay.io/<ns>/ros2-jazzy-sim:noble` | Jazzy sim + noVNC (multi-arch; Story 6) |
 
 ##### Future (not blocking Story 1)
 
@@ -279,7 +280,7 @@ Now that the scaffold (APPENG-5768) is complete, sub-tasks have fine-grained dep
 
 ### Ready Now (no blockers)
 
-Stories 1 and 6 (S6-1–S6-5) are complete. APPENG-5771 and APPENG-5772 are done (via Story 6), which unblocks Story 3 (multi-robot) and Story 4 (K8s manifests). Next pick-ups:
+Stories 1 and 6 (S6-1–S6-5) are complete. APPENG-5771 and APPENG-5772 are done (via Story 6), which unblocks Story 3 (multi-robot) and Story 4 (K8s manifests). The [arch-aware sim fix](#fix-arch-aware-sim) has landed — naming is now arch-neutral (`ros2-jazzy-sim`). Next pick-ups:
 
 | Key | Summary | Skills needed |
 |-----|---------|---------------|
@@ -414,7 +415,7 @@ This bridges Story 2 (single-robot sim) and Story 4 (OpenShift bridge) by learni
 
 **Ownership model:** Reference repos are **learning material only** — no runtime dependency after the spikes. Internalize Helm charts, Containerfiles, entrypoints, Zenoh configs, noVNC patterns, and demo scripts into our repo (`packages/backend/assets/` and/or a top-level `deploy/`). We own build, catalog, and deploy.
 
-**Relation to Story 1 / Story 6:** Story 1 golden images include Humble (TB3 sim) and Jazzy base + `ros2-jazzy-sim-arm64:noble`. Story 6 already shipped APPENG-5771/5772 on Podman using spike learnings — Story 5 internalization (S5-3) is **not** required for that path. Resume Story 5 for Kind/Helm/OpenShift; converge images/distros when those spikes decide what to keep.
+**Relation to Story 1 / Story 6:** Story 1 golden images include Humble (TB3 sim) and Jazzy base + `ros2-jazzy-sim:noble`. Story 6 already shipped APPENG-5771/5772 on Podman using spike learnings — Story 5 internalization (S5-3) is **not** required for that path. Resume Story 5 for Kind/Helm/OpenShift; converge images/distros when those spikes decide what to keep.
 
 ### Reference Repos
 
@@ -562,6 +563,61 @@ Items that improve polish or operability but are **not** required for the ROSCon
 
 ---
 
+<a id="fix-arch-aware-sim"></a>
+
+### FIX: Make simulation image build arch-aware — 🔴 Must fix before next story
+
+**Priority:** Blocking — must be resolved before Story 2 (topic monitor), Story 3 (multi-robot), or S6-6 (customize hardware).
+
+#### Problem
+
+The Jazzy simulation profile is hardcoded to arm64 naming and assumptions throughout the codebase:
+
+1. **Profile name:** `SimulationProfiles.ts` maps `jazzy + turtlebot3` to asset dir `ros2-jazzy-sim-arm64` and image name `ros2-jazzy-sim-arm64`. On an amd64 Linux machine, this produces an image named `ros2-jazzy-sim-arm64:noble` — which is misleading since it would actually contain amd64 packages.
+
+2. **Profile label:** Says "arm64-native" — wrong on amd64.
+
+3. **Containerfile is actually arch-agnostic:** `ros2-jazzy-sim-arm64/Containerfile` uses `FROM $LOCAL_BASE_IMAGE` and `apt install ros-jazzy-*` — apt resolves packages for the host architecture. The image builds and runs on amd64. The only arm64-specific part is the name.
+
+4. **Ogre2 workaround may not be needed on amd64:** The Sensors plugin was removed from the world SDF because Ogre2 segfaults on arm64 llvmpipe. On amd64 with a native GPU, this removal is unnecessary — users lose simulated sensor data for no reason.
+
+5. **Quick Start label:** Says "TurtleBot3 Sim (Jazzy arm64)" — confusing on amd64 Linux.
+
+6. **Base image preset:** `jazzy-arm64` preset says "arm64-native" in its label. The `jazzy` preset (amd64) exists but has no corresponding simulation profile — you can build a Jazzy base on amd64 but not a Jazzy sim.
+
+#### Impact
+
+The extension technically works on amd64 Linux (the Containerfile is arch-agnostic), but the UX is confusing: everything says "arm64" when it isn't. More importantly, there's no proper amd64-specific sim path that could include Ogre2 Sensors (camera/depth data).
+
+#### Proposed fix
+
+| Step | Change | Files |
+|------|--------|-------|
+| 1 | Rename asset dir from `ros2-jazzy-sim-arm64/` to `ros2-jazzy-sim/` | `packages/backend/assets/` |
+| 2 | Rename image from `ros2-jazzy-sim-arm64` to `ros2-jazzy-sim` in `SimulationProfiles.ts` | `packages/shared/src/types/SimulationProfiles.ts` |
+| 3 | Update profile label to remove "arm64-native" — e.g. "ROS2 Jazzy + TurtleBot3 + Gazebo + noVNC" | `SimulationProfiles.ts` |
+| 4 | Update Quick Start button label — e.g. "TurtleBot3 Sim (Jazzy)" | `SimulationSetup.svelte` |
+| 5 | Make world SDF arch-aware: provide two variants or conditionally include Sensors plugin based on host arch (`getHostArch()` already exists in the API) | `assets/ros2-jazzy-sim/worlds/`, `api-impl.ts` or Containerfile |
+| 6 | Update `jazzy-arm64` base image preset label to be less arm64-specific, or keep both `jazzy` and `jazzy-arm64` presets with clear labels | `SimulationBaseImages.ts` |
+| 7 | Update golden image names in README, plan doc, and story docs | READMEs, plan doc, design.adoc, story docs |
+
+**Step 5 (world SDF) has two approaches:**
+
+- **Option A — Two world files:** `tb3_sandbox.sdf` (amd64, with Sensors) and `tb3_sandbox_nosensors.sdf` (arm64, without). Entrypoint selects based on `uname -m`. Simple but duplicates the SDF.
+- **Option B — Single xacro with conditional:** Use the existing `.sdf.xacro` with a parameter to include/exclude the Sensors plugin. Entrypoint passes the flag based on arch. Cleaner, but xacro processing adds a build-time dependency.
+- **Option C — Always exclude Sensors for now:** Keep the current world SDF (no Sensors), document that sensor simulation is unavailable. Simplest, but amd64 users lose sensor data unnecessarily. Add Sensors back as a follow-up when tested on amd64.
+
+**Recommendation:** Start with steps 1–4 and 6–7 (naming fixes, no functional change). For step 5, go with **Option C for now** (always exclude Sensors) and add an item to the wishlist to conditionally enable Sensors on amd64 once tested. This avoids scope creep while fixing the confusing naming immediately.
+
+#### Validation
+
+- On Mac arm64: extension builds and runs the sim image as before (renamed from `ros2-jazzy-sim-arm64` to `ros2-jazzy-sim`)
+- Quick Start label no longer says "arm64"
+- Image name in Quay / local listing is `ros2-jazzy-sim:noble` (not `ros2-jazzy-sim-arm64:noble`)
+- Existing pushed images on Quay still work (users who already pulled `ros2-jazzy-sim-arm64:noble` are unaffected — it's a new image name, not a retag)
+
+---
+
 ## Notes on this version
 
 - **Summaries** match Jira exactly (sentence case); section labels add *(stretch)* only as plan metadata, not as part of the Summary field.
@@ -571,5 +627,6 @@ Items that improve polish or operability but are **not** required for the ROSCon
 - **Story 5 (2026-07-27):** Updated from independent review of both reference repos — Repo A stack corrected to Jazzy; Mac/Kind risks (amd64, Routes, `oc`, COPR, resources); spike exit criteria; internalization artifact checklist.
 - **Story 6 (2026-07-28):** Added Podman-only simulation workflow. Story 5 Kind approach parked (Nav2 OOMKill at 4Gi on arm64). Story 6 replaces it for the ROSCon demo using `podman run` + `podman exec` instead of Kubernetes. Cross-referenced with Story 2.
 - **Story 6 (2026-07-28):** S6-1 through S6-5 implemented. Containerfile + entrypoints, Image Builder quick-start, backend lifecycle API (6 methods), Simulation page UI, and TurtleBot3 spawn button all working. Key finding: Ogre2 Sensors plugin crashes on arm64 llvmpipe — removed from world SDF (visuals/physics unaffected). S6-6 (Customize Hardware) remains as stretch.
-- **Story 6 polish (2026-07-28):** Curated allowlist includes `ros2-*-sim-*`; golden tags add `:noble` base + `ros2-jazzy-sim-arm64:noble`; Simulation empty-state + Help describe build→launch→spawn; Quick Start saves and scrolls to Phase 1.
-- **Docs / prefs sync (2026-07-30):** Removed stale “Jazzy base-only” claims; Story 5 status unified to Parked; Quick Start docs match save+scroll (no auto-build); prefs enum includes `jazzy-arm64`; Help/design cover push cancel, public Quay limits, and local image listing.
+- **Story 6 polish (2026-07-28):** Curated allowlist includes `ros2-*-sim*`; golden tags add `:noble` base + `ros2-jazzy-sim:noble`; Simulation empty-state + Help describe build→launch→spawn; Quick Start saves and scrolls to Phase 1.
+- **Docs / prefs sync (2026-07-30):** Removed stale “Jazzy base-only” claims; Story 5 status unified to Parked; Quick Start docs match save+scroll (no auto-build); prefs enum includes `jazzy-noble`; Help/design cover push cancel, public Quay limits, and local image listing.
+- **Arch-aware sim fix (2026-07-31):** Implemented FIX — renamed `ros2-jazzy-sim-arm64` → `ros2-jazzy-sim`, `jazzy-arm64` preset → `jazzy-noble` with legacy mapping, fixed SimulationPage regex and CatalogCurated default pattern, updated all labels/docs to be arch-neutral. Option C for Ogre2 Sensors (always exclude, test on amd64 later).

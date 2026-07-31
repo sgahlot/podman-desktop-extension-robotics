@@ -14,8 +14,8 @@ describe('SimulationBaseImages', () => {
       expect(preset.imageRef.length).toBeGreaterThan(0);
       expect(preset.imageTag.length).toBeGreaterThan(0);
       expect(preset.distro).toBeTruthy();
-      // Digest-pinned presets end with @sha256:…; jazzy-arm64 may use a floating tag for multi-arch.
-      if (preset.id !== 'jazzy-arm64') {
+      // Digest-pinned presets end with @sha256:…; jazzy-noble uses a floating tag for multi-arch.
+      if (preset.id !== 'jazzy-noble') {
         expect(preset.imageRef).toMatch(/@sha256:[a-f0-9]{64}$/);
       }
     }
@@ -50,10 +50,16 @@ describe('SimulationBaseImages', () => {
     expect(preset.imageTag).toBe('latest');
   });
 
-  it('resolves the jazzy-arm64 noble preset', () => {
-    const preset = resolveSimulationBaseImage('jazzy-arm64');
-    expect(preset.id).toBe('jazzy-arm64');
+  it('resolves the jazzy-noble preset', () => {
+    const preset = resolveSimulationBaseImage('jazzy-noble');
+    expect(preset.id).toBe('jazzy-noble');
     expect(preset.architectures).toContain('arm64');
+    expect(preset.imageTag).toBe('noble');
+  });
+
+  it('maps legacy jazzy-arm64 id to jazzy-noble', () => {
+    const preset = resolveSimulationBaseImage('jazzy-arm64');
+    expect(preset.id).toBe('jazzy-noble');
     expect(preset.imageTag).toBe('noble');
   });
 
@@ -64,14 +70,14 @@ describe('SimulationBaseImages', () => {
 
     const jazzy = baseImagesForDistro('jazzy');
     expect(jazzy).toHaveLength(2);
-    expect(jazzy.map(p => p.id)).toEqual(['jazzy-arm64', 'jazzy']);
+    expect(jazzy.map(p => p.id)).toEqual(['jazzy-noble', 'jazzy']);
 
     expect(baseImagesForDistro('rolling')).toHaveLength(0);
   });
 
   it('returns distro-appropriate default base image', () => {
     expect(defaultBaseImageForDistro('humble')).toBe('sloretz');
-    expect(defaultBaseImageForDistro('jazzy')).toBe('jazzy-arm64');
+    expect(defaultBaseImageForDistro('jazzy')).toBe('jazzy-noble');
     expect(defaultBaseImageForDistro('rolling')).toBe(DEFAULT_SIMULATION_BASE_IMAGE);
   });
 });
