@@ -19,7 +19,6 @@ let spawning = false;
 let spawnStatus = '';
 let robotCounter = 1;
 let spawnedRobots: Array<{ name: string; x: string; y: string; status: string }> = [];
-let launchedHere = false;
 
 $: runningContainer = containers.find(c => c.state === 'running');
 $: hasRunning = !!runningContainer;
@@ -83,7 +82,6 @@ async function launchSim() {
       launchError = msg;
     }
   } finally {
-    if (hasRunning) launchedHere = true;
     launching = false;
   }
 }
@@ -91,7 +89,6 @@ async function launchSim() {
 async function stopSim(id: string) {
   try {
     await physicalAiClient.deleteSimulation(id);
-    launchedHere = false;
     spawnedRobots = [];
     await pollContainers();
   } catch {
@@ -178,18 +175,6 @@ async function spawnRobot() {
           {/each}
         </select>
 
-        {#if hasRunning && !launchedHere}
-          <div class="flex items-center gap-2">
-            <span class="text-xs pai-text-warning">A simulation is already running.</span>
-            <button
-              on:click={() => runningContainer && stopSim(runningContainer.id)}
-              class="pai-btn pai-btn-danger text-xs"
-            >
-              Stop
-            </button>
-          </div>
-        {/if}
-
         <button
           on:click={launchSim}
           disabled={launching || hasRunning || !selectedImage}
@@ -225,6 +210,9 @@ async function spawnRobot() {
             {#if container.state === 'running'}
               <button on:click={openInBrowser} class="pai-btn pai-btn-primary text-xs">
                 Open in Browser
+              </button>
+              <button on:click={() => router.goto('/topics')} class="pai-btn pai-btn-primary text-xs">
+                View Topics
               </button>
               <button on:click={() => stopSim(container.id)} class="pai-btn pai-btn-danger text-xs">
                 Stop

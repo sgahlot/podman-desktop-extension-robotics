@@ -8,6 +8,7 @@ import { SIM_CONTAINER_LABEL, SIM_CONTAINER_LABEL_VALUE, SIM_CONTAINER_PREFIX } 
 import { formatSimulationConfig, resolveSimulationProfile } from '/@shared/src/types/SimulationProfiles';
 import { resolveSimulationBaseImage } from '/@shared/src/types/SimulationBaseImages';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
+import type { TopicInfo } from '/@shared/src/types/TopicInfo';
 import { appendProgressLog } from './progressLogs';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
@@ -555,6 +556,84 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async openSimulationInBrowser(port: number): Promise<void> {
     await extensionApi.env.openExternal(extensionApi.Uri.parse(`http://localhost:${port}`));
+  }
+
+  async listRosTopics(containerId: string): Promise<TopicInfo[]> {
+    const distro = await this.#detectRosDistro(containerId);
+    const source = `source /opt/ros/${distro}/setup.bash`;
+
+    const listResult = await this.#execAttached(containerId, [
+      'bash', '-c', `${source} && ros2 topic list`,
+    ]);
+
+    if (listResult.exitCode !== 0 || !listResult.stdout.trim()) {
+      return [];
+    }
+
+    const topicNames = listResult.stdout
+      .trim()
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l.startsWith('/'));
+
+    const BATCH_SIZE = 5;
+    const topics: TopicInfo[] = [];
+
+    for (let i = 0; i < topicNames.length; i += BATCH_SIZE) {
+      const batch = topicNames.slice(i, i + BATCH_SIZE);
+      const results = await Promise.all(
+        batch.map(async (name): Promise<TopicInfo> => {
+          const infoResult = await this.#execAttached(containerId, [
+            'bash', '-c', `${source} && ros2 topic info ${name}`,
+          ]);
+
+          let type = 'unknown';
+          let publishers = 0;
+          let subscribers = 0;
+
+          if (infoResult.exitCode === 0 && infoResult.stdout) {
+            const typeMatch = infoResult.stdout.match(/Type:\s*(.+)/);
+            const pubMatch = infoResult.stdout.match(/Publisher count:\s*(\d+)/);
+            const subMatch = infoResult.stdout.match(/Subscription count:\s*(\d+)/);
+            if (typeMatch) type = typeMatch[1].trim();
+            if (pubMatch) publishers = parseInt(pubMatch[1], 10);
+            if (subMatch) subscribers = parseInt(subMatch[1], 10);
+          }
+
+          return { name, type, publishers, subscribers };
+        }),
+      );
+      topics.push(...results);
+    }
+
+    return topics;
+  }
+
+  async #execAttached(containerId: string, command: string[]): Promise<ExecResult> {
+    try {
+      const result = await extensionApi.process.exec('podman', ['exec', containerId, ...command]);
+      return {
+        exitCode: 0,
+        stdout: result.stdout ?? '',
+        stderr: result.stderr ?? '',
+      };
+    } catch (err: unknown) {
+      const runErr = err as { exitCode?: number; stdout?: string; stderr?: string; message?: string };
+      return {
+        exitCode: runErr.exitCode ?? 1,
+        stdout: runErr.stdout ?? '',
+        stderr: runErr.stderr ?? runErr.message ?? String(err),
+      };
+    }
+  }
+
+  async #detectRosDistro(containerId: string): Promise<string> {
+    const containers = await extensionApi.containerEngine.listContainers();
+    const container = containers.find(c => c.Id === containerId || c.Id.startsWith(containerId));
+    const imageTag = container?.Image ?? '';
+    if (imageTag.includes('humble')) return 'humble';
+    if (imageTag.includes('jazzy')) return 'jazzy';
+    return 'jazzy';
   }
 
   async pushImage(tag: string): Promise<void> {

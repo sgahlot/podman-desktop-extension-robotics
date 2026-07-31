@@ -48,6 +48,11 @@
   background-color: var(--pai-accent-hover);
 }
 
+.pai-btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .pai-btn-danger {
   background-color: var(--pai-danger-bg);
   color: var(--pai-danger-text);

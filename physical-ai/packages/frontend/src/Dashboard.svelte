@@ -71,6 +71,13 @@ onMount(async () => {
         <span class="tooltip-text">Launch and manage robot simulations</span>
         <div class="text-lg text-[var(--pd-content-header)]">Simulation</div>
       </button>
+      <button
+        on:click={() => router.goto('/topics')}
+        class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer"
+      >
+        <span class="tooltip-text">View active ROS2 topics and message details</span>
+        <div class="text-lg text-[var(--pd-content-header)]">Topic Monitor</div>
+      </button>
       <div class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)]">
         <span class="tooltip-text">Scale to multi-robot local fleet</span>
         <div class="text-lg text-[var(--pd-content-header)]">Fleet</div>

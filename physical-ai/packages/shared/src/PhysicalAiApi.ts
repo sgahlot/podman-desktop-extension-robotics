@@ -1,6 +1,7 @@
 import type { QuayRepository, QuayTag, PullProgress, BuildProgress, PushProgress } from './types/ImageCatalog';
 import type { SimulationConfig } from './types/SimulationConfig';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from './types/SimulationContainer';
+import type { TopicInfo } from './types/TopicInfo';
 
 export abstract class PhysicalAiApi {
   abstract getStatus(): Promise<string>;
@@ -29,4 +30,5 @@ export abstract class PhysicalAiApi {
   abstract listSimulationContainers(): Promise<SimContainerInfo[]>;
   abstract execInSimulation(containerId: string, command: string[]): Promise<ExecResult>;
   abstract openSimulationInBrowser(port: number): Promise<void>;
+  abstract listRosTopics(containerId: string): Promise<TopicInfo[]>;
 }

@@ -86,6 +86,21 @@ import { router } from 'tinro';
     </div>
 
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
+      <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Topic Monitor</h2>
+      <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
+        <div>
+          <strong>Overview</strong> — Shows active ROS2 topics inside a running simulation container, including message types and publisher/subscriber counts. Auto-refreshes every 5 seconds.
+        </div>
+        <div>
+          <strong>Access</strong> — Dashboard card, or <strong>View Topics</strong> button on a running simulation container card on the Simulation page.
+        </div>
+        <div>
+          <strong>How it works</strong> — Runs <span class="font-mono">ros2 topic list</span> and <span class="font-mono">ros2 topic info</span> via <span class="font-mono">podman exec</span> inside the container. No additional setup needed.
+        </div>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Golden Quay images</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-1">
         <p>Recommended set to publish for Catalog demos (replace <span class="font-mono">&lt;ns&gt;</span> with your namespace):</p>

@@ -16,6 +16,7 @@ vi.mock('@podman-desktop/api', () => ({
   },
   containerEngine: {
     listImages: vi.fn(),
+    listContainers: vi.fn(),
     pullImage: vi.fn(),
     buildImage: vi.fn(),
     pushImage: vi.fn(),
@@ -831,6 +832,126 @@ describe('PhysicalAiApiImpl', () => {
 
       const ns = await api.getDefaultNamespace();
       expect(ns).toBe('ecosystem-appeng');
+    });
+  });
+
+  describe('listRosTopics', () => {
+    const CONTAINER_ID = 'abc123';
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        { Id: CONTAINER_ID, Image: 'quay.io/sgahlot/ros2-jazzy-sim:noble' },
+      ] as any);
+    });
+
+    it('returns empty array when ros2 topic list fails', async () => {
+      vi.mocked(extensionApi.process.exec).mockRejectedValue({
+        exitCode: 1,
+        stdout: '',
+        stderr: 'command not found',
+      });
+
+      const result = await api.listRosTopics(CONTAINER_ID);
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array when ros2 topic list returns empty output', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '',
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      const result = await api.listRosTopics(CONTAINER_ID);
+      expect(result).toEqual([]);
+    });
+
+    it('parses topic list and fetches info for each topic', async () => {
+      vi.mocked(extensionApi.process.exec)
+        .mockResolvedValueOnce({
+          stdout: '/rosout\n/robot_1/cmd_vel\n',
+          stderr: '',
+          command: 'podman',
+        } as any)
+        .mockResolvedValueOnce({
+          stdout: 'Type: rcl_interfaces/msg/Log\nPublisher count: 2\nSubscription count: 0\n',
+          stderr: '',
+          command: 'podman',
+        } as any)
+        .mockResolvedValueOnce({
+          stdout: 'Type: geometry_msgs/msg/Twist\nPublisher count: 0\nSubscription count: 1\n',
+          stderr: '',
+          command: 'podman',
+        } as any);
+
+      const result = await api.listRosTopics(CONTAINER_ID);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({
+        name: '/rosout',
+        type: 'rcl_interfaces/msg/Log',
+        publishers: 2,
+        subscribers: 0,
+      });
+      expect(result[1]).toEqual({
+        name: '/robot_1/cmd_vel',
+        type: 'geometry_msgs/msg/Twist',
+        publishers: 0,
+        subscribers: 1,
+      });
+    });
+
+    it('handles topic info failure gracefully', async () => {
+      vi.mocked(extensionApi.process.exec)
+        .mockResolvedValueOnce({
+          stdout: '/rosout\n',
+          stderr: '',
+          command: 'podman',
+        } as any)
+        .mockRejectedValueOnce({
+          exitCode: 1,
+          stdout: '',
+          stderr: 'error',
+        });
+
+      const result = await api.listRosTopics(CONTAINER_ID);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({
+        name: '/rosout',
+        type: 'unknown',
+        publishers: 0,
+        subscribers: 0,
+      });
+    });
+
+    it('detects humble distro from image tag', async () => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        { Id: CONTAINER_ID, Image: 'quay.io/ns/ros2-humble-turtlebot3:sloretz' },
+      ] as any);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '/rosout\n',
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      await api.listRosTopics(CONTAINER_ID);
+      const firstCall = vi.mocked(extensionApi.process.exec).mock.calls[0];
+      expect(firstCall[1]).toContain(CONTAINER_ID);
+      const bashCmd = firstCall[1].find((arg: string) => arg.includes('source'));
+      expect(bashCmd).toContain('/opt/ros/humble/');
+    });
+
+    it('calls podman exec without -d flag (attached mode)', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '/rosout\n',
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      await api.listRosTopics(CONTAINER_ID);
+      const firstCall = vi.mocked(extensionApi.process.exec).mock.calls[0];
+      expect(firstCall[1][0]).toBe('exec');
+      expect(firstCall[1][1]).toBe(CONTAINER_ID);
+      expect(firstCall[1]).not.toContain('-d');
     });
   });
 });

@@ -31,6 +31,7 @@ describe('Dashboard', () => {
     expect(screen.getByText('Image Builder')).toBeTruthy();
     expect(screen.getByText('Image Catalog')).toBeTruthy();
     expect(screen.getByText('Simulation')).toBeTruthy();
+    expect(screen.getByText('Topic Monitor')).toBeTruthy();
     expect(screen.getByText('Fleet')).toBeTruthy();
     expect(screen.getByText('Help')).toBeTruthy();
   });
@@ -80,5 +81,12 @@ describe('Dashboard', () => {
     const btn = screen.getByText('Image Builder');
     await fireEvent.click(btn);
     expect(mockGoto).toHaveBeenCalledWith('/build');
+  });
+
+  it('navigates to Topic Monitor on click', async () => {
+    render(Dashboard);
+    const btn = screen.getByText('Topic Monitor');
+    await fireEvent.click(btn);
+    expect(mockGoto).toHaveBeenCalledWith('/topics');
   });
 });

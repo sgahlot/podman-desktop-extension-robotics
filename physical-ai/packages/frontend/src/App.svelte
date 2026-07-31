@@ -9,6 +9,7 @@ import ImageCatalog from './ImageCatalog.svelte';
 import Help from './Help.svelte';
 import ImageBuilder from './SimulationSetup.svelte';
 import SimulationPage from './SimulationPage.svelte';
+import TopicMonitor from './TopicMonitor.svelte';
 
 router.mode.hash();
 
@@ -37,6 +38,9 @@ onMount(() => {
       </Route>
       <Route path="/simulation" breadcrumb="Simulation">
         <SimulationPage />
+      </Route>
+      <Route path="/topics" breadcrumb="Topic Monitor">
+        <TopicMonitor />
       </Route>
     </div>
   </main>

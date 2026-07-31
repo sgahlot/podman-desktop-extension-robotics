@@ -41,7 +41,7 @@ Drivers:
 | Story | Summary | Status | Sub-tasks |
 |-------|---------|--------|-----------|
 | [APPENG-5764](#story-1) | Extension scaffolding and base image catalog | ✅ Done | 4/4 done, 2 follow-ups parked |
-| [APPENG-5765](#story-2) | Single robot simulation workflow | 🟡 In Progress | 2/3 done (via Story 6) |
+| [APPENG-5765](#story-2) | Single robot simulation workflow | ✅ Done | 3/3 done (via Story 6 + Topic Monitor) |
 | [APPENG-5766](#story-3) | Multi-robot local scaling *(stretch)* | ⚪ Not Started | 0/3 done |
 | [APPENG-5767](#story-4) | OpenShift deployment bridge *(stretch)* | ⚪ Not Started | 0/3 done |
 | [Spike](#story-5) | Local-first deployment of reference demos | 🅿️ Parked (Kind OOM) | 0/6 proposed |
@@ -150,7 +150,7 @@ If you only ever build one sim image and never reuse the base, the two-phase spl
 
 <a id="story-2"></a>
 
-### Story 2: Single robot simulation workflow — 🟡 In Progress (2/3 done via Story 6)
+### Story 2: Single robot simulation workflow — ✅ Done (3/3 via Story 6 + Topic Monitor)
 
 > Detail doc: [story2-simulation.md](stories/story2-simulation.md)
 
@@ -166,7 +166,7 @@ If you only ever build one sim image and never reuse the base, the two-phase spl
 |--------|-----|---------|-------------|
 | ✅ | APPENG-5771 | Container orchestration for ROS2 + Gazebo launch via Podman pod | Implemented via [Story 6](stories/story6-podman-sim.md) S6-1/S6-3/S6-4. Podman-only (no pods/compose): backend lifecycle API + Simulation page + one-click launch. |
 | ✅ | APPENG-5772 | Integrate noVNC or web-based video stream for simulation visualization | Implemented via [Story 6](stories/story6-podman-sim.md) S6-1/S6-4. noVNC stack (Xvfb + x11vnc + websockify) in sim image, "Open in Browser" on Simulation page. |
-| ⚪ | APPENG-5773 | Build topic monitor panel showing active ROS2 topics and message rates | Add a panel in the extension UI that displays active ROS2 topics, message types, and publishing rates for basic inspection without CLI tools. |
+| ✅ | APPENG-5773 | Build topic monitor panel showing active ROS2 topics and message rates | Topic Monitor page (`/topics`): lists active ROS2 topics with message types, publisher/subscriber counts. Uses `podman exec` (attached) to run `ros2 topic list` + `ros2 topic info` inside the simulation container. Auto-refreshes every 5s. Accessible from Dashboard card and Simulation page "View Topics" button. Hz measurement deferred. |
 
 ---
 
@@ -231,7 +231,7 @@ Story 1 (Scaffolding + images)  ──  Foundation; must be first  ✅
     │       ├── S5-4       catalog our images
     │       └── S5-5/S5-6  deploy-to-local + OpenShift wizards ──► feeds Stories 3–4
     │
-    ├── Story 2 (Single robot)  ──  5771/5772 done via Story 6; 5773 (topic monitor) open
+    ├── Story 2 (Single robot)  ──  ✅ Complete (5771/5772 via Story 6; 5773 Topic Monitor done)
     │       ▼
     │   Story 3 (Multi-robot)   ──  Stretch; Repo A (OpenRMF) + Repo B (Zenoh) inform this
     │
@@ -241,7 +241,7 @@ Story 1 (Scaffolding + images)  ──  Foundation; must be first  ✅
 | Priority | Scope | Issues |
 |----------|--------|--------|
 | **MVP-critical** (ROSCon demo) | Stories 1 + 6 (+ Story 2 via 5771/5772) | Image Builder, Catalog, Simulation launch/spawn/noVNC |
-| **Remaining Story 2** | APPENG-5773 | Topic monitor panel |
+| **✅ Story 2 complete** | APPENG-5773 | Topic monitor panel (done) |
 | **Parked** | Story 5 | Kind spike; resume for K8s/OpenShift path |
 | **Stretch** | Stories 3–4 | 6 sub-tasks (`APPENG-5774`–`5779`), including docs |
 
@@ -259,7 +259,7 @@ Now that the scaffold (APPENG-5768) is complete, sub-tasks have fine-grained dep
     ├── ✅ APPENG-5769 (Base image)
     ├── ✅ APPENG-5770 (Image catalog UI)
     ├── ✅ APPENG-5808 (Wizard + sim images)
-    ├── APPENG-5773 (Topic monitor UI)   ◀── independent, can use mock data
+    ├── ✅ APPENG-5773 (Topic monitor UI) ── DONE
     │
     ├── 🅿️ S5-1…S5-6 (Story 5 Kind/OpenShift spike) ── PARKED (branch spike/repo-b-kind-attempt)
     │
@@ -280,11 +280,10 @@ Now that the scaffold (APPENG-5768) is complete, sub-tasks have fine-grained dep
 
 ### Ready Now (no blockers)
 
-Stories 1 and 6 (S6-1–S6-5) are complete. APPENG-5771 and APPENG-5772 are done (via Story 6), which unblocks Story 3 (multi-robot) and Story 4 (K8s manifests). The [arch-aware sim fix](#fix-arch-aware-sim) has landed — naming is now arch-neutral (`ros2-jazzy-sim`). Next pick-ups:
+Stories 1, 2, and 6 (S6-1–S6-5) are complete. APPENG-5773 (Topic Monitor) is done — completes Story 2. The [arch-aware sim fix](#fix-arch-aware-sim) has landed. Next pick-ups:
 
 | Key | Summary | Skills needed |
 |-----|---------|---------------|
-| APPENG-5773 | Topic monitor panel | Svelte frontend, ROS2 topic APIs (or mocks) |
 | APPENG-5774 | Multi-robot orchestration | Podman, multi-container, scales from Story 6 single-robot |
 | APPENG-5777 | K8s manifest generation | Podman config export, K8s YAML |
 | S6-6 | Customize Hardware card (stretch) | Xacro parametric, podman exec |
@@ -328,7 +327,7 @@ A Miro board would be useful for a team kickoff/planning session where people ne
 |--------|-----|------------|--------|---------|
 | 🟡 | APPENG-5763 | Epic | — | Podman Desktop Extension for Physical AI Robotics Development |
 | ✅ | APPENG-5764 | Story | APPENG-5763 | Extension scaffolding and base image catalog |
-| 🟡 | APPENG-5765 | Story | APPENG-5763 | Single robot simulation workflow |
+| ✅ | APPENG-5765 | Story | APPENG-5763 | Single robot simulation workflow |
 | ⚪ | APPENG-5766 | Story | APPENG-5763 | Multi-robot local scaling |
 | ⚪ | APPENG-5767 | Story | APPENG-5763 | OpenShift deployment bridge |
 | ✅ | APPENG-5768 | Sub-task | APPENG-5764 | Scaffold Podman Desktop extension with TypeScript/Svelte boilerplate |
@@ -337,7 +336,7 @@ A Miro board would be useful for a team kickoff/planning session where people ne
 | ✅ | APPENG-5808 | Sub-task | APPENG-5764 | Project creation wizard and simulation image setup |
 | ✅ | APPENG-5771 | Sub-task | APPENG-5765 | Container orchestration for ROS2 + Gazebo launch via Podman pod |
 | ✅ | APPENG-5772 | Sub-task | APPENG-5765 | Integrate noVNC or web-based video stream for simulation visualization |
-| ⚪ | APPENG-5773 | Sub-task | APPENG-5765 | Build topic monitor panel showing active ROS2 topics and message rates |
+| ✅ | APPENG-5773 | Sub-task | APPENG-5765 | Build topic monitor panel showing active ROS2 topics and message rates |
 | ⚪ | APPENG-5774 | Sub-task | APPENG-5766 | Podman Compose or pod-based multi-container orchestration for 2+ robots |
 | ⚪ | APPENG-5775 | Sub-task | APPENG-5766 | Zenoh router and DDS bridge sidecar auto-configuration |
 | ⚪ | APPENG-5776 | Sub-task | APPENG-5766 | Fleet status panel in the extension UI |
