@@ -46,9 +46,17 @@ async function pollContainers() {
   }
 }
 
+async function cleanupExitedContainers() {
+  const exited = containers.filter(c => c.state !== 'running');
+  for (const c of exited) {
+    try { await physicalAiClient.deleteSimulation(c.id); } catch { }
+  }
+  if (exited.length > 0) await pollContainers();
+}
+
 onMount(() => {
   loadImages();
-  pollContainers();
+  pollContainers().then(() => cleanupExitedContainers());
   pollTimer = setInterval(pollContainers, 3000);
 });
 
@@ -80,7 +88,8 @@ async function launchSim() {
 
 async function stopSim(id: string) {
   try {
-    await physicalAiClient.stopSimulation(id);
+    await physicalAiClient.deleteSimulation(id);
+    spawnedRobots = [];
     await pollContainers();
   } catch {
     // will update on next poll
@@ -167,7 +176,15 @@ async function spawnRobot() {
         </select>
 
         {#if hasRunning}
-          <span class="text-xs pai-text-warning">A simulation is already running. Stop it before launching a new one.</span>
+          <div class="flex items-center gap-2">
+            <span class="text-xs pai-text-warning">A simulation is already running.</span>
+            <button
+              on:click={() => runningContainer && stopSim(runningContainer.id)}
+              class="pai-btn text-xs"
+            >
+              Stop
+            </button>
+          </div>
         {/if}
 
         <button

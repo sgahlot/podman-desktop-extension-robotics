@@ -7,6 +7,7 @@ import type { SimLaunchOptions, SimContainerInfo, ExecResult } from '/@shared/sr
 import { SIM_CONTAINER_LABEL, SIM_CONTAINER_LABEL_VALUE, SIM_CONTAINER_PREFIX } from '/@shared/src/types/SimulationContainer';
 import { formatSimulationConfig, resolveSimulationProfile } from '/@shared/src/types/SimulationProfiles';
 import { resolveSimulationBaseImage } from '/@shared/src/types/SimulationBaseImages';
+import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
 import { appendProgressLog } from './progressLogs';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
@@ -408,7 +409,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async getCatalogCuratedAllowlist(): Promise<string> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    return config.get<string>('catalogCuratedAllowlist') ?? 'ros2-*-base,ros2-*-turtlebot3,ros2-*-sim-*';
+    const stored = config.get<string>('catalogCuratedAllowlist');
+    if (!stored || stored === 'ros2-*-base,ros2-*-turtlebot3,ros2-*-sim-*') {
+      await config.update('catalogCuratedAllowlist', DEFAULT_CURATED_ALLOWLIST);
+      return DEFAULT_CURATED_ALLOWLIST;
+    }
+    return stored;
   }
 
   async getSimulationConfig(): Promise<SimulationConfig> {
