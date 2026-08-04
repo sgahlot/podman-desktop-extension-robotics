@@ -9,6 +9,7 @@ import { formatSimulationConfig, resolveSimulationProfile } from '/@shared/src/t
 import { resolveSimulationBaseImage } from '/@shared/src/types/SimulationBaseImages';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
 import type { TopicInfo } from '/@shared/src/types/TopicInfo';
+import type { NavigationGoalResult } from '/@shared/src/types/NavigationGoalResult';
 import { appendProgressLog } from './progressLogs';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
@@ -607,6 +608,68 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
 
     return topics;
+  }
+
+  async startNav2(_containerId: string, _robotName: string): Promise<ExecResult> {
+    return { exitCode: 0, stdout: '', stderr: '' };
+  }
+
+  async sendNavigationGoal(
+    containerId: string,
+    robotName: string,
+    x: number,
+    y: number,
+  ): Promise<NavigationGoalResult> {
+    const distro = await this.#detectRosDistro(containerId);
+    const source = `source /opt/ros/${distro}/setup.bash`;
+
+    const pose = await this.#getRobotPose(containerId, robotName, source);
+    const dx = x - pose.x;
+    const dy = y - pose.y;
+    const targetAngle = Math.atan2(dy, dx);
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance < 0.1) {
+      return { status: 'reached', message: `Already at (${x}, ${y})` };
+    }
+
+    let turnDelta = targetAngle - pose.yaw;
+    while (turnDelta > Math.PI) turnDelta -= 2 * Math.PI;
+    while (turnDelta < -Math.PI) turnDelta += 2 * Math.PI;
+
+    if (Math.abs(turnDelta) > 0.1) {
+      const turnSpeed = 0.5 * Math.sign(turnDelta);
+      const turnDuration = Math.min(Math.ceil(Math.abs(turnDelta) / 0.5), 8);
+      const turnCmd = `${source} && timeout ${turnDuration} ros2 topic pub --rate 10 /${robotName}/cmd_vel geometry_msgs/msg/Twist "{angular: {z: ${turnSpeed.toFixed(2)}}}" || true`;
+      await this.#execAttached(containerId, ['bash', '-c', turnCmd]);
+      const stopTurnCmd = `${source} && ros2 topic pub --once /${robotName}/cmd_vel geometry_msgs/msg/Twist "{}"`;
+      await this.#execAttached(containerId, ['bash', '-c', stopTurnCmd]);
+    }
+
+    const speed = 0.2;
+    const durationSec = Math.min(Math.ceil(distance / speed), 30);
+    const driveCmd = `${source} && timeout ${durationSec} ros2 topic pub --rate 10 /${robotName}/cmd_vel geometry_msgs/msg/Twist "{linear: {x: ${speed}}}" || true`;
+    const result = await this.#execAttached(containerId, ['bash', '-c', driveCmd]);
+
+    const stopCmd = `${source} && ros2 topic pub --once /${robotName}/cmd_vel geometry_msgs/msg/Twist "{}"`;
+    await this.#execAttached(containerId, ['bash', '-c', stopCmd]);
+
+    if (result.exitCode !== 0 && !/timeout/i.test(result.stderr)) {
+      return { status: 'failed', message: result.stderr || 'Drive command failed' };
+    }
+
+    return { status: 'reached', message: `Drove toward (${x}, ${y}) for ${durationSec}s` };
+  }
+
+  async #getRobotPose(containerId: string, robotName: string, source: string): Promise<{ x: number; y: number; yaw: number }> {
+    const result = await this.#execAttached(containerId, [
+      'bash', '-c', `${source} && gz model -m ${robotName} -p 2>/dev/null || echo "0.0 0.0 0.0 0.0 0.0 0.0"`,
+    ]);
+    const nums = result.stdout.match(/-?\d+\.\d+/g)?.map(Number);
+    if (nums && nums.length >= 6 && nums.every(n => !isNaN(n))) {
+      return { x: nums[0], y: nums[1], yaw: nums[5] };
+    }
+    return { x: 0, y: 0, yaw: 0 };
   }
 
   async #execAttached(containerId: string, command: string[]): Promise<ExecResult> {

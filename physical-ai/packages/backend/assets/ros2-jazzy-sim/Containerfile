@@ -55,10 +55,11 @@ WORKDIR /opt/ros2-demo
 
 COPY entrypoint-gazebo.sh /entrypoint-gazebo.sh
 COPY entrypoint-spawn-robot.sh /entrypoint-spawn-robot.sh
+COPY entrypoint-nav2.sh /entrypoint-nav2.sh
 COPY worlds/ /opt/ros2-demo/worlds/
 COPY www/ /opt/ros2-demo/www/
 
-RUN chmod +x /entrypoint-gazebo.sh /entrypoint-spawn-robot.sh
+RUN chmod +x /entrypoint-gazebo.sh /entrypoint-spawn-robot.sh /entrypoint-nav2.sh
 
 ENV TURTLEBOT3_MODEL=waffle
 

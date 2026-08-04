@@ -82,6 +82,9 @@ import { router } from 'tinro';
         <div>
           <strong>Add TurtleBot3</strong> — Spawns a robot into the running world via <span class="font-mono">podman exec</span> (name + X/Y/yaw).
         </div>
+        <div>
+          <strong>Navigate</strong> — Each spawned robot has a "Go" button with target X/Y coordinates. The robot turns toward the target and drives in a straight line at 0.2 m/s. Status shows: Driving &rarr; Drove to (X, Y) / Failed. No obstacle avoidance &mdash; pick targets with a clear line of sight.
+        </div>
       </div>
     </div>
 

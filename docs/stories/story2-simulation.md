@@ -1,4 +1,4 @@
-# Story 2: Single Robot Simulation Workflow — ✅ Done
+# Story 2: Single Robot Simulation Workflow — 🟡 In Progress
 
 **Jira:** APPENG-5765 | **Parent:** APPENG-5763 (Epic) | **Priority:** MVP-critical
 
@@ -13,6 +13,7 @@
 | ✅ | APPENG-5771 | Container orchestration for ROS2 + Gazebo launch via Podman pod |
 | ✅ | APPENG-5772 | Integrate noVNC or web-based video stream for simulation visualization |
 | ✅ | APPENG-5773 | Build topic monitor panel showing active ROS2 topics and message rates |
+| 🟡 | APPENG-5920 | Add Nav2 goal-sending UI for autonomous robot navigation in simulation |
 
 > **See also:** [Story 6 (Podman-only simulation)](story6-podman-sim.md) implements the core of this story (APPENG-5771 container orchestration + APPENG-5772 noVNC) using a Podman-only approach for the ROSCon demo.
 
@@ -61,3 +62,33 @@
 - Hz measurement deferred — `ros2 topic hz` needs to run for several seconds per topic, too expensive for polling
 - Uses attached `podman exec` (no `-d` flag) to capture `ros2` CLI output; existing detached mode kept for robot spawn
 - ROS distro auto-detected from container image tag for correct `setup.bash` path
+
+---
+
+## APPENG-5920: Nav2 Goal-Sending UI — 🟡 In Progress
+
+**Description:** Add a "Navigate to" control on the Simulation page that sends a Nav2 goal to a running robot. The robot autonomously plans a path and drives to the target using Nav2's built-in obstacle avoidance.
+
+### Implementation Notes
+
+**Key discovery:** The existing `entrypoint-spawn-robot.sh` only launches the robot model + `robot_state_publisher` — it does **not** start Nav2's navigation stack. A new `entrypoint-nav2.sh` script is needed to launch `nav2_bringup navigation_launch.py` per robot.
+
+**New files:**
+- `packages/backend/assets/ros2-jazzy-sim/entrypoint-nav2.sh` — launches Nav2 navigation stack for a given robot namespace via `podman exec -d`
+- `packages/shared/src/types/NavigationGoalResult.ts` — `NavigationGoalResult` interface (status, message)
+
+**Modified files:**
+- `packages/backend/assets/ros2-jazzy-sim/Containerfile` — added COPY + chmod for `entrypoint-nav2.sh`
+- `packages/shared/src/PhysicalAiApi.ts` — added `startNav2(containerId, robotName)` and `sendNavigationGoal(containerId, robotName, x, y)`
+- `packages/backend/src/api-impl.ts` — implemented both methods: `startNav2` uses detached exec, `sendNavigationGoal` uses attached exec with `ros2 action send_goal` and parses result
+- `packages/frontend/src/SimulationPage.svelte` — per-robot navigation controls (X/Y inputs, Go button, nav status display)
+- `packages/frontend/src/Help.svelte` — added Navigate section under Simulation
+- `packages/backend/src/api-impl.spec.ts` — 8 new tests for `startNav2` and `sendNavigationGoal`
+
+**Architecture:**
+1. User clicks "Go" → frontend calls `startNav2()` (detached, first time only) → waits 5s for Nav2 initialization
+2. Frontend calls `sendNavigationGoal()` → backend runs `ros2 action send_goal` (attached, blocks until complete)
+3. Backend parses stdout for SUCCEEDED/ABORTED/rejected → returns `NavigationGoalResult`
+4. Frontend shows status: Starting Nav2 → Navigating → Reached / Failed
+
+**Note:** Simulation image must be rebuilt to include `entrypoint-nav2.sh`.

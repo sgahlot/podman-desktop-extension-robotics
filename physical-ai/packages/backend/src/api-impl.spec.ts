@@ -954,4 +954,92 @@ describe('PhysicalAiApiImpl', () => {
       expect(firstCall[1]).not.toContain('-d');
     });
   });
+
+  describe('startNav2', () => {
+    it('returns success immediately (no-op)', async () => {
+      const result = await api.startNav2('abc123', 'robot_1');
+      expect(result.exitCode).toBe(0);
+    });
+  });
+
+  describe('sendNavigationGoal', () => {
+    const CONTAINER_ID = 'abc123';
+    const GZ_POSE_ORIGIN = 'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
+    const GZ_POSE_AT_TARGET = 'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [2.000000 2.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        { Id: CONTAINER_ID, Image: 'quay.io/sgahlot/ros2-jazzy-sim:noble' },
+      ] as any);
+    });
+
+    it('returns reached after driving toward target', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: GZ_POSE_ORIGIN,
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      const result = await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
+      expect(result.status).toBe('reached');
+      expect(result.message).toContain('2');
+    });
+
+    it('queries pose then publishes turn, drive, and stop commands', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: GZ_POSE_ORIGIN,
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
+      const calls = vi.mocked(extensionApi.process.exec).mock.calls;
+      const poseCmd = calls[0][1].find((arg: string) => arg.includes('gz model'));
+      expect(poseCmd).toContain('robot_1');
+      const turnCmds = calls.filter(c => c[1].some((a: string) => typeof a === 'string' && a.includes('angular')));
+      expect(turnCmds.length).toBeGreaterThan(0);
+      const driveCmds = calls.filter(c => c[1].some((a: string) => typeof a === 'string' && a.includes('linear')));
+      expect(driveCmds.length).toBe(1);
+    });
+
+    it('returns already-at-target when distance is tiny', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: GZ_POSE_AT_TARGET,
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      const result = await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
+      expect(result.status).toBe('reached');
+      expect(result.message).toContain('Already');
+    });
+
+    it('uses robot name in cmd_vel topic', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: GZ_POSE_ORIGIN,
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 3.5, -1.0);
+      const calls = vi.mocked(extensionApi.process.exec).mock.calls;
+      const driveCalls = calls.filter(c => c[1].some((a: string) => typeof a === 'string' && a.includes('linear')));
+      expect(driveCalls.length).toBe(1);
+      const driveCmd = driveCalls[0][1].find((arg: string) => arg.includes('linear'));
+      expect(driveCmd).toContain('/robot_1/cmd_vel');
+    });
+
+    it('calls podman exec without -d flag (attached mode)', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: GZ_POSE_ORIGIN,
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
+      const call = vi.mocked(extensionApi.process.exec).mock.calls[0];
+      expect(call[1][0]).toBe('exec');
+      expect(call[1]).not.toContain('-d');
+    });
+  });
 });

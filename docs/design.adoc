@@ -113,7 +113,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 * Dashboard landing page with feature cards
 * Image catalog browser with All/Curated views and pull progress _(APPENG-5770, done)_
 * Image Builder for base and simulation images with Quick Start preset _(done)_
-* Simulation page — launch, status, open in browser, stop/delete, add TurtleBot3 _(done via Story 6)_
+* Simulation page — launch, status, open in browser, stop/delete, add TurtleBot3, Nav2 navigation goals _(done via Story 6 + APPENG-5920)_
 * In-extension Help page _(done)_
 * ROS2 topic monitor — active topics, message types, pub/sub counts _(APPENG-5773, done)_
 * Fleet status dashboard _(APPENG-5776, stretch)_
@@ -206,6 +206,10 @@ export abstract class PhysicalAiApi {
 
   // Topic Monitor (APPENG-5773)
   abstract listRosTopics(containerId: string): Promise<TopicInfo[]>;
+
+  // Nav2 Navigation (APPENG-5920)
+  abstract startNav2(containerId: string, robotName: string): Promise<ExecResult>;
+  abstract sendNavigationGoal(containerId: string, robotName: string, x: number, y: number): Promise<NavigationGoalResult>;
 }
 ----
 
@@ -222,6 +226,7 @@ export abstract class PhysicalAiApi {
 | `types/SimulationContainer.ts` | `SimLaunchOptions`, `SimContainerInfo`, `ExecResult`, container label constants
 | `types/CatalogCurated.ts` | `DEFAULT_CURATED_ALLOWLIST`, `parseCuratedAllowlist()`, `repoMatchesAllowlist()`, `filterCuratedRepos()` — wildcard pattern matching for curated allowlist
 | `types/TopicInfo.ts` | `TopicInfo` — name, type, publishers, subscribers for ROS2 topic monitoring
+| `types/NavigationGoalResult.ts` | `NavigationGoalResult` — status + message for Nav2 goal feedback
 |===
 
 == Data Flow

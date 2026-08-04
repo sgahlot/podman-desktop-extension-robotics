@@ -18,7 +18,16 @@ let robotYaw = '0.0';
 let spawning = false;
 let spawnStatus = '';
 let robotCounter = 1;
-let spawnedRobots: Array<{ name: string; x: string; y: string; status: string }> = [];
+let spawnedRobots: Array<{
+  name: string;
+  x: string;
+  y: string;
+  status: string;
+  nav2Started: boolean;
+  navStatus: 'idle' | 'starting-nav2' | 'navigating' | 'reached' | 'failed';
+  navTarget: { x: string; y: string };
+  navReached: { x: string; y: string } | null;
+}> = [];
 
 $: runningContainer = containers.find(c => c.state === 'running');
 $: hasRunning = !!runningContainer;
@@ -118,7 +127,10 @@ async function spawnRobot() {
     await physicalAiClient.execInSimulation(runningContainer.id, [
       '/entrypoint-spawn-robot.sh', robotName, robotX, robotY, robotYaw,
     ]);
-    spawnedRobots = [...spawnedRobots, { name: robotName, x: robotX, y: robotY, status: 'Spawned' }];
+    spawnedRobots = [...spawnedRobots, {
+      name: robotName, x: robotX, y: robotY, status: 'Spawned',
+      nav2Started: false, navStatus: 'idle', navTarget: { x: '2.0', y: '2.0' }, navReached: null,
+    }];
     robotCounter++;
     robotName = `robot_${robotCounter}`;
     spawnStatus = '';
@@ -127,6 +139,34 @@ async function spawnRobot() {
   } finally {
     spawning = false;
   }
+}
+
+async function navigateRobot(index: number) {
+  if (!runningContainer) return;
+  const robot = spawnedRobots[index];
+  if (!robot || robot.navStatus === 'navigating') return;
+
+  const targetX = parseFloat(robot.navTarget.x);
+  const targetY = parseFloat(robot.navTarget.y);
+  if (isNaN(targetX) || isNaN(targetY)) return;
+
+  const snapshot = { x: robot.navTarget.x, y: robot.navTarget.y };
+  spawnedRobots[index] = { ...robot, navStatus: 'navigating', navReached: null };
+  spawnedRobots = [...spawnedRobots];
+
+  try {
+    const result = await physicalAiClient.sendNavigationGoal(
+      runningContainer.id, robot.name, targetX, targetY,
+    );
+    spawnedRobots[index] = {
+      ...spawnedRobots[index],
+      navStatus: result.status === 'reached' ? 'reached' : 'failed',
+      navReached: snapshot,
+    };
+  } catch {
+    spawnedRobots[index] = { ...spawnedRobots[index], navStatus: 'failed', navReached: snapshot };
+  }
+  spawnedRobots = [...spawnedRobots];
 }
 </script>
 
@@ -291,13 +331,42 @@ async function spawnRobot() {
         {/if}
 
         {#if spawnedRobots.length > 0}
-          <div class="mt-2">
-            <div class="text-xs font-medium text-[var(--pd-content-header)] mb-1">Spawned Robots</div>
-            {#each spawnedRobots as robot}
-              <div class="text-xs text-[var(--pd-content-text)] flex gap-2">
-                <span class="font-mono">{robot.name}</span>
-                <span class="pai-text-muted">({robot.x}, {robot.y})</span>
-                <span class="pai-text-success">{robot.status}</span>
+          <div class="mt-2 flex flex-col gap-2">
+            <div class="text-xs font-medium text-[var(--pd-content-header)]">Spawned Robots</div>
+            {#each spawnedRobots as robot, i}
+              <div class="rounded border border-[var(--pd-content-card-border)] p-2 flex flex-col gap-1.5">
+                <div class="text-xs text-[var(--pd-content-text)] flex items-center gap-2">
+                  <span class="font-mono font-medium">{robot.name}</span>
+                  <span class="pai-text-muted">spawned at ({robot.x}, {robot.y})</span>
+                </div>
+                <div class="flex items-end gap-2">
+                  <div class="flex flex-col gap-0.5">
+                    <label for="navX-{robot.name}" class="text-[10px] pai-text-muted">X</label>
+                    <input id="navX-{robot.name}" type="text" bind:value={robot.navTarget.x}
+                      disabled={robot.navStatus === 'navigating'}
+                      class="w-16 px-1.5 py-0.5 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]" />
+                  </div>
+                  <div class="flex flex-col gap-0.5">
+                    <label for="navY-{robot.name}" class="text-[10px] pai-text-muted">Y</label>
+                    <input id="navY-{robot.name}" type="text" bind:value={robot.navTarget.y}
+                      disabled={robot.navStatus === 'navigating'}
+                      class="w-16 px-1.5 py-0.5 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]" />
+                  </div>
+                  <button on:click={() => navigateRobot(i)}
+                    disabled={robot.navStatus === 'navigating'}
+                    class="pai-btn pai-btn-primary pai-btn-sm">
+                    Go
+                  </button>
+                  <span class="text-xs {robot.navStatus === 'reached' ? 'pai-text-success'
+                    : robot.navStatus === 'failed' ? 'pai-text-error'
+                    : robot.navStatus === 'navigating' ? 'pai-text-accent'
+                    : 'pai-text-muted'}">
+                    {robot.navStatus === 'navigating' ? 'Driving...'
+                      : robot.navStatus === 'reached' && robot.navReached ? `Drove to (${robot.navReached.x}, ${robot.navReached.y})`
+                      : robot.navStatus === 'failed' ? 'Failed'
+                      : ''}
+                  </span>
+                </div>
               </div>
             {/each}
           </div>
