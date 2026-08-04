@@ -1,4 +1,4 @@
-# Story 2: Single Robot Simulation Workflow — 🟡 In Progress
+# Story 2: Single Robot Simulation Workflow — ✅ Done
 
 **Jira:** APPENG-5765 | **Parent:** APPENG-5763 (Epic) | **Priority:** MVP-critical
 
@@ -12,7 +12,7 @@
 |--------|-----|---------|
 | ✅ | APPENG-5771 | Container orchestration for ROS2 + Gazebo launch via Podman pod |
 | ✅ | APPENG-5772 | Integrate noVNC or web-based video stream for simulation visualization |
-| ⚪ | APPENG-5773 | Build topic monitor panel showing active ROS2 topics and message rates |
+| ✅ | APPENG-5773 | Build topic monitor panel showing active ROS2 topics and message rates |
 
 > **See also:** [Story 6 (Podman-only simulation)](story6-podman-sim.md) implements the core of this story (APPENG-5771 container orchestration + APPENG-5772 noVNC) using a Podman-only approach for the ROSCon demo.
 
@@ -34,8 +34,30 @@
 
 ---
 
-## APPENG-5773: Topic Monitor Panel — ⚪ Not Started
+## APPENG-5773: Topic Monitor Panel — ✅ Done
 
 **Description:** Add a panel in the extension UI that displays active ROS2 topics, message types, and publishing rates for basic inspection without CLI tools.
 
-*No work done yet.*
+### Implementation Notes
+
+**New files:**
+- `packages/shared/src/types/TopicInfo.ts` — `TopicInfo` interface (name, type, publishers, subscribers)
+- `packages/frontend/src/TopicMonitor.svelte` — Topic Monitor page with container selector, topics table (Topic, Message Type, Pubs, Subs), auto-poll every 5s, no-sim-running state with link to Simulation page
+- `packages/frontend/src/TopicMonitor.spec.ts` — 4 tests (heading, no-sim message, topics table, column headers)
+
+**Modified files:**
+- `packages/shared/src/PhysicalAiApi.ts` — added `listRosTopics(containerId): Promise<TopicInfo[]>`
+- `packages/backend/src/api-impl.ts` — implemented `listRosTopics()` with:
+  - Private `#execAttached()` — same as `execInSimulation` but without `-d` flag (captures stdout/stderr)
+  - Private `#detectRosDistro()` — inspects container image tag for humble/jazzy, defaults to jazzy
+  - Runs `ros2 topic list` + `ros2 topic info` via attached exec, parses output, batches 5 topics at a time
+- `packages/backend/src/api-impl.spec.ts` — 6 new tests for `listRosTopics`
+- `packages/frontend/src/App.svelte` — added `/topics` route
+- `packages/frontend/src/Dashboard.svelte` — added "Topic Monitor" quick-link card
+- `packages/frontend/src/SimulationPage.svelte` — added "View Topics" button on running container cards
+- `packages/frontend/src/Help.svelte` — added Topic Monitor section
+
+**Key decisions:**
+- Hz measurement deferred — `ros2 topic hz` needs to run for several seconds per topic, too expensive for polling
+- Uses attached `podman exec` (no `-d` flag) to capture `ros2` CLI output; existing detached mode kept for robot spawn
+- ROS distro auto-detected from container image tag for correct `setup.bash` path

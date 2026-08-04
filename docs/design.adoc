@@ -115,7 +115,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 * Image Builder for base and simulation images with Quick Start preset _(done)_
 * Simulation page — launch, status, open in browser, stop/delete, add TurtleBot3 _(done via Story 6)_
 * In-extension Help page _(done)_
-* ROS2 topic monitor _(APPENG-5773, planned)_
+* ROS2 topic monitor — active topics, message types, pub/sub counts _(APPENG-5773, done)_
 * Fleet status dashboard _(APPENG-5776, stretch)_
 
 ==== Key Files
@@ -129,6 +129,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 | `src/ImageCatalog.svelte` | Browse Quay repos (All/Curated), pull images, show local images
 | `src/SimulationSetup.svelte` | Image Builder — configure + build/push base and simulation images (Quick Start card for Jazzy arm64)
 | `src/SimulationPage.svelte` | Simulation — launch containers, view status, open noVNC, add TurtleBot3
+| `src/TopicMonitor.svelte` | Topic Monitor — ROS2 topic list with message types and pub/sub counts, auto-poll
 | `src/Help.svelte` | In-extension documentation
 | `src/lib/BuildPushPanel.svelte` | Shared component for build/push/cancel lifecycle with polling
 | `src/app.css` | `.pai-*` theme classes (buttons, links, text colors, cards, progress bars) using `--pd-*` CSS variables
@@ -202,6 +203,9 @@ export abstract class PhysicalAiApi {
   abstract listSimulationContainers(): Promise<SimContainerInfo[]>;
   abstract execInSimulation(containerId: string, command: string[]): Promise<ExecResult>;
   abstract openSimulationInBrowser(port: number): Promise<void>;
+
+  // Topic Monitor (APPENG-5773)
+  abstract listRosTopics(containerId: string): Promise<TopicInfo[]>;
 }
 ----
 
@@ -217,6 +221,7 @@ export abstract class PhysicalAiApi {
 | `types/SimulationBaseImages.ts` | `SimulationBaseImageId`, presets (sloretz, osrf, jazzy-noble), `resolveSimulationBaseImage()`
 | `types/SimulationContainer.ts` | `SimLaunchOptions`, `SimContainerInfo`, `ExecResult`, container label constants
 | `types/CatalogCurated.ts` | `DEFAULT_CURATED_ALLOWLIST`, `parseCuratedAllowlist()`, `repoMatchesAllowlist()`, `filterCuratedRepos()` — wildcard pattern matching for curated allowlist
+| `types/TopicInfo.ts` | `TopicInfo` — name, type, publishers, subscribers for ROS2 topic monitoring
 |===
 
 == Data Flow

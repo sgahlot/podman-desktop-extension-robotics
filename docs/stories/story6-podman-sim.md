@@ -180,11 +180,19 @@ openSimulationInBrowser(port)
 ### Implementation Notes (completed 2026-07-28)
 
 **Files created:**
-- `packages/frontend/src/SimulationPage.svelte` — full page with 3 sections (Launch, Running Containers, Add TurtleBot3). Polls `listSimulationContainers()` every 3s. Image dropdown filters for `/ros2-.*-sim-|ros2-.*-turtlebot3/` pattern. Single-sim-at-a-time enforcement.
+- `packages/frontend/src/SimulationPage.svelte` — full page with 3 sections (Launch, Running Containers, Add TurtleBot3). Polls `listSimulationContainers()` every 3s. Image dropdown filters for `/ros2-.*-sim|ros2-.*-turtlebot3/` pattern. Single-sim-at-a-time enforcement.
 
 **Files modified:**
 - `packages/frontend/src/App.svelte` — added `/simulation` route + `SimulationPage` import
 - `packages/frontend/src/Dashboard.svelte` — changed Simulation card from disabled `<div>` to active `<button>` with `router.goto('/simulation')` and tooltip "Launch and manage robot simulations"
+
+**UX refinements (completed later):**
+- Launch card always shows dropdown + Launch button, both **disabled** (`.pai-btn-primary:disabled` — opacity 0.4, not-allowed cursor) when a simulation is running. No separate "Stop Simulation" branch — Stop only lives in the container card to avoid redundancy.
+- Stop/Delete buttons styled with `pai-btn-danger` class for visual distinction.
+- Auto-cleanup of exited containers on page load.
+- "View Topics" button added to running container cards (navigates to Topic Monitor page).
+- `stopSim()` calls `deleteSimulation` (stop + remove) for clean state.
+- 304/already-started errors handled gracefully (polls containers instead of showing error loop).
 
 **Note:** CLI-built images (e.g. `ros2-jazzy-sim:test`) don't match the extension's tag pattern (`quay.io/.../ros2-jazzy-sim:noble`), so the Simulation page shows "No simulation images found locally" until images are built through the Image Builder. This is by design.
 

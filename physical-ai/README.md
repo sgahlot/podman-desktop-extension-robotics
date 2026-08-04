@@ -7,6 +7,7 @@ A Podman Desktop extension that gives robotics developers a GUI-driven path from
 - **Image Catalog** — Browse and pull ROS2 images from Quay.io (All or Curated view)
 - **Image Builder** — Two-phase build (base + simulation) with Quick Start presets. Phase 1 builds the ROS2 base, Phase 2 layers Gazebo + Nav2 + noVNC on top.
 - **Simulation** — One-click launch of Gazebo in a Podman container, browser-based visualization via noVNC, interactive TurtleBot3 spawning
+- **Topic Monitor** — Live view of active ROS2 topics, message types, and publisher/subscriber counts inside running simulation containers
 - **Help** — In-extension documentation
 
 Current container bases are **Ubuntu 24.04** (ROS2 Jazzy and Humble). Fedora/RHEL migration is planned.
