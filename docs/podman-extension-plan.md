@@ -41,7 +41,7 @@ Drivers:
 | Story | Summary | Status | Sub-tasks |
 |-------|---------|--------|-----------|
 | [APPENG-5764](#story-1) | Extension scaffolding and base image catalog | ✅ Done | 4/4 done, 2 follow-ups parked |
-| [APPENG-5765](#story-2) | Single robot simulation workflow | 🟡 In Progress | 3/3 original done + APPENG-5920 Nav2 goals in progress |
+| [APPENG-5765](#story-2) | Single robot simulation workflow | 🟡 In Progress | 3/3 original done + APPENG-5920 nav in progress, 5922/5923 topic drill-down not started |
 | [APPENG-5766](#story-3) | Multi-robot local scaling *(stretch)* | ⚪ Not Started | 0/3 done |
 | [APPENG-5767](#story-4) | OpenShift deployment bridge *(stretch)* | ⚪ Not Started | 0/3 done |
 | [Spike](#story-5) | Local-first deployment of reference demos | 🅿️ Parked (Kind OOM) | 0/6 proposed |
@@ -167,7 +167,9 @@ If you only ever build one sim image and never reuse the base, the two-phase spl
 | ✅ | APPENG-5771 | Container orchestration for ROS2 + Gazebo launch via Podman pod | Implemented via [Story 6](stories/story6-podman-sim.md) S6-1/S6-3/S6-4. Podman-only (no pods/compose): backend lifecycle API + Simulation page + one-click launch. |
 | ✅ | APPENG-5772 | Integrate noVNC or web-based video stream for simulation visualization | Implemented via [Story 6](stories/story6-podman-sim.md) S6-1/S6-4. noVNC stack (Xvfb + x11vnc + websockify) in sim image, "Open in Browser" on Simulation page. |
 | ✅ | APPENG-5773 | Build topic monitor panel showing active ROS2 topics and message rates | Topic Monitor page (`/topics`): lists active ROS2 topics with message types, publisher/subscriber counts. Uses `podman exec` (attached) to run `ros2 topic list` + `ros2 topic info` inside the simulation container. Auto-refreshes every 5s. Accessible from Dashboard card and Simulation page "View Topics" button. Hz measurement deferred. |
-| 🟡 | APPENG-5920 | Add Nav2 goal-sending UI for autonomous robot navigation in simulation | Per-robot "Navigate to (X, Y)" controls on Simulation page. `sendNavigationGoal` queries robot pose via `gz model -m <name> -p`, then publishes `cmd_vel` Twist messages to turn and drive toward the target. Direct velocity control (no Nav2 stack needed — Nav2 requires sensor data unavailable on arm64 due to Ogre2 Sensors crash). `startNav2` is a no-op stub. |
+| 🟡 | APPENG-5920 | Add navigation UI for driving robots in simulation | Per-robot "Go" button with target X/Y on the Simulation page. On arm64 (local laptop): direct velocity control via `cmd_vel` Twist (no obstacle avoidance — Ogre2 Sensors crash blocks Nav2). On amd64/OpenShift with GPU: Nav2 autonomous navigation with obstacle avoidance (plumbing in place, blocked on Ogre2 Sensors re-enable). |
+| ⚪ | APPENG-5922 | Topic Monitor drill-down | Add expandable rows to the Topic Monitor table. Clicking a topic row reveals verbose info (publisher/subscriber node names via `ros2 topic info -v`). |
+| ⚪ | APPENG-5923 | Topic Monitor message peek | Add a "Peek" button to expanded Topic Monitor rows that shows one live message snapshot via `ros2 topic echo --once`. Displays raw message data inline below the node list. |
 
 ---
 
@@ -242,7 +244,7 @@ Story 1 (Scaffolding + images)  ──  Foundation; must be first  ✅
 | Priority | Scope | Issues |
 |----------|--------|--------|
 | **MVP-critical** (ROSCon demo) | Stories 1 + 6 (+ Story 2 via 5771/5772) | Image Builder, Catalog, Simulation launch/spawn/noVNC |
-| **🟡 Story 2 in progress** | APPENG-5773 done, APPENG-5920 in progress | Topic monitor done; Nav2 goal UI in progress |
+| **🟡 Story 2 in progress** | APPENG-5773 done, APPENG-5920 in progress, 5922/5923 not started | Topic monitor done; nav UI in progress; topic drill-down + peek queued |
 | **Parked** | Story 5 | Kind spike; resume for K8s/OpenShift path |
 | **Stretch** | Stories 3–4 | 6 sub-tasks (`APPENG-5774`–`5779`), including docs |
 
@@ -261,6 +263,8 @@ Now that the scaffold (APPENG-5768) is complete, sub-tasks have fine-grained dep
     ├── ✅ APPENG-5770 (Image catalog UI)
     ├── ✅ APPENG-5808 (Wizard + sim images)
     ├── ✅ APPENG-5773 (Topic monitor UI) ── DONE
+    │       ├── ⚪ APPENG-5922 (Topic drill-down)    ◀── expandable rows with node names
+    │       └── ⚪ APPENG-5923 (Topic message peek)  ◀── ros2 topic echo --once; needs 5922 first
     ├── 🟡 APPENG-5920 (Nav2 goal UI) ── IN PROGRESS
     │
     ├── 🅿️ S5-1…S5-6 (Story 5 Kind/OpenShift spike) ── PARKED (branch spike/repo-b-kind-attempt)
@@ -339,7 +343,9 @@ A Miro board would be useful for a team kickoff/planning session where people ne
 | ✅ | APPENG-5771 | Sub-task | APPENG-5765 | Container orchestration for ROS2 + Gazebo launch via Podman pod |
 | ✅ | APPENG-5772 | Sub-task | APPENG-5765 | Integrate noVNC or web-based video stream for simulation visualization |
 | ✅ | APPENG-5773 | Sub-task | APPENG-5765 | Build topic monitor panel showing active ROS2 topics and message rates |
-| 🟡 | APPENG-5920 | Sub-task | APPENG-5765 | Add Nav2 goal-sending UI for autonomous robot navigation in simulation |
+| 🟡 | APPENG-5920 | Sub-task | APPENG-5765 | Add navigation UI for driving robots in simulation |
+| ⚪ | APPENG-5922 | Sub-task | APPENG-5765 | Topic Monitor drill-down |
+| ⚪ | APPENG-5923 | Sub-task | APPENG-5765 | Topic Monitor message peek |
 | ⚪ | APPENG-5774 | Sub-task | APPENG-5766 | Podman Compose or pod-based multi-container orchestration for 2+ robots |
 | ⚪ | APPENG-5775 | Sub-task | APPENG-5766 | Zenoh router and DDS bridge sidecar auto-configuration |
 | ⚪ | APPENG-5776 | Sub-task | APPENG-5766 | Fleet status panel in the extension UI |

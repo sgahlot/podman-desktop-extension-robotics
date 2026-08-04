@@ -13,7 +13,9 @@
 | ✅ | APPENG-5771 | Container orchestration for ROS2 + Gazebo launch via Podman pod |
 | ✅ | APPENG-5772 | Integrate noVNC or web-based video stream for simulation visualization |
 | ✅ | APPENG-5773 | Build topic monitor panel showing active ROS2 topics and message rates |
-| 🟡 | APPENG-5920 | Add Nav2 goal-sending UI for autonomous robot navigation in simulation |
+| 🟡 | APPENG-5920 | Add navigation UI for driving robots in simulation |
+| ⚪ | APPENG-5922 | Topic Monitor drill-down |
+| ⚪ | APPENG-5923 | Topic Monitor message peek |
 
 > **See also:** [Story 6 (Podman-only simulation)](story6-podman-sim.md) implements the core of this story (APPENG-5771 container orchestration + APPENG-5772 noVNC) using a Podman-only approach for the ROSCon demo.
 
@@ -65,30 +67,30 @@
 
 ---
 
-## APPENG-5920: Nav2 Goal-Sending UI — 🟡 In Progress
+## APPENG-5920: Navigation UI — 🟡 In Progress
 
-**Description:** Add a "Navigate to" control on the Simulation page that sends a Nav2 goal to a running robot. The robot autonomously plans a path and drives to the target using Nav2's built-in obstacle avoidance.
+**Description:** Add a "Go" button with target X/Y coordinates on the Simulation page that drives a robot to the specified location.
 
 ### Implementation Notes
 
-**Key discovery:** The existing `entrypoint-spawn-robot.sh` only launches the robot model + `robot_state_publisher` — it does **not** start Nav2's navigation stack. A new `entrypoint-nav2.sh` script is needed to launch `nav2_bringup navigation_launch.py` per robot.
+**Current approach (arm64 / local laptop):** Direct velocity control. Backend queries robot pose via `gz model -m <name> -p`, then publishes `cmd_vel` Twist messages to turn and drive in a straight line. No obstacle avoidance — Ogre2 Sensors crash on arm64 llvmpipe blocks Nav2 (no lidar/costmap data).
+
+**Target (amd64 / OpenShift with GPU):** Nav2 autonomous navigation with obstacle avoidance. Once Ogre2 Sensors is re-enabled, the Nav2 navigation stack can be launched per robot and goals sent via `navigate_to_pose` — the robot will autonomously plan a path and avoid obstacles. The backend plumbing is already in place to support this switch.
 
 **New files:**
-- `packages/backend/assets/ros2-jazzy-sim/entrypoint-nav2.sh` — launches Nav2 navigation stack for a given robot namespace via `podman exec -d`
+- `packages/backend/assets/ros2-jazzy-sim/entrypoint-nav2.sh` — launches Nav2 navigation stack (unused on arm64; ready for amd64/OpenShift)
 - `packages/shared/src/types/NavigationGoalResult.ts` — `NavigationGoalResult` interface (status, message)
 
 **Modified files:**
 - `packages/backend/assets/ros2-jazzy-sim/Containerfile` — added COPY + chmod for `entrypoint-nav2.sh`
-- `packages/shared/src/PhysicalAiApi.ts` — added `startNav2(containerId, robotName)` and `sendNavigationGoal(containerId, robotName, x, y)`
-- `packages/backend/src/api-impl.ts` — implemented both methods: `startNav2` uses detached exec, `sendNavigationGoal` uses attached exec with `ros2 action send_goal` and parses result
-- `packages/frontend/src/SimulationPage.svelte` — per-robot navigation controls (X/Y inputs, Go button, nav status display)
+- `packages/shared/src/PhysicalAiApi.ts` — added `startNav2()` and `sendNavigationGoal()`
+- `packages/backend/src/api-impl.ts` — `startNav2` is a no-op stub; `sendNavigationGoal` queries pose, publishes turn/drive/stop via attached `podman exec`
+- `packages/frontend/src/SimulationPage.svelte` — per-robot navigation controls (X/Y inputs, Go button, status with snapshotted coordinates)
 - `packages/frontend/src/Help.svelte` — added Navigate section under Simulation
-- `packages/backend/src/api-impl.spec.ts` — 8 new tests for `startNav2` and `sendNavigationGoal`
+- `packages/backend/src/api-impl.spec.ts` — 6 tests for `startNav2` and `sendNavigationGoal`
 
 **Architecture:**
-1. User clicks "Go" → frontend calls `startNav2()` (detached, first time only) → waits 5s for Nav2 initialization
-2. Frontend calls `sendNavigationGoal()` → backend runs `ros2 action send_goal` (attached, blocks until complete)
-3. Backend parses stdout for SUCCEEDED/ABORTED/rejected → returns `NavigationGoalResult`
-4. Frontend shows status: Starting Nav2 → Navigating → Reached / Failed
-
-**Note:** Simulation image must be rebuilt to include `entrypoint-nav2.sh`.
+1. User clicks "Go" → frontend calls `sendNavigationGoal(containerId, robotName, x, y)`
+2. Backend queries current pose, computes heading, publishes turn then drive via `ros2 topic pub`
+3. Backend sends stop command, returns `NavigationGoalResult`
+4. Frontend shows status: Driving → Drove to (X, Y) / Failed
