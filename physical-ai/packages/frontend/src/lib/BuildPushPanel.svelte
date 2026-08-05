@@ -121,6 +121,7 @@ async function startBuild() {
     startPolling('build');
   } catch (e) {
     building = false;
+    buildDone = true;
     buildError = e instanceof Error ? e.message : typeof e === 'string' ? e : 'Build failed to start';
   }
 }
