@@ -2,7 +2,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { ExtensionContext } from '@podman-desktop/api';
 import { PhysicalAiApiImpl } from './api-impl';
 import { SIM_CONTAINER_LABEL, SIM_CONTAINER_LABEL_VALUE } from '/@shared/src/types/SimulationContainer';
-import { SPAWN_ENTRYPOINT } from '/@shared/src/security/simInput';
+import { SPAWN_ENTRYPOINT, GAZEBO_ENTRYPOINT } from '/@shared/src/security/simInput';
 
 vi.mock('@podman-desktop/api', () => ({
   provider: {
@@ -22,6 +22,8 @@ vi.mock('@podman-desktop/api', () => ({
     pullImage: vi.fn(),
     buildImage: vi.fn(),
     pushImage: vi.fn(),
+    createContainer: vi.fn(),
+    startContainer: vi.fn(),
   },
   process: {
     exec: vi.fn(),
@@ -1286,6 +1288,68 @@ describe('PhysicalAiApiImpl', () => {
       await expect(
         api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '0', '0', '0']),
       ).rejects.toThrow('Not a Physical AI simulation container');
+    });
+  });
+
+  describe('launchSimulation security', () => {
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
+        { engineId: 'engine-1', RepoTags: ['quay.io/sgahlot/ros2-jazzy-sim:noble'] },
+      ] as any);
+      vi.mocked(extensionApi.containerEngine.createContainer).mockResolvedValue({
+        id: 'created-1',
+      } as any);
+      vi.mocked(extensionApi.containerEngine.startContainer).mockResolvedValue(undefined as any);
+    });
+
+    it('forces gazebo entrypoint and rejects custom Cmd', async () => {
+      await expect(
+        api.launchSimulation('quay.io/sgahlot/ros2-jazzy-sim:noble', 'pai-sim-test', {
+          cmd: ['/bin/bash', '-c', 'id'],
+        }),
+      ).rejects.toThrow(/only allows Cmd/);
+
+      await api.launchSimulation('quay.io/sgahlot/ros2-jazzy-sim:noble', 'pai-sim-ok', undefined);
+      expect(extensionApi.containerEngine.createContainer).toHaveBeenCalledWith(
+        'engine-1',
+        expect.objectContaining({
+          Cmd: [GAZEBO_ENTRYPOINT],
+          Labels: expect.objectContaining({
+            [SIM_CONTAINER_LABEL]: SIM_CONTAINER_LABEL_VALUE,
+          }),
+        }),
+      );
+    });
+
+    it('rejects dangerous env keys and keeps role label forced', async () => {
+      await expect(
+        api.launchSimulation('quay.io/sgahlot/ros2-jazzy-sim:noble', 'pai-sim-env', {
+          env: { PATH: '/evil', LD_PRELOAD: 'x.so' },
+        }),
+      ).rejects.toThrow(/not allowed/);
+
+      await api.launchSimulation('quay.io/sgahlot/ros2-jazzy-sim:noble', 'pai-sim-labels', {
+        labels: {
+          'io.physical-ai.role': 'attacker',
+          'app.kubernetes.io/name': 'sim',
+        },
+        env: { WORLD_NAME: 'empty', ROBOTS: 'robot_1:0:0:0' },
+      });
+
+      const createArg = vi.mocked(extensionApi.containerEngine.createContainer).mock.calls[0][1] as {
+        Labels: Record<string, string>;
+        Env: string[];
+      };
+      expect(createArg.Labels[SIM_CONTAINER_LABEL]).toBe(SIM_CONTAINER_LABEL_VALUE);
+      expect(createArg.Env).toEqual(
+        expect.arrayContaining([
+          'LIBGL_ALWAYS_SOFTWARE=1',
+          'GALLIUM_DRIVER=llvmpipe',
+          'WORLD_NAME=empty',
+          'ROBOTS=robot_1:0:0:0',
+        ]),
+      );
+      expect(createArg.Env.some(e => e.startsWith('PATH='))).toBe(false);
     });
   });
 });

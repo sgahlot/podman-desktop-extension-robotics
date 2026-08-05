@@ -15,6 +15,11 @@ import {
   assertRosTopicName,
   assertRosDistro,
   assertSpawnExecCommand,
+  assertLaunchCmd,
+  assertLaunchEnv,
+  assertLaunchLabels,
+  assertPortMappings,
+  assertContainerName,
   ROS_TOPIC_NAME_RE,
   type SupportedRosDistro,
 } from '/@shared/src/security/simInput';
@@ -462,21 +467,27 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async launchSimulation(imageTag: string, containerName: string, options?: SimLaunchOptions): Promise<string> {
     const engineId = await this.#getEngineId(imageTag);
-    const name = containerName || `${SIM_CONTAINER_PREFIX}${Date.now()}`;
+    const name = containerName
+      ? assertContainerName(containerName)
+      : `${SIM_CONTAINER_PREFIX}${Date.now()}`;
+
+    // Role label always wins — client cannot clear or redefine it.
     const labels: Record<string, string> = {
+      ...assertLaunchLabels(options?.labels),
       [SIM_CONTAINER_LABEL]: SIM_CONTAINER_LABEL_VALUE,
-      ...options?.labels,
     };
 
-    const portMappings = options?.portMappings ?? [
-      { hostPort: 6080, containerPort: 6080 },
-      { hostPort: 8080, containerPort: 8080 },
+    const portMappings = assertPortMappings(options?.portMappings) ?? [
+      { hostPort: 6080, containerPort: 6080, protocol: 'tcp' },
+      { hostPort: 8080, containerPort: 8080, protocol: 'tcp' },
     ];
 
+    const cmd = assertLaunchCmd(options?.cmd);
+    const clientEnv = assertLaunchEnv(options?.env);
     const env: Record<string, string> = {
       LIBGL_ALWAYS_SOFTWARE: '1',
       GALLIUM_DRIVER: 'llvmpipe',
-      ...options?.env,
+      ...clientEnv,
     };
 
     const envArray = Object.entries(env).map(([k, v]) => `${k}=${v}`);
@@ -486,13 +497,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       {
         name,
         Image: imageTag,
-        Cmd: options?.cmd ?? ['/entrypoint-gazebo.sh'],
+        Cmd: cmd,
         Env: envArray,
         Labels: labels,
         HostConfig: {
           PortBindings: Object.fromEntries(
             portMappings.map(p => [
-              `${p.containerPort}/${p.protocol ?? 'tcp'}`,
+              `${p.containerPort}/${p.protocol}`,
               [{ HostPort: String(p.hostPort) }],
             ]),
           ),

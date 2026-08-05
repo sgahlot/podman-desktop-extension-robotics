@@ -1,6 +1,13 @@
+/**
+ * Options for launchSimulation.
+ * `cmd` is ignored unless it is exactly `['/entrypoint-gazebo.sh']` (custom Cmd is rejected).
+ * `env` only allows gazebo-related keys (see assertLaunchEnv); PATH/LD_PRELOAD/etc. are rejected.
+ * Simulation role label is always forced server-side and cannot be overridden.
+ */
 export interface SimLaunchOptions {
   portMappings?: Array<{ hostPort: number; containerPort: number; protocol?: string }>;
   env?: Record<string, string>;
+  /** @deprecated Custom Cmd is not allowed; only `/entrypoint-gazebo.sh`. */
   cmd?: string[];
   labels?: Record<string, string>;
 }
