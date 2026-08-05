@@ -8,6 +8,7 @@ import {
   assertLaunchCmd,
   assertLaunchEnv,
   assertRobotsEnv,
+  assertBrowserPort,
   SPAWN_ENTRYPOINT,
   GAZEBO_ENTRYPOINT,
 } from './simInput';
@@ -74,5 +75,12 @@ describe('simInput security validators', () => {
     expect(() => assertLaunchEnv({ LD_PRELOAD: 'x' })).toThrow(/not allowed/);
     expect(() => assertRobotsEnv('bad;entry')).toThrow(/Invalid ROBOTS entry/);
     expect(() => assertRobotsEnv('robot;x:0:0:0')).toThrow(/Invalid robot name/);
+  });
+
+  it('allowlists browser ports for openSimulationInBrowser', () => {
+    expect(assertBrowserPort(6080)).toBe(6080);
+    expect(assertBrowserPort(8080)).toBe(8080);
+    expect(() => assertBrowserPort(22)).toThrow(/not allowed/);
+    expect(() => assertBrowserPort(6080.5)).toThrow(/not allowed/);
   });
 });

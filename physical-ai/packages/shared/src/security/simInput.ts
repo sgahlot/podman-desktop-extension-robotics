@@ -227,3 +227,16 @@ export function assertPortMappings(
     return { hostPort, containerPort, protocol };
   });
 }
+
+/** Ports openSimulationInBrowser may open (noVNC + landing page). */
+export const ALLOWED_BROWSER_PORTS = new Set([6080, 8080]);
+
+export function assertBrowserPort(port: number): number {
+  const n = Number(port);
+  if (!Number.isInteger(n) || !ALLOWED_BROWSER_PORTS.has(n)) {
+    throw new Error(
+      `Port ${port} is not allowed. openSimulationInBrowser only opens ${[...ALLOWED_BROWSER_PORTS].join(' or ')}.`,
+    );
+  }
+  return n;
+}

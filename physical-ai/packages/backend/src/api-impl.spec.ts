@@ -31,8 +31,12 @@ vi.mock('@podman-desktop/api', () => ({
   configuration: {
     getConfiguration: vi.fn(),
   },
+  env: {
+    openExternal: vi.fn(),
+  },
   Uri: {
     joinPath: vi.fn(),
+    parse: vi.fn((s: string) => ({ toString: () => s })),
   },
   Disposable: {
     create: vi.fn(),
@@ -1383,6 +1387,28 @@ describe('PhysicalAiApiImpl', () => {
         'engine-1',
         expect.objectContaining({ Image: digest }),
       );
+    });
+  });
+
+  describe('openSimulationInBrowser security', () => {
+    beforeEach(() => {
+      vi.mocked(extensionApi.env.openExternal).mockResolvedValue(true as any);
+      vi.mocked(extensionApi.Uri.parse).mockImplementation((s: string) => ({ toString: () => s }) as any);
+    });
+
+    it('opens allowlisted ports only', async () => {
+      await api.openSimulationInBrowser(6080);
+      expect(extensionApi.Uri.parse).toHaveBeenCalledWith('http://localhost:6080');
+      expect(extensionApi.env.openExternal).toHaveBeenCalled();
+
+      await api.openSimulationInBrowser(8080);
+      expect(extensionApi.Uri.parse).toHaveBeenCalledWith('http://localhost:8080');
+    });
+
+    it('rejects non-allowlisted ports', async () => {
+      await expect(api.openSimulationInBrowser(22)).rejects.toThrow(/not allowed/);
+      await expect(api.openSimulationInBrowser(3000)).rejects.toThrow(/not allowed/);
+      expect(extensionApi.env.openExternal).not.toHaveBeenCalled();
     });
   });
 });

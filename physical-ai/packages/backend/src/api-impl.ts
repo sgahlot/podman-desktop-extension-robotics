@@ -20,6 +20,7 @@ import {
   assertLaunchLabels,
   assertPortMappings,
   assertContainerName,
+  assertBrowserPort,
   ROS_TOPIC_NAME_RE,
   type SupportedRosDistro,
 } from '/@shared/src/security/simInput';
@@ -592,7 +593,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async openSimulationInBrowser(port: number): Promise<void> {
-    await extensionApi.env.openExternal(extensionApi.Uri.parse(`http://localhost:${port}`));
+    const safePort = assertBrowserPort(port);
+    await extensionApi.env.openExternal(extensionApi.Uri.parse(`http://localhost:${safePort}`));
   }
 
   async listRosTopics(containerId: string): Promise<TopicInfo[]> {
