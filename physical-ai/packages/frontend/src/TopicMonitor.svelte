@@ -3,7 +3,7 @@ import { physicalAiClient } from './api/client';
 import { onMount, onDestroy } from 'svelte';
 import { router } from 'tinro';
 import type { SimContainerInfo } from '/@shared/src/types/SimulationContainer';
-import type { TopicInfo } from '/@shared/src/types/TopicInfo';
+import type { TopicInfo, TopicDetailInfo } from '/@shared/src/types/TopicInfo';
 
 let containers: SimContainerInfo[] = [];
 let selectedContainerId = '';
@@ -12,6 +12,11 @@ let loading = false;
 let error = '';
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let pollInFlight = false;
+
+let expandedTopic: string | null = null;
+let topicDetail: TopicDetailInfo | null = null;
+let loadingDetail = false;
+let detailError = '';
 
 $: runningContainers = containers.filter(c => c.state === 'running');
 $: hasRunning = runningContainers.length > 0;
@@ -24,6 +29,13 @@ $: if (selectedContainerId && !runningContainers.find(c => c.id === selectedCont
   selectedContainerId = '';
   topics = [];
   error = '';
+  expandedTopic = null;
+  topicDetail = null;
+}
+
+$: if (expandedTopic && !topics.find(t => t.name === expandedTopic)) {
+  expandedTopic = null;
+  topicDetail = null;
 }
 
 async function pollContainers() {
@@ -54,6 +66,28 @@ async function refresh() {
     await pollTopics();
   }
   loading = false;
+}
+
+async function toggleTopicDetail(topicName: string) {
+  if (expandedTopic === topicName) {
+    expandedTopic = null;
+    topicDetail = null;
+    detailError = '';
+    return;
+  }
+
+  expandedTopic = topicName;
+  loadingDetail = true;
+  topicDetail = null;
+  detailError = '';
+
+  try {
+    topicDetail = await physicalAiClient.getRosTopicDetail(selectedContainerId, topicName);
+  } catch (e) {
+    detailError = e instanceof Error ? e.message : String(e);
+  } finally {
+    loadingDetail = false;
+  }
 }
 
 onMount(() => {
@@ -132,12 +166,60 @@ onDestroy(() => {
           </thead>
           <tbody>
             {#each topics as topic}
-              <tr class="border-b border-[var(--pd-content-card-border)] last:border-b-0">
-                <td class="p-3 pr-4 font-mono font-medium text-[var(--pd-content-header)]">{topic.name}</td>
+              <tr
+                class="border-b border-[var(--pd-content-card-border)] cursor-pointer hover:bg-[var(--pd-content-bg)] transition-colors"
+                on:click={() => toggleTopicDetail(topic.name)}
+              >
+                <td class="p-3 pr-4 font-mono font-medium text-[var(--pd-content-header)]">
+                  <span class="inline-block w-4 text-center text-[var(--pd-content-text)]">{expandedTopic === topic.name ? '▼' : '▶'}</span>
+                  {topic.name}
+                </td>
                 <td class="p-3 pr-4 font-mono text-[var(--pd-content-text)]">{topic.type}</td>
                 <td class="p-3 pr-4 text-right text-[var(--pd-content-text)]">{topic.publishers}</td>
                 <td class="p-3 text-right text-[var(--pd-content-text)]">{topic.subscribers}</td>
               </tr>
+              {#if expandedTopic === topic.name}
+                <tr class="border-b border-[var(--pd-content-card-border)]">
+                  <td colspan="4" class="p-4 pl-10 bg-[var(--pd-content-bg)]">
+                    {#if loadingDetail}
+                      <span class="text-xs text-[var(--pd-content-text)]">Loading detail...</span>
+                    {:else if detailError}
+                      <span class="text-xs pai-text-error">{detailError}</span>
+                    {:else if topicDetail}
+                      <div class="flex flex-row gap-8">
+                        <div>
+                          <div class="text-xs font-medium text-[var(--pd-content-header)] mb-1">
+                            Publishers ({topicDetail.publishers.length})
+                          </div>
+                          {#if topicDetail.publishers.length === 0}
+                            <span class="text-xs text-[var(--pd-content-text)]">None</span>
+                          {:else}
+                            {#each topicDetail.publishers as pub}
+                              <div class="text-xs font-mono text-[var(--pd-content-text)]">
+                                {pub.nodeNamespace === '/' ? '' : pub.nodeNamespace}/{pub.nodeName}
+                              </div>
+                            {/each}
+                          {/if}
+                        </div>
+                        <div>
+                          <div class="text-xs font-medium text-[var(--pd-content-header)] mb-1">
+                            Subscribers ({topicDetail.subscribers.length})
+                          </div>
+                          {#if topicDetail.subscribers.length === 0}
+                            <span class="text-xs text-[var(--pd-content-text)]">None</span>
+                          {:else}
+                            {#each topicDetail.subscribers as sub}
+                              <div class="text-xs font-mono text-[var(--pd-content-text)]">
+                                {sub.nodeNamespace === '/' ? '' : sub.nodeNamespace}/{sub.nodeName}
+                              </div>
+                            {/each}
+                          {/if}
+                        </div>
+                      </div>
+                    {/if}
+                  </td>
+                </tr>
+              {/if}
             {/each}
           </tbody>
         </table>

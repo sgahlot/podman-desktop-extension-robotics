@@ -955,6 +955,124 @@ describe('PhysicalAiApiImpl', () => {
     });
   });
 
+  describe('getRosTopicDetail', () => {
+    const CONTAINER_ID = 'abc123';
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        { Id: CONTAINER_ID, Image: 'quay.io/sgahlot/ros2-jazzy-sim:noble' },
+      ] as any);
+    });
+
+    it('parses verbose output with publishers and subscribers', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: [
+          'Type: geometry_msgs/msg/Twist',
+          '',
+          'Publisher count: 1',
+          '',
+          'Node name: teleop_keyboard',
+          'Node namespace: /',
+          'Topic type: geometry_msgs/msg/Twist',
+          'Endpoint type: PUBLISHER',
+          'GID: 01.0f.7e.00.00.00.00.00',
+          'QoS profile:',
+          '  Reliability: RELIABLE',
+          '  History (Depth): UNKNOWN',
+          '  Durability: VOLATILE',
+          '',
+          'Subscription count: 2',
+          '',
+          'Node name: turtlebot3_diff_drive',
+          'Node namespace: /robot_1',
+          'Topic type: geometry_msgs/msg/Twist',
+          'Endpoint type: SUBSCRIPTION',
+          'GID: 01.0f.7e.00.00.00.00.01',
+          'QoS profile:',
+          '  Reliability: RELIABLE',
+          '',
+          'Node name: nav2_velocity_smoother',
+          'Node namespace: /robot_1',
+          'Topic type: geometry_msgs/msg/Twist',
+          'Endpoint type: SUBSCRIPTION',
+          'GID: 01.0f.7e.00.00.00.00.02',
+        ].join('\n'),
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      const result = await api.getRosTopicDetail(CONTAINER_ID, '/robot_1/cmd_vel');
+      expect(result.topicName).toBe('/robot_1/cmd_vel');
+      expect(result.type).toBe('geometry_msgs/msg/Twist');
+      expect(result.publishers).toEqual([
+        { nodeName: 'teleop_keyboard', nodeNamespace: '/' },
+      ]);
+      expect(result.subscribers).toEqual([
+        { nodeName: 'turtlebot3_diff_drive', nodeNamespace: '/robot_1' },
+        { nodeName: 'nav2_velocity_smoother', nodeNamespace: '/robot_1' },
+      ]);
+    });
+
+    it('returns empty arrays when exec fails', async () => {
+      vi.mocked(extensionApi.process.exec).mockRejectedValue({
+        exitCode: 1,
+        stdout: '',
+        stderr: 'command not found',
+      });
+
+      const result = await api.getRosTopicDetail(CONTAINER_ID, '/rosout');
+      expect(result).toEqual({
+        topicName: '/rosout',
+        type: 'unknown',
+        publishers: [],
+        subscribers: [],
+      });
+    });
+
+    it('returns empty arrays for zero publishers and subscribers', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: 'Type: std_msgs/msg/String\n\nPublisher count: 0\n\nSubscription count: 0\n',
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      const result = await api.getRosTopicDetail(CONTAINER_ID, '/empty_topic');
+      expect(result.topicName).toBe('/empty_topic');
+      expect(result.type).toBe('std_msgs/msg/String');
+      expect(result.publishers).toEqual([]);
+      expect(result.subscribers).toEqual([]);
+    });
+
+    it('detects humble distro for sourcing', async () => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        { Id: CONTAINER_ID, Image: 'quay.io/ns/ros2-humble-turtlebot3:sloretz' },
+      ] as any);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: 'Type: std_msgs/msg/String\n\nPublisher count: 0\n\nSubscription count: 0\n',
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      await api.getRosTopicDetail(CONTAINER_ID, '/rosout');
+      const firstCall = vi.mocked(extensionApi.process.exec).mock.calls[0];
+      const bashCmd = firstCall[1].find((arg: string) => arg.includes('source'));
+      expect(bashCmd).toContain('/opt/ros/humble/');
+    });
+
+    it('passes -v flag to ros2 topic info', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: 'Type: std_msgs/msg/String\n\nPublisher count: 0\n\nSubscription count: 0\n',
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      await api.getRosTopicDetail(CONTAINER_ID, '/rosout');
+      const firstCall = vi.mocked(extensionApi.process.exec).mock.calls[0];
+      const bashCmd = firstCall[1].find((arg: string) => arg.includes('ros2 topic info'));
+      expect(bashCmd).toContain('ros2 topic info -v /rosout');
+    });
+  });
+
   describe('startNav2', () => {
     it('returns success immediately (no-op)', async () => {
       const result = await api.startNav2('abc123', 'robot_1');

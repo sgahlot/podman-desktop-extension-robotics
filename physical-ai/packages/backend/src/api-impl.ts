@@ -8,7 +8,7 @@ import { SIM_CONTAINER_LABEL, SIM_CONTAINER_LABEL_VALUE, SIM_CONTAINER_PREFIX } 
 import { formatSimulationConfig, resolveSimulationProfile } from '/@shared/src/types/SimulationProfiles';
 import { resolveSimulationBaseImage } from '/@shared/src/types/SimulationBaseImages';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
-import type { TopicInfo } from '/@shared/src/types/TopicInfo';
+import type { TopicInfo, TopicDetailInfo, TopicNodeInfo } from '/@shared/src/types/TopicInfo';
 import type { NavigationGoalResult } from '/@shared/src/types/NavigationGoalResult';
 import { appendProgressLog } from './progressLogs';
 
@@ -608,6 +608,45 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
 
     return topics;
+  }
+
+  async getRosTopicDetail(containerId: string, topicName: string): Promise<TopicDetailInfo> {
+    const distro = await this.#detectRosDistro(containerId);
+    const source = `source /opt/ros/${distro}/setup.bash`;
+
+    const result = await this.#execAttached(containerId, [
+      'bash', '-c', `${source} && ros2 topic info -v ${topicName}`,
+    ]);
+
+    let type = 'unknown';
+    const publishers: TopicNodeInfo[] = [];
+    const subscribers: TopicNodeInfo[] = [];
+
+    if (result.exitCode === 0 && result.stdout) {
+      const typeMatch = result.stdout.match(/Type:\s*(.+)/);
+      if (typeMatch) type = typeMatch[1].trim();
+
+      const nodePattern = /Node name:\s*(.+)\s*\n\s*Node namespace:\s*(.+)/g;
+
+      const pubSection = result.stdout.match(/Publisher count:[\s\S]*?(?=Subscription count:|$)/);
+      if (pubSection) {
+        let match;
+        while ((match = nodePattern.exec(pubSection[0])) !== null) {
+          publishers.push({ nodeName: match[1].trim(), nodeNamespace: match[2].trim() });
+        }
+      }
+
+      const subSection = result.stdout.match(/Subscription count:[\s\S]*/);
+      if (subSection) {
+        const subPattern = /Node name:\s*(.+)\s*\n\s*Node namespace:\s*(.+)/g;
+        let match;
+        while ((match = subPattern.exec(subSection[0])) !== null) {
+          subscribers.push({ nodeName: match[1].trim(), nodeNamespace: match[2].trim() });
+        }
+      }
+    }
+
+    return { topicName, type, publishers, subscribers };
   }
 
   async startNav2(_containerId: string, _robotName: string): Promise<ExecResult> {
