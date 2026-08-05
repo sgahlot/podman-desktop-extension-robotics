@@ -10,6 +10,7 @@ let selectedImage = '';
 let containers: SimContainerInfo[] = [];
 let launching = false;
 let launchError = '';
+let actionError = '';
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let simImageAllowlist = '';
 
@@ -25,14 +26,23 @@ let spawnedRobots: Array<{
   x: string;
   y: string;
   status: string;
-  nav2Started: boolean;
-  navStatus: 'idle' | 'starting-nav2' | 'navigating' | 'reached' | 'failed';
+  navStatus: 'idle' | 'navigating' | 'reached' | 'failed';
   navTarget: { x: string; y: string };
   navReached: { x: string; y: string } | null;
 }> = [];
 
 $: runningContainer = containers.find(c => c.state === 'running');
 $: hasRunning = !!runningContainer;
+
+/** Host port mapped to container private port (e.g. 6080 noVNC). */
+function hostPortForPrivate(container: SimContainerInfo | undefined, privatePort: number): number {
+  if (!container) return privatePort;
+  for (const p of container.ports) {
+    const m = p.match(/^(\d+):(\d+)\//);
+    if (m && Number(m[2]) === privatePort) return Number(m[1]);
+  }
+  return privatePort;
+}
 
 async function loadImages() {
   try {
@@ -61,17 +71,9 @@ async function pollContainers() {
   }
 }
 
-async function cleanupExitedContainers() {
-  const exited = containers.filter(c => c.state !== 'running');
-  for (const c of exited) {
-    try { await physicalAiClient.deleteSimulation(c.id); } catch { }
-  }
-  if (exited.length > 0) await pollContainers();
-}
-
 onMount(() => {
   loadImages();
-  pollContainers().then(() => cleanupExitedContainers());
+  pollContainers();
   pollTimer = setInterval(pollContainers, 3000);
 });
 
@@ -83,6 +85,7 @@ async function launchSim() {
   if (!selectedImage || hasRunning) return;
   launching = true;
   launchError = '';
+  actionError = '';
   try {
     await physicalAiClient.launchSimulation(selectedImage, '', undefined);
     spawnedRobots = [];
@@ -102,27 +105,35 @@ async function launchSim() {
 }
 
 async function stopSim(id: string) {
+  actionError = '';
   try {
     await physicalAiClient.deleteSimulation(id);
     spawnedRobots = [];
     await pollContainers();
-  } catch {
-    // will update on next poll
+  } catch (e) {
+    actionError = e instanceof Error ? e.message : String(e);
   }
 }
 
 async function deleteSim(id: string) {
+  actionError = '';
   try {
     await physicalAiClient.deleteSimulation(id);
     spawnedRobots = [];
     await pollContainers();
-  } catch {
-    // will update on next poll
+  } catch (e) {
+    actionError = e instanceof Error ? e.message : String(e);
   }
 }
 
 async function openInBrowser() {
-  await physicalAiClient.openSimulationInBrowser(6080);
+  actionError = '';
+  try {
+    const port = hostPortForPrivate(runningContainer, 6080);
+    await physicalAiClient.openSimulationInBrowser(port);
+  } catch (e) {
+    actionError = e instanceof Error ? e.message : String(e);
+  }
 }
 
 async function spawnRobot() {
@@ -135,7 +146,7 @@ async function spawnRobot() {
     ]);
     spawnedRobots = [...spawnedRobots, {
       name: robotName, x: robotX, y: robotY, status: 'Spawned',
-      nav2Started: false, navStatus: 'idle', navTarget: { x: '2.0', y: '2.0' }, navReached: null,
+      navStatus: 'idle', navTarget: { x: '2.0', y: '2.0' }, navReached: null,
     }];
     robotCounter++;
     robotName = `robot_${robotCounter}`;
@@ -241,6 +252,9 @@ async function navigateRobot(index: number) {
   {#if containers.length > 0}
     <div class="flex flex-col gap-2 max-w-lg">
       <h2 class="text-sm font-medium text-[var(--pd-content-header)]">Simulation Containers</h2>
+      {#if actionError}
+        <span class="text-xs pai-text-error">{actionError}</span>
+      {/if}
 
       {#each containers as container (container.id)}
         <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3 flex flex-col gap-2">

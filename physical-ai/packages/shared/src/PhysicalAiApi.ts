@@ -35,6 +35,5 @@ export abstract class PhysicalAiApi {
   abstract openSimulationInBrowser(port: number): Promise<void>;
   abstract listRosTopics(containerId: string): Promise<TopicInfo[]>;
   abstract getRosTopicDetail(containerId: string, topicName: string): Promise<TopicDetailInfo>;
-  abstract startNav2(containerId: string, robotName: string): Promise<ExecResult>;
   abstract sendNavigationGoal(containerId: string, robotName: string, x: number, y: number): Promise<NavigationGoalResult>;
 }

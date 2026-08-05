@@ -25,11 +25,14 @@ import {
   type SupportedRosDistro,
 } from '/@shared/src/security/simInput';
 import { assertLaunchImageTag } from '/@shared/src/security/simImageTrust';
+import { assertQuayName } from '/@shared/src/security/quayNames';
 import { appendProgressLog } from './progressLogs';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
 /** How long completed progress entries stay queryable for the UI. */
 const PROGRESS_RETENTION_MS = 30_000;
+/** Cap concurrent in-flight pull/build/push ops. */
+const MAX_IN_FLIGHT_OPS = 5;
 
 export class PhysicalAiApiImpl implements PhysicalAiApi {
   private extensionContext: ExtensionContext;
@@ -62,12 +65,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async listCatalogImages(namespace: string): Promise<QuayRepository[]> {
+    const safeNs = assertQuayName(namespace, 'namespace');
     const repos: QuayRepository[] = [];
     let nextPage: string | undefined;
 
     do {
       const url = new URL(`${QUAY_API_BASE}/repository`);
-      url.searchParams.set('namespace', namespace);
+      url.searchParams.set('namespace', safeNs);
       url.searchParams.set('public', 'true');
       if (nextPage) {
         url.searchParams.set('next_page', nextPage);
@@ -87,7 +91,11 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async getImageTags(namespace: string, name: string): Promise<QuayTag[]> {
-    const url = new URL(`${QUAY_API_BASE}/repository/${namespace}/${name}/tag/`);
+    const safeNs = assertQuayName(namespace, 'namespace');
+    const safeName = assertQuayName(name, 'repository');
+    const url = new URL(
+      `${QUAY_API_BASE}/repository/${encodeURIComponent(safeNs)}/${encodeURIComponent(safeName)}/tag/`,
+    );
     url.searchParams.set('onlyActiveTags', 'true');
     url.searchParams.set('limit', '50');
 
@@ -171,11 +179,32 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     this.progressCleanupTimers.set(timerKey, timer);
   }
 
+  #countInFlight(map: Map<string, { done?: boolean }>): number {
+    let n = 0;
+    for (const v of map.values()) {
+      if (!v.done) n++;
+    }
+    return n;
+  }
+
+  #assertCanStartOp(map: Map<string, { done?: boolean }>, key: string, kind: string): void {
+    const existing = map.get(key);
+    if (existing && !existing.done) {
+      return; // replacing same in-flight key is allowed
+    }
+    if (this.#countInFlight(map) >= MAX_IN_FLIGHT_OPS) {
+      throw new Error(
+        `Too many concurrent ${kind} operations (max ${MAX_IN_FLIGHT_OPS}). Wait for one to finish.`,
+      );
+    }
+  }
+
   #startImageBuild(
     tag: string,
     assetDir: string,
     buildargs?: { [key: string]: string },
   ): void {
+    this.#assertCanStartOp(this.activeBuilds, tag, 'build');
     const podmanConnection = this.#getRunningPodmanConnection();
 
     const contextDir = extensionApi.Uri.joinPath(
@@ -310,6 +339,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const podmanConnection = this.#getRunningPodmanConnection();
 
     const imageToPull = `quay.io/${fullImageName}:${tag}`;
+    this.#assertCanStartOp(this.activePulls, imageToPull, 'pull');
     this.activePulls.set(imageToPull, { image: imageToPull, status: 'Starting...' });
     this.layerProgress.set(imageToPull, new Map());
 
@@ -420,6 +450,9 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async setCatalogViewMode(mode: 'all' | 'curated'): Promise<void> {
+    if (mode !== 'all' && mode !== 'curated') {
+      throw new Error(`Invalid catalog view mode "${String(mode)}". Use "all" or "curated".`);
+    }
     const config = extensionApi.configuration.getConfiguration('physical-ai');
     await config.update('catalogViewMode', mode);
   }
@@ -525,27 +558,43 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async stopSimulation(containerId: string): Promise<void> {
-    await this.#assertSimulationContainer(containerId);
-    const engineId = await this.#findEngineIdForContainer(containerId);
-    await extensionApi.containerEngine.stopContainer(engineId, containerId);
+    const { id, engineId } = await this.#resolveSimulationContainer(containerId);
+    await extensionApi.containerEngine.stopContainer(engineId, id);
   }
 
   async deleteSimulation(containerId: string): Promise<void> {
-    await this.#assertSimulationContainer(containerId);
-    const engineId = await this.#findEngineIdForContainer(containerId);
+    const { id, engineId } = await this.#resolveSimulationContainer(containerId);
     try {
-      await extensionApi.containerEngine.stopContainer(engineId, containerId);
+      await extensionApi.containerEngine.stopContainer(engineId, id);
     } catch {
       // already stopped
     }
-    await extensionApi.containerEngine.deleteContainer(engineId, containerId);
+    await extensionApi.containerEngine.deleteContainer(engineId, id);
   }
 
-  async #findEngineIdForContainer(containerId: string): Promise<string> {
+  async #resolveSimulationContainer(
+    containerId: string,
+  ): Promise<{ id: string; engineId: string; image: string }> {
+    if (!containerId || typeof containerId !== 'string' || containerId.length < 12) {
+      throw new Error('Container id must be at least 12 characters.');
+    }
     const containers = await extensionApi.containerEngine.listContainers();
-    const match = containers.find(c => c.Id === containerId || c.Id.startsWith(containerId));
-    if (match) return match.engineId;
-    return this.#getEngineId();
+    const matches = containers.filter(
+      c => c.Id === containerId || c.Id.startsWith(containerId),
+    );
+    if (matches.length === 0) {
+      throw new Error('Not a Physical AI simulation container');
+    }
+    if (matches.length > 1) {
+      throw new Error(
+        `Ambiguous container id "${containerId}" matches ${matches.length} containers.`,
+      );
+    }
+    const match = matches[0];
+    if (match.Labels?.[SIM_CONTAINER_LABEL] !== SIM_CONTAINER_LABEL_VALUE) {
+      throw new Error('Not a Physical AI simulation container');
+    }
+    return { id: match.Id, engineId: match.engineId, image: match.Image ?? '' };
   }
 
   async listSimulationContainers(): Promise<SimContainerInfo[]> {
@@ -568,13 +617,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async execInSimulation(containerId: string, command: string[]): Promise<ExecResult> {
-    await this.#assertSimulationContainer(containerId);
+    const { id } = await this.#resolveSimulationContainer(containerId);
     const safeCommand = assertSpawnExecCommand(command);
     try {
+      // Detached: entrypoint backgrounds work; exitCode reflects only whether
+      // podman accepted the exec, not whether spawn succeeded inside the container.
       const result = await extensionApi.process.exec('podman', [
         'exec',
         '-d',
-        containerId,
+        id,
         ...safeCommand,
       ]);
       return {
@@ -598,10 +649,10 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async listRosTopics(containerId: string): Promise<TopicInfo[]> {
-    await this.#assertSimulationContainer(containerId);
-    const distro = await this.#detectRosDistro(containerId);
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    const distro = await this.#detectRosDistro(id);
 
-    const listResult = await this.#execRosBash(containerId, distro, 'ros2 topic list');
+    const listResult = await this.#execRosBash(id, distro, 'ros2 topic list');
 
     if (listResult.exitCode !== 0 || !listResult.stdout.trim()) {
       return [];
@@ -621,7 +672,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       const results = await Promise.all(
         batch.map(async (name): Promise<TopicInfo> => {
           const infoResult = await this.#execRosBash(
-            containerId,
+            id,
             distro,
             'ros2 topic info "$1"',
             [name],
@@ -650,12 +701,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async getRosTopicDetail(containerId: string, topicName: string): Promise<TopicDetailInfo> {
-    await this.#assertSimulationContainer(containerId);
+    const { id } = await this.#resolveSimulationContainer(containerId);
     const safeTopic = assertRosTopicName(topicName);
-    const distro = await this.#detectRosDistro(containerId);
+    const distro = await this.#detectRosDistro(id);
 
     const result = await this.#execRosBash(
-      containerId,
+      id,
       distro,
       'ros2 topic info -v "$1"',
       [safeTopic],
@@ -692,21 +743,17 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return { topicName: safeTopic, type, publishers, subscribers };
   }
 
-  async startNav2(_containerId: string, _robotName: string): Promise<ExecResult> {
-    return { exitCode: 0, stdout: '', stderr: '' };
-  }
-
   async sendNavigationGoal(
     containerId: string,
     robotName: string,
     x: number,
     y: number,
   ): Promise<NavigationGoalResult> {
-    await this.#assertSimulationContainer(containerId);
+    const { id } = await this.#resolveSimulationContainer(containerId);
     const safeRobot = assertRobotName(robotName);
-    const distro = await this.#detectRosDistro(containerId);
+    const distro = await this.#detectRosDistro(id);
 
-    const pose = await this.#getRobotPose(containerId, safeRobot, distro);
+    const pose = await this.#getRobotPose(id, safeRobot, distro);
     const dx = x - pose.x;
     const dy = y - pose.y;
     const targetAngle = Math.atan2(dy, dx);
@@ -724,13 +771,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       const turnSpeed = 0.5 * Math.sign(turnDelta);
       const turnDuration = Math.min(Math.ceil(Math.abs(turnDelta) / 0.5), 8);
       await this.#execRosBash(
-        containerId,
+        id,
         distro,
         'timeout "$1" ros2 topic pub --rate 10 "/$2/cmd_vel" geometry_msgs/msg/Twist "{angular: {z: $3}}" || true',
         [String(turnDuration), safeRobot, turnSpeed.toFixed(2)],
       );
       await this.#execRosBash(
-        containerId,
+        id,
         distro,
         'ros2 topic pub --once "/$1/cmd_vel" geometry_msgs/msg/Twist "{}"',
         [safeRobot],
@@ -740,14 +787,14 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const speed = 0.2;
     const durationSec = Math.min(Math.ceil(distance / speed), 30);
     const result = await this.#execRosBash(
-      containerId,
+      id,
       distro,
       'timeout "$1" ros2 topic pub --rate 10 "/$2/cmd_vel" geometry_msgs/msg/Twist "{linear: {x: $3}}" || true',
       [String(durationSec), safeRobot, String(speed)],
     );
 
     await this.#execRosBash(
-      containerId,
+      id,
       distro,
       'ros2 topic pub --once "/$1/cmd_vel" geometry_msgs/msg/Twist "{}"',
       [safeRobot],
@@ -757,7 +804,18 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       return { status: 'failed', message: result.stderr || 'Drive command failed' };
     }
 
-    return { status: 'reached', message: `Drove toward (${x}, ${y}) for ${durationSec}s` };
+    const finalPose = await this.#getRobotPose(id, safeRobot, distro);
+    const remaining = Math.hypot(x - finalPose.x, y - finalPose.y);
+    if (remaining < 0.35) {
+      return {
+        status: 'reached',
+        message: `Drove to near (${x}, ${y}) (≈${remaining.toFixed(2)}m remaining)`,
+      };
+    }
+    return {
+      status: 'failed',
+      message: `Drove ${durationSec}s toward (${x}, ${y}) but still ≈${remaining.toFixed(2)}m away`,
+    };
   }
 
   async #getRobotPose(
@@ -768,14 +826,16 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const result = await this.#execRosBash(
       containerId,
       distro,
-      'gz model -m "$1" -p 2>/dev/null || echo "0.0 0.0 0.0 0.0 0.0 0.0"',
+      'gz model -m "$1" -p 2>/dev/null',
       [robotName],
     );
     const nums = result.stdout.match(/-?\d+\.\d+/g)?.map(Number);
     if (nums && nums.length >= 6 && nums.every(n => !isNaN(n))) {
       return { x: nums[0], y: nums[1], yaw: nums[5] };
     }
-    return { x: 0, y: 0, yaw: 0 };
+    throw new Error(
+      `Could not read pose for robot "${robotName}". Is it spawned in Gazebo?`,
+    );
   }
 
   /**
@@ -799,12 +859,9 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     ]);
   }
 
-  async #assertSimulationContainer(containerId: string): Promise<void> {
-    const containers = await extensionApi.containerEngine.listContainers();
-    const match = containers.find(c => c.Id === containerId || c.Id.startsWith(containerId));
-    if (!match || match.Labels?.[SIM_CONTAINER_LABEL] !== SIM_CONTAINER_LABEL_VALUE) {
-      throw new Error('Not a Physical AI simulation container');
-    }
+  async #assertSimulationContainer(containerId: string): Promise<string> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    return id;
   }
 
   async #execAttached(containerId: string, command: string[]): Promise<ExecResult> {
@@ -826,12 +883,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async #detectRosDistro(containerId: string): Promise<SupportedRosDistro> {
-    const containers = await extensionApi.containerEngine.listContainers();
-    const container = containers.find(c => c.Id === containerId || c.Id.startsWith(containerId));
-    const imageTag = container?.Image ?? '';
-    if (imageTag.includes('humble')) return 'humble';
-    if (imageTag.includes('jazzy')) return 'jazzy';
-    return 'jazzy';
+    const { image } = await this.#resolveSimulationContainer(containerId);
+    if (image.includes('humble')) return 'humble';
+    if (image.includes('jazzy')) return 'jazzy';
+    throw new Error(
+      `Unsupported ROS distro for image "${image}". Tag must include "humble" or "jazzy".`,
+    );
   }
 
   async pushImage(tag: string): Promise<void> {
@@ -851,6 +908,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const abortController = new AbortController();
     this.pushAbortControllers.set(tag, abortController);
 
+    this.#assertCanStartOp(this.activePushes, tag, 'push');
     this.activePushes.set(tag, {
       tag,
       status: 'Pushing...',

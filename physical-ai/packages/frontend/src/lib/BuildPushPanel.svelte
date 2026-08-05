@@ -44,6 +44,8 @@ let buildLogsExpanded = true;
 
 let pollTimer: number | null = null;
 let logContainer: HTMLDivElement;
+/** Bumps on each image presence check so stale responses are ignored. */
+let imageCheckGen = 0;
 
 async function checkLocalImage(imageTag: string = inputValue) {
   if (!imageTag) {
@@ -52,13 +54,16 @@ async function checkLocalImage(imageTag: string = inputValue) {
     registryCheckError = false;
     return;
   }
+  const gen = ++imageCheckGen;
   try {
     const localImages = await physicalAiClient.listLocalImages();
+    if (gen !== imageCheckGen) return;
     imageExistsLocally = localImages.includes(imageTag);
   } catch {
+    if (gen !== imageCheckGen) return;
     imageExistsLocally = false;
   }
-  await checkRegistryImage(imageTag);
+  await checkRegistryImage(imageTag, gen);
 }
 
 /** Parse quay.io/ns/name:tag — other registries are not checked. */
@@ -68,18 +73,22 @@ function parseQuayRef(imageTag: string): { namespace: string; name: string; tag:
   return { namespace: match[1], name: match[2], tag: match[3] };
 }
 
-async function checkRegistryImage(imageTag: string = inputValue) {
+async function checkRegistryImage(imageTag: string = inputValue, gen: number = imageCheckGen) {
   const ref = parseQuayRef(imageTag);
   if (!ref) {
-    imageExistsInRegistry = null;
-    registryCheckError = false;
+    if (gen === imageCheckGen) {
+      imageExistsInRegistry = null;
+      registryCheckError = false;
+    }
     return;
   }
   try {
     const tags = await physicalAiClient.getImageTags(ref.namespace, ref.name);
+    if (gen !== imageCheckGen) return;
     imageExistsInRegistry = tags.some(t => t.name === ref.tag);
     registryCheckError = false;
   } catch {
+    if (gen !== imageCheckGen) return;
     // Private repos or network errors — Quay public API often returns 401/404
     imageExistsInRegistry = null;
     registryCheckError = true;

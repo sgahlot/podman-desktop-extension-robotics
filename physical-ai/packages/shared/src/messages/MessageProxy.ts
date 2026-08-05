@@ -87,13 +87,27 @@ export class RpcExtension {
     );
 
     methodNames.forEach(name => {
+      const proto = classType.prototype[name] as ((...args: unknown[]) => unknown) | undefined;
+      const maxArgs = typeof proto === 'function' ? proto.length : 0;
       const method = (instance[name as keyof T] as UnaryRPC).bind(instance);
-      this.register(name, method);
+      this.register(name, method, maxArgs);
     });
   }
 
-  register(channel: string, method: (...args: unknown[]) => Promise<unknown>): void {
-    this.methods.set(channel, method);
+  register(
+    channel: string,
+    method: (...args: unknown[]) => Promise<unknown>,
+    maxArgs: number = method.length,
+  ): void {
+    this.methods.set(channel, async (...args: unknown[]) => {
+      // method.length is 0 for mocks / zero-param handlers — skip those.
+      if (maxArgs > 0 && args.length > maxArgs) {
+        throw new Error(
+          `Too many arguments for ${channel}: got ${args.length}, expected at most ${maxArgs}`,
+        );
+      }
+      return method(...args);
+    });
   }
 
 }

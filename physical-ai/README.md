@@ -45,7 +45,7 @@ npm run build
 |------|---------|
 | `packages/backend` | Extension entrypoint, RPC API, bundled container assets (Containerfiles, entrypoints, world files) |
 | `packages/frontend` | Svelte 5 + TailwindCSS webview UI |
-| `packages/shared` | API interface (27 methods), RPC bridge, shared types (simulation profiles, config, container info) |
+| `packages/shared` | API interface (RPC methods), RPC bridge, shared types (simulation profiles, config, container info) |
 
 ## Tech Stack
 

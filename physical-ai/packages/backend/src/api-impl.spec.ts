@@ -162,6 +162,23 @@ describe('PhysicalAiApiImpl', () => {
 
       await expect(api.getImageTags('ns', 'img')).rejects.toThrow('Quay API error: 500');
     });
+
+    it('rejects path-injection in namespace or repository name', async () => {
+      await expect(api.getImageTags('../admin', 'ros2-base')).rejects.toThrow(/Invalid Quay/);
+      await expect(api.getImageTags('ns', 'img?x=1')).rejects.toThrow(/Invalid Quay/);
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('encodes path segments in the Quay URL', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ tags: [] }),
+      } as Response);
+
+      await api.getImageTags('ecosystem-appeng', 'ros2-jazzy-sim');
+      const url = new URL(vi.mocked(fetch).mock.calls[0][0] as string);
+      expect(url.pathname).toBe('/api/v1/repository/ecosystem-appeng/ros2-jazzy-sim/tag/');
+    });
   });
 
   describe('listLocalImages', () => {
@@ -858,7 +875,7 @@ describe('PhysicalAiApiImpl', () => {
   });
 
   describe('listRosTopics', () => {
-    const CONTAINER_ID = 'abc123';
+    const CONTAINER_ID = 'abc123def456';
 
     beforeEach(() => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
@@ -1020,7 +1037,7 @@ describe('PhysicalAiApiImpl', () => {
   });
 
   describe('getRosTopicDetail', () => {
-    const CONTAINER_ID = 'abc123';
+    const CONTAINER_ID = 'abc123def456';
 
     beforeEach(() => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
@@ -1145,17 +1162,26 @@ describe('PhysicalAiApiImpl', () => {
     });
   });
 
-  describe('startNav2', () => {
-    it('returns success immediately (no-op)', async () => {
-      const result = await api.startNav2('abc123', 'robot_1');
-      expect(result.exitCode).toBe(0);
-    });
-  });
-
   describe('sendNavigationGoal', () => {
-    const CONTAINER_ID = 'abc123';
+    const CONTAINER_ID = 'abc123def456';
     const GZ_POSE_ORIGIN = 'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
     const GZ_POSE_AT_TARGET = 'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [2.000000 2.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
+
+    function mockNavExec(finalPose: string = GZ_POSE_AT_TARGET) {
+      let poseCalls = 0;
+      vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+        const argv = args as string[];
+        if (argv.some(a => typeof a === 'string' && a.includes('gz model'))) {
+          poseCalls++;
+          return {
+            stdout: poseCalls === 1 ? GZ_POSE_ORIGIN : finalPose,
+            stderr: '',
+            command: 'podman',
+          } as any;
+        }
+        return { stdout: '', stderr: '', command: 'podman' } as any;
+      });
+    }
 
     beforeEach(() => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
@@ -1164,23 +1190,23 @@ describe('PhysicalAiApiImpl', () => {
     });
 
     it('returns reached after driving toward target', async () => {
-      vi.mocked(extensionApi.process.exec).mockResolvedValue({
-        stdout: GZ_POSE_ORIGIN,
-        stderr: '',
-        command: 'podman',
-      } as any);
+      mockNavExec(GZ_POSE_AT_TARGET);
 
       const result = await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
       expect(result.status).toBe('reached');
       expect(result.message).toContain('2');
     });
 
+    it('returns failed when final pose is still far from target', async () => {
+      mockNavExec(GZ_POSE_ORIGIN);
+
+      const result = await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
+      expect(result.status).toBe('failed');
+      expect(result.message).toMatch(/still/);
+    });
+
     it('queries pose then publishes turn, drive, and stop commands', async () => {
-      vi.mocked(extensionApi.process.exec).mockResolvedValue({
-        stdout: GZ_POSE_ORIGIN,
-        stderr: '',
-        command: 'podman',
-      } as any);
+      mockNavExec();
 
       await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
       const poseArgs = execArgs(0);
@@ -1207,11 +1233,7 @@ describe('PhysicalAiApiImpl', () => {
     });
 
     it('uses robot name as positional arg for cmd_vel topic', async () => {
-      vi.mocked(extensionApi.process.exec).mockResolvedValue({
-        stdout: GZ_POSE_ORIGIN,
-        stderr: '',
-        command: 'podman',
-      } as any);
+      mockNavExec();
 
       await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 3.5, -1.0);
       const calls = vi.mocked(extensionApi.process.exec).mock.calls;
@@ -1230,12 +1252,20 @@ describe('PhysicalAiApiImpl', () => {
       );
     });
 
-    it('calls podman exec without -d flag (attached mode)', async () => {
+    it('fails loudly when pose cannot be parsed', async () => {
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
-        stdout: GZ_POSE_ORIGIN,
+        stdout: 'no pose here',
         stderr: '',
         command: 'podman',
       } as any);
+
+      await expect(api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0)).rejects.toThrow(
+        /Could not read pose/,
+      );
+    });
+
+    it('calls podman exec without -d flag (attached mode)', async () => {
+      mockNavExec();
 
       await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
       const args = execArgs(0);
@@ -1245,7 +1275,7 @@ describe('PhysicalAiApiImpl', () => {
   });
 
   describe('execInSimulation security', () => {
-    const CONTAINER_ID = 'abc123';
+    const CONTAINER_ID = 'abc123def456';
 
     beforeEach(() => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
@@ -1360,14 +1390,14 @@ describe('PhysicalAiApiImpl', () => {
       expect(createArg.Env.some(e => e.startsWith('PATH='))).toBe(false);
     });
 
-    it('rejects non-sim image tags (M2)', async () => {
+    it('rejects non-sim image tags', async () => {
       await expect(
         api.launchSimulation('docker.io/library/nginx:latest', 'pai-sim-bad', undefined),
       ).rejects.toThrow(/not allowed/);
       expect(extensionApi.containerEngine.createContainer).not.toHaveBeenCalled();
     });
 
-    it('honors optional digest allowlist preference (M2)', async () => {
+    it('honors optional digest allowlist preference', async () => {
       const digest =
         'quay.io/sgahlot/ros2-jazzy-sim@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({

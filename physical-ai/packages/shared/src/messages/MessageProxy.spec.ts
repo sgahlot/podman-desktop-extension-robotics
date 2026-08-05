@@ -174,6 +174,12 @@ describe('RpcExtension', () => {
       ).toBe(false);
     });
   });
+
+  it('rejects calls with too many arguments', async () => {
+    rpcExt.register('echo', async (a: unknown) => a);
+    await expect(rpcExt.methods.get('echo')!('x', 'extra')).rejects.toThrow(/Too many arguments/);
+    await expect(rpcExt.methods.get('echo')!('x')).resolves.toBe('x');
+  });
 });
 
 describe('RpcBrowser', () => {

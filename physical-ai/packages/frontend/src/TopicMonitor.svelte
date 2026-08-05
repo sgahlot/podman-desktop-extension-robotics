@@ -48,11 +48,15 @@ async function pollContainers() {
 
 async function pollTopics() {
   if (!selectedContainerId || pollInFlight) return;
+  const targetId = selectedContainerId;
   pollInFlight = true;
   try {
-    topics = await physicalAiClient.listRosTopics(selectedContainerId);
+    const next = await physicalAiClient.listRosTopics(targetId);
+    if (selectedContainerId !== targetId) return;
+    topics = next;
     error = '';
   } catch (e) {
+    if (selectedContainerId !== targetId) return;
     error = e instanceof Error ? e.message : String(e);
   } finally {
     pollInFlight = false;
@@ -76,14 +80,18 @@ async function toggleTopicDetail(topicName: string) {
     return;
   }
 
+  const targetId = selectedContainerId;
   expandedTopic = topicName;
   loadingDetail = true;
   topicDetail = null;
   detailError = '';
 
   try {
-    topicDetail = await physicalAiClient.getRosTopicDetail(selectedContainerId, topicName);
+    const detail = await physicalAiClient.getRosTopicDetail(targetId, topicName);
+    if (selectedContainerId !== targetId || expandedTopic !== topicName) return;
+    topicDetail = detail;
   } catch (e) {
+    if (selectedContainerId !== targetId || expandedTopic !== topicName) return;
     detailError = e instanceof Error ? e.message : String(e);
   } finally {
     loadingDetail = false;

@@ -26,7 +26,7 @@ async function createDashboardPanel(extensionContext: ExtensionContext): Promise
         const webviewSrc = newPanel.webview.asWebviewUri(
           extensionApi.Uri.joinPath(extensionContext.extensionUri, 'media', src[1]),
         );
-        indexHtml = indexHtml.replace(src[1], webviewSrc.toString());
+        indexHtml = indexHtml.replaceAll(src[1], webviewSrc.toString());
       }
     });
   }
@@ -39,7 +39,7 @@ async function createDashboardPanel(extensionContext: ExtensionContext): Promise
         const webviewHref = newPanel.webview.asWebviewUri(
           extensionApi.Uri.joinPath(extensionContext.extensionUri, 'media', href[1]),
         );
-        indexHtml = indexHtml.replace(href[1], webviewHref.toString());
+        indexHtml = indexHtml.replaceAll(href[1], webviewHref.toString());
       }
     });
   }
