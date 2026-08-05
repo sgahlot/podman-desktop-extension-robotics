@@ -1293,6 +1293,10 @@ describe('PhysicalAiApiImpl', () => {
 
   describe('launchSimulation security', () => {
     beforeEach(() => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue(''),
+        update: vi.fn(),
+      } as any);
       vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
         { engineId: 'engine-1', RepoTags: ['quay.io/sgahlot/ros2-jazzy-sim:noble'] },
       ] as any);
@@ -1350,6 +1354,35 @@ describe('PhysicalAiApiImpl', () => {
         ]),
       );
       expect(createArg.Env.some(e => e.startsWith('PATH='))).toBe(false);
+    });
+
+    it('rejects non-sim image tags (M2)', async () => {
+      await expect(
+        api.launchSimulation('docker.io/library/nginx:latest', 'pai-sim-bad', undefined),
+      ).rejects.toThrow(/not allowed/);
+      expect(extensionApi.containerEngine.createContainer).not.toHaveBeenCalled();
+    });
+
+    it('honors optional digest allowlist preference (M2)', async () => {
+      const digest =
+        'quay.io/sgahlot/ros2-jazzy-sim@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue(digest),
+        update: vi.fn(),
+      } as any);
+      vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
+        { engineId: 'engine-1', RepoTags: [digest] },
+      ] as any);
+
+      await expect(
+        api.launchSimulation('quay.io/sgahlot/ros2-jazzy-sim:noble', 'pai-sim-pin', undefined),
+      ).rejects.toThrow(/not allowed/);
+
+      await api.launchSimulation(digest, 'pai-sim-pinned', undefined);
+      expect(extensionApi.containerEngine.createContainer).toHaveBeenCalledWith(
+        'engine-1',
+        expect.objectContaining({ Image: digest }),
+      );
     });
   });
 });

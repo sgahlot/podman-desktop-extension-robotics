@@ -77,6 +77,9 @@ import { router } from 'tinro';
           <strong>Launch</strong> — Pick a local sim image (tags matching <span class="font-mono">ros2-*-sim*</span> or <span class="font-mono">ros2-*-turtlebot3</span>). The container starts Gazebo + noVNC. The world is <strong>empty</strong> until you add a robot.
         </div>
         <div>
+          <strong>Image trust</strong> — Launch runs entrypoints from the selected <em>local</em> image. Tag matching is not a signature check: only use images you built via Image Builder or pulled from a Quay namespace you trust. For demos, pin exact tags or digests under Settings → Preferences → Physical AI → <span class="font-mono">Simulation image allowlist</span>.
+        </div>
+        <div>
           <strong>Open in Browser</strong> — Opens noVNC (default port 6080) to view Gazebo.
         </div>
         <div>

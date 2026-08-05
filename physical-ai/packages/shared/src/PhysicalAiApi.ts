@@ -23,6 +23,8 @@ export abstract class PhysicalAiApi {
   abstract getCatalogViewMode(): Promise<'all' | 'curated'>;
   abstract setCatalogViewMode(mode: 'all' | 'curated'): Promise<void>;
   abstract getCatalogCuratedAllowlist(): Promise<string>;
+  /** Empty string = default ros2-*-sim* / ros2-*-turtlebot3 patterns. */
+  abstract getSimulationImageAllowlist(): Promise<string>;
   abstract getSimulationConfig(): Promise<SimulationConfig>;
   abstract saveSimulationConfig(config: SimulationConfig): Promise<void>;
   abstract launchSimulation(imageTag: string, containerName: string, options?: SimLaunchOptions): Promise<string>;

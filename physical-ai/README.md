@@ -57,7 +57,11 @@ The root `Containerfile` builds an OCI image of the extension. The backend `READ
 
 ## Settings
 
-8 configuration properties under **Settings → Preferences → Physical AI**: default namespace, catalog view mode, curated allowlist, and Image Builder defaults (robot, distro, middleware, engine, base preset).
+9 configuration properties under **Settings → Preferences → Physical AI**: default namespace, catalog view mode, curated allowlist, optional simulation image allowlist (tag/digest pins for demos), and Image Builder defaults (robot, distro, middleware, engine, base preset).
+
+### Simulation image trust
+
+Launching a simulation runs `/entrypoint-gazebo.sh` from the **local** image you select. Name/tag allowlisting is not cryptographic verification — treat local images like any other container you run. Prefer builds from **Image Builder** or pulls from your Quay namespace. Optionally set **Simulation image allowlist** to exact tags or `@sha256:…` digests for locked-down demos.
 
 ## License
 

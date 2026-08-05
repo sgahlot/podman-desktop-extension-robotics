@@ -6,7 +6,7 @@ Podman Desktop extension for Physical AI robotics development. Provides a GUI-dr
 
 - **Image Catalog** — Browse and pull ROS2 images from Quay.io (All or Curated view; allowlist configurable in Preferences)
 - **Image Builder** — Configure, build, and push ROS2 images (Humble TurtleBot3 or Jazzy sim + noVNC). Uses a [two-phase build](#two-phase-image-build): Phase 1 base, Phase 2 simulation. Builds and pushes are cancellable.
-- **Simulation** — Launch Gazebo via Podman, open noVNC, add TurtleBot3 into a running world
+- **Simulation** — Launch Gazebo via Podman, open noVNC, add TurtleBot3 into a running world. Launch only allows images matching the simulation allowlist (default `ros2-*-sim*` / `ros2-*-turtlebot3`; optional exact tag/digest pins in Preferences). Local image content is trusted once selected — see Help → Image trust.
 - **Help** — In-extension documentation
 
 Current container bases are **Ubuntu interim** (official `ros` / OSRF / sloretz images). Fedora/RHEL migration is parked (APPENG-5809). Catalog lists **public** Quay repos only.
@@ -42,6 +42,7 @@ To check or change Podman Machine resources: open **Settings → Resources → P
 - **Default Namespace** — Quay.io namespace for catalog and image tags
 - **Catalog view mode** — `all` (default) or `curated`
 - **Catalog curated allowlist** — comma-separated repo name patterns (`*` wildcard), default `ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*`
+- **Simulation image allowlist** — optional comma-separated image refs or patterns for Simulation launch. Empty = default `ros2-*-sim*` / `ros2-*-turtlebot3`. Pin exact tags or `@sha256:…` digests for demos. Local image *content* is still trusted once selected.
 - Image Builder wizard defaults (robot, distro, middleware, engine, base preset)
 
 ## Golden images to publish

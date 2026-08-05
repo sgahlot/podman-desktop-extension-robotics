@@ -23,6 +23,7 @@ import {
   ROS_TOPIC_NAME_RE,
   type SupportedRosDistro,
 } from '/@shared/src/security/simInput';
+import { assertLaunchImageTag } from '/@shared/src/security/simImageTrust';
 import { appendProgressLog } from './progressLogs';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
@@ -465,8 +466,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     throw new Error('no engine matching this container');
   }
 
+  async getSimulationImageAllowlist(): Promise<string> {
+    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    return config.get<string>('simulationImageAllowlist') ?? '';
+  }
+
   async launchSimulation(imageTag: string, containerName: string, options?: SimLaunchOptions): Promise<string> {
-    const engineId = await this.#getEngineId(imageTag);
+    const allowlist = await this.getSimulationImageAllowlist();
+    const safeImageTag = assertLaunchImageTag(imageTag, allowlist || null);
+    const engineId = await this.#getEngineId(safeImageTag);
     const name = containerName
       ? assertContainerName(containerName)
       : `${SIM_CONTAINER_PREFIX}${Date.now()}`;
@@ -496,7 +504,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       engineId,
       {
         name,
-        Image: imageTag,
+        Image: safeImageTag,
         Cmd: cmd,
         Env: envArray,
         Labels: labels,

@@ -3,6 +3,7 @@ import { physicalAiClient } from './api/client';
 import { onMount, onDestroy } from 'svelte';
 import { router } from 'tinro';
 import type { SimContainerInfo } from '/@shared/src/types/SimulationContainer';
+import { isSimLaunchImageRef } from '/@shared/src/security/simImageTrust';
 
 let localSimImages: string[] = [];
 let selectedImage = '';
@@ -10,6 +11,7 @@ let containers: SimContainerInfo[] = [];
 let launching = false;
 let launchError = '';
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+let simImageAllowlist = '';
 
 let robotName = 'robot_1';
 let robotX = '-2.0';
@@ -34,10 +36,14 @@ $: hasRunning = !!runningContainer;
 
 async function loadImages() {
   try {
+    simImageAllowlist = await physicalAiClient.getSimulationImageAllowlist();
     const all = await physicalAiClient.listLocalImages();
-    localSimImages = all.filter(t => /ros2-.*-sim|ros2-.*-turtlebot3/.test(t));
+    localSimImages = all.filter(t => isSimLaunchImageRef(t, simImageAllowlist || null));
     if (localSimImages.length > 0 && !selectedImage) {
       selectedImage = localSimImages[0];
+    }
+    if (selectedImage && !localSimImages.includes(selectedImage)) {
+      selectedImage = localSimImages[0] ?? '';
     }
   } catch {
     localSimImages = [];
@@ -177,6 +183,7 @@ async function navigateRobot(index: number) {
   <h1 class="text-3xl text-[var(--pd-content-header)]">Simulation</h1>
   <p class="text-sm text-[var(--pd-content-text)]">
     Launch a Gazebo world (empty by default), view it in the browser via noVNC, then add TurtleBot3 robots interactively.
+    Only local images matching the simulation allowlist can be launched (default <span class="font-mono">ros2-*-sim*</span> / <span class="font-mono">ros2-*-turtlebot3</span>).
   </p>
 
   <!-- Section 1: Launch -->
