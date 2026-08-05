@@ -10,6 +10,14 @@ import { resolveSimulationBaseImage } from '/@shared/src/types/SimulationBaseIma
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
 import type { TopicInfo, TopicDetailInfo, TopicNodeInfo } from '/@shared/src/types/TopicInfo';
 import type { NavigationGoalResult } from '/@shared/src/types/NavigationGoalResult';
+import {
+  assertRobotName,
+  assertRosTopicName,
+  assertRosDistro,
+  assertSpawnExecCommand,
+  ROS_TOPIC_NAME_RE,
+  type SupportedRosDistro,
+} from '/@shared/src/security/simInput';
 import { appendProgressLog } from './progressLogs';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
@@ -497,11 +505,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async stopSimulation(containerId: string): Promise<void> {
+    await this.#assertSimulationContainer(containerId);
     const engineId = await this.#findEngineIdForContainer(containerId);
     await extensionApi.containerEngine.stopContainer(engineId, containerId);
   }
 
   async deleteSimulation(containerId: string): Promise<void> {
+    await this.#assertSimulationContainer(containerId);
     const engineId = await this.#findEngineIdForContainer(containerId);
     try {
       await extensionApi.containerEngine.stopContainer(engineId, containerId);
@@ -538,8 +548,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async execInSimulation(containerId: string, command: string[]): Promise<ExecResult> {
+    await this.#assertSimulationContainer(containerId);
+    const safeCommand = assertSpawnExecCommand(command);
     try {
-      const result = await extensionApi.process.exec('podman', ['exec', '-d', containerId, ...command]);
+      const result = await extensionApi.process.exec('podman', [
+        'exec',
+        '-d',
+        containerId,
+        ...safeCommand,
+      ]);
       return {
         exitCode: 0,
         stdout: result.stdout ?? '',
@@ -560,12 +577,10 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async listRosTopics(containerId: string): Promise<TopicInfo[]> {
+    await this.#assertSimulationContainer(containerId);
     const distro = await this.#detectRosDistro(containerId);
-    const source = `source /opt/ros/${distro}/setup.bash`;
 
-    const listResult = await this.#execAttached(containerId, [
-      'bash', '-c', `${source} && ros2 topic list`,
-    ]);
+    const listResult = await this.#execRosBash(containerId, distro, 'ros2 topic list');
 
     if (listResult.exitCode !== 0 || !listResult.stdout.trim()) {
       return [];
@@ -575,7 +590,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       .trim()
       .split('\n')
       .map(l => l.trim())
-      .filter(l => l.startsWith('/'));
+      .filter(l => ROS_TOPIC_NAME_RE.test(l));
 
     const BATCH_SIZE = 5;
     const topics: TopicInfo[] = [];
@@ -584,9 +599,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       const batch = topicNames.slice(i, i + BATCH_SIZE);
       const results = await Promise.all(
         batch.map(async (name): Promise<TopicInfo> => {
-          const infoResult = await this.#execAttached(containerId, [
-            'bash', '-c', `${source} && ros2 topic info ${name}`,
-          ]);
+          const infoResult = await this.#execRosBash(
+            containerId,
+            distro,
+            'ros2 topic info "$1"',
+            [name],
+          );
 
           let type = 'unknown';
           let publishers = 0;
@@ -611,12 +629,16 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async getRosTopicDetail(containerId: string, topicName: string): Promise<TopicDetailInfo> {
+    await this.#assertSimulationContainer(containerId);
+    const safeTopic = assertRosTopicName(topicName);
     const distro = await this.#detectRosDistro(containerId);
-    const source = `source /opt/ros/${distro}/setup.bash`;
 
-    const result = await this.#execAttached(containerId, [
-      'bash', '-c', `${source} && ros2 topic info -v ${topicName}`,
-    ]);
+    const result = await this.#execRosBash(
+      containerId,
+      distro,
+      'ros2 topic info -v "$1"',
+      [safeTopic],
+    );
 
     let type = 'unknown';
     const publishers: TopicNodeInfo[] = [];
@@ -646,7 +668,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       }
     }
 
-    return { topicName, type, publishers, subscribers };
+    return { topicName: safeTopic, type, publishers, subscribers };
   }
 
   async startNav2(_containerId: string, _robotName: string): Promise<ExecResult> {
@@ -659,10 +681,11 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     x: number,
     y: number,
   ): Promise<NavigationGoalResult> {
+    await this.#assertSimulationContainer(containerId);
+    const safeRobot = assertRobotName(robotName);
     const distro = await this.#detectRosDistro(containerId);
-    const source = `source /opt/ros/${distro}/setup.bash`;
 
-    const pose = await this.#getRobotPose(containerId, robotName, source);
+    const pose = await this.#getRobotPose(containerId, safeRobot, distro);
     const dx = x - pose.x;
     const dy = y - pose.y;
     const targetAngle = Math.atan2(dy, dx);
@@ -679,19 +702,35 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     if (Math.abs(turnDelta) > 0.1) {
       const turnSpeed = 0.5 * Math.sign(turnDelta);
       const turnDuration = Math.min(Math.ceil(Math.abs(turnDelta) / 0.5), 8);
-      const turnCmd = `${source} && timeout ${turnDuration} ros2 topic pub --rate 10 /${robotName}/cmd_vel geometry_msgs/msg/Twist "{angular: {z: ${turnSpeed.toFixed(2)}}}" || true`;
-      await this.#execAttached(containerId, ['bash', '-c', turnCmd]);
-      const stopTurnCmd = `${source} && ros2 topic pub --once /${robotName}/cmd_vel geometry_msgs/msg/Twist "{}"`;
-      await this.#execAttached(containerId, ['bash', '-c', stopTurnCmd]);
+      await this.#execRosBash(
+        containerId,
+        distro,
+        'timeout "$1" ros2 topic pub --rate 10 "/$2/cmd_vel" geometry_msgs/msg/Twist "{angular: {z: $3}}" || true',
+        [String(turnDuration), safeRobot, turnSpeed.toFixed(2)],
+      );
+      await this.#execRosBash(
+        containerId,
+        distro,
+        'ros2 topic pub --once "/$1/cmd_vel" geometry_msgs/msg/Twist "{}"',
+        [safeRobot],
+      );
     }
 
     const speed = 0.2;
     const durationSec = Math.min(Math.ceil(distance / speed), 30);
-    const driveCmd = `${source} && timeout ${durationSec} ros2 topic pub --rate 10 /${robotName}/cmd_vel geometry_msgs/msg/Twist "{linear: {x: ${speed}}}" || true`;
-    const result = await this.#execAttached(containerId, ['bash', '-c', driveCmd]);
+    const result = await this.#execRosBash(
+      containerId,
+      distro,
+      'timeout "$1" ros2 topic pub --rate 10 "/$2/cmd_vel" geometry_msgs/msg/Twist "{linear: {x: $3}}" || true',
+      [String(durationSec), safeRobot, String(speed)],
+    );
 
-    const stopCmd = `${source} && ros2 topic pub --once /${robotName}/cmd_vel geometry_msgs/msg/Twist "{}"`;
-    await this.#execAttached(containerId, ['bash', '-c', stopCmd]);
+    await this.#execRosBash(
+      containerId,
+      distro,
+      'ros2 topic pub --once "/$1/cmd_vel" geometry_msgs/msg/Twist "{}"',
+      [safeRobot],
+    );
 
     if (result.exitCode !== 0 && !/timeout/i.test(result.stderr)) {
       return { status: 'failed', message: result.stderr || 'Drive command failed' };
@@ -700,15 +739,51 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return { status: 'reached', message: `Drove toward (${x}, ${y}) for ${durationSec}s` };
   }
 
-  async #getRobotPose(containerId: string, robotName: string, source: string): Promise<{ x: number; y: number; yaw: number }> {
-    const result = await this.#execAttached(containerId, [
-      'bash', '-c', `${source} && gz model -m ${robotName} -p 2>/dev/null || echo "0.0 0.0 0.0 0.0 0.0 0.0"`,
-    ]);
+  async #getRobotPose(
+    containerId: string,
+    robotName: string,
+    distro: SupportedRosDistro,
+  ): Promise<{ x: number; y: number; yaw: number }> {
+    const result = await this.#execRosBash(
+      containerId,
+      distro,
+      'gz model -m "$1" -p 2>/dev/null || echo "0.0 0.0 0.0 0.0 0.0 0.0"',
+      [robotName],
+    );
     const nums = result.stdout.match(/-?\d+\.\d+/g)?.map(Number);
     if (nums && nums.length >= 6 && nums.every(n => !isNaN(n))) {
       return { x: nums[0], y: nums[1], yaw: nums[5] };
     }
     return { x: 0, y: 0, yaw: 0 };
+  }
+
+  /**
+   * Run a shell snippet after sourcing ROS setup. Dynamic values must be passed
+   * as `args` and referenced as `$1`, `$2`, … inside `script` — never concatenated.
+   */
+  async #execRosBash(
+    containerId: string,
+    distro: SupportedRosDistro,
+    script: string,
+    args: string[] = [],
+  ): Promise<ExecResult> {
+    const safeDistro = assertRosDistro(distro);
+    const setup = `/opt/ros/${safeDistro}/setup.bash`;
+    return this.#execAttached(containerId, [
+      'bash',
+      '-c',
+      `source "${setup}" && ${script}`,
+      '_',
+      ...args,
+    ]);
+  }
+
+  async #assertSimulationContainer(containerId: string): Promise<void> {
+    const containers = await extensionApi.containerEngine.listContainers();
+    const match = containers.find(c => c.Id === containerId || c.Id.startsWith(containerId));
+    if (!match || match.Labels?.[SIM_CONTAINER_LABEL] !== SIM_CONTAINER_LABEL_VALUE) {
+      throw new Error('Not a Physical AI simulation container');
+    }
   }
 
   async #execAttached(containerId: string, command: string[]): Promise<ExecResult> {
@@ -729,7 +804,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
   }
 
-  async #detectRosDistro(containerId: string): Promise<string> {
+  async #detectRosDistro(containerId: string): Promise<SupportedRosDistro> {
     const containers = await extensionApi.containerEngine.listContainers();
     const container = containers.find(c => c.Id === containerId || c.Id.startsWith(containerId));
     const imageTag = container?.Image ?? '';

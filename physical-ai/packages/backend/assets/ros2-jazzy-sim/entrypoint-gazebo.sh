@@ -9,12 +9,43 @@ set -eo pipefail
 #   ROBOTS="robot_1:-2.0:-0.5:0.0 robot_2:2.0:0.5:3.14159"
 # Leave empty for Path B (empty world, robots added via podman exec).
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_pai_loader="${SCRIPT_DIR}/lib/load-validate-input.sh"
+[[ -f "${_pai_loader}" ]] || _pai_loader="/usr/local/lib/physical-ai/load-validate-input.sh"
+if [[ ! -f "${_pai_loader}" ]]; then
+  echo "error: load-validate-input.sh not found (tried ${SCRIPT_DIR}/lib/ and /usr/local/lib/physical-ai/)" >&2
+  exit 1
+fi
+# shellcheck source=lib/load-validate-input.sh
+source "${_pai_loader}"
+
+WEB_PORT="${WEB_PORT:-8080}"
+VNC_PORT="${VNC_PORT:-5900}"
+NOVNC_PORT="${NOVNC_PORT:-6080}"
+WORLD_NAME="${WORLD_NAME:-tb3_sandbox}"
+DISPLAY_NUM="${DISPLAY_NUM:-99}"
+RESOLUTION="${RESOLUTION:-1024x768x16}"
+ROBOTS="${ROBOTS:-}"
+
+# Fail closed on hostile env before starting any display/ROS processes.
+pai_validate_port "${WEB_PORT}" "WEB_PORT"
+pai_validate_port "${VNC_PORT}" "VNC_PORT"
+pai_validate_port "${NOVNC_PORT}" "NOVNC_PORT"
+pai_validate_identifier "${WORLD_NAME}" "WORLD_NAME"
+pai_validate_numeric "${DISPLAY_NUM}" "DISPLAY_NUM"
+if [[ ! "${RESOLUTION}" =~ ^[0-9]+x[0-9]+x[0-9]+$ ]]; then
+  echo "error: invalid RESOLUTION '${RESOLUTION}' (expected WxHxD, e.g. 1024x768x16)" >&2
+  exit 1
+fi
+pai_validate_robots_env "${ROBOTS}"
+
 export HOME="/tmp/ros-home"
 mkdir -p "${HOME}" "${HOME}/.ros" "${HOME}/.gazebo" "${HOME}/.config" "${HOME}/.gz/sim/8"
 export ROS_HOME="${HOME}/.ros"
 export ROS_LOG_DIR="${HOME}/.ros/log"
 
-source /opt/ros/jazzy/setup.bash
+# shellcheck disable=SC1090
+source "${PHYSICAL_AI_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
 
 set -u
 
@@ -25,15 +56,6 @@ export GZ_SIM_RESOURCE_PATH="/opt/ros/jazzy/share:/opt/ros/jazzy/share/nav2_mini
 echo "[gazebo] No GPU in Podman VM, using software rendering..."
 export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe
-
-WEB_PORT="${WEB_PORT:-8080}"
-VNC_PORT="${VNC_PORT:-5900}"
-NOVNC_PORT="${NOVNC_PORT:-6080}"
-WORLD_NAME="${WORLD_NAME:-tb3_sandbox}"
-DISPLAY_NUM="${DISPLAY_NUM:-99}"
-RESOLUTION="${RESOLUTION:-1024x768x16}"
-
-ROBOTS="${ROBOTS:-}"
 
 export DISPLAY=":${DISPLAY_NUM}"
 
@@ -81,7 +103,7 @@ for i in $(seq 1 60); do
 done
 
 # --- 8. Optionally spawn robots (Path A) ---
-SIM_DIR="/opt/ros/jazzy/share/nav2_minimal_tb3_sim"
+SIM_DIR="${PHYSICAL_AI_SIM_DIR:-/opt/ros/jazzy/share/nav2_minimal_tb3_sim}"
 URDF_FILE="${SIM_DIR}/urdf/turtlebot3_waffle.urdf"
 
 SPAWN_PIDS=()
@@ -89,6 +111,7 @@ if [ -n "${ROBOTS}" ]; then
   echo "[gazebo] Spawning robots: ${ROBOTS}"
   for spec in ${ROBOTS}; do
     IFS=: read -r rname rx ry ryaw <<< "${spec}"
+    ryaw="${ryaw:-0.0}"
 
     echo "[gazebo] Spawning ${rname} at (${rx}, ${ry}, yaw=${ryaw})..."
     ros2 launch nav2_minimal_tb3_sim spawn_tb3.launch.py \

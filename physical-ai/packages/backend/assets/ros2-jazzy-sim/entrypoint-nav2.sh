@@ -11,14 +11,26 @@ set -eo pipefail
 # Usage:
 #   /entrypoint-nav2.sh robot_1
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_pai_loader="${SCRIPT_DIR}/lib/load-validate-input.sh"
+[[ -f "${_pai_loader}" ]] || _pai_loader="/usr/local/lib/physical-ai/load-validate-input.sh"
+if [[ ! -f "${_pai_loader}" ]]; then
+  echo "error: load-validate-input.sh not found (tried ${SCRIPT_DIR}/lib/ and /usr/local/lib/physical-ai/)" >&2
+  exit 1
+fi
+# shellcheck source=lib/load-validate-input.sh
+source "${_pai_loader}"
+
 ROBOT_NAME="${1:?Usage: $0 <robot_name>}"
+pai_validate_robot_name "${ROBOT_NAME}"
 
 export HOME="/tmp/ros-home"
 mkdir -p "${HOME}/.ros"
 export ROS_HOME="${HOME}/.ros"
 export ROS_LOG_DIR="${HOME}/.ros/log"
 
-source /opt/ros/jazzy/setup.bash
+# shellcheck disable=SC1090
+source "${PHYSICAL_AI_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
 
 echo "[nav2] Starting Nav2 navigation stack for ${ROBOT_NAME}..."
 

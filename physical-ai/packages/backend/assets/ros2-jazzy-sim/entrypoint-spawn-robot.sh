@@ -8,22 +8,39 @@ set -eo pipefail
 #   /entrypoint-spawn-robot.sh robot_1 -2.0 -0.5 0.0
 #   /entrypoint-spawn-robot.sh robot_2  2.0  0.5 3.14159
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_pai_loader="${SCRIPT_DIR}/lib/load-validate-input.sh"
+[[ -f "${_pai_loader}" ]] || _pai_loader="/usr/local/lib/physical-ai/load-validate-input.sh"
+if [[ ! -f "${_pai_loader}" ]]; then
+  echo "error: load-validate-input.sh not found (tried ${SCRIPT_DIR}/lib/ and /usr/local/lib/physical-ai/)" >&2
+  exit 1
+fi
+# shellcheck source=lib/load-validate-input.sh
+source "${_pai_loader}"
+
 ROBOT_NAME="${1:?Usage: $0 <robot_name> <x> <y> <yaw>}"
 X_POSE="${2:?Usage: $0 <robot_name> <x> <y> <yaw>}"
 Y_POSE="${3:?Usage: $0 <robot_name> <x> <y> <yaw>}"
 YAW="${4:-0.0}"
+
+pai_validate_robot_name "${ROBOT_NAME}"
+pai_validate_numeric "${X_POSE}" "x"
+pai_validate_numeric "${Y_POSE}" "y"
+pai_validate_numeric "${YAW}" "yaw"
 
 export HOME="/tmp/ros-home"
 mkdir -p "${HOME}/.ros"
 export ROS_HOME="${HOME}/.ros"
 export ROS_LOG_DIR="${HOME}/.ros/log"
 
-source /opt/ros/jazzy/setup.bash
+# Overridable for stubbed unit tests (default: real image path).
+# shellcheck disable=SC1090
+source "${PHYSICAL_AI_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
 
 export TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-waffle}"
 export GZ_SIM_RESOURCE_PATH="/opt/ros/jazzy/share:/opt/ros/jazzy/share/nav2_minimal_tb3_sim/models:${GZ_SIM_RESOURCE_PATH:-}"
 
-SIM_DIR="/opt/ros/jazzy/share/nav2_minimal_tb3_sim"
+SIM_DIR="${PHYSICAL_AI_SIM_DIR:-/opt/ros/jazzy/share/nav2_minimal_tb3_sim}"
 URDF_FILE="${SIM_DIR}/urdf/turtlebot3_waffle.urdf"
 
 echo "[spawn] Spawning ${ROBOT_NAME} at (${X_POSE}, ${Y_POSE}, yaw=${YAW})..."

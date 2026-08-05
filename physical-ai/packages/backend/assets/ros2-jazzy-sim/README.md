@@ -31,5 +31,7 @@ The simulation container uses ~2.5–3 GB RAM. Ensure your Podman Machine has at
 
 ## Notes
 
+- Entrypoints validate robot names / poses / `ROBOTS` env (and gazebo ports/world) **before** sourcing ROS — hostile args fail closed even if invoked via raw `podman exec`.
 - Sensors system plugin removed from the sandbox world (Ogre2 + llvmpipe segfault on arm64). Visuals/physics/spawn still work.
 - Extension Simulation page filters for `ros2-*-sim*` / `ros2-*-turtlebot3` tags.
+- Security stub tests (no container): from repo root `npm run test:scripts`.

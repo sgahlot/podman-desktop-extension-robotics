@@ -56,10 +56,14 @@ WORKDIR /opt/ros2-demo
 COPY entrypoint-gazebo.sh /entrypoint-gazebo.sh
 COPY entrypoint-spawn-robot.sh /entrypoint-spawn-robot.sh
 COPY entrypoint-nav2.sh /entrypoint-nav2.sh
+COPY lib/validate-input.sh /usr/local/lib/physical-ai/validate-input.sh
+COPY lib/load-validate-input.sh /usr/local/lib/physical-ai/load-validate-input.sh
 COPY worlds/ /opt/ros2-demo/worlds/
 COPY www/ /opt/ros2-demo/www/
 
-RUN chmod +x /entrypoint-gazebo.sh /entrypoint-spawn-robot.sh /entrypoint-nav2.sh
+RUN chmod +x /entrypoint-gazebo.sh /entrypoint-spawn-robot.sh /entrypoint-nav2.sh \
+    && chmod 644 /usr/local/lib/physical-ai/validate-input.sh \
+                 /usr/local/lib/physical-ai/load-validate-input.sh
 
 ENV TURTLEBOT3_MODEL=waffle
 

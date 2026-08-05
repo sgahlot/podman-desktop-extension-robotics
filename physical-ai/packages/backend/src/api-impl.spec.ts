@@ -1,6 +1,8 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { ExtensionContext } from '@podman-desktop/api';
 import { PhysicalAiApiImpl } from './api-impl';
+import { SIM_CONTAINER_LABEL, SIM_CONTAINER_LABEL_VALUE } from '/@shared/src/types/SimulationContainer';
+import { SPAWN_ENTRYPOINT } from '/@shared/src/security/simInput';
 
 vi.mock('@podman-desktop/api', () => ({
   provider: {
@@ -49,6 +51,20 @@ function createMockConnection(type = 'podman', status = 'started') {
       status: () => status,
     },
   };
+}
+
+function simContainer(id: string, image: string) {
+  return {
+    Id: id,
+    Image: image,
+    Labels: { [SIM_CONTAINER_LABEL]: SIM_CONTAINER_LABEL_VALUE },
+  };
+}
+
+function execArgs(callIndex = 0): string[] {
+  const call = vi.mocked(extensionApi.process.exec).mock.calls[callIndex];
+  expect(call?.[1]).toBeDefined();
+  return call![1] as string[];
 }
 
 describe('PhysicalAiApiImpl', () => {
@@ -840,7 +856,7 @@ describe('PhysicalAiApiImpl', () => {
 
     beforeEach(() => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
-        { Id: CONTAINER_ID, Image: 'quay.io/sgahlot/ros2-jazzy-sim:noble' },
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
       ] as any);
     });
 
@@ -925,7 +941,7 @@ describe('PhysicalAiApiImpl', () => {
 
     it('detects humble distro from image tag', async () => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
-        { Id: CONTAINER_ID, Image: 'quay.io/ns/ros2-humble-turtlebot3:sloretz' },
+        simContainer(CONTAINER_ID, 'quay.io/ns/ros2-humble-turtlebot3:sloretz'),
       ] as any);
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
         stdout: '/rosout\n',
@@ -934,10 +950,52 @@ describe('PhysicalAiApiImpl', () => {
       } as any);
 
       await api.listRosTopics(CONTAINER_ID);
-      const firstCall = vi.mocked(extensionApi.process.exec).mock.calls[0];
-      expect(firstCall[1]).toContain(CONTAINER_ID);
-      const bashCmd = firstCall[1].find((arg: string) => arg.includes('source'));
+      const args = execArgs(0);
+      expect(args).toContain(CONTAINER_ID);
+      const bashCmd = args.find((arg: string) => arg.includes('source'));
       expect(bashCmd).toContain('/opt/ros/humble/');
+    });
+
+    it('skips injectable topic names from ros2 topic list', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '/rosout\n/cmd_vel; id\n',
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      const result = await api.listRosTopics(CONTAINER_ID);
+      expect(result.map(t => t.name)).toEqual(['/rosout']);
+    });
+
+    it('rejects non-simulation containers', async () => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        { Id: CONTAINER_ID, Image: 'quay.io/ns/other:latest', Labels: {} },
+      ] as any);
+
+      await expect(api.listRosTopics(CONTAINER_ID)).rejects.toThrow(
+        'Not a Physical AI simulation container',
+      );
+    });
+
+    it('passes topic names as bash positional args (not interpolated)', async () => {
+      vi.mocked(extensionApi.process.exec)
+        .mockResolvedValueOnce({
+          stdout: '/robot_1/cmd_vel\n',
+          stderr: '',
+          command: 'podman',
+        } as any)
+        .mockResolvedValueOnce({
+          stdout: 'Type: geometry_msgs/msg/Twist\nPublisher count: 0\nSubscription count: 1\n',
+          stderr: '',
+          command: 'podman',
+        } as any);
+
+      await api.listRosTopics(CONTAINER_ID);
+      const args = execArgs(1);
+      const bashCmd = args.find((arg: string) => arg.includes('ros2 topic info'));
+      expect(bashCmd).toContain('ros2 topic info "$1"');
+      expect(bashCmd).not.toContain('/robot_1/cmd_vel');
+      expect(args).toContain('/robot_1/cmd_vel');
     });
 
     it('calls podman exec without -d flag (attached mode)', async () => {
@@ -948,10 +1006,10 @@ describe('PhysicalAiApiImpl', () => {
       } as any);
 
       await api.listRosTopics(CONTAINER_ID);
-      const firstCall = vi.mocked(extensionApi.process.exec).mock.calls[0];
-      expect(firstCall[1][0]).toBe('exec');
-      expect(firstCall[1][1]).toBe(CONTAINER_ID);
-      expect(firstCall[1]).not.toContain('-d');
+      const args = execArgs(0);
+      expect(args[0]).toBe('exec');
+      expect(args[1]).toBe(CONTAINER_ID);
+      expect(args).not.toContain('-d');
     });
   });
 
@@ -960,7 +1018,7 @@ describe('PhysicalAiApiImpl', () => {
 
     beforeEach(() => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
-        { Id: CONTAINER_ID, Image: 'quay.io/sgahlot/ros2-jazzy-sim:noble' },
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
       ] as any);
     });
 
@@ -1045,7 +1103,7 @@ describe('PhysicalAiApiImpl', () => {
 
     it('detects humble distro for sourcing', async () => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
-        { Id: CONTAINER_ID, Image: 'quay.io/ns/ros2-humble-turtlebot3:sloretz' },
+        simContainer(CONTAINER_ID, 'quay.io/ns/ros2-humble-turtlebot3:sloretz'),
       ] as any);
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
         stdout: 'Type: std_msgs/msg/String\n\nPublisher count: 0\n\nSubscription count: 0\n',
@@ -1054,12 +1112,12 @@ describe('PhysicalAiApiImpl', () => {
       } as any);
 
       await api.getRosTopicDetail(CONTAINER_ID, '/rosout');
-      const firstCall = vi.mocked(extensionApi.process.exec).mock.calls[0];
-      const bashCmd = firstCall[1].find((arg: string) => arg.includes('source'));
+      const args = execArgs(0);
+      const bashCmd = args.find((arg: string) => arg.includes('source'));
       expect(bashCmd).toContain('/opt/ros/humble/');
     });
 
-    it('passes -v flag to ros2 topic info', async () => {
+    it('passes -v flag and topic as positional arg', async () => {
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
         stdout: 'Type: std_msgs/msg/String\n\nPublisher count: 0\n\nSubscription count: 0\n',
         stderr: '',
@@ -1067,9 +1125,17 @@ describe('PhysicalAiApiImpl', () => {
       } as any);
 
       await api.getRosTopicDetail(CONTAINER_ID, '/rosout');
-      const firstCall = vi.mocked(extensionApi.process.exec).mock.calls[0];
-      const bashCmd = firstCall[1].find((arg: string) => arg.includes('ros2 topic info'));
-      expect(bashCmd).toContain('ros2 topic info -v /rosout');
+      const args = execArgs(0);
+      const bashCmd = args.find((arg: string) => arg.includes('ros2 topic info'));
+      expect(bashCmd).toContain('ros2 topic info -v "$1"');
+      expect(bashCmd).not.toMatch(/-v \/rosout/);
+      expect(args).toContain('/rosout');
+    });
+
+    it('rejects injectable topic names', async () => {
+      await expect(api.getRosTopicDetail(CONTAINER_ID, '/rosout; id')).rejects.toThrow(
+        /Invalid ROS topic/,
+      );
     });
   });
 
@@ -1087,7 +1153,7 @@ describe('PhysicalAiApiImpl', () => {
 
     beforeEach(() => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
-        { Id: CONTAINER_ID, Image: 'quay.io/sgahlot/ros2-jazzy-sim:noble' },
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
       ] as any);
     });
 
@@ -1111,12 +1177,14 @@ describe('PhysicalAiApiImpl', () => {
       } as any);
 
       await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
+      const poseArgs = execArgs(0);
+      const poseCmd = poseArgs.find((arg: string) => arg.includes('gz model'));
+      expect(poseCmd).toContain('gz model -m "$1"');
+      expect(poseArgs).toContain('robot_1');
       const calls = vi.mocked(extensionApi.process.exec).mock.calls;
-      const poseCmd = calls[0][1].find((arg: string) => arg.includes('gz model'));
-      expect(poseCmd).toContain('robot_1');
-      const turnCmds = calls.filter(c => c[1].some((a: string) => typeof a === 'string' && a.includes('angular')));
+      const turnCmds = calls.filter(c => (c[1] as string[] | undefined)?.some((a: string) => typeof a === 'string' && a.includes('angular')));
       expect(turnCmds.length).toBeGreaterThan(0);
-      const driveCmds = calls.filter(c => c[1].some((a: string) => typeof a === 'string' && a.includes('linear')));
+      const driveCmds = calls.filter(c => (c[1] as string[] | undefined)?.some((a: string) => typeof a === 'string' && a.includes('linear')));
       expect(driveCmds.length).toBe(1);
     });
 
@@ -1132,7 +1200,7 @@ describe('PhysicalAiApiImpl', () => {
       expect(result.message).toContain('Already');
     });
 
-    it('uses robot name in cmd_vel topic', async () => {
+    it('uses robot name as positional arg for cmd_vel topic', async () => {
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
         stdout: GZ_POSE_ORIGIN,
         stderr: '',
@@ -1141,10 +1209,19 @@ describe('PhysicalAiApiImpl', () => {
 
       await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 3.5, -1.0);
       const calls = vi.mocked(extensionApi.process.exec).mock.calls;
-      const driveCalls = calls.filter(c => c[1].some((a: string) => typeof a === 'string' && a.includes('linear')));
-      expect(driveCalls.length).toBe(1);
-      const driveCmd = driveCalls[0][1].find((arg: string) => arg.includes('linear'));
-      expect(driveCmd).toContain('/robot_1/cmd_vel');
+      const driveCallIndex = calls.findIndex(c => (c[1] as string[] | undefined)?.some((a: string) => typeof a === 'string' && a.includes('linear')));
+      expect(driveCallIndex).toBeGreaterThanOrEqual(0);
+      const driveArgs = execArgs(driveCallIndex);
+      const driveCmd = driveArgs.find((arg: string) => arg.includes('linear'));
+      expect(driveCmd).toContain('/$2/cmd_vel');
+      expect(driveArgs).toContain('robot_1');
+      expect(driveCmd).not.toContain('/robot_1/cmd_vel');
+    });
+
+    it('rejects injectable robot names', async () => {
+      await expect(api.sendNavigationGoal(CONTAINER_ID, 'robot;id', 2.0, 2.0)).rejects.toThrow(
+        /Invalid robot name/,
+      );
     });
 
     it('calls podman exec without -d flag (attached mode)', async () => {
@@ -1155,9 +1232,60 @@ describe('PhysicalAiApiImpl', () => {
       } as any);
 
       await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
-      const call = vi.mocked(extensionApi.process.exec).mock.calls[0];
-      expect(call[1][0]).toBe('exec');
-      expect(call[1]).not.toContain('-d');
+      const args = execArgs(0);
+      expect(args[0]).toBe('exec');
+      expect(args).not.toContain('-d');
+    });
+  });
+
+  describe('execInSimulation security', () => {
+    const CONTAINER_ID = 'abc123';
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as any);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '',
+        stderr: '',
+        command: 'podman',
+      } as any);
+    });
+
+    it('allows spawn entrypoint with validated args', async () => {
+      await api.execInSimulation(CONTAINER_ID, [
+        SPAWN_ENTRYPOINT,
+        'robot_1',
+        '-2.0',
+        '0.5',
+        '0.0',
+      ]);
+      expect(extensionApi.process.exec).toHaveBeenCalledWith('podman', [
+        'exec',
+        '-d',
+        CONTAINER_ID,
+        SPAWN_ENTRYPOINT,
+        'robot_1',
+        '-2.0',
+        '0.5',
+        '0.0',
+      ]);
+    });
+
+    it('rejects arbitrary commands', async () => {
+      await expect(api.execInSimulation(CONTAINER_ID, ['bash', '-c', 'id'])).rejects.toThrow(
+        /Only /,
+      );
+    });
+
+    it('rejects non-simulation containers', async () => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        { Id: CONTAINER_ID, Image: 'docker.io/library/nginx:latest', Labels: {} },
+      ] as any);
+
+      await expect(
+        api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '0', '0', '0']),
+      ).rejects.toThrow('Not a Physical AI simulation container');
     });
   });
 });
