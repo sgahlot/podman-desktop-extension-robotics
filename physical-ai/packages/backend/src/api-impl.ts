@@ -8,7 +8,7 @@ import { SIM_CONTAINER_LABEL, SIM_CONTAINER_LABEL_VALUE, SIM_CONTAINER_PREFIX } 
 import { formatSimulationConfig, resolveSimulationProfile } from '/@shared/src/types/SimulationProfiles';
 import { resolveSimulationBaseImage } from '/@shared/src/types/SimulationBaseImages';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
-import type { TopicInfo, TopicDetailInfo, TopicNodeInfo } from '/@shared/src/types/TopicInfo';
+import type { TopicInfo, TopicDetailInfo, TopicNodeInfo, TopicPeekResult } from '/@shared/src/types/TopicInfo';
 import type { NavigationGoalResult } from '/@shared/src/types/NavigationGoalResult';
 import {
   assertRobotName,
@@ -741,6 +741,48 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
 
     return { topicName: safeTopic, type, publishers, subscribers };
+  }
+
+  async peekRosTopic(containerId: string, topicName: string): Promise<TopicPeekResult> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    const safeTopic = assertRosTopicName(topicName);
+    const distro = await this.#detectRosDistro(id);
+
+    // Bound wait so idle topics do not hang the UI (timeout exits 124).
+    const PEEK_TIMEOUT_SEC = '5';
+    const result = await this.#execRosBash(
+      id,
+      distro,
+      'timeout "$1" ros2 topic echo --once "$2"',
+      [PEEK_TIMEOUT_SEC, safeTopic],
+    );
+
+    const stdout = (result.stdout ?? '').trim();
+    const stderr = (result.stderr ?? '').trim();
+    const timedOut =
+      result.exitCode === 124 ||
+      /timeout/i.test(stderr) ||
+      (result.exitCode !== 0 && !stdout);
+
+    if (stdout) {
+      return { topicName: safeTopic, message: stdout, timedOut: false };
+    }
+
+    if (timedOut) {
+      return {
+        topicName: safeTopic,
+        message: '',
+        timedOut: true,
+        error: `No message on ${safeTopic} within ${PEEK_TIMEOUT_SEC}s`,
+      };
+    }
+
+    return {
+      topicName: safeTopic,
+      message: '',
+      timedOut: false,
+      error: stderr || `Failed to peek ${safeTopic} (exit ${result.exitCode})`,
+    };
   }
 
   async sendNavigationGoal(

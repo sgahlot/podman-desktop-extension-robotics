@@ -5,6 +5,7 @@ import TopicMonitor from './TopicMonitor.svelte';
 const mockListSimulationContainers = vi.fn();
 const mockListRosTopics = vi.fn();
 const mockGetRosTopicDetail = vi.fn();
+const mockPeekRosTopic = vi.fn();
 const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
@@ -12,6 +13,7 @@ vi.mock('./api/client', () => ({
     listSimulationContainers: (...args: any[]) => mockListSimulationContainers(...args),
     listRosTopics: (...args: any[]) => mockListRosTopics(...args),
     getRosTopicDetail: (...args: any[]) => mockGetRosTopicDetail(...args),
+    peekRosTopic: (...args: any[]) => mockPeekRosTopic(...args),
   },
 }));
 
@@ -25,6 +27,7 @@ describe('TopicMonitor', () => {
     mockListSimulationContainers.mockResolvedValue([]);
     mockListRosTopics.mockResolvedValue([]);
     mockGetRosTopicDetail.mockResolvedValue({ topicName: '', type: '', publishers: [], subscribers: [] });
+    mockPeekRosTopic.mockResolvedValue({ topicName: '', message: '', timedOut: false });
   });
 
   it('renders heading', () => {
@@ -149,5 +152,62 @@ describe('TopicMonitor', () => {
     await fireEvent.click(row);
 
     expect(await screen.findByText('exec failed')).toBeTruthy();
+  });
+
+  it('peeks a live message from an expanded topic', async () => {
+    mockListSimulationContainers.mockResolvedValue([
+      { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
+    ]);
+    mockListRosTopics.mockResolvedValue([
+      { name: '/cmd_vel', type: 'geometry_msgs/msg/Twist', publishers: 1, subscribers: 1 },
+    ]);
+    mockGetRosTopicDetail.mockResolvedValue({
+      topicName: '/cmd_vel',
+      type: 'geometry_msgs/msg/Twist',
+      publishers: [{ nodeName: 'teleop_keyboard', nodeNamespace: '/' }],
+      subscribers: [],
+    });
+    mockPeekRosTopic.mockResolvedValue({
+      topicName: '/cmd_vel',
+      message: 'linear:\n  x: 0.2\n',
+      timedOut: false,
+    });
+
+    render(TopicMonitor);
+    const topicCell = await screen.findByText('/cmd_vel');
+    await fireEvent.click(topicCell.closest('tr')!);
+    await screen.findByText(/teleop_keyboard/);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Peek' }));
+    expect(mockPeekRosTopic).toHaveBeenCalledWith('c1', '/cmd_vel');
+    expect(await screen.findByText(/linear:/)).toBeTruthy();
+  });
+
+  it('shows timeout message when peek finds no data', async () => {
+    mockListSimulationContainers.mockResolvedValue([
+      { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
+    ]);
+    mockListRosTopics.mockResolvedValue([
+      { name: '/idle', type: 'std_msgs/msg/String', publishers: 0, subscribers: 0 },
+    ]);
+    mockGetRosTopicDetail.mockResolvedValue({
+      topicName: '/idle',
+      type: 'std_msgs/msg/String',
+      publishers: [],
+      subscribers: [],
+    });
+    mockPeekRosTopic.mockResolvedValue({
+      topicName: '/idle',
+      message: '',
+      timedOut: true,
+      error: 'No message on /idle within 5s',
+    });
+
+    render(TopicMonitor);
+    await fireEvent.click((await screen.findByText('/idle')).closest('tr')!);
+    await screen.findByRole('button', { name: 'Peek' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Peek' }));
+
+    expect(await screen.findByText(/No message on \/idle/)).toBeTruthy();
   });
 });

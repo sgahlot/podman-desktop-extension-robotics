@@ -14,8 +14,8 @@
 | ✅ | APPENG-5772 | Integrate noVNC or web-based video stream for simulation visualization |
 | ✅ | APPENG-5773 | Build topic monitor panel showing active ROS2 topics and message rates |
 | 🟡 | APPENG-5920 | Add navigation UI for driving robots in simulation |
-| ⚪ | APPENG-5922 | Topic Monitor drill-down |
-| ⚪ | APPENG-5923 | Topic Monitor message peek |
+| ✅ | APPENG-5922 | Topic Monitor drill-down |
+| ✅ | APPENG-5923 | Topic Monitor message peek |
 
 > **See also:** [Story 6 (Podman-only simulation)](story6-podman-sim.md) implements the core of this story (APPENG-5771 container orchestration + APPENG-5772 noVNC) using a Podman-only approach for the ROSCon demo.
 
@@ -94,3 +94,33 @@
 2. Backend queries current pose, computes heading, publishes turn then drive via `ros2 topic pub`
 3. Backend sends stop command, returns `NavigationGoalResult`
 4. Frontend shows status: Driving → Drove to (X, Y) / Failed
+
+---
+
+## APPENG-5922: Topic Monitor Drill-down — ✅ Done
+
+**Description:** Expandable topic rows showing publisher/subscriber node names via `ros2 topic info -v`.
+
+See plan notes (2026-08-04): `getRosTopicDetail`, expandable UI, on-demand fetch.
+
+---
+
+## APPENG-5923: Topic Monitor Message Peek — ✅ Done
+
+**Description:** Add a **Peek** button on expanded Topic Monitor rows that shows one live message snapshot via `ros2 topic echo --once`.
+
+### Implementation Notes
+
+**Types / API:**
+- `TopicPeekResult` in `packages/shared/src/types/TopicInfo.ts`
+- `peekRosTopic(containerId, topicName)` on `PhysicalAiApi`
+
+**Backend:**
+- Validates sim container + topic name; runs `timeout 5 ros2 topic echo --once "$topic"` via `#execRosBash` (positional args)
+- Returns message text, or `timedOut` / error when idle or failed
+
+**Frontend:**
+- Peek control under publishers/subscribers in the expanded row; shows `<pre>` snapshot or timeout notice
+- Click does not collapse the row (`stopPropagation`)
+
+**Tests:** backend `peekRosTopic` cases; frontend peek success + timeout

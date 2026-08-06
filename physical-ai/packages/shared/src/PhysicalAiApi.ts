@@ -1,7 +1,7 @@
 import type { QuayRepository, QuayTag, PullProgress, BuildProgress, PushProgress } from './types/ImageCatalog';
 import type { SimulationConfig } from './types/SimulationConfig';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from './types/SimulationContainer';
-import type { TopicInfo, TopicDetailInfo } from './types/TopicInfo';
+import type { TopicInfo, TopicDetailInfo, TopicPeekResult } from './types/TopicInfo';
 import type { NavigationGoalResult } from './types/NavigationGoalResult';
 
 export abstract class PhysicalAiApi {
@@ -35,5 +35,7 @@ export abstract class PhysicalAiApi {
   abstract openSimulationInBrowser(port: number): Promise<void>;
   abstract listRosTopics(containerId: string): Promise<TopicInfo[]>;
   abstract getRosTopicDetail(containerId: string, topicName: string): Promise<TopicDetailInfo>;
+  /** One live message via `ros2 topic echo --once` (bounded wait). */
+  abstract peekRosTopic(containerId: string, topicName: string): Promise<TopicPeekResult>;
   abstract sendNavigationGoal(containerId: string, robotName: string, x: number, y: number): Promise<NavigationGoalResult>;
 }

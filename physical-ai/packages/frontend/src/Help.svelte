@@ -103,6 +103,12 @@ import { router } from 'tinro';
         <div>
           <strong>How it works</strong> — Runs <span class="font-mono">ros2 topic list</span> and <span class="font-mono">ros2 topic info</span> via <span class="font-mono">podman exec</span> inside the container. No additional setup needed.
         </div>
+        <div>
+          <strong>Drill-down</strong> — Click a topic row to expand publishers and subscribers (<span class="font-mono">ros2 topic info -v</span>).
+        </div>
+        <div>
+          <strong>Peek</strong> — On an expanded row, <strong>Peek</strong> captures one live message (<span class="font-mono">ros2 topic echo --once</span>, 5s timeout). Idle topics show a timeout notice instead of hanging.
+        </div>
       </div>
     </div>
 

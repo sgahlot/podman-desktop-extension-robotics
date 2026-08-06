@@ -18,6 +18,11 @@ let topicDetail: TopicDetailInfo | null = null;
 let loadingDetail = false;
 let detailError = '';
 
+let peeking = false;
+let peekMessage = '';
+let peekError = '';
+let peekTimedOut = false;
+
 $: runningContainers = containers.filter(c => c.state === 'running');
 $: hasRunning = runningContainers.length > 0;
 
@@ -31,11 +36,13 @@ $: if (selectedContainerId && !runningContainers.find(c => c.id === selectedCont
   error = '';
   expandedTopic = null;
   topicDetail = null;
+  clearPeek();
 }
 
 $: if (expandedTopic && !topics.find(t => t.name === expandedTopic)) {
   expandedTopic = null;
   topicDetail = null;
+  clearPeek();
 }
 
 async function pollContainers() {
@@ -72,11 +79,19 @@ async function refresh() {
   loading = false;
 }
 
+function clearPeek() {
+  peekMessage = '';
+  peekError = '';
+  peekTimedOut = false;
+  peeking = false;
+}
+
 async function toggleTopicDetail(topicName: string) {
   if (expandedTopic === topicName) {
     expandedTopic = null;
     topicDetail = null;
     detailError = '';
+    clearPeek();
     return;
   }
 
@@ -85,6 +100,7 @@ async function toggleTopicDetail(topicName: string) {
   loadingDetail = true;
   topicDetail = null;
   detailError = '';
+  clearPeek();
 
   try {
     const detail = await physicalAiClient.getRosTopicDetail(targetId, topicName);
@@ -95,6 +111,33 @@ async function toggleTopicDetail(topicName: string) {
     detailError = e instanceof Error ? e.message : String(e);
   } finally {
     loadingDetail = false;
+  }
+}
+
+async function peekTopic(topicName: string, event: MouseEvent) {
+  event.stopPropagation();
+  if (!selectedContainerId || peeking) return;
+
+  const targetId = selectedContainerId;
+  peeking = true;
+  peekMessage = '';
+  peekError = '';
+  peekTimedOut = false;
+
+  try {
+    const result = await physicalAiClient.peekRosTopic(targetId, topicName);
+    if (selectedContainerId !== targetId || expandedTopic !== topicName) return;
+    peekTimedOut = result.timedOut;
+    if (result.message) {
+      peekMessage = result.message;
+    } else {
+      peekError = result.error ?? 'No message received';
+    }
+  } catch (e) {
+    if (selectedContainerId !== targetId || expandedTopic !== topicName) return;
+    peekError = e instanceof Error ? e.message : String(e);
+  } finally {
+    peeking = false;
   }
 }
 
@@ -194,33 +237,57 @@ onDestroy(() => {
                     {:else if detailError}
                       <span class="text-xs pai-text-error">{detailError}</span>
                     {:else if topicDetail}
-                      <div class="flex flex-row gap-8">
-                        <div>
-                          <div class="text-xs font-medium text-[var(--pd-content-header)] mb-1">
-                            Publishers ({topicDetail.publishers.length})
+                      <div class="flex flex-col gap-3">
+                        <div class="flex flex-row gap-8">
+                          <div>
+                            <div class="text-xs font-medium text-[var(--pd-content-header)] mb-1">
+                              Publishers ({topicDetail.publishers.length})
+                            </div>
+                            {#if topicDetail.publishers.length === 0}
+                              <span class="text-xs text-[var(--pd-content-text)]">None</span>
+                            {:else}
+                              {#each topicDetail.publishers as pub}
+                                <div class="text-xs font-mono text-[var(--pd-content-text)]">
+                                  {pub.nodeNamespace === '/' ? '' : pub.nodeNamespace}/{pub.nodeName}
+                                </div>
+                              {/each}
+                            {/if}
                           </div>
-                          {#if topicDetail.publishers.length === 0}
-                            <span class="text-xs text-[var(--pd-content-text)]">None</span>
-                          {:else}
-                            {#each topicDetail.publishers as pub}
-                              <div class="text-xs font-mono text-[var(--pd-content-text)]">
-                                {pub.nodeNamespace === '/' ? '' : pub.nodeNamespace}/{pub.nodeName}
-                              </div>
-                            {/each}
-                          {/if}
+                          <div>
+                            <div class="text-xs font-medium text-[var(--pd-content-header)] mb-1">
+                              Subscribers ({topicDetail.subscribers.length})
+                            </div>
+                            {#if topicDetail.subscribers.length === 0}
+                              <span class="text-xs text-[var(--pd-content-text)]">None</span>
+                            {:else}
+                              {#each topicDetail.subscribers as sub}
+                                <div class="text-xs font-mono text-[var(--pd-content-text)]">
+                                  {sub.nodeNamespace === '/' ? '' : sub.nodeNamespace}/{sub.nodeName}
+                                </div>
+                              {/each}
+                            {/if}
+                          </div>
                         </div>
-                        <div>
-                          <div class="text-xs font-medium text-[var(--pd-content-header)] mb-1">
-                            Subscribers ({topicDetail.subscribers.length})
+
+                        <div class="flex flex-col gap-2 pt-1 border-t border-[var(--pd-content-card-border)]">
+                          <div class="flex flex-row items-center gap-2">
+                            <button
+                              type="button"
+                              class="pai-btn pai-btn-primary text-xs"
+                              disabled={peeking}
+                              on:click={e => peekTopic(topic.name, e)}
+                            >
+                              {peeking ? 'Peeking...' : 'Peek'}
+                            </button>
+                            <span class="text-xs pai-text-muted">One live message via ros2 topic echo --once</span>
                           </div>
-                          {#if topicDetail.subscribers.length === 0}
-                            <span class="text-xs text-[var(--pd-content-text)]">None</span>
-                          {:else}
-                            {#each topicDetail.subscribers as sub}
-                              <div class="text-xs font-mono text-[var(--pd-content-text)]">
-                                {sub.nodeNamespace === '/' ? '' : sub.nodeNamespace}/{sub.nodeName}
-                              </div>
-                            {/each}
+                          {#if peekError}
+                            <div class="text-xs {peekTimedOut ? 'pai-text-muted' : 'pai-text-error'}">{peekError}</div>
+                          {/if}
+                          {#if peekMessage}
+                            <pre
+                              class="rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] font-mono text-xs text-[var(--pd-content-text)] p-2 overflow-auto max-h-48 whitespace-pre-wrap break-all"
+                            >{peekMessage}</pre>
                           {/if}
                         </div>
                       </div>

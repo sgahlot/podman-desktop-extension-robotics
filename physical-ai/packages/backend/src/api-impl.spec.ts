@@ -1162,6 +1162,63 @@ describe('PhysicalAiApiImpl', () => {
     });
   });
 
+  describe('peekRosTopic', () => {
+    const CONTAINER_ID = 'abc123def456';
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as any);
+    });
+
+    it('returns message text from ros2 topic echo --once', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: 'linear:\n  x: 0.2\n  y: 0.0\n  z: 0.0\n',
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      const result = await api.peekRosTopic(CONTAINER_ID, '/robot_1/cmd_vel');
+      expect(result.timedOut).toBe(false);
+      expect(result.message).toContain('linear:');
+      expect(result.topicName).toBe('/robot_1/cmd_vel');
+
+      const args = execArgs(0);
+      const bashCmd = args.find((arg: string) => arg.includes('topic echo'));
+      expect(bashCmd).toContain('timeout "$1" ros2 topic echo --once "$2"');
+      expect(args).toContain('5');
+      expect(args).toContain('/robot_1/cmd_vel');
+    });
+
+    it('reports timeout when no message arrives', async () => {
+      vi.mocked(extensionApi.process.exec).mockRejectedValue({
+        exitCode: 124,
+        stdout: '',
+        stderr: 'timeout',
+        message: 'Command failed',
+      });
+
+      const result = await api.peekRosTopic(CONTAINER_ID, '/idle_topic');
+      expect(result.timedOut).toBe(true);
+      expect(result.message).toBe('');
+      expect(result.error).toMatch(/No message/);
+    });
+
+    it('rejects injectable topic names', async () => {
+      await expect(api.peekRosTopic(CONTAINER_ID, '/cmd; id')).rejects.toThrow(/Invalid ROS topic/);
+    });
+
+    it('rejects non-simulation containers', async () => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        { Id: CONTAINER_ID, Image: 'docker.io/library/nginx:latest', Labels: {} },
+      ] as any);
+
+      await expect(api.peekRosTopic(CONTAINER_ID, '/rosout')).rejects.toThrow(
+        'Not a Physical AI simulation container',
+      );
+    });
+  });
+
   describe('sendNavigationGoal', () => {
     const CONTAINER_ID = 'abc123def456';
     const GZ_POSE_ORIGIN = 'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
