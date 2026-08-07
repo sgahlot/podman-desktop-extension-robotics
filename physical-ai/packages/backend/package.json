@@ -84,6 +84,13 @@
           "type": "string",
           "default": "",
           "description": "Optional comma-separated image refs or repo patterns allowed for Simulation launch (e.g. quay.io/ns/ros2-jazzy-sim:noble or quay.io/ns/ros2-jazzy-sim@sha256:…). Empty uses default ros2-*-sim* and ros2-*-turtlebot3. Pin exact tags/digests for demos — local image content is still trusted once selected."
+        },
+        "physical-ai.topicPeekTimeoutSeconds": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 30,
+          "default": 5,
+          "description": "Timeout in seconds for Topic Monitor Peek (ros2 topic echo --once). Must be a whole number from 1 to 30."
         }
       }
     }

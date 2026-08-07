@@ -1,7 +1,12 @@
 import type { QuayRepository, QuayTag, PullProgress, BuildProgress, PushProgress } from './types/ImageCatalog';
 import type { SimulationConfig } from './types/SimulationConfig';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from './types/SimulationContainer';
-import type { TopicInfo, TopicDetailInfo, TopicPeekResult } from './types/TopicInfo';
+import type {
+  TopicInfo,
+  TopicDetailInfo,
+  TopicPeekResult,
+  TopicSchemaResult,
+} from './types/TopicInfo';
 import type { NavigationGoalResult } from './types/NavigationGoalResult';
 
 export abstract class PhysicalAiApi {
@@ -25,6 +30,10 @@ export abstract class PhysicalAiApi {
   abstract getCatalogCuratedAllowlist(): Promise<string>;
   /** Empty string = default ros2-*-sim* / ros2-*-turtlebot3 patterns. */
   abstract getSimulationImageAllowlist(): Promise<string>;
+  /** Peek wait in seconds (Preferences: physical-ai.topicPeekTimeoutSeconds, 1–30). */
+  abstract getTopicPeekTimeoutSeconds(): Promise<number>;
+  /** Validates and persists peek timeout (1–30). Throws a user-facing error if out of range. */
+  abstract setTopicPeekTimeoutSeconds(seconds: number): Promise<void>;
   abstract getSimulationConfig(): Promise<SimulationConfig>;
   abstract saveSimulationConfig(config: SimulationConfig): Promise<void>;
   abstract launchSimulation(imageTag: string, containerName: string, options?: SimLaunchOptions): Promise<string>;
@@ -37,5 +46,7 @@ export abstract class PhysicalAiApi {
   abstract getRosTopicDetail(containerId: string, topicName: string): Promise<TopicDetailInfo>;
   /** One live message via `ros2 topic echo --once` (bounded wait). */
   abstract peekRosTopic(containerId: string, topicName: string): Promise<TopicPeekResult>;
+  /** Message structural definition via `ros2 interface show`. */
+  abstract getRosMessageSchema(containerId: string, messageType: string): Promise<TopicSchemaResult>;
   abstract sendNavigationGoal(containerId: string, robotName: string, x: number, y: number): Promise<NavigationGoalResult>;
 }

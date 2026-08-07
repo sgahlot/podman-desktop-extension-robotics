@@ -107,20 +107,26 @@ See plan notes (2026-08-04): `getRosTopicDetail`, expandable UI, on-demand fetch
 
 ## APPENG-5923: Topic Monitor Message Peek — ✅ Done
 
-**Description:** Add a **Peek** button on expanded Topic Monitor rows that shows one live message snapshot via `ros2 topic echo --once`.
+**Description:** Add a **Peek** button on expanded Topic Monitor rows that shows one live message snapshot via `ros2 topic echo --once`, polished toward a topic-browser inspector.
 
 ### Implementation Notes
 
 **Types / API:**
-- `TopicPeekResult` in `packages/shared/src/types/TopicInfo.ts`
+- `TopicPeekResult` (+ `capturedAt`, `messageStamp`, `truncated`) in `packages/shared/src/types/TopicInfo.ts`
+- `TopicSchemaResult` + `getRosMessageSchema(containerId, messageType)`
 - `peekRosTopic(containerId, topicName)` on `PhysicalAiApi`
+- Shared helpers: `packages/shared/src/ros/topicPeek.ts` (clean echo, stamp extract, YAML tree, short type badge)
+- Preferences: `physical-ai.topicPeekTimeoutSeconds` (1–30, default 5); out-of-range values surface a clear error
 
 **Backend:**
-- Validates sim container + topic name; runs `timeout 5 ros2 topic echo --once "$topic"` via `#execRosBash` (positional args)
-- Returns message text, or `timedOut` / error when idle or failed
+- Validates sim container + topic name; runs `timeout <N> ros2 topic echo --once --qos-reliability best_effort --qos-durability volatile`
+- `N` from Preferences via `getTopicPeekTimeoutSeconds` / `setTopicPeekTimeoutSeconds` (asserted 1–30)
+- Cleans DDS lost-message noise; caps payload size; returns capture metadata
+- Schema via `ros2 interface show` with message-type allowlist
 
 **Frontend:**
-- Peek control under publishers/subscribers in the expanded row; shows `<pre>` snapshot or timeout notice
-- Click does not collapse the row (`stopPropagation`)
+- Soft topology (pubs → topic → subs), type badges, schema toggle
+- Peek inspector: topic/type header, Captured / Msg stamp, Tree/Raw toggle, Copy
+- Improved idle-topic timeout copy
 
-**Tests:** backend `peekRosTopic` cases; frontend peek success + timeout
+**Tests:** shared peek helpers; backend peek + schema; frontend topology/schema/peek

@@ -23,7 +23,8 @@ onMount(() => {
 
 <Route path="/*" breadcrumb="Physical AI" isAppMounted={isMounted} let:meta>
   <main class="flex flex-col w-screen h-screen overflow-hidden bg-[var(--pd-content-bg)]">
-    <div class="flex flex-row w-full h-full overflow-hidden">
+    <!-- min-h-0 lets the active page become the scroll container instead of growing past the viewport -->
+    <div class="flex flex-row w-full flex-1 min-h-0 overflow-hidden">
       <Route path="/" breadcrumb="Dashboard">
         <Dashboard />
       </Route>

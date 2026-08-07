@@ -1169,11 +1169,16 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
         simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
       ] as any);
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue(5),
+        update: vi.fn(),
+      } as any);
     });
 
-    it('returns message text from ros2 topic echo --once', async () => {
+    it('returns cleaned message text from ros2 topic echo --once', async () => {
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
-        stdout: 'linear:\n  x: 0.2\n  y: 0.0\n  z: 0.0\n',
+        stdout:
+          'A message was lost!!!\nlinear:\n  x: 0.2\n  y: 0.0\n  z: 0.0\n---\n',
         stderr: '',
         command: 'podman',
       } as any);
@@ -1181,13 +1186,55 @@ describe('PhysicalAiApiImpl', () => {
       const result = await api.peekRosTopic(CONTAINER_ID, '/robot_1/cmd_vel');
       expect(result.timedOut).toBe(false);
       expect(result.message).toContain('linear:');
+      expect(result.message).not.toMatch(/message was lost/i);
       expect(result.topicName).toBe('/robot_1/cmd_vel');
+      expect(result.capturedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 
       const args = execArgs(0);
       const bashCmd = args.find((arg: string) => arg.includes('topic echo'));
-      expect(bashCmd).toContain('timeout "$1" ros2 topic echo --once "$2"');
+      expect(bashCmd).toContain('timeout "$1" ros2 topic echo --once');
+      expect(bashCmd).toContain('--qos-reliability best_effort');
       expect(args).toContain('5');
       expect(args).toContain('/robot_1/cmd_vel');
+    });
+
+    it('uses configured peek timeout seconds', async () => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue(12),
+        update: vi.fn(),
+      } as any);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: 'data: hi\n',
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      await api.peekRosTopic(CONTAINER_ID, '/rosout');
+      const args = execArgs(0);
+      expect(args).toContain('12');
+    });
+
+    it('returns a settings error when peek timeout is out of range', async () => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue(99),
+        update: vi.fn(),
+      } as any);
+
+      const result = await api.peekRosTopic(CONTAINER_ID, '/rosout');
+      expect(result.message).toBe('');
+      expect(result.error).toMatch(/at most 30/);
+      expect(extensionApi.process.exec).not.toHaveBeenCalled();
+    });
+
+    it('extracts message stamp from header', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: 'header:\n  stamp:\n    sec: 21039\n    nanosec: 900000000\n  frame_id: base\n',
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      const result = await api.peekRosTopic(CONTAINER_ID, '/robot_1/joint_states');
+      expect(result.messageStamp).toBe('sec=21039 nanosec=900000000');
     });
 
     it('reports timeout when no message arrives', async () => {
@@ -1202,6 +1249,8 @@ describe('PhysicalAiApiImpl', () => {
       expect(result.timedOut).toBe(true);
       expect(result.message).toBe('');
       expect(result.error).toMatch(/No message/);
+      expect(result.error).toMatch(/idle|infrequently/i);
+      expect(result.capturedAt).toBeTruthy();
     });
 
     it('rejects injectable topic names', async () => {
@@ -1216,6 +1265,80 @@ describe('PhysicalAiApiImpl', () => {
       await expect(api.peekRosTopic(CONTAINER_ID, '/rosout')).rejects.toThrow(
         'Not a Physical AI simulation container',
       );
+    });
+  });
+
+  describe('getTopicPeekTimeoutSeconds / setTopicPeekTimeoutSeconds', () => {
+    it('returns default when unset', async () => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue(undefined),
+        update: vi.fn(),
+      } as any);
+      expect(await api.getTopicPeekTimeoutSeconds()).toBe(5);
+    });
+
+    it('rejects set below minimum with a clear message', async () => {
+      const update = vi.fn();
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn(),
+        update,
+      } as any);
+      await expect(api.setTopicPeekTimeoutSeconds(0)).rejects.toThrow(/at least 1/);
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('rejects set above maximum with a clear message', async () => {
+      const update = vi.fn();
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn(),
+        update,
+      } as any);
+      await expect(api.setTopicPeekTimeoutSeconds(31)).rejects.toThrow(/at most 30/);
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('persists a valid timeout', async () => {
+      const update = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn(),
+        update,
+      } as any);
+      await api.setTopicPeekTimeoutSeconds(15);
+      expect(update).toHaveBeenCalledWith('topicPeekTimeoutSeconds', 15);
+    });
+  });
+
+  describe('getRosMessageSchema', () => {
+    const CONTAINER_ID = 'abc123def456';
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as any);
+    });
+
+    it('returns interface definition text', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: 'float64 x\nfloat64 y\nfloat64 z\n',
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      const result = await api.getRosMessageSchema(CONTAINER_ID, 'geometry_msgs/msg/Vector3');
+      expect(result.type).toBe('geometry_msgs/msg/Vector3');
+      expect(result.schema).toContain('float64 x');
+      expect(result.error).toBeUndefined();
+
+      const args = execArgs(0);
+      const bashCmd = args.find((arg: string) => arg.includes('interface show'));
+      expect(bashCmd).toContain('ros2 interface show "$1"');
+      expect(args).toContain('geometry_msgs/msg/Vector3');
+    });
+
+    it('rejects injectable message types', async () => {
+      await expect(
+        api.getRosMessageSchema(CONTAINER_ID, 'std_msgs/msg/String; id'),
+      ).rejects.toThrow(/Invalid ROS message/);
     });
   });
 

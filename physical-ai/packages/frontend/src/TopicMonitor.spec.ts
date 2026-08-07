@@ -6,6 +6,8 @@ const mockListSimulationContainers = vi.fn();
 const mockListRosTopics = vi.fn();
 const mockGetRosTopicDetail = vi.fn();
 const mockPeekRosTopic = vi.fn();
+const mockGetRosMessageSchema = vi.fn();
+const mockGetTopicPeekTimeoutSeconds = vi.fn();
 const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
@@ -14,6 +16,8 @@ vi.mock('./api/client', () => ({
     listRosTopics: (...args: any[]) => mockListRosTopics(...args),
     getRosTopicDetail: (...args: any[]) => mockGetRosTopicDetail(...args),
     peekRosTopic: (...args: any[]) => mockPeekRosTopic(...args),
+    getRosMessageSchema: (...args: any[]) => mockGetRosMessageSchema(...args),
+    getTopicPeekTimeoutSeconds: (...args: any[]) => mockGetTopicPeekTimeoutSeconds(...args),
   },
 }));
 
@@ -27,7 +31,14 @@ describe('TopicMonitor', () => {
     mockListSimulationContainers.mockResolvedValue([]);
     mockListRosTopics.mockResolvedValue([]);
     mockGetRosTopicDetail.mockResolvedValue({ topicName: '', type: '', publishers: [], subscribers: [] });
-    mockPeekRosTopic.mockResolvedValue({ topicName: '', message: '', timedOut: false });
+    mockPeekRosTopic.mockResolvedValue({
+      topicName: '',
+      message: '',
+      timedOut: false,
+      capturedAt: new Date().toISOString(),
+    });
+    mockGetRosMessageSchema.mockResolvedValue({ type: '', schema: '' });
+    mockGetTopicPeekTimeoutSeconds.mockResolvedValue(5);
   });
 
   it('renders heading', () => {
@@ -55,6 +66,7 @@ describe('TopicMonitor', () => {
     expect(topicCell).toBeTruthy();
     expect(screen.getByText('/robot_1/cmd_vel')).toBeTruthy();
     expect(screen.getByText('geometry_msgs/msg/Twist')).toBeTruthy();
+    expect(screen.getByText('Twist')).toBeTruthy();
     expect(screen.getByText('2 active topics')).toBeTruthy();
   });
 
@@ -87,7 +99,7 @@ describe('TopicMonitor', () => {
     expect(screen.getByText('▶')).toBeTruthy();
   });
 
-  it('expands a topic row and shows node names on click', async () => {
+  it('expands a topic row and shows soft topology on click', async () => {
     mockListSimulationContainers.mockResolvedValue([
       { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
     ]);
@@ -100,6 +112,10 @@ describe('TopicMonitor', () => {
       publishers: [{ nodeName: 'teleop_keyboard', nodeNamespace: '/' }],
       subscribers: [{ nodeName: 'diff_drive', nodeNamespace: '/robot_1' }],
     });
+    mockGetRosMessageSchema.mockResolvedValue({
+      type: 'geometry_msgs/msg/Twist',
+      schema: 'Vector3 linear\nVector3 angular\n',
+    });
 
     render(TopicMonitor);
     const topicCell = await screen.findByText('/cmd_vel');
@@ -111,6 +127,33 @@ describe('TopicMonitor', () => {
     expect(screen.getByText(/diff_drive/)).toBeTruthy();
     expect(screen.getByText('Publishers (1)')).toBeTruthy();
     expect(screen.getByText('Subscribers (1)')).toBeTruthy();
+    expect(screen.getByText(/Flow: publishers → \/cmd_vel → subscribers/)).toBeTruthy();
+    expect(mockGetRosMessageSchema).toHaveBeenCalledWith('c1', 'geometry_msgs/msg/Twist');
+  });
+
+  it('shows schema when toggled', async () => {
+    mockListSimulationContainers.mockResolvedValue([
+      { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
+    ]);
+    mockListRosTopics.mockResolvedValue([
+      { name: '/cmd_vel', type: 'geometry_msgs/msg/Twist', publishers: 1, subscribers: 0 },
+    ]);
+    mockGetRosTopicDetail.mockResolvedValue({
+      topicName: '/cmd_vel',
+      type: 'geometry_msgs/msg/Twist',
+      publishers: [{ nodeName: 'teleop_keyboard', nodeNamespace: '/' }],
+      subscribers: [],
+    });
+    mockGetRosMessageSchema.mockResolvedValue({
+      type: 'geometry_msgs/msg/Twist',
+      schema: 'Vector3 linear\nVector3 angular\n',
+    });
+
+    render(TopicMonitor);
+    await fireEvent.click((await screen.findByText('/cmd_vel')).closest('tr')!);
+    await screen.findByText(/teleop_keyboard/);
+    await fireEvent.click(screen.getByRole('button', { name: /Show message schema/ }));
+    expect(await screen.findByText(/Vector3 linear/)).toBeTruthy();
   });
 
   it('collapses an expanded topic row on second click', async () => {
@@ -154,7 +197,7 @@ describe('TopicMonitor', () => {
     expect(await screen.findByText('exec failed')).toBeTruthy();
   });
 
-  it('peeks a live message from an expanded topic', async () => {
+  it('peeks a live message with metadata and tree view', async () => {
     mockListSimulationContainers.mockResolvedValue([
       { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
     ]);
@@ -171,6 +214,7 @@ describe('TopicMonitor', () => {
       topicName: '/cmd_vel',
       message: 'linear:\n  x: 0.2\n',
       timedOut: false,
+      capturedAt: '2026-08-06T14:30:00.000Z',
     });
 
     render(TopicMonitor);
@@ -180,7 +224,10 @@ describe('TopicMonitor', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Peek' }));
     expect(mockPeekRosTopic).toHaveBeenCalledWith('c1', '/cmd_vel');
-    expect(await screen.findByText(/linear:/)).toBeTruthy();
+    expect(await screen.findByText(/Captured:/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Tree' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Raw' })).toBeTruthy();
   });
 
   it('shows timeout message when peek finds no data', async () => {
@@ -200,7 +247,9 @@ describe('TopicMonitor', () => {
       topicName: '/idle',
       message: '',
       timedOut: true,
-      error: 'No message on /idle within 5s',
+      capturedAt: new Date().toISOString(),
+      error:
+        'No message on /idle within 5s. The topic may be idle or publishing infrequently — try one with active publishers.',
     });
 
     render(TopicMonitor);
@@ -209,5 +258,6 @@ describe('TopicMonitor', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Peek' }));
 
     expect(await screen.findByText(/No message on \/idle/)).toBeTruthy();
+    expect(screen.getByText(/active publishers/)).toBeTruthy();
   });
 });

@@ -107,7 +107,13 @@ import { router } from 'tinro';
           <strong>Drill-down</strong> — Click a topic row to expand publishers and subscribers (<span class="font-mono">ros2 topic info -v</span>).
         </div>
         <div>
-          <strong>Peek</strong> — On an expanded row, <strong>Peek</strong> captures one live message (<span class="font-mono">ros2 topic echo --once</span>, 5s timeout). Idle topics show a timeout notice instead of hanging.
+          <strong>Peek</strong> — On an expanded row, <strong>Peek</strong> captures one live message
+          (<span class="font-mono">ros2 topic echo --once</span>). Timeout is configurable under
+          Preferences → Physical AI → <strong>Topic peek timeout</strong> (1–30 seconds, default 5).
+          Shows topic/type, wall-clock capture time, optional ROS msg stamp, and a Tree/Raw view with Copy.
+          Idle topics show a timeout notice. Message schema is available via
+          <strong>Show message schema</strong> (<span class="font-mono">ros2 interface show</span>).
+          Msg stamp is time inside the message (e.g. <span class="font-mono">header.stamp</span>), not the <span class="font-mono">/clock</span> topic.
         </div>
       </div>
     </div>

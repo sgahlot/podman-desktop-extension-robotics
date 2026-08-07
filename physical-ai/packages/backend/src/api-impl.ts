@@ -8,7 +8,7 @@ import { SIM_CONTAINER_LABEL, SIM_CONTAINER_LABEL_VALUE, SIM_CONTAINER_PREFIX } 
 import { formatSimulationConfig, resolveSimulationProfile } from '/@shared/src/types/SimulationProfiles';
 import { resolveSimulationBaseImage } from '/@shared/src/types/SimulationBaseImages';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
-import type { TopicInfo, TopicDetailInfo, TopicNodeInfo, TopicPeekResult } from '/@shared/src/types/TopicInfo';
+import type { TopicInfo, TopicDetailInfo, TopicNodeInfo, TopicPeekResult, TopicSchemaResult } from '/@shared/src/types/TopicInfo';
 import type { NavigationGoalResult } from '/@shared/src/types/NavigationGoalResult';
 import {
   assertRobotName,
@@ -26,6 +26,7 @@ import {
 } from '/@shared/src/security/simInput';
 import { assertLaunchImageTag } from '/@shared/src/security/simImageTrust';
 import { assertQuayName } from '/@shared/src/security/quayNames';
+import { assertRosMessageType, cleanEchoOutput, assertPeekTimeoutSeconds, PEEK_TIMEOUT_DEFAULT_SEC } from '/@shared/src/ros/topicPeek';
 import { appendProgressLog } from './progressLogs';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
@@ -505,6 +506,21 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return config.get<string>('simulationImageAllowlist') ?? '';
   }
 
+  async getTopicPeekTimeoutSeconds(): Promise<number> {
+    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const raw = config.get<number>('topicPeekTimeoutSeconds');
+    if (raw === undefined || raw === null) {
+      return PEEK_TIMEOUT_DEFAULT_SEC;
+    }
+    return assertPeekTimeoutSeconds(raw);
+  }
+
+  async setTopicPeekTimeoutSeconds(seconds: number): Promise<void> {
+    const safe = assertPeekTimeoutSeconds(seconds);
+    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    await config.update('topicPeekTimeoutSeconds', safe);
+  }
+
   async launchSimulation(imageTag: string, containerName: string, options?: SimLaunchOptions): Promise<string> {
     const allowlist = await this.getSimulationImageAllowlist();
     const safeImageTag = assertLaunchImageTag(imageTag, allowlist || null);
@@ -747,14 +763,29 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const { id } = await this.#resolveSimulationContainer(containerId);
     const safeTopic = assertRosTopicName(topicName);
     const distro = await this.#detectRosDistro(id);
+    const capturedAt = new Date().toISOString();
+
+    let peekTimeoutSec: number;
+    try {
+      peekTimeoutSec = await this.getTopicPeekTimeoutSeconds();
+    } catch (e) {
+      return {
+        topicName: safeTopic,
+        message: '',
+        timedOut: false,
+        capturedAt,
+        error: e instanceof Error ? e.message : String(e),
+      };
+    }
+    const peekTimeoutArg = String(peekTimeoutSec);
 
     // Bound wait so idle topics do not hang the UI (timeout exits 124).
-    const PEEK_TIMEOUT_SEC = '5';
+    // best_effort reduces "message was lost" spam on high-rate sensor topics.
     const result = await this.#execRosBash(
       id,
       distro,
-      'timeout "$1" ros2 topic echo --once "$2"',
-      [PEEK_TIMEOUT_SEC, safeTopic],
+      'timeout "$1" ros2 topic echo --once --qos-reliability best_effort --qos-durability volatile "$2"',
+      [peekTimeoutArg, safeTopic],
     );
 
     const stdout = (result.stdout ?? '').trim();
@@ -765,7 +796,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       (result.exitCode !== 0 && !stdout);
 
     if (stdout) {
-      return { topicName: safeTopic, message: stdout, timedOut: false };
+      const cleaned = cleanEchoOutput(stdout);
+      return {
+        topicName: safeTopic,
+        message: cleaned.message,
+        timedOut: false,
+        capturedAt,
+        messageStamp: cleaned.messageStamp,
+        truncated: cleaned.truncated || undefined,
+      };
     }
 
     if (timedOut) {
@@ -773,7 +812,10 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         topicName: safeTopic,
         message: '',
         timedOut: true,
-        error: `No message on ${safeTopic} within ${PEEK_TIMEOUT_SEC}s`,
+        capturedAt,
+        error:
+          `No message on ${safeTopic} within ${peekTimeoutSec}s. ` +
+          'The topic may be idle or publishing infrequently — try one with active publishers.',
       };
     }
 
@@ -781,7 +823,28 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       topicName: safeTopic,
       message: '',
       timedOut: false,
+      capturedAt,
       error: stderr || `Failed to peek ${safeTopic} (exit ${result.exitCode})`,
+    };
+  }
+
+  async getRosMessageSchema(containerId: string, messageType: string): Promise<TopicSchemaResult> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    const safeType = assertRosMessageType(messageType);
+    const distro = await this.#detectRosDistro(id);
+
+    const result = await this.#execRosBash(id, distro, 'ros2 interface show "$1"', [safeType]);
+    const stdout = (result.stdout ?? '').trim();
+    const stderr = (result.stderr ?? '').trim();
+
+    if (result.exitCode === 0 && stdout) {
+      return { type: safeType, schema: stdout };
+    }
+
+    return {
+      type: safeType,
+      schema: '',
+      error: stderr || `Failed to load schema for ${safeType} (exit ${result.exitCode})`,
     };
   }
 
