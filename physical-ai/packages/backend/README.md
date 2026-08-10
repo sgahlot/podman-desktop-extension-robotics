@@ -34,8 +34,11 @@ To check or change Podman Machine resources: open **Settings → Resources → P
 1. Install / load the extension in Podman Desktop
 2. Open **Physical AI**, or press **F1** → **Physical AI: Open Dashboard**
 3. **Image Builder** → Quick Start **TurtleBot3 Sim (Jazzy)** → Phase 1 Build → Phase 2 Build
-4. **Simulation** → Launch → Open in Browser → Add TurtleBot3
-5. Adjust defaults under **Settings → Preferences → Physical AI**
+4. **Simulation** → Launch → Open in Browser → Add TurtleBot3 → optional **Go** (X/Y) and Topic Monitor **Peek**
+5. **Stop** when done — close the Gazebo (noVNC) browser tab manually if it is still open
+6. Adjust defaults under **Settings → Preferences → Physical AI**
+
+Idle noVNC tabs may show Disconnected; reconnect or refresh — the simulation is still running. Sensors (lidar/camera) are off under software rendering on Mac, so **Go** has no obstacle avoidance.
 
 ## Settings
 
@@ -43,6 +46,7 @@ To check or change Podman Machine resources: open **Settings → Resources → P
 - **Catalog view mode** — `all` (default) or `curated`
 - **Catalog curated allowlist** — comma-separated repo name patterns (`*` wildcard), default `ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*`
 - **Simulation image allowlist** — optional comma-separated image refs or patterns for Simulation launch. Empty = default `ros2-*-sim*` / `ros2-*-turtlebot3`. Pin exact tags or `@sha256:…` digests for demos. Local image *content* is still trusted once selected.
+- **Topic peek timeout** — seconds to wait for Topic Monitor **Peek** (`ros2 topic echo --once`). Whole number 1–30; default 5.
 - Image Builder wizard defaults (robot, distro, middleware, engine, base preset)
 
 ## Golden images to publish

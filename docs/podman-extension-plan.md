@@ -41,15 +41,15 @@ Drivers:
 | Story | Summary | Status | Sub-tasks |
 |-------|---------|--------|-----------|
 | [APPENG-5764](#story-1) | Extension scaffolding and base image catalog | ✅ Done | 4/4 done, 2 follow-ups parked |
-| [APPENG-5765](#story-2) | Single robot simulation workflow | 🟡 In Progress | 3/3 original + 5922/5923 done; APPENG-5920 nav still in progress |
+| [APPENG-5765](#story-2) | Single robot simulation workflow | 🟡 In Progress | Original + Topic Monitor done; APPENG-5920/5922/5923 **In Review** |
 | [APPENG-5766](#story-3) | Multi-robot local scaling *(stretch)* | ⚪ Not Started | 0/3 done |
 | [APPENG-5767](#story-4) | OpenShift deployment bridge *(stretch)* | ⚪ Not Started | 0/3 done |
 | [Spike](#story-5) | Local-first deployment of reference demos | 🅿️ Parked (Kind OOM) | 0/6 proposed |
-| [Story 6](#story-6) | Podman-only simulation workflow (ROSCon demo) | 🟡 In Progress | 5/6 done |
+| [Story 6](#story-6) | Podman-only simulation workflow (ROSCon demo) | 🟡 In Progress | 5/6 done — **demo path complete; S6-6 deferred** |
 | [FIX](#fix-arch-aware-sim) | Make simulation image build arch-aware | ✅ Done | Naming + labels fixed; Ogre2 Sensors deferred |
 | [Security](#security-hardening) | Security hardening | ✅ Done | Shell injection, exec/launch lockdown, image trust, defense-in-depth + follow-up fixes |
 
-> **Legend:** ✅ Done · 🟡 In Progress / Almost Done · ⚪ Not Started · 🅿️ Parked · 🔴 Must fix
+> **Legend:** ✅ Done · 🟠 In Review · 🟡 In Progress / Almost Done · ⚪ Not Started · 🅿️ Parked · 🔴 Must fix
 
 **Last updated:** 2026-08-10
 
@@ -152,7 +152,7 @@ If you only ever build one sim image and never reuse the base, the two-phase spl
 
 <a id="story-2"></a>
 
-### Story 2: Single robot simulation workflow — 🟡 In Progress (5771–5773 + 5922/5923 done; 5920 remaining)
+### Story 2: Single robot simulation workflow — 🟡 In Progress (5771–5773 done; 5920/5922/5923 In Review)
 
 > Detail doc: [story2-simulation.md](stories/story2-simulation.md)
 
@@ -169,9 +169,9 @@ If you only ever build one sim image and never reuse the base, the two-phase spl
 | ✅ | APPENG-5771 | Container orchestration for ROS2 + Gazebo launch via Podman pod | Implemented via [Story 6](stories/story6-podman-sim.md) S6-1/S6-3/S6-4. Podman-only (no pods/compose): backend lifecycle API + Simulation page + one-click launch. |
 | ✅ | APPENG-5772 | Integrate noVNC or web-based video stream for simulation visualization | Implemented via [Story 6](stories/story6-podman-sim.md) S6-1/S6-4. noVNC stack (Xvfb + x11vnc + websockify) in sim image, "Open in Browser" on Simulation page. |
 | ✅ | APPENG-5773 | Build topic monitor panel showing active ROS2 topics and message rates | Topic Monitor page (`/topics`): lists active ROS2 topics with message types, publisher/subscriber counts. Uses `podman exec` (attached) to run `ros2 topic list` + `ros2 topic info` inside the simulation container. Auto-refreshes every 5s. Accessible from Dashboard card and Simulation page "View Topics" button. Hz measurement deferred. |
-| 🟡 | APPENG-5920 | Add navigation UI for driving robots in simulation | Per-robot "Go" button with target X/Y on the Simulation page. On arm64 (local laptop): direct velocity control via `cmd_vel` Twist (no obstacle avoidance — Ogre2 Sensors crash blocks Nav2). On OpenShift: enable Sensors + Nav2 (`navigate_to_pose`) and **verify in-cluster**, preferring **no GPU** first (GPU optional, not required). |
-| ✅ | APPENG-5922 | Topic Monitor drill-down | Expandable rows in Topic Monitor: clicking a topic fetches `ros2 topic info -v` and shows publisher/subscriber node names inline. On-demand fetch (not polled) to avoid expensive verbose calls every 5s. Follows ImageCatalog expand/collapse pattern. |
-| ✅ | APPENG-5923 | Topic Monitor message peek | **Peek** on expanded rows runs `ros2 topic echo --once` (configurable 1–30s timeout, default 5, best-effort QoS). Cleaned body + capture/msg timestamps, Tree/Raw view, Copy; soft pub/sub topology; `ros2 interface show` schema; short type badges. |
+| 🟠 | APPENG-5920 | Add navigation UI for driving robots in simulation | **In Review.** Per-robot X/Y + **Go** on Simulation page. Local/Mac: `cmd_vel` turn/drive (no obstacle avoidance — Sensors off). OpenShift Nav2 (`navigate_to_pose`) deferred — prefer CPU first, GPU optional. |
+| 🟠 | APPENG-5922 | Topic Monitor drill-down | **In Review.** Expandable rows: `ros2 topic info -v` pub/sub node names. On-demand fetch (not polled). |
+| 🟠 | APPENG-5923 | Topic Monitor message peek | **In Review.** Peek via `ros2 topic echo --once` (1–30s timeout); Tree/Raw, Copy, schema, topology badges. |
 
 ---
 
@@ -236,7 +236,7 @@ Story 1 (Scaffolding + images)  ──  Foundation; must be first  ✅
     │       ├── S5-4       catalog our images
     │       └── S5-5/S5-6  deploy-to-local + OpenShift wizards ──► feeds Stories 3–4
     │
-    ├── Story 2 (Single robot)  ──  🟡 In Progress (5771/5772/5773 done; 5920 Nav2 goals in progress)
+    ├── Story 2 (Single robot)  ──  🟡 In Progress (5771–5773 done; 5920/5922/5923 In Review)
     │       ▼
     │   Story 3 (Multi-robot)   ──  Stretch; Repo A (OpenRMF) + Repo B (Zenoh) inform this
     │
@@ -246,7 +246,7 @@ Story 1 (Scaffolding + images)  ──  Foundation; must be first  ✅
 | Priority | Scope | Issues |
 |----------|--------|--------|
 | **MVP-critical** (ROSCon demo) | Stories 1 + 6 (+ Story 2 via 5771/5772) | Image Builder, Catalog, Simulation launch/spawn/noVNC |
-| **🟡 Story 2 in progress** | APPENG-5773 + 5922 + 5923 done; APPENG-5920 in progress | Topic monitor + drill-down + peek done; nav UI remaining |
+| **🟠 Story 2 sub-tasks In Review** | APPENG-5920 + 5922 + 5923 | Local Go (`cmd_vel`), Topic drill-down, Peek — pending review |
 | **Parked** | Story 5 | Kind spike; resume for K8s/OpenShift path |
 | **Stretch** | Stories 3–4 | 6 sub-tasks (`APPENG-5774`–`5779`), including docs |
 
@@ -265,9 +265,9 @@ Now that the scaffold (APPENG-5768) is complete, sub-tasks have fine-grained dep
     ├── ✅ APPENG-5770 (Image catalog UI)
     ├── ✅ APPENG-5808 (Wizard + sim images)
     ├── ✅ APPENG-5773 (Topic monitor UI) ── DONE
-    │       ├── ✅ APPENG-5922 (Topic drill-down)    ◀── DONE; expandable rows with node names
-    │       └── ✅ APPENG-5923 (Topic message peek)  ◀── DONE; ros2 topic echo --once
-    ├── 🟡 APPENG-5920 (Nav2 goal UI) ── IN PROGRESS
+    │       ├── 🟠 APPENG-5922 (Topic drill-down)    ◀── IN REVIEW
+    │       └── 🟠 APPENG-5923 (Topic message peek)  ◀── IN REVIEW
+    ├── 🟠 APPENG-5920 (Nav Go UI / cmd_vel) ── IN REVIEW (OpenShift Nav2 deferred)
     │
     ├── 🅿️ S5-1…S5-6 (Story 5 Kind/OpenShift spike) ── PARKED (branch spike/repo-b-kind-attempt)
     │
@@ -288,14 +288,14 @@ Now that the scaffold (APPENG-5768) is complete, sub-tasks have fine-grained dep
 
 ### Ready Now (no blockers)
 
-Stories 1 and 6 (S6-1–S6-5) are complete. Story 2 original sub-tasks + APPENG-5922/5923 done; APPENG-5920 (nav UI) in progress. [Security hardening](#security-hardening) complete. The [arch-aware sim fix](#fix-arch-aware-sim) has landed. Next pick-ups:
+Stories 1 and 6 (S6-1–S6-5) are complete for the ROSCon **demo path**; S6-6 (Customize Hardware) remains stretch/deferred. Story 2 original sub-tasks done; APPENG-5920 / 5922 / 5923 are **In Review**. [Security hardening](#security-hardening) complete. The [arch-aware sim fix](#fix-arch-aware-sim) has landed. Next pick-ups:
 
 | Key | Summary | Skills needed |
 |-----|---------|---------------|
-| APPENG-5920 | Navigation UI (finish / polish) | Gazebo pose, cmd_vel locally; Nav2 on OpenShift (CPU first, GPU optional) |
 | APPENG-5774 | Multi-robot orchestration | Podman, multi-container, scales from Story 6 single-robot |
 | APPENG-5777 | K8s manifest generation | Podman config export, K8s YAML |
-| S6-6 | Customize Hardware card (stretch) | Xacro parametric, podman exec |
+| OpenShift spike | Sensors + Nav2 in-cluster (manual; not full Story 4) | `oc`, Sensors-on world, `navigate_to_pose`, CPU first |
+| S6-6 | Customize Hardware card *(stretch — deferred)* | Xacro parametric, podman exec |
 
 **Parked (not ready-now):** Story 5 S5-1…S5-6 — Kind OOM on arm64; resume from `spike/repo-b-kind-attempt` when tackling K8s/OpenShift.
 
@@ -346,9 +346,9 @@ A Miro board would be useful for a team kickoff/planning session where people ne
 | ✅ | APPENG-5771 | Sub-task | APPENG-5765 | Container orchestration for ROS2 + Gazebo launch via Podman pod |
 | ✅ | APPENG-5772 | Sub-task | APPENG-5765 | Integrate noVNC or web-based video stream for simulation visualization |
 | ✅ | APPENG-5773 | Sub-task | APPENG-5765 | Build topic monitor panel showing active ROS2 topics and message rates |
-| 🟡 | APPENG-5920 | Sub-task | APPENG-5765 | Add navigation UI for driving robots in simulation |
-| ✅ | APPENG-5922 | Sub-task | APPENG-5765 | Topic Monitor drill-down |
-| ✅ | APPENG-5923 | Sub-task | APPENG-5765 | Topic Monitor message peek |
+| 🟠 | APPENG-5920 | Sub-task | APPENG-5765 | Add navigation UI for driving robots in simulation |
+| 🟠 | APPENG-5922 | Sub-task | APPENG-5765 | Topic Monitor drill-down |
+| 🟠 | APPENG-5923 | Sub-task | APPENG-5765 | Topic Monitor message peek |
 | ⚪ | APPENG-5774 | Sub-task | APPENG-5766 | Podman Compose or pod-based multi-container orchestration for 2+ robots |
 | ⚪ | APPENG-5775 | Sub-task | APPENG-5766 | Zenoh router and DDS bridge sidecar auto-configuration |
 | ⚪ | APPENG-5776 | Sub-task | APPENG-5766 | Fleet status panel in the extension UI |
@@ -575,6 +575,8 @@ Items that improve polish or operability but are **not** required for the ROSCon
 ### Story 6: Podman-only simulation workflow (ROSCon demo) — 🟡 In Progress (5/6 done)
 
 > **Detail doc:** [stories/story6-podman-sim.md](stories/story6-podman-sim.md)
+>
+> **Demo path complete** (S6-1–S6-5). **S6-6 Customize Hardware deferred** (stretch — not this pass).
 
 **Goal:** Enable interactive robot simulation using Podman only — no Kubernetes. Replaces Story 5's Kind approach (parked due to arm64 OOM issues). Two paths: (A) Image Builder Quick Start (configure + save + scroll to Build; user builds Phase 1 then Phase 2), (B) interactive layered flow (launch empty Gazebo world → add TurtleBot3 via `podman exec`).
 
@@ -689,3 +691,4 @@ Comprehensive security audit and hardening of the extension's backend API, entry
 - **Security hardening (2026-08-05):** Full security audit and remediation. Shell injection (H1), exec/launch lockdown (H2/M1), script hardening (S1), image trust (M2), browser port allowlist (L2), RPC arity validation, stale poll fix, dead code removal, new UI test coverage. Tracked in `.internal/security-fixes.md` and `.internal/follow-up-fixes.md`. All items done except L1 (deferred, local-only risk) and I1 (deferred, already validated).
 - **APPENG-5923 done (2026-08-06):** Topic Monitor message peek — **Peek** on expanded rows runs `ros2 topic echo --once` (Preferences timeout 1–30s, default 5, best-effort QoS); cleaned body, capture/msg timestamps, Tree/Raw + Copy, schema via `ros2 interface show`, soft topology + type badges.
 - **Wishlist (2026-08-10):** Humble + noVNC Mac parity (optional Quick Start) — time-permitting. noVNC stack is portable; hard part is Humble `ros-gz`/Gazebo arm64 + porting Story 6 entrypoints. Cross-linked from Story 1 Future. Do not add peer Humble Quick Start until Simulation browser UX works.
+- **In Review + Story 6 polish (2026-08-10):** APPENG-5920 / 5922 / 5923 marked **In Review** in plan and story docs. Ready Now points at 5774 / OpenShift spike / deferred S6-6. Story 6 demo path framed complete; ROSCon e2e checklist added in story6 doc. S6-6 still stretch/out of scope.

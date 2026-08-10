@@ -141,16 +141,19 @@ import { router } from 'tinro';
         <p>&#8226; Pull progress may jump as layers are discovered — that is normal.</p>
         <p>&#8226; The extension remembers your last visited page.</p>
         <p>&#8226; For Gazebo on Mac, prefer Jazzy Noble over Humble (avoids QEMU).</p>
+        <p>&#8226; noVNC may show Disconnected after an idle background tab — auto-reconnect or refresh; the sim is still running.</p>
+        <p>&#8226; After <strong>Stop</strong>, close the Gazebo browser tab yourself (the extension cannot close it).</p>
+        <p>&#8226; Demo flow: Image Builder → Launch → Open in Browser → Add TurtleBot3 → Go → Topics → Stop.</p>
       </div>
     </div>
 
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Coming Soon</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-1">
-        <p><strong>Customize hardware</strong> — Swap sensors (e.g. camera) on a running robot (Story 6 stretch).</p>
-        <p><strong>Additional robots</strong> — Beyond TurtleBot3 (planned; see project plan).</p>
+        <p><strong>Customize hardware</strong> — Swap sensors (e.g. camera) on a running robot.</p>
+        <p><strong>Additional robots</strong> — Beyond TurtleBot3.</p>
         <p><strong>Fleet</strong> — Multi-robot local fleets with Zenoh.</p>
-        <p><strong>OpenShift Bridge</strong> — Export to Kubernetes / OpenShift (Kind path parked for now).</p>
+        <p><strong>OpenShift Bridge</strong> — Export to Kubernetes / OpenShift.</p>
       </div>
     </div>
 

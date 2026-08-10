@@ -96,7 +96,7 @@ The backend is the entry point loaded by Podman Desktop. It manages the extensio
 | `src/extension.ts` | Entry point — creates webview panel, wires RPC, registers `physical-ai.open` command
 | `src/api-impl.ts` | `PhysicalAiApiImpl` — implements all API methods; private helpers use JS `#private` syntax (not RPC-callable)
 | `src/progressLogs.ts` | `appendProgressLog()` — capped at 500 lines with truncation marker
-| `package.json` | Extension manifest (contributes: commands, configuration with 8 properties)
+| `package.json` | Extension manifest (contributes: commands, configuration with 10 properties)
 | `vite.config.js` | Builds to CJS, externalizes `@podman-desktop/api`
 | `assets/ros2-jazzy-base/` | Bundled Containerfile + entrypoint for Jazzy base builds
 | `assets/ros2-jazzy-sim/` | Jazzy simulation image: Containerfile, entrypoint-gazebo.sh, entrypoint-spawn-robot.sh, world SDF, noVNC landing page
@@ -113,7 +113,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 * Dashboard landing page with feature cards
 * Image catalog browser with All/Curated views and pull progress _(APPENG-5770, done)_
 * Image Builder for base and simulation images with Quick Start preset _(done)_
-* Simulation page — launch, status, open in browser, stop/delete, add TurtleBot3, Nav2 navigation goals _(done via Story 6 + APPENG-5920)_
+* Simulation page — launch, status, open in browser, stop/delete, add TurtleBot3, per-robot X/Y + **Go** (`cmd_vel` locally; APPENG-5920 In Review). OpenShift Nav2 deferred.
 * In-extension Help page _(done)_
 * ROS2 topic monitor — active topics, message types, pub/sub counts _(APPENG-5773, done)_
 * Fleet status dashboard _(APPENG-5776, stretch)_
@@ -150,7 +150,7 @@ Frontend (RpcBrowser)                    Backend (RpcExtension)
         │──── IMessageRequest ──────────────────►│
         │     { id, channel, args }              │
         │                                        │── calls registered method
-        │◄─── IMessageResponse ─────────────────│
+        │◄─── IMessageResponse ──────────────────│
         │     { id, channel, body, status }      │
 ----
 
@@ -207,8 +207,7 @@ export abstract class PhysicalAiApi {
   // Topic Monitor (APPENG-5773)
   abstract listRosTopics(containerId: string): Promise<TopicInfo[]>;
 
-  // Nav2 Navigation (APPENG-5920)
-  abstract startNav2(containerId: string, robotName: string): Promise<ExecResult>;
+  // Navigation Go (APPENG-5920) — local cmd_vel; OpenShift Nav2 deferred
   abstract sendNavigationGoal(containerId: string, robotName: string, x: number, y: number): Promise<NavigationGoalResult>;
 }
 ----
@@ -226,7 +225,7 @@ export abstract class PhysicalAiApi {
 | `types/SimulationContainer.ts` | `SimLaunchOptions`, `SimContainerInfo`, `ExecResult`, container label constants
 | `types/CatalogCurated.ts` | `DEFAULT_CURATED_ALLOWLIST`, `parseCuratedAllowlist()`, `repoMatchesAllowlist()`, `filterCuratedRepos()` — wildcard pattern matching for curated allowlist
 | `types/TopicInfo.ts` | `TopicInfo` — name, type, publishers, subscribers for ROS2 topic monitoring
-| `types/NavigationGoalResult.ts` | `NavigationGoalResult` — status + message for Nav2 goal feedback
+| `types/NavigationGoalResult.ts` | `NavigationGoalResult` — status + message for Go / nav goal feedback (`cmd_vel` today)
 |===
 
 == Data Flow
@@ -358,21 +357,21 @@ Uses a single Podman container (not a pod) with all components baked in. This av
 ┌─── Podman Container: pai-sim-<timestamp> ──────────────────────────┐
 │    Image: ros2-jazzy-sim:noble                                     │
 │    Labels: io.physical-ai.role=simulation                          │
-│                                                                     │
+│                                                                    │
 │  ┌──────────────────────────────────────────────────────────────┐  │
-│  │  Ubuntu 24.04 + ROS2 Jazzy + Gazebo Harmonic + Nav2         │  │
+│  │  Ubuntu 24.04 + ROS2 Jazzy + Gazebo Harmonic + Nav2          │  │
 │  │                                                              │  │
-│  │  Xvfb (:99) → openbox → x11vnc → websockify (port 6080)    │  │
+│  │  Xvfb (:99) → openbox → x11vnc → websockify (port 6080)      │  │
 │  │                              ↑                               │  │
 │  │  gz sim (server) ──► gz sim (GUI, renders to :99)            │  │
 │  │                                                              │  │
 │  │  Software rendering: LIBGL_ALWAYS_SOFTWARE=1, llvmpipe       │  │
 │  │  (Ogre2 Sensors plugin removed — segfaults on arm64)         │  │
 │  └──────────────────────────────────────────────────────────────┘  │
-│                                                                     │
+│                                                                    │
 │  Exposed ports: 6080 (noVNC), 8080 (landing page)                  │
 │  Robot spawn: podman exec -d → /entrypoint-spawn-robot.sh          │
-└─────────────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────────────┘
 ----
 
 ==== Why a single container (not a pod)?
@@ -400,7 +399,7 @@ NOTE: The current single-robot path uses `podman exec` to spawn additional robot
 
 == Configuration Properties
 
-The extension contributes 8 settings under **Settings → Preferences → Physical AI**:
+The extension contributes 10 settings under **Settings → Preferences → Physical AI**:
 
 [cols="2,1,1,2"]
 |===
@@ -414,6 +413,8 @@ The extension contributes 8 settings under **Settings → Preferences → Physic
 | `physical-ai.simulationBaseImage` | enum | `sloretz` | Base preset: `sloretz` (multi-arch Humble), `osrf` (amd64 Humble), `jazzy-noble` (Noble / multi-arch Quick Start), or `jazzy` (amd64 Jazzy `:latest`)
 | `physical-ai.catalogViewMode` | enum | `all` | Image Catalog view: `all` (show all public repos) or `curated` (filter by allowlist)
 | `physical-ai.catalogCuratedAllowlist` | string | `ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*` | Comma-separated wildcard patterns for curated catalog view
+| `physical-ai.simulationImageAllowlist` | string | _(empty)_ | Optional comma-separated image refs or patterns for Simulation launch. Empty = default `ros2-*-sim*` / `ros2-*-turtlebot3`. Pin exact tags or digests for demos.
+| `physical-ai.topicPeekTimeoutSeconds` | number | `5` | Timeout in seconds for Topic Monitor Peek (`ros2 topic echo --once`). Whole number from 1 to 30.
 |===
 
 == Key Technical Decisions

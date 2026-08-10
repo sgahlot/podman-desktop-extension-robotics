@@ -18,7 +18,7 @@ Base layer for Jazzy simulation images (including `ros2-jazzy-sim`). Provides RO
 ## Build manually
 
 ```bash
-# Multi-arch / Story 6 Quick Start tag
+# Multi-arch / Quick Start tag
 podman build -t quay.io/ecosystem-appeng/ros2-jazzy-base:noble \
   packages/backend/assets/ros2-jazzy-base/
 

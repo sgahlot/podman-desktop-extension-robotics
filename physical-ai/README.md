@@ -37,7 +37,10 @@ npm run build
 1. Load the extension from `packages/backend` in Podman Desktop (Settings → Extensions → Local extension)
 2. Open **Physical AI** (or **F1** → **Physical AI: Open Dashboard**)
 3. **Image Builder** → Quick Start **TurtleBot3 Sim (Jazzy)** → Phase 1 Build → Phase 2 Build
-4. **Simulation** → Launch → Open in Browser → Add TurtleBot3
+4. **Simulation** → Launch → Open in Browser → Add TurtleBot3 → optional **Go** (X/Y) and Topic Monitor **Peek**
+5. **Stop** when done — close the Gazebo (noVNC) browser tab manually if it is still open
+
+Idle noVNC tabs may show Disconnected; reconnect or refresh — the simulation is still running. Sensors (lidar/camera) are off under software rendering on Mac, so **Go** has no obstacle avoidance.
 
 ## Project Structure
 
@@ -57,7 +60,16 @@ The root `Containerfile` builds an OCI image of the extension. The backend `READ
 
 ## Settings
 
-9 configuration properties under **Settings → Preferences → Physical AI**: default namespace, catalog view mode, curated allowlist, optional simulation image allowlist (tag/digest pins for demos), and Image Builder defaults (robot, distro, middleware, engine, base preset).
+10 configuration properties under **Settings → Preferences → Physical AI**:
+
+| Preference | Purpose |
+|------------|---------|
+| Default namespace | Quay.io namespace for catalog and image tags |
+| Catalog view mode | `all` or `curated` |
+| Catalog curated allowlist | Wildcard patterns for Curated view |
+| Simulation image allowlist | Optional tag/digest pins for Simulation launch |
+| Topic peek timeout | Seconds for Topic Monitor Peek (1–30, default 5) |
+| Image Builder defaults | Robot, distro, middleware, engine, base preset |
 
 ### Simulation image trust
 

@@ -6,6 +6,8 @@
 
 **Target:** ROSCon Toronto demo, September 2026.
 
+**Status:** **Demo path complete** (S6-1–S6-5). **S6-6 Customize Hardware deferred** (stretch — not this pass). Story remains “In Progress” only because S6-6 is unfinished stretch.
+
 ---
 
 ## Relationship to Other Stories
@@ -28,7 +30,8 @@
 
 1. Launch base Gazebo image (empty world + noVNC) from Simulation page
 2. Click "Add TurtleBot3" → robot appears in the running sim via `podman exec`
-3. *(Stretch)* Click "Customize Hardware" → swap camera sensor
+3. Set target X/Y and click **Go** (`cmd_vel` drive — no obstacle avoidance; Sensors off)
+4. *(Stretch / deferred)* "Customize Hardware" → swap camera sensor (S6-6 — not started)
 
 ---
 
@@ -41,7 +44,7 @@
 | ✅ | S6-3 | Backend container lifecycle API (create/start/stop/exec) | S6-4, S6-5 | 2d |
 | ✅ | S6-4 | Simulation page: launch, status, open, stop | S6-5 | 2d |
 | ✅ | S6-5 | Add TurtleBot3 (podman exec spawn) | S6-6 | 1d |
-| ⚪ | S6-6 | Customize Hardware card *(stretch)* | — | 1-2d |
+| ⚪ | S6-6 | Customize Hardware card *(stretch — deferred)* | — | 1-2d |
 
 **Dependency chain:** S6-1 → S6-3 → S6-4 → S6-5 → S6-6. S6-2 is independent.
 
@@ -215,9 +218,9 @@ Implemented in `SimulationPage.svelte` Section 3 — all in the same file as S6-
 
 ---
 
-## S6-6: Customize Hardware *(stretch)*
+## S6-6: Customize Hardware *(stretch — deferred)*
 
-Swap camera sensor on a robot. Deferred until S6-5 is working. Likely: parametric xacro with camera type arg passed via `podman exec`.
+Swap camera sensor on a robot. **Out of scope for the current polish pass.** Likely: parametric xacro with camera type arg passed via `podman exec`. Blocked in practice by Ogre2 Sensors remaining off on arm64 (camera data needs Sensors).
 
 ---
 
@@ -235,6 +238,8 @@ Swap camera sensor on a robot. Deferred until S6-5 is working. Likely: parametri
 
 ## Verification (end-to-end)
 
+### CLI / image (done)
+
 - [x] Containerfile builds natively on Mac arm64
 - [x] `podman run` starts Gazebo, noVNC reachable at localhost:6080
 - [x] `podman exec` spawns TurtleBot3 visible in Gazebo
@@ -242,5 +247,19 @@ Swap camera sensor on a robot. Deferred until S6-5 is working. Likely: parametri
 - [x] Simulation page can launch/stop/delete containers
 - [x] "Add TurtleBot3" button spawns robot into running sim
 - [x] Image Builder quick-start pre-fills, saves, and scrolls to Phase 1 (user builds explicitly)
-- [ ] End-to-end via extension (build through Image Builder → launch from Simulation page → add robot)
-- [ ] S6-6: Customize Hardware card *(stretch — not started)*
+
+### ROSCon demo checklist (via extension)
+
+Run this on a Mac with Podman Desktop + the Physical AI extension loaded. Expect Sensors off (no lidar/camera costmap) and **Go** without obstacle avoidance.
+
+1. [ ] **Image Builder** → Quick Start **TurtleBot3 Sim (Jazzy)** → Phase 1 Build → Phase 2 Build (or pull golden `ros2-jazzy-sim:noble`)
+2. [ ] **Simulation** → Launch the sim image → container shows **running**
+3. [ ] **Open in Browser** → Gazebo GUI via noVNC (`/vnc.html` with autoconnect + reconnect). Idle background tabs may disconnect; reconnect or refresh — sim still running
+4. [ ] **Add TurtleBot3** → robot appears in Gazebo
+5. [ ] Set target **X/Y** → **Go** → robot turns/drives (`cmd_vel`); status shows Driving → Drove to / Failed
+6. [ ] **View Topics** / Topic Monitor → expand a topic → **Peek** one message
+7. [ ] **Stop** → toast + on-page hint to close the Gazebo browser tab manually → **Delete** exited container when done
+
+### Deferred
+
+- [ ] S6-6: Customize Hardware card *(stretch — not this pass)*

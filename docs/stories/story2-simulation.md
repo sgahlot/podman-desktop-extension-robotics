@@ -13,9 +13,9 @@
 | ✅ | APPENG-5771 | Container orchestration for ROS2 + Gazebo launch via Podman pod |
 | ✅ | APPENG-5772 | Integrate noVNC or web-based video stream for simulation visualization |
 | ✅ | APPENG-5773 | Build topic monitor panel showing active ROS2 topics and message rates |
-| 🟡 | APPENG-5920 | Add navigation UI for driving robots in simulation |
-| ✅ | APPENG-5922 | Topic Monitor drill-down |
-| ✅ | APPENG-5923 | Topic Monitor message peek |
+| 🟠 | APPENG-5920 | Add navigation UI for driving robots in simulation — **In Review** |
+| 🟠 | APPENG-5922 | Topic Monitor drill-down — **In Review** |
+| 🟠 | APPENG-5923 | Topic Monitor message peek — **In Review** |
 
 > **See also:** [Story 6 (Podman-only simulation)](story6-podman-sim.md) implements the core of this story (APPENG-5771 container orchestration + APPENG-5772 noVNC) using a Podman-only approach for the ROSCon demo.
 
@@ -67,27 +67,27 @@
 
 ---
 
-## APPENG-5920: Navigation UI — 🟡 In Progress
+## APPENG-5920: Navigation UI — 🟠 In Review
 
 **Description:** Add a "Go" button with target X/Y coordinates on the Simulation page that drives a robot to the specified location.
 
 ### Implementation Notes
 
-**Current approach (arm64 / local laptop):** Direct velocity control. Backend queries robot pose via `gz model -m <name> -p`, then publishes `cmd_vel` Twist messages to turn and drive in a straight line. No obstacle avoidance — Ogre2 Sensors crash on arm64 llvmpipe blocks Nav2 (no lidar/costmap data).
+**Done (local / Mac):** Direct velocity control. Backend queries robot pose via `gz model -m <name> -p`, then publishes `cmd_vel` Twist messages to turn and drive in a straight line. No obstacle avoidance — Ogre2 Sensors crash on arm64 llvmpipe blocks Nav2 (no lidar/costmap data). Per-robot X/Y + **Go**, status feedback, Help, tests.
 
-**Target (OpenShift, GPU optional):** Nav2 autonomous navigation with obstacle avoidance. Re-enable Ogre2 Sensors for the OpenShift deploy profile, launch Nav2 per robot (`entrypoint-nav2.sh`), and send goals via `navigate_to_pose`. **Verify on OpenShift** — no mandatory local amd64 proof step first. **Prefer no GPU** (software rendering) unless Sensors/Nav2 fail without it; GPU must not be a hard requirement. Backend plumbing for the switch is partially in place (`entrypoint-nav2.sh`; `sendNavigationGoal` still uses `cmd_vel` today).
+**Deferred (OpenShift):** Nav2 autonomous navigation with obstacle avoidance. Re-enable Ogre2 Sensors for the OpenShift deploy profile, launch Nav2 per robot (`entrypoint-nav2.sh`), and send goals via `navigate_to_pose`. Prefer CPU/software GL first — GPU optional, not required. Verify in-cluster. Partial plumbing today: Nav2 packages and `entrypoint-nav2.sh` in `ros2-jazzy-sim`; `sendNavigationGoal` still uses `cmd_vel`. Wiring `navigate_to_pose` + Sensors + in-cluster verify is Story 4 / follow-up — not required to close local 5920 scope.
 
 **New files:**
-- `packages/backend/assets/ros2-jazzy-sim/entrypoint-nav2.sh` — launches Nav2 navigation stack (unused on arm64; ready for amd64/OpenShift)
+- `packages/backend/assets/ros2-jazzy-sim/entrypoint-nav2.sh` — launches Nav2 navigation stack (unused from UI on arm64; ready for OpenShift wiring)
 - `packages/shared/src/types/NavigationGoalResult.ts` — `NavigationGoalResult` interface (status, message)
 
 **Modified files:**
 - `packages/backend/assets/ros2-jazzy-sim/Containerfile` — added COPY + chmod for `entrypoint-nav2.sh`
-- `packages/shared/src/PhysicalAiApi.ts` — added `startNav2()` and `sendNavigationGoal()`
-- `packages/backend/src/api-impl.ts` — `startNav2` is a no-op stub; `sendNavigationGoal` queries pose, publishes turn/drive/stop via attached `podman exec`
+- `packages/shared/src/PhysicalAiApi.ts` — `sendNavigationGoal()`
+- `packages/backend/src/api-impl.ts` — `sendNavigationGoal` queries pose, publishes turn/drive/stop via attached `podman exec`
 - `packages/frontend/src/SimulationPage.svelte` — per-robot navigation controls (X/Y inputs, Go button, status with snapshotted coordinates)
 - `packages/frontend/src/Help.svelte` — added Navigate section under Simulation
-- `packages/backend/src/api-impl.spec.ts` — 6 tests for `startNav2` and `sendNavigationGoal`
+- `packages/backend/src/api-impl.spec.ts` — tests for `sendNavigationGoal`
 
 **Architecture:**
 1. User clicks "Go" → frontend calls `sendNavigationGoal(containerId, robotName, x, y)`
@@ -97,15 +97,15 @@
 
 ---
 
-## APPENG-5922: Topic Monitor Drill-down — ✅ Done
+## APPENG-5922: Topic Monitor Drill-down — 🟠 In Review
 
-**Description:** Expandable topic rows showing publisher/subscriber node names via `ros2 topic info -v`.
+**Description:** Expandable topic rows showing publisher/subscriber node names via `ros2 topic info -v`. On-demand fetch when the row expands (not on the 5s topic-list poll).
 
 See plan notes (2026-08-04): `getRosTopicDetail`, expandable UI, on-demand fetch.
 
 ---
 
-## APPENG-5923: Topic Monitor Message Peek — ✅ Done
+## APPENG-5923: Topic Monitor Message Peek — 🟠 In Review
 
 **Description:** Add a **Peek** button on expanded Topic Monitor rows that shows one live message snapshot via `ros2 topic echo --once`, polished toward a topic-browser inspector.
 
