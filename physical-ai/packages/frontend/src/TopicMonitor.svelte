@@ -215,7 +215,7 @@ async function copyPeek(event: MouseEvent) {
   event.stopPropagation();
   if (!peekResult?.message) return;
   try {
-    await navigator.clipboard.writeText(peekResult.message);
+    await physicalAiClient.copyToClipboard(peekResult.message);
     copyFeedback = 'Copied';
     setTimeout(() => {
       copyFeedback = '';

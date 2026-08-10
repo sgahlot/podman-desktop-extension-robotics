@@ -33,6 +33,10 @@ vi.mock('@podman-desktop/api', () => ({
   },
   env: {
     openExternal: vi.fn(),
+    clipboard: {
+      writeText: vi.fn(),
+      readText: vi.fn(),
+    },
   },
   Uri: {
     joinPath: vi.fn(),
@@ -1339,6 +1343,19 @@ describe('PhysicalAiApiImpl', () => {
       await expect(
         api.getRosMessageSchema(CONTAINER_ID, 'std_msgs/msg/String; id'),
       ).rejects.toThrow(/Invalid ROS message/);
+    });
+  });
+
+  describe('copyToClipboard', () => {
+    it('writes text via extension clipboard API', async () => {
+      vi.mocked(extensionApi.env.clipboard.writeText).mockResolvedValue(undefined);
+      await api.copyToClipboard('linear:\n  x: 0.2\n');
+      expect(extensionApi.env.clipboard.writeText).toHaveBeenCalledWith('linear:\n  x: 0.2\n');
+    });
+
+    it('rejects oversized payloads', async () => {
+      await expect(api.copyToClipboard('x'.repeat(70_000))).rejects.toThrow(/exceeds/);
+      expect(extensionApi.env.clipboard.writeText).not.toHaveBeenCalled();
     });
   });
 

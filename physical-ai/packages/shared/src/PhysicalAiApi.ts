@@ -48,5 +48,7 @@ export abstract class PhysicalAiApi {
   abstract peekRosTopic(containerId: string, topicName: string): Promise<TopicPeekResult>;
   /** Message structural definition via `ros2 interface show`. */
   abstract getRosMessageSchema(containerId: string, messageType: string): Promise<TopicSchemaResult>;
+  /** Copy text via the host clipboard (webview Clipboard API is unavailable). */
+  abstract copyToClipboard(text: string): Promise<void>;
   abstract sendNavigationGoal(containerId: string, robotName: string, x: number, y: number): Promise<NavigationGoalResult>;
 }

@@ -26,7 +26,7 @@ import {
 } from '/@shared/src/security/simInput';
 import { assertLaunchImageTag } from '/@shared/src/security/simImageTrust';
 import { assertQuayName } from '/@shared/src/security/quayNames';
-import { assertRosMessageType, cleanEchoOutput, assertPeekTimeoutSeconds, PEEK_TIMEOUT_DEFAULT_SEC } from '/@shared/src/ros/topicPeek';
+import { assertRosMessageType, cleanEchoOutput, assertPeekTimeoutSeconds, PEEK_TIMEOUT_DEFAULT_SEC, PEEK_MAX_BYTES } from '/@shared/src/ros/topicPeek';
 import { appendProgressLog } from './progressLogs';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
@@ -846,6 +846,17 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       schema: '',
       error: stderr || `Failed to load schema for ${safeType} (exit ${result.exitCode})`,
     };
+  }
+
+  async copyToClipboard(text: string): Promise<void> {
+    if (typeof text !== 'string') {
+      throw new Error('Clipboard text must be a string.');
+    }
+    // Peek payloads are capped; keep the same bound for clipboard RPC.
+    if (text.length > PEEK_MAX_BYTES + 64) {
+      throw new Error('Clipboard text exceeds the allowed size.');
+    }
+    await extensionApi.env.clipboard.writeText(text);
   }
 
   async sendNavigationGoal(

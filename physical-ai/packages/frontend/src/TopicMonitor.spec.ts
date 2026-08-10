@@ -8,6 +8,7 @@ const mockGetRosTopicDetail = vi.fn();
 const mockPeekRosTopic = vi.fn();
 const mockGetRosMessageSchema = vi.fn();
 const mockGetTopicPeekTimeoutSeconds = vi.fn();
+const mockCopyToClipboard = vi.fn();
 const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
@@ -18,6 +19,7 @@ vi.mock('./api/client', () => ({
     peekRosTopic: (...args: any[]) => mockPeekRosTopic(...args),
     getRosMessageSchema: (...args: any[]) => mockGetRosMessageSchema(...args),
     getTopicPeekTimeoutSeconds: (...args: any[]) => mockGetTopicPeekTimeoutSeconds(...args),
+    copyToClipboard: (...args: any[]) => mockCopyToClipboard(...args),
   },
 }));
 
@@ -39,6 +41,7 @@ describe('TopicMonitor', () => {
     });
     mockGetRosMessageSchema.mockResolvedValue({ type: '', schema: '' });
     mockGetTopicPeekTimeoutSeconds.mockResolvedValue(5);
+    mockCopyToClipboard.mockResolvedValue(undefined);
   });
 
   it('renders heading', () => {
@@ -228,6 +231,10 @@ describe('TopicMonitor', () => {
     expect(screen.getByRole('button', { name: 'Copy' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Tree' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Raw' })).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    expect(mockCopyToClipboard).toHaveBeenCalledWith('linear:\n  x: 0.2\n');
+    expect(await screen.findByText('Copied')).toBeTruthy();
   });
 
   it('shows timeout message when peek finds no data', async () => {
