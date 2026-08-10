@@ -47,8 +47,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 
-# noVNC auto-connect landing page
-RUN printf '<!DOCTYPE html>\n<html><head><meta http-equiv="refresh" content="0;url=vnc_lite.html?autoconnect=true&resize=scale"></head></html>\n' \
+# noVNC landing: full UI + autoconnect + auto-reconnect (background tabs often drop WebSockets)
+RUN printf '<!DOCTYPE html>\n<html><head><meta http-equiv="refresh" content="0;url=vnc.html?autoconnect=true&reconnect=true&reconnect_delay=2000&resize=scale"></head></html>\n' \
     > /usr/share/novnc/index.html
 
 WORKDIR /opt/ros2-demo

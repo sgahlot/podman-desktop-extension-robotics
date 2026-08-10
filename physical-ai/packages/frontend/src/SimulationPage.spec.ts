@@ -7,6 +7,7 @@ const mockListLocalImages = vi.fn();
 const mockListSimulationContainers = vi.fn();
 const mockLaunchSimulation = vi.fn();
 const mockDeleteSimulation = vi.fn();
+const mockStopSimulation = vi.fn();
 const mockOpenSimulationInBrowser = vi.fn();
 const mockExecInSimulation = vi.fn();
 const mockSendNavigationGoal = vi.fn();
@@ -19,6 +20,7 @@ vi.mock('./api/client', () => ({
     listSimulationContainers: (...args: any[]) => mockListSimulationContainers(...args),
     launchSimulation: (...args: any[]) => mockLaunchSimulation(...args),
     deleteSimulation: (...args: any[]) => mockDeleteSimulation(...args),
+    stopSimulation: (...args: any[]) => mockStopSimulation(...args),
     openSimulationInBrowser: (...args: any[]) => mockOpenSimulationInBrowser(...args),
     execInSimulation: (...args: any[]) => mockExecInSimulation(...args),
     sendNavigationGoal: (...args: any[]) => mockSendNavigationGoal(...args),
@@ -39,6 +41,7 @@ describe('SimulationPage', () => {
     mockListSimulationContainers.mockResolvedValue([]);
     mockLaunchSimulation.mockResolvedValue('cid');
     mockDeleteSimulation.mockResolvedValue(undefined);
+    mockStopSimulation.mockResolvedValue(undefined);
     mockOpenSimulationInBrowser.mockResolvedValue(undefined);
   });
 
@@ -140,7 +143,31 @@ describe('SimulationPage', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Open in Browser' }));
 
     await waitFor(() => {
-      expect(mockOpenSimulationInBrowser).toHaveBeenCalledWith(16080);
+      expect(mockOpenSimulationInBrowser).toHaveBeenCalledWith(16080, 6080);
     });
+  });
+
+  it('stops a running simulation and shows a noVNC tab hint', async () => {
+    mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
+    mockListSimulationContainers.mockResolvedValue([
+      {
+        id: 'abc123def456',
+        name: 'pai-sim-run',
+        imageTag: SIM_IMAGE,
+        state: 'running',
+        ports: ['6080:6080/tcp'],
+        labels: {},
+      },
+    ]);
+
+    render(SimulationPage);
+    await screen.findByText('pai-sim-run');
+    await fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+
+    await waitFor(() => {
+      expect(mockStopSimulation).toHaveBeenCalledWith('abc123def456');
+      expect(mockDeleteSimulation).not.toHaveBeenCalled();
+    });
+    expect(await screen.findByText(/Close the Gazebo \(noVNC\) browser tab/)).toBeTruthy();
   });
 });

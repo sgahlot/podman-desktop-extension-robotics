@@ -231,6 +231,10 @@ export function assertPortMappings(
 /** Ports openSimulationInBrowser may open (noVNC + landing page). */
 export const ALLOWED_BROWSER_PORTS = new Set([6080, 8080]);
 
+/** noVNC UI with autoconnect + reconnect (background tabs drop WebSockets). */
+export const NOVNC_BROWSER_PATH =
+  '/vnc.html?autoconnect=true&reconnect=true&reconnect_delay=2000&resize=scale';
+
 export function assertBrowserPort(port: number): number {
   const n = Number(port);
   if (!Number.isInteger(n) || !ALLOWED_BROWSER_PORTS.has(n)) {
@@ -239,4 +243,21 @@ export function assertBrowserPort(port: number): number {
     );
   }
   return n;
+}
+
+/**
+ * Build the URL for Open in Browser.
+ * @param hostPort - Host-side published port (may differ from container when remapped)
+ * @param containerPort - Container private port (6080 noVNC / 8080 landing). Defaults to hostPort.
+ */
+export function simulationBrowserUrl(hostPort: number, containerPort?: number): string {
+  const host = Number(hostPort);
+  if (!Number.isInteger(host) || host < 1 || host > 65535) {
+    throw new Error(`Invalid host port: ${hostPort}`);
+  }
+  const servicePort = assertBrowserPort(containerPort ?? host);
+  if (servicePort === 6080) {
+    return `http://localhost:${host}${NOVNC_BROWSER_PATH}`;
+  }
+  return `http://localhost:${host}`;
 }

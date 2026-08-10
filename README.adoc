@@ -20,11 +20,9 @@ A Podman Desktop extension that gives robotics developers a GUI-driven path from
 * Curated catalog of ROS2 base images (Ubuntu interim) pullable from Quay.io
 * Image Builder with two-phase build (base + simulation) and Quick Start presets
 * One-click launch of ROS2 + Gazebo simulation in a single Podman container
-* Browser-based simulation visualization via noVNC
+* Browser-based simulation visualization via noVNC (view the Gazebo GUI in a browser without a separate VNC client)
 * Add TurtleBot3 robots into a running simulation interactively
-* ROS2 topic inspection panel _(planned — APPENG-5773)_
-* Multi-robot local fleet scaling with Zenoh middleware _(stretch)_
-* Export to Kubernetes manifests and deploy to OpenShift _(stretch)_
+* ROS2 topic inspection panel (Topic Monitor — list, drill-down, message peek)
 
 === Strategic Drivers
 
@@ -114,7 +112,6 @@ podman-work/                            <1>
 │               ├── PhysicalAiApi.ts    # API interface (27 abstract methods)
 │               └── messages/
 │                   └── MessageProxy.ts # RPC bridge
-└── repo-b-reference/                   <7>
 ----
 <1> Main repo (git root)
 <2> Project docs: plan, design, per-story tracking (lives here, not inside extension dir)
@@ -122,7 +119,6 @@ podman-work/                            <1>
 <4> Backend: extension lifecycle, Podman Desktop API integration, bundled container assets
 <5> Frontend: Svelte 5 + TailwindCSS UI
 <6> Shared: RPC bridge, API interface, simulation profiles and types
-<7> Reference material from spike repos (not shipped)
 
 == Tech Stack
 
@@ -156,10 +152,8 @@ podman-work/                            <1>
 
 | Epic | APPENG-5763 | Podman Desktop Extension for Physical AI Robotics Development
 | Story | APPENG-5764 | Extension scaffolding and base image catalog _(done)_
-| Story | APPENG-5765 | Single robot simulation workflow _(in progress — 2/3 sub-tasks done via Story 6)_
-| Story | APPENG-5766 | Multi-robot local scaling _(stretch)_
-| Story | APPENG-5767 | OpenShift deployment bridge _(stretch)_
-| Story | (Story 6) | Podman-only simulation for ROSCon demo _(in progress — 5/6 sub-tasks done)_
+| Story | APPENG-5765 | Single robot simulation workflow _(in progress)_
+| Story | (Story 6) | Podman-only simulation for ROSCon demo _(in progress)_
 |===
 
 == License

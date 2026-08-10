@@ -3,6 +3,7 @@ import { physicalAiClient } from './api/client';
 import { onMount, onDestroy } from 'svelte';
 import { router } from 'tinro';
 import type { SimContainerInfo } from '/@shared/src/types/SimulationContainer';
+import { SIM_STOPPED_BROWSER_HINT } from '/@shared/src/types/SimulationContainer';
 import { isSimLaunchImageRef } from '/@shared/src/security/simImageTrust';
 
 let localSimImages: string[] = [];
@@ -11,6 +12,7 @@ let containers: SimContainerInfo[] = [];
 let launching = false;
 let launchError = '';
 let actionError = '';
+let actionInfo = '';
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let simImageAllowlist = '';
 
@@ -106,9 +108,11 @@ async function launchSim() {
 
 async function stopSim(id: string) {
   actionError = '';
+  actionInfo = '';
   try {
-    await physicalAiClient.deleteSimulation(id);
+    await physicalAiClient.stopSimulation(id);
     spawnedRobots = [];
+    actionInfo = SIM_STOPPED_BROWSER_HINT;
     await pollContainers();
   } catch (e) {
     actionError = e instanceof Error ? e.message : String(e);
@@ -117,6 +121,7 @@ async function stopSim(id: string) {
 
 async function deleteSim(id: string) {
   actionError = '';
+  actionInfo = '';
   try {
     await physicalAiClient.deleteSimulation(id);
     spawnedRobots = [];
@@ -130,7 +135,7 @@ async function openInBrowser() {
   actionError = '';
   try {
     const port = hostPortForPrivate(runningContainer, 6080);
-    await physicalAiClient.openSimulationInBrowser(port);
+    await physicalAiClient.openSimulationInBrowser(port, 6080);
   } catch (e) {
     actionError = e instanceof Error ? e.message : String(e);
   }
@@ -254,6 +259,9 @@ async function navigateRobot(index: number) {
       <h2 class="text-sm font-medium text-[var(--pd-content-header)]">Simulation Containers</h2>
       {#if actionError}
         <span class="text-xs pai-text-error">{actionError}</span>
+      {/if}
+      {#if actionInfo}
+        <span class="text-xs text-[var(--pd-content-text)]">{actionInfo}</span>
       {/if}
 
       {#each containers as container (container.id)}

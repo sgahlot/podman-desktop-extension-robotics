@@ -9,6 +9,8 @@ import {
   assertLaunchEnv,
   assertRobotsEnv,
   assertBrowserPort,
+  simulationBrowserUrl,
+  NOVNC_BROWSER_PATH,
   SPAWN_ENTRYPOINT,
   GAZEBO_ENTRYPOINT,
 } from './simInput';
@@ -82,5 +84,12 @@ describe('simInput security validators', () => {
     expect(assertBrowserPort(8080)).toBe(8080);
     expect(() => assertBrowserPort(22)).toThrow(/not allowed/);
     expect(() => assertBrowserPort(6080.5)).toThrow(/not allowed/);
+  });
+
+  it('builds noVNC reconnect URL for port 6080', () => {
+    expect(simulationBrowserUrl(6080)).toBe(`http://localhost:6080${NOVNC_BROWSER_PATH}`);
+    expect(simulationBrowserUrl(16080, 6080)).toBe(`http://localhost:16080${NOVNC_BROWSER_PATH}`);
+    expect(simulationBrowserUrl(8080)).toBe('http://localhost:8080');
+    expect(() => simulationBrowserUrl(16080)).toThrow(/not allowed/);
   });
 });

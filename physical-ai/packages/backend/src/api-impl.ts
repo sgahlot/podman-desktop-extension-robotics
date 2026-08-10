@@ -4,7 +4,7 @@ import type { PhysicalAiApi } from '/@shared/src/PhysicalAiApi';
 import type { QuayRepository, QuayTag, PullProgress, BuildProgress, PushProgress } from '/@shared/src/types/ImageCatalog';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from '/@shared/src/types/SimulationContainer';
-import { SIM_CONTAINER_LABEL, SIM_CONTAINER_LABEL_VALUE, SIM_CONTAINER_PREFIX } from '/@shared/src/types/SimulationContainer';
+import { SIM_CONTAINER_LABEL, SIM_CONTAINER_LABEL_VALUE, SIM_CONTAINER_PREFIX, SIM_STOPPED_BROWSER_HINT } from '/@shared/src/types/SimulationContainer';
 import { formatSimulationConfig, resolveSimulationProfile } from '/@shared/src/types/SimulationProfiles';
 import { resolveSimulationBaseImage } from '/@shared/src/types/SimulationBaseImages';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
@@ -20,7 +20,7 @@ import {
   assertLaunchLabels,
   assertPortMappings,
   assertContainerName,
-  assertBrowserPort,
+  simulationBrowserUrl,
   ROS_TOPIC_NAME_RE,
   type SupportedRosDistro,
 } from '/@shared/src/security/simInput';
@@ -576,6 +576,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   async stopSimulation(containerId: string): Promise<void> {
     const { id, engineId } = await this.#resolveSimulationContainer(containerId);
     await extensionApi.containerEngine.stopContainer(engineId, id);
+    await extensionApi.window.showInformationMessage(SIM_STOPPED_BROWSER_HINT);
   }
 
   async deleteSimulation(containerId: string): Promise<void> {
@@ -659,9 +660,9 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
   }
 
-  async openSimulationInBrowser(port: number): Promise<void> {
-    const safePort = assertBrowserPort(port);
-    await extensionApi.env.openExternal(extensionApi.Uri.parse(`http://localhost:${safePort}`));
+  async openSimulationInBrowser(hostPort: number, containerPort?: number): Promise<void> {
+    const url = simulationBrowserUrl(hostPort, containerPort);
+    await extensionApi.env.openExternal(extensionApi.Uri.parse(url));
   }
 
   async listRosTopics(containerId: string): Promise<TopicInfo[]> {

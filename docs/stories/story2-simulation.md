@@ -75,7 +75,7 @@
 
 **Current approach (arm64 / local laptop):** Direct velocity control. Backend queries robot pose via `gz model -m <name> -p`, then publishes `cmd_vel` Twist messages to turn and drive in a straight line. No obstacle avoidance — Ogre2 Sensors crash on arm64 llvmpipe blocks Nav2 (no lidar/costmap data).
 
-**Target (amd64 / OpenShift with GPU):** Nav2 autonomous navigation with obstacle avoidance. Once Ogre2 Sensors is re-enabled, the Nav2 navigation stack can be launched per robot and goals sent via `navigate_to_pose` — the robot will autonomously plan a path and avoid obstacles. The backend plumbing is already in place to support this switch.
+**Target (OpenShift, GPU optional):** Nav2 autonomous navigation with obstacle avoidance. Re-enable Ogre2 Sensors for the OpenShift deploy profile, launch Nav2 per robot (`entrypoint-nav2.sh`), and send goals via `navigate_to_pose`. **Verify on OpenShift** — no mandatory local amd64 proof step first. **Prefer no GPU** (software rendering) unless Sensors/Nav2 fail without it; GPU must not be a hard requirement. Backend plumbing for the switch is partially in place (`entrypoint-nav2.sh`; `sendNavigationGoal` still uses `cmd_vel` today).
 
 **New files:**
 - `packages/backend/assets/ros2-jazzy-sim/entrypoint-nav2.sh` — launches Nav2 navigation stack (unused on arm64; ready for amd64/OpenShift)

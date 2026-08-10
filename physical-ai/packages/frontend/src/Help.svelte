@@ -80,7 +80,10 @@ import { router } from 'tinro';
           <strong>Image trust</strong> — Launch runs entrypoints from the selected <em>local</em> image. Tag matching is not a signature check: only use images you built via Image Builder or pulled from a Quay namespace you trust. For demos, pin exact tags or digests under Settings → Preferences → Physical AI → <span class="font-mono">Simulation image allowlist</span>.
         </div>
         <div>
-          <strong>Open in Browser</strong> — Opens noVNC (port <span class="font-mono">6080</span>) or the landing page (<span class="font-mono">8080</span>). Other ports are rejected by the API.
+          <strong>Stop</strong> — Stops the simulation container. A notification reminds you to close the Gazebo (noVNC) browser tab (the extension cannot close it). Use <strong>Delete</strong> on an exited container to remove it.
+        </div>
+        <div>
+          <strong>Open in Browser</strong> — Opens noVNC at <span class="font-mono">/vnc.html</span> with autoconnect + auto-reconnect (port <span class="font-mono">6080</span>), or the landing page (<span class="font-mono">8080</span>). Other ports are rejected by the API. Idle background tabs often drop the WebSocket (“Disconnected”); reconnect or a refresh brings the view back — the sim is still running.
         </div>
         <div>
           <strong>Add TurtleBot3</strong> — Spawns a robot into the running world via <span class="font-mono">podman exec</span> (name + X/Y/yaw).

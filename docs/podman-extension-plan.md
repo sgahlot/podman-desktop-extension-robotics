@@ -51,7 +51,7 @@ Drivers:
 
 > **Legend:** ✅ Done · 🟡 In Progress / Almost Done · ⚪ Not Started · 🅿️ Parked · 🔴 Must fix
 
-**Last updated:** 2026-08-06
+**Last updated:** 2026-08-10
 
 ---
 
@@ -114,6 +114,7 @@ If you only ever build one sim image and never reuse the base, the two-phase spl
 
 - **Additional robot types** beyond TurtleBot3 — same Image Builder pattern (`SimulationProfiles` + `assets/ros2-humble-<robot>/` + curated allowlist entry). Spike package availability on Humble (e.g. TurtleBot4) before enabling UI options.
 - Simulation **launch** wizard — ✅ implemented via Story 6 (APPENG-5771/5772 done).
+- **Humble + noVNC / Mac Simulation parity** — time-permitting; see [Wishlist](#wishlist--good-to-have). Today Quick Start and Story 6 UX are Jazzy-only; Humble builds on Mac via `sloretz` but lacks the browser display stack.
 
 #### Follow-up tasks (from APPENG-5769 scope adjustments)
 
@@ -168,7 +169,7 @@ If you only ever build one sim image and never reuse the base, the two-phase spl
 | ✅ | APPENG-5771 | Container orchestration for ROS2 + Gazebo launch via Podman pod | Implemented via [Story 6](stories/story6-podman-sim.md) S6-1/S6-3/S6-4. Podman-only (no pods/compose): backend lifecycle API + Simulation page + one-click launch. |
 | ✅ | APPENG-5772 | Integrate noVNC or web-based video stream for simulation visualization | Implemented via [Story 6](stories/story6-podman-sim.md) S6-1/S6-4. noVNC stack (Xvfb + x11vnc + websockify) in sim image, "Open in Browser" on Simulation page. |
 | ✅ | APPENG-5773 | Build topic monitor panel showing active ROS2 topics and message rates | Topic Monitor page (`/topics`): lists active ROS2 topics with message types, publisher/subscriber counts. Uses `podman exec` (attached) to run `ros2 topic list` + `ros2 topic info` inside the simulation container. Auto-refreshes every 5s. Accessible from Dashboard card and Simulation page "View Topics" button. Hz measurement deferred. |
-| 🟡 | APPENG-5920 | Add navigation UI for driving robots in simulation | Per-robot "Go" button with target X/Y on the Simulation page. On arm64 (local laptop): direct velocity control via `cmd_vel` Twist (no obstacle avoidance — Ogre2 Sensors crash blocks Nav2). On amd64/OpenShift with GPU: Nav2 autonomous navigation with obstacle avoidance (plumbing in place, blocked on Ogre2 Sensors re-enable). |
+| 🟡 | APPENG-5920 | Add navigation UI for driving robots in simulation | Per-robot "Go" button with target X/Y on the Simulation page. On arm64 (local laptop): direct velocity control via `cmd_vel` Twist (no obstacle avoidance — Ogre2 Sensors crash blocks Nav2). On OpenShift: enable Sensors + Nav2 (`navigate_to_pose`) and **verify in-cluster**, preferring **no GPU** first (GPU optional, not required). |
 | ✅ | APPENG-5922 | Topic Monitor drill-down | Expandable rows in Topic Monitor: clicking a topic fetches `ros2 topic info -v` and shows publisher/subscriber node names inline. On-demand fetch (not polled) to avoid expensive verbose calls every 5s. Follows ImageCatalog expand/collapse pattern. |
 | ✅ | APPENG-5923 | Topic Monitor message peek | **Peek** on expanded rows runs `ros2 topic echo --once` (configurable 1–30s timeout, default 5, best-effort QoS). Cleaned body + capture/msg timestamps, Tree/Raw view, Copy; soft pub/sub topology; `ros2 interface show` schema; short type badges. |
 
@@ -291,7 +292,7 @@ Stories 1 and 6 (S6-1–S6-5) are complete. Story 2 original sub-tasks + APPENG-
 
 | Key | Summary | Skills needed |
 |-----|---------|---------------|
-| APPENG-5920 | Navigation UI (finish / polish) | Gazebo pose, cmd_vel; Nav2 on amd64 later |
+| APPENG-5920 | Navigation UI (finish / polish) | Gazebo pose, cmd_vel locally; Nav2 on OpenShift (CPU first, GPU optional) |
 | APPENG-5774 | Multi-robot orchestration | Podman, multi-container, scales from Story 6 single-robot |
 | APPENG-5777 | K8s manifest generation | Podman config export, K8s YAML |
 | S6-6 | Customize Hardware card (stretch) | Xacro parametric, podman exec |
@@ -548,8 +549,26 @@ Items that improve polish or operability but are **not** required for the ROSCon
 | 💡 | Build / push UI | **Download full build log** | Build/push progress in the UI keeps only the newest ~500 log lines (memory safety). A true “Download full log” needs uncapped logs written to a temp file during the build, plus a download action and cleanup on cancel/complete/reload. Do **not** expose a Settings toggle for “full vs capped” display — prefer download of the full file when this is implemented. |
 | 💡 | Build / push UI | Persist progress across extension reload | Progress Maps are in-memory today; reloading the extension clears build/push/pull state. Nice-to-have later if long builds + reload becomes a common pain. |
 | 💡 | Simulation | **Re-enable Ogre2 Sensors plugin on amd64** | Ogre2 Sensors (`gz-sim-sensors-system`) crashes on arm64 llvmpipe (`GL_ARB_copy_image` unsupported). On amd64 with a GPU, this may work — conditionally include it in the world SDF (xacro param or two SDF variants). Would restore simulated lidar/camera data and enable Nav2 autonomous navigation (costmap needs sensor input). No upstream fix for arm64 as of 2026-08. |
+| 💡 | Simulation / Image Builder | **Humble + noVNC Mac parity (+ optional Quick Start)** | Time-permitting. See notes below. |
 
 > **Legend:** 💡 Wishlist · promote to 🅿️ follow-up or a Jira sub-task when scheduled
+
+##### Wishlist notes — Humble + noVNC / Mac parity (2026-08-10)
+
+**Context:** Quick Start and the Simulation page browser demo (`Open in Browser`, interactive spawn) target **Jazzy** (`ros2-jazzy-sim:noble` + noVNC). Humble already **runs on Mac** for ROS itself via the multi-arch `sloretz` base preset, but `ros2-humble-turtlebot3` has no noVNC stack and a bare entrypoint — so it does not match Story 6 UX. Do **not** add a peer Humble Quick Start until that parity exists (or label it clearly as non-browser).
+
+**Feasible in principle:** The display stack is distro-agnostic Ubuntu packages (`xvfb`, `x11vnc`, `novnc`, `websockify`, `openbox`) plus the same entrypoint pattern as `ros2-jazzy-sim` (Xvfb → VNC → websockify → Gazebo GUI under `LIBGL_ALWAYS_SOFTWARE` / llvmpipe). That part can be ported to Humble.
+
+**What actually made Mac work for Jazzy** was not noVNC alone — it was **Tier 1 arm64 binaries** on Ubuntu Noble for ROS 2 Jazzy + Gazebo Harmonic + Nav2. Story 6 originally moved off Humble partly because Humble `ros-gz` / Nav2 packaging on arm64 looked like an amd64/QEMU path.
+
+**Spike before scheduling (exit criteria):**
+
+1. On Apple Silicon Podman: install/run Humble + `ros-gz` (or equivalent) + Gazebo GUI under llvmpipe without QEMU; note Fortress vs Harmonic pairing.
+2. Port (or share) noVNC entrypoints/worlds/spawn scripts; confirm Sensors/llvmpipe workarounds still apply.
+3. Simulation page + `#detectRosDistro` work against a Humble noVNC image tag.
+4. Only then: optional Image Builder Quick Start button (`humble` + `sloretz`), clearly secondary to Jazzy.
+
+**Cost / priority:** Second full sim image to maintain (Containerfile, entrypoints, worlds, Mac GL quirks) for an older LTS while demos stay on Jazzy. Pick up only if there is a real need for Humble + browser Simulation on Mac; otherwise keep Humble as dropdown-only.
 
 <a id="story-6"></a>
 
@@ -669,3 +688,4 @@ Comprehensive security audit and hardening of the extension's backend API, entry
 - **APPENG-5922 done (2026-08-04):** Topic Monitor drill-down — expandable rows with publisher/subscriber node names via `ros2 topic info -v`. On-demand fetch, follows ImageCatalog expand/collapse pattern. Added `TopicNodeInfo`/`TopicDetailInfo` types, `getRosTopicDetail` backend method, frontend drill-down UI + tests. APPENG-5923 (message peek) is now unblocked.
 - **Security hardening (2026-08-05):** Full security audit and remediation. Shell injection (H1), exec/launch lockdown (H2/M1), script hardening (S1), image trust (M2), browser port allowlist (L2), RPC arity validation, stale poll fix, dead code removal, new UI test coverage. Tracked in `.internal/security-fixes.md` and `.internal/follow-up-fixes.md`. All items done except L1 (deferred, local-only risk) and I1 (deferred, already validated).
 - **APPENG-5923 done (2026-08-06):** Topic Monitor message peek — **Peek** on expanded rows runs `ros2 topic echo --once` (Preferences timeout 1–30s, default 5, best-effort QoS); cleaned body, capture/msg timestamps, Tree/Raw + Copy, schema via `ros2 interface show`, soft topology + type badges.
+- **Wishlist (2026-08-10):** Humble + noVNC Mac parity (optional Quick Start) — time-permitting. noVNC stack is portable; hard part is Humble `ros-gz`/Gazebo arm64 + porting Story 6 entrypoints. Cross-linked from Story 1 Future. Do not add peer Humble Quick Start until Simulation browser UX works.

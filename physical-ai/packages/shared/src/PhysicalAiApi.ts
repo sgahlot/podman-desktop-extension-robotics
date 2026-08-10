@@ -41,7 +41,7 @@ export abstract class PhysicalAiApi {
   abstract deleteSimulation(containerId: string): Promise<void>;
   abstract listSimulationContainers(): Promise<SimContainerInfo[]>;
   abstract execInSimulation(containerId: string, command: string[]): Promise<ExecResult>;
-  abstract openSimulationInBrowser(port: number): Promise<void>;
+  abstract openSimulationInBrowser(hostPort: number, containerPort?: number): Promise<void>;
   abstract listRosTopics(containerId: string): Promise<TopicInfo[]>;
   abstract getRosTopicDetail(containerId: string, topicName: string): Promise<TopicDetailInfo>;
   /** One live message via `ros2 topic echo --once` (bounded wait). */

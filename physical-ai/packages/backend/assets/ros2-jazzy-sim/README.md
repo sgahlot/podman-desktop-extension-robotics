@@ -31,6 +31,7 @@ The simulation container uses ~2.5–3 GB RAM. Ensure your Podman Machine has at
 
 ## Notes
 
+- Entrypoints (`entrypoint-gazebo.sh`, `entrypoint-spawn-robot.sh`, …) are required in-image process orchestration. Podman Desktop APIs manage container lifecycle and `podman exec`; they do not replace Gazebo/ROS/noVNC startup or provide a ROS/DDS API. Topic Monitor and similar features still `exec` ROS CLI inside this image.
 - Entrypoints validate robot names / poses / `ROBOTS` env (and gazebo ports/world) **before** sourcing ROS — hostile args fail closed even if invoked via raw `podman exec`.
 - Sensors system plugin removed from the sandbox world (Ogre2 + llvmpipe segfault on arm64). Visuals/physics/spawn still work.
 - Extension Simulation page filters for `ros2-*-sim*` / `ros2-*-turtlebot3` tags.

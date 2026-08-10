@@ -1,7 +1,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { ExtensionContext } from '@podman-desktop/api';
 import { PhysicalAiApiImpl } from './api-impl';
-import { SIM_CONTAINER_LABEL, SIM_CONTAINER_LABEL_VALUE } from '/@shared/src/types/SimulationContainer';
+import { SIM_CONTAINER_LABEL, SIM_CONTAINER_LABEL_VALUE, SIM_STOPPED_BROWSER_HINT } from '/@shared/src/types/SimulationContainer';
 import { SPAWN_ENTRYPOINT, GAZEBO_ENTRYPOINT } from '/@shared/src/security/simInput';
 
 vi.mock('@podman-desktop/api', () => ({
@@ -24,6 +24,8 @@ vi.mock('@podman-desktop/api', () => ({
     pushImage: vi.fn(),
     createContainer: vi.fn(),
     startContainer: vi.fn(),
+    stopContainer: vi.fn(),
+    deleteContainer: vi.fn(),
   },
   process: {
     exec: vi.fn(),
@@ -1625,17 +1627,43 @@ describe('PhysicalAiApiImpl', () => {
 
     it('opens allowlisted ports only', async () => {
       await api.openSimulationInBrowser(6080);
-      expect(extensionApi.Uri.parse).toHaveBeenCalledWith('http://localhost:6080');
+      expect(extensionApi.Uri.parse).toHaveBeenCalledWith(
+        'http://localhost:6080/vnc.html?autoconnect=true&reconnect=true&reconnect_delay=2000&resize=scale',
+      );
       expect(extensionApi.env.openExternal).toHaveBeenCalled();
 
       await api.openSimulationInBrowser(8080);
       expect(extensionApi.Uri.parse).toHaveBeenCalledWith('http://localhost:8080');
     });
 
+    it('opens noVNC path when host port is remapped', async () => {
+      await api.openSimulationInBrowser(16080, 6080);
+      expect(extensionApi.Uri.parse).toHaveBeenCalledWith(
+        'http://localhost:16080/vnc.html?autoconnect=true&reconnect=true&reconnect_delay=2000&resize=scale',
+      );
+    });
+
     it('rejects non-allowlisted ports', async () => {
       await expect(api.openSimulationInBrowser(22)).rejects.toThrow(/not allowed/);
       await expect(api.openSimulationInBrowser(3000)).rejects.toThrow(/not allowed/);
       expect(extensionApi.env.openExternal).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('stopSimulation', () => {
+    const CONTAINER_ID = 'abc123def456';
+
+    it('stops the container and shows a noVNC tab hint', async () => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        { ...simContainer(CONTAINER_ID, 'quay.io/ns/ros2-jazzy-sim:noble'), engineId: 'podman' },
+      ]);
+      vi.mocked(extensionApi.containerEngine.stopContainer).mockResolvedValue(undefined as any);
+      vi.mocked(extensionApi.window.showInformationMessage).mockResolvedValue(undefined);
+
+      await api.stopSimulation(CONTAINER_ID);
+
+      expect(extensionApi.containerEngine.stopContainer).toHaveBeenCalledWith('podman', CONTAINER_ID);
+      expect(extensionApi.window.showInformationMessage).toHaveBeenCalledWith(SIM_STOPPED_BROWSER_HINT);
     });
   });
 });

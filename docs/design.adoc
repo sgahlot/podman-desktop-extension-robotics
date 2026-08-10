@@ -498,6 +498,10 @@ The extension contributes 8 settings under **Settings → Preferences → Physic
 | `podman exec -d` via `process.exec()`
 | Podman Desktop `containerEngine` API has no `exec` method. `process.exec('podman', ['exec', ...])` runs `/entrypoint-spawn-robot.sh` detached in the running container.
 
+| Bash entrypoints vs Podman APIs
+| Keep in-image scripts; use PD/Podman for lifecycle + exec only
+| Podman/`@podman-desktop/api` manage images and containers (create/start/stop/list/build). They do not provide ROS 2/DDS, Gazebo spawn, or the Xvfb/noVNC stack. Entrypoints (`entrypoint-gazebo.sh`, `entrypoint-spawn-robot.sh`, …) orchestrate that stack inside the image; Topic Monitor / Peek / nav use `podman exec` + ROS CLI (`#execRosBash`). A native ROS client or in-container bridge would reduce CLI execs but is a separate architecture bet — not “replace scripts with Podman.” Internal detail: `.internal/tech-reference.md` (Bash scripts vs Podman).
+
 | Ogre2 Sensors on arm64
 | Removed from world SDF
 | Ogre2 `GL3PlusRenderSystem` segfaults with llvmpipe software rendering on arm64. Sensors plugin (camera, depth) removed; visuals and physics unaffected.
@@ -510,7 +514,7 @@ The extension contributes 8 settings under **Settings → Preferences → Physic
 
 == Open Questions
 
-* **Topic monitor:** How to expose ROS2 topic data to the extension UI — `podman exec ros2 topic list` polling, or a lightweight bridge/agent inside the container?
+* **Topic monitor bridge:** Topic Monitor currently uses `podman exec` + `ros2` CLI (acceptable; Podman has no ROS API). Open: keep CLI polling long-term, or add a lightweight in-container HTTP/WS bridge for Hz/streaming (see Phase C/D in peek polish notes)?
 * **Multi-robot resource limits:** How many TurtleBot3 instances can run in a single container before the Podman VM hits memory limits?
 
 == References
