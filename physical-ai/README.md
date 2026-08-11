@@ -5,7 +5,7 @@ A Podman Desktop extension that gives robotics developers a GUI-driven path from
 ## Features
 
 - **Image Catalog** — Browse and pull ROS2 images from Quay.io (All or Curated view)
-- **Image Builder** — Two-phase build (base + simulation) with Quick Start presets. Phase 1 builds the ROS2 base, Phase 2 layers Gazebo + Nav2 + noVNC on top.
+- **Image Builder** — Two-phase build (base + simulation) with Quick Start presets. Phase 1 builds the ROS2 base, Phase 2 layers Gazebo + noVNC on top (Nav2 packages included in image; navigation stack deferred to OpenShift).
 - **Simulation** — One-click launch of Gazebo in a Podman container, browser-based visualization via noVNC, interactive TurtleBot3 spawning
 - **Topic Monitor** — Live view of active ROS2 topics, message types, and publisher/subscriber counts inside running simulation containers
 - **Help** — In-extension documentation
@@ -23,7 +23,7 @@ Current container bases are **Ubuntu 24.04** (ROS2 Jazzy and Humble). Fedora/RHE
 | Machine Disk | 30 GB | 50+ GB |
 | Node.js (for building) | 24.0.0 | 24.x (matches Podman Desktop) |
 
-Simulation uses software rendering (llvmpipe) — no GPU required. Default Podman Machine (~5.7 GB) is fine for 1–2 robots. For 3+ robots, increase to 8 GB: `podman machine set --memory 8192`.
+Simulation uses software rendering (`llvmpipe`) by default in the sim image — no GPU required for the demo. On Mac, LibKrun can expose the host GPU via virtio-gpu, but we force software GL for Gazebo stability. Default Podman Machine (~5.7 GB) is fine for 1–2 robots. For 3+ robots, increase to 8 GB: `podman machine set --memory 8192`.
 
 See [`packages/backend/README.md`](packages/backend/README.md) for platform-specific notes (Mac Apple Silicon, Linux).
 
@@ -38,7 +38,7 @@ npm run build
 2. Open **Physical AI** (or **F1** → **Physical AI: Open Dashboard**)
 3. **Image Builder** → Quick Start **TurtleBot3 Sim (Jazzy)** → Phase 1 Build → Phase 2 Build
 4. **Simulation** → Launch → Open in Browser → Add TurtleBot3 → optional **Go** (X/Y) and Topic Monitor **Peek**
-5. **Stop** when done — close the Gazebo (noVNC) browser tab manually if it is still open
+5. **Stop & remove** when done — close the Gazebo (noVNC) browser tab manually if it is still open
 
 Idle noVNC tabs may show Disconnected; reconnect or refresh — the simulation is still running. Sensors (lidar/camera) are off under software rendering on Mac, so **Go** has no obstacle avoidance.
 

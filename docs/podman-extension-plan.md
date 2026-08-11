@@ -42,8 +42,8 @@ Drivers:
 |-------|---------|--------|-----------|
 | [APPENG-5764](#story-1) | Extension scaffolding and base image catalog | ✅ Done | 4/4 done, 2 follow-ups parked |
 | [APPENG-5765](#story-2) | Single robot simulation workflow | 🟡 In Progress | Original + Topic Monitor done; APPENG-5920/5922/5923 **In Review** |
-| [APPENG-5766](#story-3) | Multi-robot local scaling *(stretch)* | ⚪ Not Started | 0/3 done |
-| [APPENG-5767](#story-4) | OpenShift deployment bridge *(stretch)* | ⚪ Not Started | 0/3 done |
+| [APPENG-5766](#story-3) | Multi-robot local scaling | ⚪ Not Started | 0/3 done |
+| [APPENG-5767](#story-4) | OpenShift deployment bridge | ⚪ Not Started | 0/3 done |
 | [Spike](#story-5) | Local-first deployment of reference demos | 🅿️ Parked (Kind OOM) | 0/6 proposed |
 | [Story 6](#story-6) | Podman-only simulation workflow (ROSCon demo) | 🟡 In Progress | 5/6 done — **demo path complete; S6-6 deferred** |
 | [FIX](#fix-arch-aware-sim) | Make simulation image build arch-aware | ✅ Done | Naming + labels fixed; Ogre2 Sensors deferred |
@@ -177,29 +177,31 @@ If you only ever build one sim image and never reuse the base, the two-phase spl
 
 <a id="story-3"></a>
 
-### Story 3: Multi-robot local scaling *(stretch)* — ⚪ Not Started
+### Story 3: Multi-robot local scaling — ⚪ Not Started
 
 > Detail doc: [story3-multi-robot.md](stories/story3-multi-robot.md)
+>
+> **Approach (2026-08-10):** **Podman Compose** is the Story 3 orchestration path (APPENG-5774). Single-container multi-spawn (Story 6) remains a lightweight demo only — it does not complete this story. Zenoh (5775) and fleet panel (5776) follow Compose.
 
 | Key | Parent | Issue Type | Created | Summary |
 |-----|--------|------------|---------|---------|
 | APPENG-5766 | APPENG-5763 | Story | 2026/07/16 | Multi-robot local scaling |
 
-**Description:** Scale from one robot to a local fleet using Podman pods or Compose. Integrate Zenoh middleware for inter-robot communication across containers. Provide a fleet dashboard showing robot status and topic routing. (Stretch goal for MVP)
+**Description:** Scale from one robot to a local fleet using Podman pods or Compose. Integrate Zenoh middleware for inter-robot communication across containers. Provide a fleet dashboard showing robot status and topic routing.
 
 #### Sub-tasks
 
 | Status | Key | Summary | Description |
 |--------|-----|---------|-------------|
-| ⚪ | APPENG-5774 | Podman Compose or pod-based multi-container orchestration for 2+ robots | Enable launching multiple robot containers locally using Podman Compose or pod-based orchestration, scaling from a single robot to a local fleet. |
-| ⚪ | APPENG-5775 | Zenoh router and DDS bridge sidecar auto-configuration | Automatically configure Zenoh router and DDS bridge sidecars when scaling to multiple robots, enabling inter-robot communication across containers. |
-| ⚪ | APPENG-5776 | Fleet status panel in the extension UI | Build a dashboard panel in the extension showing fleet-level status: robot count, individual robot state, and topic routing across the local fleet. |
+| ⚪ | APPENG-5774 | Podman Compose multi-container orchestration for 2+ robots | **Podman Compose** fleet: Gazebo/noVNC + robot services (Zenoh-ready). Extension start/stop/scale via Compose. |
+| ⚪ | APPENG-5775 | Zenoh router and DDS bridge sidecar auto-configuration | Zenoh for cross-container DDS (and OpenShift CNI parity) after Compose topology exists. |
+| ⚪ | APPENG-5776 | Fleet status panel in the extension UI | Fleet dashboard over Compose-managed services/containers. |
 
 ---
 
 <a id="story-4"></a>
 
-### Story 4: OpenShift deployment bridge *(stretch)* — ⚪ Not Started
+### Story 4: OpenShift deployment bridge — ⚪ Not Started
 
 > Detail doc: [story4-openshift-bridge.md](stories/story4-openshift-bridge.md)
 
@@ -207,14 +209,14 @@ If you only ever build one sim image and never reuse the base, the two-phase spl
 |-----|--------|------------|---------|---------|
 | APPENG-5767 | APPENG-5763 | Story | 2026/07/16 | OpenShift deployment bridge |
 
-**Description:** Export local Podman configuration to Kubernetes manifests. Enable optional Kind-based local cluster testing before pushing to OpenShift. Document the full laptop-to-cluster workflow. (Stretch goal for MVP)
+**Description:** Export local Podman configuration to Kubernetes manifests. Enable optional Kind-based local cluster testing before pushing to OpenShift. Document the full laptop-to-cluster workflow.
 
 #### Sub-tasks
 
 | Status | Key | Summary | Description |
 |--------|-----|---------|-------------|
 | ⚪ | APPENG-5777 | Generate K8s manifests from running Podman pod configuration | Export the running Podman pod configuration as Kubernetes-compatible manifests, enabling the transition from local development to cluster deployment. |
-| ⚪ | APPENG-5778 | Kind cluster integration for local validation | Enable deploying the generated K8s manifests to a local Kind cluster from the extension for validation before pushing to OpenShift. |
+| ⚪ | APPENG-5778 | Kind cluster integration for local validation | Deploy generated (or hand-written lean) manifests to Kind. Prefer a **single-sim Deployment** of `ros2-jazzy-sim` first (Story 6 parity); multi-pod Nav2 charts remain a later / heavier path. See Story 5 revisit note (2026-08-10). |
 | ⚪ | APPENG-5779 | Getting-started guide for the full workflow | Write end-to-end documentation covering the full developer journey: installing the extension, launching a robot simulation, scaling to a fleet, and deploying to OpenShift. |
 
 ---
@@ -292,12 +294,13 @@ Stories 1 and 6 (S6-1–S6-5) are complete for the ROSCon **demo path**; S6-6 (C
 
 | Key | Summary | Skills needed |
 |-----|---------|---------------|
-| APPENG-5774 | Multi-robot orchestration | Podman, multi-container, scales from Story 6 single-robot |
-| APPENG-5777 | K8s manifest generation | Podman config export, K8s YAML |
-| OpenShift spike | Sensors + Nav2 in-cluster (manual; not full Story 4) | `oc`, Sensors-on world, `navigate_to_pose`, CPU first |
+| APPENG-5774 | Multi-robot via **Podman Compose** | Compose services + extension launch/scale; Zenoh next |
+| APPENG-5777 | K8s manifest generation | Start from single-container Deployment (not multi-pod export) |
+| Kind lean spike | One `ros2-jazzy-sim` pod on Kind + port-forward | Packaging dry-run; not full Story 4/5 |
+| OpenShift spike | Sensors + Nav2 in-cluster (manual) | `oc`, Sensors-on world, `navigate_to_pose`, CPU first |
 | S6-6 | Customize Hardware card *(stretch — deferred)* | Xacro parametric, podman exec |
 
-**Parked (not ready-now):** Story 5 S5-1…S5-6 — Kind OOM on arm64; resume from `spike/repo-b-kind-attempt` when tackling K8s/OpenShift.
+**Parked (not ready-now):** Story 5 multi-pod Kind (Repo B) — OOM on arm64. **Revisit** with lean single-sim Kind before restoring multi-pod charts.
 
 **Story 1 follow-ons (optional polish):** additional robot types in Image Builder; curated Catalog demos against published golden Quay tags.
 
@@ -349,7 +352,7 @@ A Miro board would be useful for a team kickoff/planning session where people ne
 | 🟠 | APPENG-5920 | Sub-task | APPENG-5765 | Add navigation UI for driving robots in simulation |
 | 🟠 | APPENG-5922 | Sub-task | APPENG-5765 | Topic Monitor drill-down |
 | 🟠 | APPENG-5923 | Sub-task | APPENG-5765 | Topic Monitor message peek |
-| ⚪ | APPENG-5774 | Sub-task | APPENG-5766 | Podman Compose or pod-based multi-container orchestration for 2+ robots |
+| ⚪ | APPENG-5774 | Sub-task | APPENG-5766 | Podman Compose multi-container orchestration for 2+ robots |
 | ⚪ | APPENG-5775 | Sub-task | APPENG-5766 | Zenoh router and DDS bridge sidecar auto-configuration |
 | ⚪ | APPENG-5776 | Sub-task | APPENG-5766 | Fleet status panel in the extension UI |
 | ⚪ | APPENG-5777 | Sub-task | APPENG-5767 | Generate K8s manifests from running Podman pod configuration |
@@ -411,6 +414,8 @@ Captured during initial scaffold implementation.
 > **No Jira keys yet.** Create tasks when work resumes.
 >
 > **Status (2026-07-28):** Kind spike parked on branch `spike/repo-b-kind-attempt` after Nav2 OOMKill (~4 Gi) on arm64. **Story 6** is the ROSCon Podman-only path. Resume Story 5 when tackling K8s / OpenShift.
+>
+> **Revisit note (2026-08-10):** The Kind OOM was from a **multi-pod** layout (control plane + Gazebo + per-robot Nav2 + Zenoh) with high memory requests — not from Kind itself. A **lean Kind spike** can mirror Story 6: **one** Deployment/Pod running `ros2-jazzy-sim` (Gazebo + noVNC + in-image spawn via `kubectl exec`), NodePort/`kubectl port-forward` for 6080, `kind load` for the image. Kind still adds API-server/etcd overhead (and on Mac often VM → Kind → pod), so budget more RAM than bare Podman (~5.7 GB), but a single-sim pod is far more realistic than Repo B’s chart. This does **not** by itself enable Nav2 (Sensors still off under llvmpipe). Prefer this packaging spike before full multi-pod Helm or APPENG-5778.
 >
 > **Research note (2026-07-27):** Both reference repos were reviewed independently against this story. Goal and ownership model are sound; details below incorporate corrections (especially Repo A distro) and Mac/Kind spike risks that were previously under-specified.
 
@@ -521,9 +526,10 @@ Story 1 (images) ✅
 
 | Option | Pros | Cons | Notes |
 |--------|------|------|-------|
-| **Kind** | Lightweight; aligns with APPENG-5778 | No GPU; needs Route→Ingress/port-forward; image load | **Preferred first K8s target** for S5-1 |
+| **Kind (lean / single sim)** | Proves K8s packaging; aligns with APPENG-5778; same image as Story 6 | Control-plane + nested VM overhead on Mac; no GPU | **Preferred Kind revisit** — one Deployment of `ros2-jazzy-sim`, port-forward 6080, spawn via `kubectl exec`. See Story 5 revisit note (2026-08-10). |
+| **Kind (Repo B multi-pod)** | Closer to OpenShift fleet chart | OOM on arm64 Mac (~4 Gi) | Parked — do not resume until lean path works and/or larger host |
 | **Minikube** | Ingress UX; mature | Heavier on Mac | Fallback if Kind networking bites |
-| **Plain Podman** | Repo A already has scripts; fast smoke | Does not prove Helm path | Use before Kind for S5-2 office |
+| **Plain Podman** | Repo A already has scripts; Story 6 path; fast smoke | Does not prove Helm path | Default for ROSCon / Story 3 |
 | **Podman `kube play`** | K8s YAML without full cluster | Weak Helm/Services story | Optional middle ground |
 
 ### Open questions / spike risks
@@ -533,10 +539,11 @@ Story 1 (images) ✅
 3. **GPU on Mac** — Assume software GL only; is that demo-viable for Gazebo + noVNC?
 4. **noVNC on local K8s** — Standardize on port-forward for MVP wizard; Ingress/NodePort as stretch.
 5. **Image size / build time** — Fedora+Jazzy+Gazebo+noVNC and Jazzy+RMF images are large; budget Mac disk/RAM and CI time.
-6. **Docker Desktop resources** — Can a typical Mac give Kind enough CPU/RAM for Repo B’s requests without drastic values overrides?
+6. **Docker Desktop / Podman Machine resources** — Repo B multi-pod requests do not fit a typical Mac Kind node. For lean Kind, size the VM for control plane + ~2.5–3 Gi sim pod (often ≥8 Gi machine memory).
 7. **`oc` vs `kubectl`** — Extension and scripts must abstract or prefer kubectl locally.
 8. **COPR / Fedora path** — Keep for spike only, or replace when internalizing (ties to parked Ubuntu→Fedora/RHEL work)?
 9. **Distro convergence** — Stay on Jazzy for cluster demos while Story 1 Humble sim remains laptop Image Builder default?
+10. **Lean Kind vs multi-pod** — Confirm single-sim Kind works on Mac before investing in multi-Nav2 Helm again.
 
 ---
 
@@ -548,7 +555,7 @@ Items that improve polish or operability but are **not** required for the ROSCon
 |--------|------|------|-------|
 | 💡 | Build / push UI | **Download full build log** | Build/push progress in the UI keeps only the newest ~500 log lines (memory safety). A true “Download full log” needs uncapped logs written to a temp file during the build, plus a download action and cleanup on cancel/complete/reload. Do **not** expose a Settings toggle for “full vs capped” display — prefer download of the full file when this is implemented. |
 | 💡 | Build / push UI | Persist progress across extension reload | Progress Maps are in-memory today; reloading the extension clears build/push/pull state. Nice-to-have later if long builds + reload becomes a common pain. |
-| 💡 | Simulation | **Re-enable Ogre2 Sensors plugin on amd64** | Ogre2 Sensors (`gz-sim-sensors-system`) crashes on arm64 llvmpipe (`GL_ARB_copy_image` unsupported). On amd64 with a GPU, this may work — conditionally include it in the world SDF (xacro param or two SDF variants). Would restore simulated lidar/camera data and enable Nav2 autonomous navigation (costmap needs sensor input). No upstream fix for arm64 as of 2026-08. |
+| 💡 | Simulation | **Re-verify Ogre2 Sensors on arm64** | Removed during S6-1 after reported segfault with llvmpipe. **TODO (time-permitting):** re-test on current Gazebo Harmonic + Mesa (llvmpipe and virtio-gpu); file/link upstream issue if still broken; investigate upstream fix contribution. If fixed, re-enable Sensors and wire Nav2 for OpenShift. Conditionally include Sensors in world SDF on amd64/OpenShift deploy profile. |
 | 💡 | Simulation / Image Builder | **Humble + noVNC Mac parity (+ optional Quick Start)** | Time-permitting. See notes below. |
 
 > **Legend:** 💡 Wishlist · promote to 🅿️ follow-up or a Jira sub-task when scheduled
@@ -692,3 +699,5 @@ Comprehensive security audit and hardening of the extension's backend API, entry
 - **APPENG-5923 done (2026-08-06):** Topic Monitor message peek — **Peek** on expanded rows runs `ros2 topic echo --once` (Preferences timeout 1–30s, default 5, best-effort QoS); cleaned body, capture/msg timestamps, Tree/Raw + Copy, schema via `ros2 interface show`, soft topology + type badges.
 - **Wishlist (2026-08-10):** Humble + noVNC Mac parity (optional Quick Start) — time-permitting. noVNC stack is portable; hard part is Humble `ros-gz`/Gazebo arm64 + porting Story 6 entrypoints. Cross-linked from Story 1 Future. Do not add peer Humble Quick Start until Simulation browser UX works.
 - **In Review + Story 6 polish (2026-08-10):** APPENG-5920 / 5922 / 5923 marked **In Review** in plan and story docs. Ready Now points at 5774 / OpenShift spike / deferred S6-6. Story 6 demo path framed complete; ROSCon e2e checklist added in story6 doc. S6-6 still stretch/out of scope.
+- **Kind lean path (2026-08-10):** Documented revisit of Kind using a **single** `ros2-jazzy-sim` Deployment (Story 6 parity) instead of Repo B multi-pod Nav2 charts that OOM’d on arm64. Updated Story 5 status, local deployment options, APPENG-5778 note, and Ready Now.
+- **Story 3 = Podman Compose (2026-08-10):** Clarified APPENG-5774/Story 3 deliverable is **Podman Compose** multi-container fleet (not scale-in-one-container alone). Story 6 multi-spawn remains a lightweight demo path.

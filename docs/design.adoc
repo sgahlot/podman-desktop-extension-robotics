@@ -56,15 +56,15 @@ For work breakdown and progress tracking, see the link:podman-extension-plan.md[
                                 │                │                │
                          ┌──────▼──────┐  ┌──────▼──────┐  ┌──────▼──────┐
                          │   Podman    │  │   Quay.io   │  │  OpenShift  │
-                         │   Engine    │  │  Registry   │  │  (stretch)  │
+                         │   Engine    │  │  Registry   │  │             │
                          │             │  │             │  │             │
                          │ ┌─────────┐ │  └─────────────┘  └─────────────┘
                          │ │  Sim    │ │
                          │ │Container│ │
                          │ │┌───────┐│ │
                          │ ││Gazebo ││ │
-                         │ ││Nav2   ││ │
                          │ ││noVNC  ││ │
+                         │ ││spawn  ││ │
                          │ │└───────┘│ │
                          │ └─────────┘ │
                          └─────────────┘
@@ -113,10 +113,10 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 * Dashboard landing page with feature cards
 * Image catalog browser with All/Curated views and pull progress _(APPENG-5770, done)_
 * Image Builder for base and simulation images with Quick Start preset _(done)_
-* Simulation page — launch, status, open in browser, stop/delete, add TurtleBot3, per-robot X/Y + **Go** (`cmd_vel` locally; APPENG-5920 In Review). OpenShift Nav2 deferred.
+* Simulation page — launch, status, open in browser, stop & remove, add TurtleBot3, per-robot X/Y + **Go** (`cmd_vel` locally; APPENG-5920 In Review). Nav2 packages ship in the sim image; autonomous Nav2 (`navigate_to_pose`) deferred to OpenShift (APPENG-5767).
 * In-extension Help page _(done)_
 * ROS2 topic monitor — active topics, message types, pub/sub counts _(APPENG-5773, done)_
-* Fleet status dashboard _(APPENG-5776, stretch)_
+* Fleet status dashboard _(APPENG-5776, planned — Story 3)_
 
 ==== Key Files
 
@@ -243,8 +243,10 @@ User clicks "Pull"   ──► Frontend sends pull request  ──► Backend ca
                          Frontend polls getPullProgress ◄── Backend returns PullProgress
                          (every 500ms while active)         { status, layers, percent }
 
-listLocalImages()    ──► Engine listImages (RepoTags or Names) merged with `podman images`
-                         so Podman 5 / PD empty RepoTags still appear in Locally Available
+listLocalImages()    ──► Merges Podman Desktop engine image list with `podman images` CLI output.
+                         Some Podman 5 / Podman Desktop builds return images with no tag names
+                         (empty RepoTags); the CLI merge keeps those images visible under
+                         "Locally Available" in the catalog.
 ----
 
 === Build & Push (Base Image and Simulation Image)
@@ -259,7 +261,7 @@ User clicks "Build"  ──► Frontend sends buildBaseImage/buildSimulationImag
                                 ├── Backend calls containerEngine.buildImage() with AbortController
                                 │
                          Frontend polls getBuildProgress ◄── Backend returns BuildProgress
-                         (every 500ms while active)         { step, totalSteps, log, done }
+                         (every 500ms while active)         { step, totalSteps, log, done, error, cancelled }
 
 User clicks "Cancel" ──► Frontend calls cancelBuild(tag) ──► Backend aborts AbortController
                                                               Progress marked done immediately
@@ -267,7 +269,7 @@ User clicks "Cancel" ──► Frontend calls cancelBuild(tag) ──► Backend
 User clicks "Push"   ──► Frontend sends pushImage(tag) with AbortController
                                 │
                          Frontend polls getPushProgress  ◄── Backend returns PushProgress
-                         (every 500ms while active)          { status, digest, cancelled? }
+                         (every 500ms while active)          { status, digest, logs, done, error, cancelled }
 
 User clicks "Cancel push" ──► Frontend calls cancelPush(tag) ──► Backend aborts AbortController
                                                                   Progress marked done immediately
@@ -305,7 +307,7 @@ The build is split into a **base image** (Phase 1) and a **simulation image** (P
 | Multiple simulation images can share the same base. Today: Humble base + Humble TurtleBot3 sim, Jazzy base + Jazzy arm64 sim. Future robot types (TurtleBot4, custom URDF) layer on the same base without rebuilding ROS2 each time.
 
 | Smaller pushes
-| If `ros2-jazzy-base:noble` is already on Quay, pushing a new sim variant only transfers the diff layers (Gazebo + Nav2 + noVNC), not the entire ROS2 stack again.
+| If `ros2-jazzy-base:noble` is already on Quay, pushing a new sim variant only transfers the diff layers (Gazebo + noVNC + packaged Nav2 deps), not the entire ROS2 stack again.
 
 | Non-simulation use
 | The base image works standalone for headless ROS2 development, CI pipelines, or robots that don't need Gazebo/noVNC.
@@ -342,8 +344,7 @@ User clicks "Open"   ──► Frontend calls openSimulationInBrowser(6080)
 User clicks "Add     ──► Frontend calls execInSimulation(containerId, ['/entrypoint-spawn-robot.sh', ...])
 TurtleBot3"              ──► Backend runs podman exec -d (detached, long-running spawn process)
 
-User clicks "Stop"   ──► Frontend calls stopSimulation(containerId) ──► Backend stops container
-User clicks "Delete" ──► Frontend calls deleteSimulation(containerId) ──► Backend stops + removes
+User clicks "Stop & remove" ──► Frontend calls deleteSimulation ──► Backend force-removes container (+ noVNC tab hint)
 ----
 
 == Container Architecture
@@ -359,14 +360,15 @@ Uses a single Podman container (not a pod) with all components baked in. This av
 │    Labels: io.physical-ai.role=simulation                          │
 │                                                                    │
 │  ┌──────────────────────────────────────────────────────────────┐  │
-│  │  Ubuntu 24.04 + ROS2 Jazzy + Gazebo Harmonic + Nav2          │  │
+│  │  Ubuntu 24.04 + ROS2 Jazzy + Gazebo Harmonic + noVNC           │  │
+│  │  (Nav2 packages in image; stack not launched locally)          │  │
 │  │                                                              │  │
 │  │  Xvfb (:99) → openbox → x11vnc → websockify (port 6080)      │  │
 │  │                              ↑                               │  │
 │  │  gz sim (server) ──► gz sim (GUI, renders to :99)            │  │
 │  │                                                              │  │
 │  │  Software rendering: LIBGL_ALWAYS_SOFTWARE=1, llvmpipe       │  │
-│  │  (Ogre2 Sensors plugin removed — segfaults on arm64)         │  │
+│  │  (Ogre2 Sensors plugin removed from world — see Open Qs)     │  │
 │  └──────────────────────────────────────────────────────────────┘  │
 │                                                                    │
 │  Exposed ports: 6080 (noVNC), 8080 (landing page)                  │
@@ -376,11 +378,11 @@ Uses a single Podman container (not a pod) with all components baked in. This av
 
 ==== Why a single container (not a pod)?
 
-The original plan (Story 2/5) used a Podman pod with separate ROS2, Gazebo, and noVNC containers. On Mac Apple Silicon (arm64), the combined memory pressure of the K8s-style setup caused Nav2 to OOMKill at 4 GiB. A single container with all components baked in eliminates infra container overhead and fits within the default Podman VM (5.7 GB). Robot spawn via `podman exec` adds TurtleBot3 instances into the running container without additional containers.
+The original plan (Story 2/5) used a Podman pod with separate ROS2, Gazebo, and noVNC containers. On Mac Apple Silicon (arm64), the combined memory pressure of the K8s-style setup caused OOM at 4 GiB. A single container with Gazebo + noVNC baked in eliminates infra container overhead and fits within the default Podman VM (5.7 GB). Robot spawn via `podman exec` adds TurtleBot3 instances into the running container without additional containers.
 
-=== Multi-Robot Fleet (planned, stretch)
+=== Multi-Robot Fleet (planned, Story 3)
 
-NOTE: The current single-robot path uses `podman exec` to spawn additional robots into a single container. The pod-based fleet model below is speculative — it would only apply if robots need separate containers for isolation or resource limits.
+NOTE: Story 6 uses `podman exec` to spawn additional robots into a **single** simulation container (lightweight demo). **Story 3** targets **Podman Compose** for a real multi-container fleet (APPENG-5774), then Zenoh and a fleet panel. Kind revisit still prefers one sim Deployment for packaging spikes (plan Story 5 lean Kind note, 2026-08-10); Compose/OpenShift multi-service is the fuller path.
 
 [source]
 ----
@@ -493,7 +495,11 @@ The extension contributes 10 settings under **Settings → Preferences → Physi
 
 | Simulation container model
 | Single container (not pods)
-| Pod-based approach (Story 2/5) caused Nav2 OOMKill at 4 GiB on arm64. Single container with Gazebo + Nav2 + noVNC baked in fits default 5.7 GB Podman VM. See "Why a single container" in Container Architecture.
+| Pod-based approach (Story 2/5) caused OOM at 4 GiB on arm64. Single container with Gazebo + noVNC baked in fits default 5.7 GB Podman VM. Nav2 packages are in the image but the navigation stack is not launched locally.
+
+| Nav2 (local vs OpenShift)
+| Packages in image; stack deferred to OpenShift
+| `ros-jazzy-navigation2` and `entrypoint-nav2.sh` ship in `ros2-jazzy-sim`. Local **Go** uses `cmd_vel` (APPENG-5920). Autonomous Nav2 (`navigate_to_pose`) targets OpenShift (APPENG-5767).
 
 | Robot spawn mechanism
 | `podman exec -d` via `process.exec()`
@@ -504,17 +510,19 @@ The extension contributes 10 settings under **Settings → Preferences → Physi
 | Podman/`@podman-desktop/api` manage images and containers (create/start/stop/list/build). They do not provide ROS 2/DDS, Gazebo spawn, or the Xvfb/noVNC stack. Entrypoints (`entrypoint-gazebo.sh`, `entrypoint-spawn-robot.sh`, …) orchestrate that stack inside the image; Topic Monitor / Peek / nav use `podman exec` + ROS CLI (`#execRosBash`). A native ROS client or in-container bridge would reduce CLI execs but is a separate architecture bet — not “replace scripts with Podman.” Internal detail: `.internal/tech-reference.md` (Bash scripts vs Podman).
 
 | Ogre2 Sensors on arm64
-| Removed from world SDF
-| Ogre2 `GL3PlusRenderSystem` segfaults with llvmpipe software rendering on arm64. Sensors plugin (camera, depth) removed; visuals and physics unaffected.
+| Removed from world SDF (2026-07 spike)
+| Reported segfault with llvmpipe during S6-1; re-verify on current Gazebo/Mesa (see Open Questions). Sensors plugin removed from world SDF; visuals and physics unaffected.
 |===
 
 == Resolved Questions
 
 * **noVNC vs alternatives:** noVNC chosen and implemented. Xvfb + x11vnc + websockify stack baked into the simulation image, served on port 6080. Lightweight and works without GPU.
-* **GPU passthrough:** Not needed for the demo. Software rendering via llvmpipe is sufficient at 1024x768. Ogre2 Sensors plugin crashes on arm64 llvmpipe (segfault in `GL3PlusRenderSystem`) — removed from world SDF. Visuals and physics work fine; only simulated sensor data (camera, depth) is lost.
+* **Mac GPU and rendering:** LibKrun can expose the host GPU to the VM via virtio-gpu (API translation to Metal on Apple Silicon). Our sim image forces `llvmpipe` software rendering because Gazebo Ogre2 was unreliable through virtio-gpu during the S6-1 spike — not because GPU passthrough is impossible. Demo visuals work at 1024×768 without enabling GPU in Podman Machine.
+* **Ogre2 Sensors plugin:** Removed from the world SDF during S6-1 after a reported segfault under software rendering. Re-verify on current stack; if still broken, track upstream fix or conditional re-enable on OpenShift/amd64 (see Open Questions and plan wishlist).
 
 == Open Questions
 
+* **Ogre2 Sensors re-verification:** Re-test `gz-sim-sensors-system` on arm64 with current Gazebo Harmonic + Mesa (llvmpipe and virtio-gpu paths). If reproducible, file/link upstream issue; if fixed, re-enable Sensors and wire Nav2 for OpenShift. Time-permitting: investigate whether we can contribute a fix upstream.
 * **Topic monitor bridge:** Topic Monitor currently uses `podman exec` + `ros2` CLI (acceptable; Podman has no ROS API). Open: keep CLI polling long-term, or add a lightweight in-container HTTP/WS bridge for Hz/streaming (see Phase C/D in peek polish notes)?
 * **Multi-robot resource limits:** How many TurtleBot3 instances can run in a single container before the Podman VM hits memory limits?
 

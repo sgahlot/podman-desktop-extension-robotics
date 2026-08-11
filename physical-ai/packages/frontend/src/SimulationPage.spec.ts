@@ -85,7 +85,7 @@ describe('SimulationPage', () => {
     expect(await screen.findByText('engine unavailable')).toBeTruthy();
   });
 
-  it('keeps exited containers visible and does not auto-delete them', async () => {
+  it('keeps exited containers visible with Stop & remove and does not auto-delete them', async () => {
     mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
     mockListSimulationContainers.mockResolvedValue([
       {
@@ -101,10 +101,11 @@ describe('SimulationPage', () => {
     render(SimulationPage);
     expect(await screen.findByText('pai-sim-exited')).toBeTruthy();
     expect(screen.getByText('exited')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Stop & remove' })).toBeTruthy();
     expect(mockDeleteSimulation).not.toHaveBeenCalled();
   });
 
-  it('surfaces delete errors', async () => {
+  it('surfaces stop & remove errors for exited containers', async () => {
     mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
     mockListSimulationContainers.mockResolvedValue([
       {
@@ -116,13 +117,13 @@ describe('SimulationPage', () => {
         labels: {},
       },
     ]);
-    mockDeleteSimulation.mockRejectedValue(new Error('delete failed'));
+    mockDeleteSimulation.mockRejectedValue(new Error('remove failed'));
 
     render(SimulationPage);
     await screen.findByText('pai-sim-dead');
-    await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Stop & remove' }));
 
-    expect(await screen.findByText('delete failed')).toBeTruthy();
+    expect(await screen.findByText('remove failed')).toBeTruthy();
   });
 
   it('opens browser using mapped host port for noVNC', async () => {
@@ -147,7 +148,7 @@ describe('SimulationPage', () => {
     });
   });
 
-  it('stops a running simulation and shows a noVNC tab hint', async () => {
+  it('stops and removes a running simulation and shows a noVNC tab hint', async () => {
     mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
     mockListSimulationContainers.mockResolvedValue([
       {
@@ -162,11 +163,11 @@ describe('SimulationPage', () => {
 
     render(SimulationPage);
     await screen.findByText('pai-sim-run');
-    await fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Stop & remove' }));
 
     await waitFor(() => {
-      expect(mockStopSimulation).toHaveBeenCalledWith('abc123def456');
-      expect(mockDeleteSimulation).not.toHaveBeenCalled();
+      expect(mockDeleteSimulation).toHaveBeenCalledWith('abc123def456');
+      expect(mockStopSimulation).not.toHaveBeenCalled();
     });
     expect(await screen.findByText(/Close the Gazebo \(noVNC\) browser tab/)).toBeTruthy();
   });

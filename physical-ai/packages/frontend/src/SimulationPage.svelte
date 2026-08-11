@@ -110,21 +110,9 @@ async function stopSim(id: string) {
   actionError = '';
   actionInfo = '';
   try {
-    await physicalAiClient.stopSimulation(id);
-    spawnedRobots = [];
-    actionInfo = SIM_STOPPED_BROWSER_HINT;
-    await pollContainers();
-  } catch (e) {
-    actionError = e instanceof Error ? e.message : String(e);
-  }
-}
-
-async function deleteSim(id: string) {
-  actionError = '';
-  actionInfo = '';
-  try {
     await physicalAiClient.deleteSimulation(id);
     spawnedRobots = [];
+    actionInfo = SIM_STOPPED_BROWSER_HINT;
     await pollContainers();
   } catch (e) {
     actionError = e instanceof Error ? e.message : String(e);
@@ -283,14 +271,10 @@ async function navigateRobot(index: number) {
               <button on:click={() => router.goto('/topics')} class="pai-btn pai-btn-primary text-xs">
                 View Topics
               </button>
-              <button on:click={() => stopSim(container.id)} class="pai-btn pai-btn-danger text-xs">
-                Stop
-              </button>
-            {:else}
-              <button on:click={() => deleteSim(container.id)} class="pai-btn pai-btn-danger text-xs">
-                Delete
-              </button>
             {/if}
+            <button on:click={() => stopSim(container.id)} class="pai-btn pai-btn-danger text-xs">
+              Stop &amp; remove
+            </button>
           </div>
         </div>
       {/each}

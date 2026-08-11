@@ -44,14 +44,14 @@ A Podman Desktop extension that gives robotics developers a GUI-driven path from
 |===
 | Resource | Minimum | Recommended | Notes
 
-| CPUs | 4 | 6+ | Gazebo + Nav2 + noVNC are CPU-bound under software rendering
+| CPUs | 4 | 6+ | Gazebo + noVNC are CPU-bound under software rendering (local demo path)
 | Memory | 4 GB | 8 GB | Single sim container uses ~2.5–3 GB. Default ~5.7 GB works for 1–2 robots. Increase for 3+ robots.
 | Disk | 30 GB | 50+ GB | Base image ~1.5 GB, sim image ~3 GB, plus build cache layers
 |===
 
 To adjust: `podman machine set --memory 8192 --cpus 6` or use *Settings → Resources → Podman Machine* in Podman Desktop.
 
-NOTE: On Mac Apple Silicon, Podman uses LibKrun (no GPU passthrough). Simulation runs with software rendering (llvmpipe). This is sufficient for demo purposes.
+NOTE: On Mac Apple Silicon, Podman Machine uses LibKrun. The host GPU can be exposed to the Linux VM via virtio-gpu (API translation — e.g. Vulkan through MoltenVK to Apple Metal). Our simulation image still forces software rendering (`llvmpipe`) because Gazebo Ogre2 was unreliable through that path during development; visuals work at demo resolution without requiring GPU passthrough. Enable GPU in Podman Machine settings if you experiment with hardware rendering.
 
 === Build
 
@@ -95,7 +95,7 @@ podman-work/                            <1>
 │       │   │   └── api-impl.ts         # PhysicalAiApi implementation (27 methods)
 │       │   ├── assets/                 # Bundled Containerfiles + entrypoints
 │       │   │   ├── ros2-jazzy-base/
-│       │   │   ├── ros2-jazzy-sim/          # Jazzy sim: Gazebo + Nav2 + noVNC
+│       │   │   ├── ros2-jazzy-sim/          # Jazzy sim: Gazebo + noVNC (Nav2 pkgs in image; stack deferred to OpenShift)
 │       │   │   ├── ros2-humble-base/
 │       │   │   └── ros2-humble-turtlebot3/
 │       │   └── package.json            # Extension manifest (8 config properties)
@@ -153,7 +153,8 @@ podman-work/                            <1>
 | Epic | APPENG-5763 | Podman Desktop Extension for Physical AI Robotics Development
 | Story | APPENG-5764 | Extension scaffolding and base image catalog _(done)_
 | Story | APPENG-5765 | Single robot simulation workflow _(in progress)_
-| Story | (Story 6) | Podman-only simulation for ROSCon demo _(in progress)_
+| Story | APPENG-5766 | Multi-robot local scaling _(not started)_
+| Story | APPENG-5767 | OpenShift deployment bridge _(not started)_
 |===
 
 == License

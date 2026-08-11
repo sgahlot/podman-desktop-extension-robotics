@@ -25,7 +25,7 @@
 
 **Description:** Implement one-click launch of a ROS2 robot with Gazebo simulation running in a Podman pod, managed from the extension.
 
-**Implemented in [Story 6](story6-podman-sim.md)** using Podman-only (no pods/compose). Backend lifecycle API (`launchSimulation`, `stopSimulation`, `deleteSimulation`, `listSimulationContainers`, `execInSimulation`) + Simulation page with one-click launch, container polling, stop/delete. Robot spawn via `podman exec`. Single-container architecture: Gazebo + Nav2 + noVNC in one image (`ros2-jazzy-sim`).
+**Implemented in [Story 6](story6-podman-sim.md)** using Podman-only (no pods/compose). Backend lifecycle API (`launchSimulation`, `stopSimulation`, `deleteSimulation`, `listSimulationContainers`, `execInSimulation`) + Simulation page with one-click launch, container polling, stop & remove. Robot spawn via `podman exec`. Single-container architecture: Gazebo + noVNC in one image (`ros2-jazzy-sim`; Nav2 packages in image, stack deferred to OpenShift).
 
 ---
 

@@ -13,7 +13,7 @@
 ## Relationship to Other Stories
 
 - **[Story 2 (APPENG-5765)](story2-simulation.md):** Story 6 implements the core of Story 2 (single robot sim workflow) using a Podman-only approach. APPENG-5771 (container orchestration), APPENG-5772 (noVNC) are directly addressed here.
-- **[Story 5 (Spike)](../podman-extension-plan.md#story-5):** The Kind-based approach is parked at branch `spike/repo-b-kind-attempt`. Nav2 pods OOMKill at 4Gi on arm64 — K8s control plane + Gazebo + Nav2 overwhelms the Podman VM. Learnings (Containerfile.arm64, entrypoints, noVNC stack) feed into Story 6.
+- **[Story 5 (Spike)](../podman-extension-plan.md#story-5):** The Kind **multi-pod** approach is parked at branch `spike/repo-b-kind-attempt` (Nav2 OOMKill at ~4Gi on arm64). Learnings (Containerfile, entrypoints, noVNC) feed into Story 6. A **lean Kind** revisit (one sim Deployment, Story 6 parity) is documented in the plan Story 5 revisit note (2026-08-10).
 - **[Story 3](story3-multi-robot.md):** The `podman exec` spawn pattern lays groundwork for multi-robot fleet scaling.
 
 ---
@@ -96,7 +96,9 @@ New directory: `packages/backend/assets/ros2-jazzy-sim/`
 - `SimulationProfiles.ts` — added Jazzy sim profile with `assetDir: 'ros2-jazzy-sim'`, `imageName: 'ros2-jazzy-sim'`
 - `SimulationBaseImages.ts` — added `jazzy-noble` preset (Ubuntu 24.04 Noble, multi-arch, `imageRef: 'docker.io/library/ros:jazzy-ros-base'`)
 
-**Key finding — Ogre2 segfault on arm64 llvmpipe:** The `gz-sim-sensors-system` plugin requires the Ogre2 render engine, which crashes with a segfault (`Ogre::GL3PlusRenderSystem::_createRenderWindow` → null pointer) when using llvmpipe software rendering on arm64. Fixed by removing `<plugin filename="gz-sim-sensors-system">` from `tb3_sandbox.sdf.xacro`. Physics, visuals, and robot spawning all work fine; only simulated sensor data rendering (camera, depth) is lost — acceptable for ROSCon demo.
+**Key finding — Ogre2 segfault on arm64 llvmpipe (2026-07):** The `gz-sim-sensors-system` plugin was reported to crash with a segfault (`Ogre::GL3PlusRenderSystem::_createRenderWindow`) under llvmpipe on arm64. Workaround: removed `<plugin filename="gz-sim-sensors-system">` from `tb3_sandbox.sdf.xacro`. Physics, visuals, and robot spawning work; simulated sensor rendering is off.
+
+**Re-verification TODO (2026-08-11):** Re-test Sensors plugin on current Gazebo Harmonic + Mesa (llvmpipe and virtio-gpu). Initial re-test on running `ros2-jazzy-sim:noble` did **not** reproduce a segfault for server/GUI smoke tests — confirm with full TB3 spawn + sensor topics. If still broken in realistic scenarios, file upstream; time-permitting investigate upstream fix. If fixed, re-enable Sensors for OpenShift Nav2 path.
 
 **Build fix:** The Containerfile initially listed `xacro` in the noVNC apt-get layer; on Ubuntu Noble it's `ros-jazzy-xacro` and was already installed as a dependency. Removed the duplicate to fix build error (exit code 100).
 
@@ -177,7 +179,7 @@ openSimulationInBrowser(port)
 - **App.svelte:** Add `<Route path="/simulation">` (same pattern as `/build`, `/images`)
 - **SimulationPage.svelte (new):**
   - **Section 1 — Launch:** Dropdown of local sim images, "Launch" button, single-sim-at-a-time for MVP
-  - **Section 2 — Running:** Polls `listSimulationContainers()` every 3s, shows container card with "Open in Browser" / "Stop" / "Delete" buttons
+  - **Section 2 — Running:** Polls `listSimulationContainers()` every 3s, shows container card with "Open in Browser" / "View Topics" (running only) and **Stop & remove**
   - **Section 3 — Add Robot:** See S6-5
 
 ### Implementation Notes (completed 2026-07-28)
@@ -191,10 +193,10 @@ openSimulationInBrowser(port)
 
 **UX refinements (completed later):**
 - Launch card always shows dropdown + Launch button, both **disabled** (`.pai-btn-primary:disabled` — opacity 0.4, not-allowed cursor) when a simulation is running. No separate "Stop Simulation" branch — Stop only lives in the container card to avoid redundancy.
-- Stop/Delete buttons styled with `pai-btn-danger` class for visual distinction.
+- Stop & remove button styled with `pai-btn-danger` class for visual distinction.
 - Auto-cleanup of exited containers on page load.
 - "View Topics" button added to running container cards (navigates to Topic Monitor page).
-- `stopSim()` calls `deleteSimulation` (stop + remove) for clean state.
+- `stopSim()` calls `deleteSimulation` (stop + remove in one step).
 - 304/already-started errors handled gracefully (polls containers instead of showing error loop).
 
 **Note:** CLI-built images (e.g. `ros2-jazzy-sim:test`) don't match the extension's tag pattern (`quay.io/.../ros2-jazzy-sim:noble`), so the Simulation page shows "No simulation images found locally" until images are built through the Image Builder. This is by design.
@@ -244,7 +246,7 @@ Swap camera sensor on a robot. **Out of scope for the current polish pass.** Lik
 - [x] `podman run` starts Gazebo, noVNC reachable at localhost:6080
 - [x] `podman exec` spawns TurtleBot3 visible in Gazebo
 - [x] Extension dashboard shows enabled Simulation card
-- [x] Simulation page can launch/stop/delete containers
+- [x] Simulation page can launch and stop & remove containers
 - [x] "Add TurtleBot3" button spawns robot into running sim
 - [x] Image Builder quick-start pre-fills, saves, and scrolls to Phase 1 (user builds explicitly)
 
@@ -258,7 +260,7 @@ Run this on a Mac with Podman Desktop + the Physical AI extension loaded. Expect
 4. [ ] **Add TurtleBot3** → robot appears in Gazebo
 5. [ ] Set target **X/Y** → **Go** → robot turns/drives (`cmd_vel`); status shows Driving → Drove to / Failed
 6. [ ] **View Topics** / Topic Monitor → expand a topic → **Peek** one message
-7. [ ] **Stop** → toast + on-page hint to close the Gazebo browser tab manually → **Delete** exited container when done
+7. [ ] **Stop & remove** → toast + on-page hint to close the Gazebo browser tab manually (container is deleted in one step)
 
 ### Deferred
 

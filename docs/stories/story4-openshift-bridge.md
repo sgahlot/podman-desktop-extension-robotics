@@ -1,8 +1,8 @@
-# Story 4: OpenShift Deployment Bridge — ⚪ Not Started *(stretch)*
+# Story 4: OpenShift Deployment Bridge — ⚪ Not Started
 
-**Jira:** APPENG-5767 | **Parent:** APPENG-5763 (Epic) | **Priority:** Stretch
+**Jira:** APPENG-5767 | **Parent:** APPENG-5763 (Epic) | **Priority:** Required (post–ROSCon MVP)
 
-**Description:** Export local Podman configuration to Kubernetes manifests. Enable optional Kind-based local cluster testing before pushing to OpenShift. Document the full laptop-to-cluster workflow. (Stretch goal for MVP)
+**Description:** Export local Podman configuration to Kubernetes manifests. Enable optional Kind-based local cluster testing before pushing to OpenShift. Document the full laptop-to-cluster workflow.
 
 ---
 
@@ -12,6 +12,8 @@
 |--------|-----|---------|
 | ⚪ | APPENG-5777 | Generate K8s manifests from running Podman pod configuration |
 | ⚪ | APPENG-5778 | Kind cluster integration for local validation |
+
+> **Kind note (2026-08-10):** Prefer a lean single-sim Deployment of `ros2-jazzy-sim` (port-forward noVNC, spawn via `kubectl exec`) before multi-pod Nav2 charts. Multi-pod Kind OOM’d on arm64 Mac — see plan Story 5 revisit note.
 | ⚪ | APPENG-5779 | Getting-started guide for the full workflow |
 
 ---

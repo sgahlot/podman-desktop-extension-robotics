@@ -1650,19 +1650,23 @@ describe('PhysicalAiApiImpl', () => {
     });
   });
 
-  describe('stopSimulation', () => {
+  describe('deleteSimulation', () => {
     const CONTAINER_ID = 'abc123def456';
 
-    it('stops the container and shows a noVNC tab hint', async () => {
+    it('force-removes the container with podman rm -f and shows a noVNC tab hint', async () => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
         { ...simContainer(CONTAINER_ID, 'quay.io/ns/ros2-jazzy-sim:noble'), engineId: 'podman' },
       ]);
-      vi.mocked(extensionApi.containerEngine.stopContainer).mockResolvedValue(undefined as any);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '',
+        stderr: '',
+        command: 'podman',
+      } as any);
       vi.mocked(extensionApi.window.showInformationMessage).mockResolvedValue(undefined);
 
-      await api.stopSimulation(CONTAINER_ID);
+      await api.deleteSimulation(CONTAINER_ID);
 
-      expect(extensionApi.containerEngine.stopContainer).toHaveBeenCalledWith('podman', CONTAINER_ID);
+      expect(extensionApi.process.exec).toHaveBeenCalledWith('podman', ['rm', '-f', CONTAINER_ID]);
       expect(extensionApi.window.showInformationMessage).toHaveBeenCalledWith(SIM_STOPPED_BROWSER_HINT);
     });
   });

@@ -44,7 +44,7 @@ import { router } from 'tinro';
           <strong>Pull images</strong> — Click Pull on any tag. Progress shows aggregated layer download status.
         </div>
         <div>
-          <strong>Locally Available</strong> — Collapsible section lists images from this namespace already present locally (engine listing plus <span class="font-mono">podman images</span> merge so Podman 5 empty <span class="font-mono">RepoTags</span> still show up).
+          <strong>Locally Available</strong> — Collapsible section lists images from this namespace already present locally. The backend merges the Podman Desktop image list with <span class="font-mono">podman images</span> so untagged or oddly-tagged local images still appear.
         </div>
       </div>
     </div>
@@ -62,7 +62,7 @@ import { router } from 'tinro';
           <strong>Phase 1: Base Image</strong> — Humble: <span class="font-mono">sloretz</span> (<span class="font-mono">:sloretz</span>) or <span class="font-mono">osrf</span> (<span class="font-mono">:osrf</span>). Jazzy: Ubuntu Noble preset (tag <span class="font-mono">:noble</span>). Official Jazzy amd64 preset uses tag <span class="font-mono">:latest</span>.
         </div>
         <div>
-          <strong>Phase 2: Simulation Image</strong> — Layers Gazebo, Nav2, TurtleBot3 (and noVNC for Jazzy) on your Phase 1 local base. Disabled until the base exists locally.
+          <strong>Phase 2: Simulation Image</strong> — Layers Gazebo, TurtleBot3 spawn assets, and noVNC (Jazzy) on your Phase 1 local base. Nav2 packages are included in the image; autonomous navigation is deferred to OpenShift. Disabled until the base exists locally.
         </div>
         <div>
           <strong>Cancel / Push</strong> — Cancel aborts an in-progress <strong>build</strong> or <strong>push</strong>. Push requires registry login via Podman Desktop &rarr; Settings &rarr; Registries. Image Builder also shows whether the current <span class="font-mono">quay.io/…</span> tag exists on Quay (public repos only; private repos show as unavailable).
@@ -80,7 +80,7 @@ import { router } from 'tinro';
           <strong>Image trust</strong> — Launch runs entrypoints from the selected <em>local</em> image. Tag matching is not a signature check: only use images you built via Image Builder or pulled from a Quay namespace you trust. For demos, pin exact tags or digests under Settings → Preferences → Physical AI → <span class="font-mono">Simulation image allowlist</span>.
         </div>
         <div>
-          <strong>Stop</strong> — Stops the simulation container. A notification reminds you to close the Gazebo (noVNC) browser tab (the extension cannot close it). Use <strong>Delete</strong> on an exited container to remove it.
+          <strong>Stop &amp; remove</strong> — Stops and deletes the simulation container in one step. A notification reminds you to close the Gazebo (noVNC) browser tab (the extension cannot close it).
         </div>
         <div>
           <strong>Open in Browser</strong> — Opens noVNC at <span class="font-mono">/vnc.html</span> with autoconnect + auto-reconnect (port <span class="font-mono">6080</span>), or the landing page (<span class="font-mono">8080</span>). Other ports are rejected by the API. Idle background tabs often drop the WebSocket (“Disconnected”); reconnect or a refresh brings the view back — the sim is still running.
@@ -142,8 +142,8 @@ import { router } from 'tinro';
         <p>&#8226; The extension remembers your last visited page.</p>
         <p>&#8226; For Gazebo on Mac, prefer Jazzy Noble over Humble (avoids QEMU).</p>
         <p>&#8226; noVNC may show Disconnected after an idle background tab — auto-reconnect or refresh; the sim is still running.</p>
-        <p>&#8226; After <strong>Stop</strong>, close the Gazebo browser tab yourself (the extension cannot close it).</p>
-        <p>&#8226; Demo flow: Image Builder → Launch → Open in Browser → Add TurtleBot3 → Go → Topics → Stop.</p>
+        <p>&#8226; After <strong>Stop &amp; remove</strong>, close the Gazebo browser tab yourself (the extension cannot close it).</p>
+        <p>&#8226; Demo flow: Image Builder → Launch → Open in Browser → Add TurtleBot3 → Go → Topics → Stop &amp; remove.</p>
       </div>
     </div>
 

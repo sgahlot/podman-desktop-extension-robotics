@@ -31,6 +31,6 @@ export const SIM_CONTAINER_LABEL = 'io.physical-ai.role';
 export const SIM_CONTAINER_LABEL_VALUE = 'simulation';
 export const SIM_CONTAINER_PREFIX = 'pai-sim-';
 
-/** Shown when a simulation is stopped (noVNC tab cannot be closed by the extension). */
+/** Shown when a simulation is stopped and removed (noVNC tab cannot be closed by the extension). */
 export const SIM_STOPPED_BROWSER_HINT =
-  'Simulation stopped. Close the Gazebo (noVNC) browser tab if it is still open.';
+  'Simulation stopped and removed. Close the Gazebo (noVNC) browser tab if it is still open.';

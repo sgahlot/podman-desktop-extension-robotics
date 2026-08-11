@@ -576,17 +576,23 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   async stopSimulation(containerId: string): Promise<void> {
     const { id, engineId } = await this.#resolveSimulationContainer(containerId);
     await extensionApi.containerEngine.stopContainer(engineId, id);
-    await extensionApi.window.showInformationMessage(SIM_STOPPED_BROWSER_HINT);
   }
 
   async deleteSimulation(containerId: string): Promise<void> {
-    const { id, engineId } = await this.#resolveSimulationContainer(containerId);
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    // Force-remove via CLI — containerEngine.deleteContainer can leave exited
+    // containers listed (stop-only leftovers). `rm -f` stops if needed and deletes.
     try {
-      await extensionApi.containerEngine.stopContainer(engineId, id);
-    } catch {
-      // already stopped
+      await extensionApi.process.exec('podman', ['rm', '-f', id]);
+    } catch (err: unknown) {
+      const runErr = err as { stderr?: string; message?: string };
+      const detail = runErr.stderr?.trim() || runErr.message || String(err);
+      // Already gone is success
+      if (!/no such container|not found/i.test(detail)) {
+        throw new Error(`Failed to remove simulation container: ${detail}`);
+      }
     }
-    await extensionApi.containerEngine.deleteContainer(engineId, id);
+    await extensionApi.window.showInformationMessage(SIM_STOPPED_BROWSER_HINT);
   }
 
   async #resolveSimulationContainer(

@@ -52,8 +52,8 @@ set -u
 export TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-waffle}"
 export GZ_SIM_RESOURCE_PATH="/opt/ros/jazzy/share:/opt/ros/jazzy/share/nav2_minimal_tb3_sim/models:${GZ_SIM_RESOURCE_PATH:-}"
 
-# Software rendering (no GPU inside Podman VM)
-echo "[gazebo] No GPU in Podman VM, using software rendering..."
+# Software rendering (Gazebo stability on Mac / in VM — see backend README)
+echo "[gazebo] Using software rendering (llvmpipe)..."
 export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe
 

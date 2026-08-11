@@ -17,7 +17,7 @@ Current container bases are **Ubuntu interim** (official `ros` / OSRF / sloretz 
 
 - **Podman Desktop** — 1.28+ (tested with 1.28.x and 1.29.x). Extension API `@podman-desktop/api@1.28.3`
 - **Podman** — 5.x or 6.x (tested with 5.8.5 and 6.0.2)
-- **Machine CPUs** — minimum 4, recommended 6+. Gazebo + Nav2 + noVNC are CPU-bound under software rendering.
+- **Machine CPUs** — minimum 4, recommended 6+. Gazebo + noVNC are CPU-bound under software rendering.
 - **Machine Memory** — minimum 4 GB, recommended 8 GB. Single sim container uses ~2.5–3 GB. Default ~5.7 GB works for 1–2 robots. Increase to 8 GB for 3+ robots.
 - **Machine Disk** — minimum 30 GB, recommended 50+ GB. Base image ~1.5 GB, sim image ~3 GB, plus build cache layers.
 
@@ -25,7 +25,7 @@ To check or change Podman Machine resources: open **Settings → Resources → P
 
 ### Platform notes
 
-- **Mac Apple Silicon (arm64)**: Use the Jazzy Quick Start — builds natively, no QEMU. VM backend is LibKrun (default). Uses software rendering (llvmpipe) — see [GPU and rendering](#gpu-and-rendering) for why.
+- **Mac Apple Silicon (arm64)**: Use the Jazzy Quick Start — builds natively, no QEMU. VM backend is LibKrun (default). LibKrun can expose the host GPU via virtio-gpu (API translation to Metal), but the sim image forces software rendering (`llvmpipe`) for Gazebo stability — see [GPU and rendering](#gpu-and-rendering).
 - **Linux amd64**: Use Humble (sloretz or osrf base) or Jazzy (Noble or amd64 preset). Native GPU rendering may work but is untested.
 - **Windows**: Untested.
 
@@ -35,7 +35,7 @@ To check or change Podman Machine resources: open **Settings → Resources → P
 2. Open **Physical AI**, or press **F1** → **Physical AI: Open Dashboard**
 3. **Image Builder** → Quick Start **TurtleBot3 Sim (Jazzy)** → Phase 1 Build → Phase 2 Build
 4. **Simulation** → Launch → Open in Browser → Add TurtleBot3 → optional **Go** (X/Y) and Topic Monitor **Peek**
-5. **Stop** when done — close the Gazebo (noVNC) browser tab manually if it is still open
+5. **Stop & remove** when done — close the Gazebo (noVNC) browser tab manually if it is still open
 6. Adjust defaults under **Settings → Preferences → Physical AI**
 
 Idle noVNC tabs may show Disconnected; reconnect or refresh — the simulation is still running. Sensors (lidar/camera) are off under software rendering on Mac, so **Go** has no obstacle avoidance.
@@ -65,7 +65,7 @@ Build via Image Builder (or CLI against `assets/`), then push:
 ### Simulation images (Phase 2 outputs, built on top of a base)
 
 - `quay.io/<ns>/ros2-humble-turtlebot3:sloretz` — Humble TurtleBot3 sim (layers on the sloretz base).
-- `quay.io/<ns>/ros2-jazzy-sim:noble` — The Jazzy sim: Gazebo + Nav2 + noVNC.
+- `quay.io/<ns>/ros2-jazzy-sim:noble` — The Jazzy sim: Gazebo + noVNC (Nav2 packages in image; stack deferred to OpenShift).
 
 ## Coming Soon
 
@@ -84,13 +84,13 @@ Bundled Containerfile contexts live under `assets/` in this package.
 
 ### GPU and rendering
 
-Podman Machine on Mac (LibKrun) does expose GPU virtualization via virtio-gpu/virgl — "Default GPU enabled (LibKrun)" is shown in Podman Desktop. However, Gazebo's Ogre2 rendering engine does not work reliably through this virtualization layer on arm64: the Sensors system plugin (`GL3PlusRenderSystem`) segfaults when using virgl or any non-llvmpipe Mesa driver.
+On Mac, Podman Machine uses **LibKrun**. The host GPU can be exposed to the Linux VM via **virtio-gpu** (API translation — e.g. Vulkan through MoltenVK to Apple Metal). Podman Desktop may show “Default GPU enabled (LibKrun)” when GPU is enabled in Machine settings.
 
-We force software rendering instead:
+Gazebo’s Ogre2 rendering engine was unreliable through virtio-gpu on arm64 during development, and Ogre2 Sensors (`gz-sim-sensors-system`) was reported to segfault under software rendering. We therefore **force software rendering** in the sim entrypoint:
 - `LIBGL_ALWAYS_SOFTWARE=1` — tells Mesa to skip hardware GPU detection
 - `GALLIUM_DRIVER=llvmpipe` — selects the LLVM-based CPU rasterizer
 
-This is stable and sufficient at 1024x768. Gazebo visuals and physics work normally; only simulated sensor data (camera images, depth maps) is unavailable because the Sensors plugin was removed from the world SDF to avoid the segfault.
+This is stable and sufficient at 1024x768. Gazebo visuals and physics work normally; simulated sensor data (camera images, depth maps) is unavailable because the Sensors plugin was removed from the world SDF. **TODO (time-permitting):** re-verify whether the Sensors segfault still occurs on current Gazebo/Mesa and whether virtio-gpu works for Gazebo without forcing llvmpipe.
 
 On **Linux with a native GPU** (not in a VM), Ogre2 may work without these workarounds, **but this has not been tested.**
 
