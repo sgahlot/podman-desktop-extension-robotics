@@ -1527,7 +1527,10 @@ describe('PhysicalAiApiImpl', () => {
   describe('launchSimulation security', () => {
     beforeEach(() => {
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
-        get: vi.fn().mockReturnValue(''),
+        get: vi.fn().mockImplementation((key: string) => {
+          if (key === 'simulationGpuPassthrough') return false;
+          return '';
+        }),
         update: vi.fn(),
       } as any);
       vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
@@ -1616,6 +1619,31 @@ describe('PhysicalAiApiImpl', () => {
         'engine-1',
         expect.objectContaining({ Image: digest }),
       );
+    });
+
+    it('passes /dev/dri and PHYSICAL_AI_USE_GPU on arm64 when GPU passthrough is enabled', async () => {
+      const archSpy = vi.spyOn(process, 'arch', 'get').mockReturnValue('arm64');
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockImplementation((key: string) => {
+          if (key === 'simulationGpuPassthrough') return true;
+          return '';
+        }),
+        update: vi.fn(),
+      } as any);
+
+      await api.launchSimulation('quay.io/sgahlot/ros2-jazzy-sim:noble', 'pai-sim-gpu', undefined);
+
+      const createArg = vi.mocked(extensionApi.containerEngine.createContainer).mock.calls[0][1] as {
+        Env: string[];
+        HostConfig: { Devices?: Array<{ PathOnHost: string }> };
+      };
+      expect(createArg.Env).toContain('PHYSICAL_AI_USE_GPU=1');
+      expect(createArg.Env.some(e => e.startsWith('LIBGL_ALWAYS_SOFTWARE='))).toBe(false);
+      expect(createArg.HostConfig.Devices?.map(d => d.PathOnHost)).toEqual([
+        '/dev/dri/card0',
+        '/dev/dri/renderD128',
+      ]);
+      archSpy.mockRestore();
     });
   });
 

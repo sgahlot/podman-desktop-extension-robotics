@@ -52,10 +52,16 @@ set -u
 export TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-waffle}"
 export GZ_SIM_RESOURCE_PATH="/opt/ros/jazzy/share:/opt/ros/jazzy/share/nav2_minimal_tb3_sim/models:${GZ_SIM_RESOURCE_PATH:-}"
 
-# Software rendering (Gazebo stability on Mac / in VM — see backend README)
-echo "[gazebo] Using software rendering (llvmpipe)..."
-export LIBGL_ALWAYS_SOFTWARE=1
-export GALLIUM_DRIVER=llvmpipe
+# Rendering: GPU passthrough when extension sets PHYSICAL_AI_USE_GPU=1 and /dev/dri exists.
+if [[ "${PHYSICAL_AI_USE_GPU:-0}" == "1" ]] && [[ -e /dev/dri/renderD128 ]]; then
+  echo "[gazebo] GPU passthrough enabled (/dev/dri present), using hardware rendering"
+  unset LIBGL_ALWAYS_SOFTWARE
+  unset GALLIUM_DRIVER
+else
+  echo "[gazebo] Using software rendering (llvmpipe)..."
+  export LIBGL_ALWAYS_SOFTWARE=1
+  export GALLIUM_DRIVER=llvmpipe
+fi
 
 export DISPLAY=":${DISPLAY_NUM}"
 

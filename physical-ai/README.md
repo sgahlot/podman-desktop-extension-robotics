@@ -23,7 +23,7 @@ Current container bases are **Ubuntu 24.04** (ROS2 Jazzy and Humble). Fedora/RHE
 | Machine Disk | 30 GB | 50+ GB |
 | Node.js (for building) | 24.0.0 | 24.x (matches Podman Desktop) |
 
-Simulation uses software rendering (`llvmpipe`) by default in the sim image — no GPU required for the demo. On Mac, LibKrun can expose the host GPU via virtio-gpu, but we force software GL for Gazebo stability. Default Podman Machine (~5.7 GB) is fine for 1–2 robots. For 3+ robots, increase to 8 GB: `podman machine set --memory 8192`.
+Simulation on **Apple Silicon** uses virtio-gpu by default (`/dev/dri` passthrough). Disable **Simulation GPU passthrough** in Preferences to force software rendering. On amd64, software rendering is always used. Default Podman Machine (~5.7 GB) is fine for 1–2 robots. For 3+ robots, increase to 8 GB: `podman machine set --memory 8192`.
 
 See [`packages/backend/README.md`](packages/backend/README.md) for platform-specific notes (Mac Apple Silicon, Linux).
 
@@ -40,7 +40,7 @@ npm run build
 4. **Simulation** → Launch → Open in Browser → Add TurtleBot3 → optional **Go** (X/Y) and Topic Monitor **Peek**
 5. **Stop & remove** when done — close the Gazebo (noVNC) browser tab manually if it is still open
 
-Idle noVNC tabs may show Disconnected; reconnect or refresh — the simulation is still running. Sensors (lidar/camera) are off under software rendering on Mac, so **Go** has no obstacle avoidance.
+Idle noVNC tabs may show Disconnected; reconnect or refresh — the simulation is still running. On arm64 with GPU passthrough, lidar/IMU topics are available after spawn; **Go** still uses open-loop `cmd_vel` (Nav2 deferred to OpenShift).
 
 ## Project Structure
 
@@ -60,7 +60,7 @@ The root `Containerfile` builds an OCI image of the extension. The backend `READ
 
 ## Settings
 
-10 configuration properties under **Settings → Preferences → Physical AI**:
+11 configuration properties under **Settings → Preferences → Physical AI**:
 
 | Preference | Purpose |
 |------------|---------|
@@ -69,6 +69,7 @@ The root `Containerfile` builds an OCI image of the extension. The backend `READ
 | Catalog curated allowlist | Wildcard patterns for Curated view |
 | Simulation image allowlist | Optional tag/digest pins for Simulation launch |
 | Topic peek timeout | Seconds for Topic Monitor Peek (1–30, default 5) |
+| Simulation GPU passthrough | On arm64 Mac, pass `/dev/dri` and use virtio-gpu (default on). Disable to force llvmpipe |
 | Image Builder defaults | Robot, distro, middleware, engine, base preset |
 
 ### Simulation image trust

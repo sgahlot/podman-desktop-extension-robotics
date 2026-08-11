@@ -44,14 +44,14 @@ A Podman Desktop extension that gives robotics developers a GUI-driven path from
 |===
 | Resource | Minimum | Recommended | Notes
 
-| CPUs | 4 | 6+ | Gazebo + noVNC are CPU-bound under software rendering (local demo path)
+| CPUs | 4 | 6+ | Gazebo + noVNC; arm64 Mac uses virtio-gpu by default (llvmpipe fallback if passthrough disabled)
 | Memory | 4 GB | 8 GB | Single sim container uses ~2.5–3 GB. Default ~5.7 GB works for 1–2 robots. Increase for 3+ robots.
 | Disk | 30 GB | 50+ GB | Base image ~1.5 GB, sim image ~3 GB, plus build cache layers
 |===
 
 To adjust: `podman machine set --memory 8192 --cpus 6` or use *Settings → Resources → Podman Machine* in Podman Desktop.
 
-NOTE: On Mac Apple Silicon, Podman Machine uses LibKrun. The host GPU can be exposed to the Linux VM via virtio-gpu (API translation — e.g. Vulkan through MoltenVK to Apple Metal). Our simulation image still forces software rendering (`llvmpipe`) because Gazebo Ogre2 was unreliable through that path during development; visuals work at demo resolution without requiring GPU passthrough. Enable GPU in Podman Machine settings if you experiment with hardware rendering.
+NOTE: On Mac Apple Silicon, Podman Machine uses LibKrun with virtio-gpu (API translation to Metal). Simulation launch passes `/dev/dri` by default on arm64 and uses hardware rendering when available; disable **Simulation GPU passthrough** in Preferences to force `llvmpipe`. Lidar and IMU topics (`/scan`, `/imu`) are available after spawn on a current sim image.
 
 === Build
 

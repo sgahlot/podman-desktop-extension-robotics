@@ -91,6 +91,11 @@
           "maximum": 30,
           "default": 5,
           "description": "Timeout in seconds for Topic Monitor Peek (ros2 topic echo --once). Must be a whole number from 1 to 30."
+        },
+        "physical-ai.simulationGpuPassthrough": {
+          "type": "boolean",
+          "default": true,
+          "description": "On Apple Silicon (arm64), pass /dev/dri into simulation containers and use virtio-gpu rendering when available. Disable to force software rendering (llvmpipe). Ignored on amd64 (always software GL)."
         }
       }
     }

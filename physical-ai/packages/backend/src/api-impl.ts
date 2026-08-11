@@ -542,13 +542,31 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
     const cmd = assertLaunchCmd(options?.cmd);
     const clientEnv = assertLaunchEnv(options?.env);
-    const env: Record<string, string> = {
-      LIBGL_ALWAYS_SOFTWARE: '1',
-      GALLIUM_DRIVER: 'llvmpipe',
-      ...clientEnv,
-    };
+    const useGpu = await this.#simulationGpuPassthroughEnabled();
+    const env: Record<string, string> = { ...clientEnv };
+    if (useGpu) {
+      env.PHYSICAL_AI_USE_GPU = '1';
+    } else {
+      env.LIBGL_ALWAYS_SOFTWARE = '1';
+      env.GALLIUM_DRIVER = 'llvmpipe';
+    }
 
     const envArray = Object.entries(env).map(([k, v]) => `${k}=${v}`);
+
+    const hostConfig: {
+      PortBindings: Record<string, Array<{ HostPort: string }>>;
+      Devices?: Array<{ PathOnHost: string; PathInContainer: string; CgroupPermissions: string }>;
+    } = {
+      PortBindings: Object.fromEntries(
+        portMappings.map(p => [
+          `${p.containerPort}/${p.protocol}`,
+          [{ HostPort: String(p.hostPort) }],
+        ]),
+      ),
+    };
+    if (useGpu) {
+      hostConfig.Devices = this.#simulationGpuDeviceMappings();
+    }
 
     const createResult = await extensionApi.containerEngine.createContainer(
       engineId,
@@ -558,19 +576,27 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         Cmd: cmd,
         Env: envArray,
         Labels: labels,
-        HostConfig: {
-          PortBindings: Object.fromEntries(
-            portMappings.map(p => [
-              `${p.containerPort}/${p.protocol}`,
-              [{ HostPort: String(p.hostPort) }],
-            ]),
-          ),
-        },
+        HostConfig: hostConfig,
       },
     );
 
     await extensionApi.containerEngine.startContainer(engineId, createResult.id);
     return createResult.id;
+  }
+
+  async #simulationGpuPassthroughEnabled(): Promise<boolean> {
+    if (process.arch !== 'arm64') {
+      return false;
+    }
+    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    return config.get<boolean>('simulationGpuPassthrough') ?? true;
+  }
+
+  #simulationGpuDeviceMappings(): Array<{ PathOnHost: string; PathInContainer: string; CgroupPermissions: string }> {
+    return [
+      { PathOnHost: '/dev/dri/card0', PathInContainer: '/dev/dri/card0', CgroupPermissions: 'rwm' },
+      { PathOnHost: '/dev/dri/renderD128', PathInContainer: '/dev/dri/renderD128', CgroupPermissions: 'rwm' },
+    ];
   }
 
   async stopSimulation(containerId: string): Promise<void> {

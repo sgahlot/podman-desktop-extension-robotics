@@ -96,7 +96,7 @@ The backend is the entry point loaded by Podman Desktop. It manages the extensio
 | `src/extension.ts` | Entry point — creates webview panel, wires RPC, registers `physical-ai.open` command
 | `src/api-impl.ts` | `PhysicalAiApiImpl` — implements all API methods; private helpers use JS `#private` syntax (not RPC-callable)
 | `src/progressLogs.ts` | `appendProgressLog()` — capped at 500 lines with truncation marker
-| `package.json` | Extension manifest (contributes: commands, configuration with 10 properties)
+| `package.json` | Extension manifest (contributes: commands, configuration with 11 properties)
 | `vite.config.js` | Builds to CJS, externalizes `@podman-desktop/api`
 | `assets/ros2-jazzy-base/` | Bundled Containerfile + entrypoint for Jazzy base builds
 | `assets/ros2-jazzy-sim/` | Jazzy simulation image: Containerfile, entrypoint-gazebo.sh, entrypoint-spawn-robot.sh, world SDF, noVNC landing page
@@ -113,7 +113,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 * Dashboard landing page with feature cards
 * Image catalog browser with All/Curated views and pull progress _(APPENG-5770, done)_
 * Image Builder for base and simulation images with Quick Start preset _(done)_
-* Simulation page — launch, status, open in browser, stop & remove, add TurtleBot3, per-robot X/Y + **Go** (`cmd_vel` locally; APPENG-5920 In Review). Nav2 packages ship in the sim image; autonomous Nav2 (`navigate_to_pose`) deferred to OpenShift (APPENG-5767).
+* Simulation page — launch, status, open in browser, stop & remove, add TurtleBot3, per-robot X/Y + **Go** (`cmd_vel` locally; APPENG-5920 In Review). Lidar/IMU sensors active on Mac (2026-08); Nav2 stack (`navigate_to_pose`) deferred to OpenShift (APPENG-5767).
 * In-extension Help page _(done)_
 * ROS2 topic monitor — active topics, message types, pub/sub counts _(APPENG-5773, done)_
 * Fleet status dashboard _(APPENG-5776, planned — Story 3)_
@@ -360,15 +360,15 @@ Uses a single Podman container (not a pod) with all components baked in. This av
 │    Labels: io.physical-ai.role=simulation                          │
 │                                                                    │
 │  ┌──────────────────────────────────────────────────────────────┐  │
-│  │  Ubuntu 24.04 + ROS2 Jazzy + Gazebo Harmonic + noVNC           │  │
-│  │  (Nav2 packages in image; stack not launched locally)          │  │
+│  │  Ubuntu 24.04 + ROS2 Jazzy + Gazebo Harmonic + noVNC         │  │
+│  │  (Nav2 packages in image; stack not launched locally)        │  │
 │  │                                                              │  │
 │  │  Xvfb (:99) → openbox → x11vnc → websockify (port 6080)      │  │
 │  │                              ↑                               │  │
 │  │  gz sim (server) ──► gz sim (GUI, renders to :99)            │  │
 │  │                                                              │  │
-│  │  Software rendering: LIBGL_ALWAYS_SOFTWARE=1, llvmpipe       │  │
-│  │  (Ogre2 Sensors plugin removed from world — see Open Qs)     │  │
+│  │  arm64: virtio-gpu via /dev/dri (default); llvmpipe fallback │  │
+│  │  Ogre2 Sensors plugin enabled (re-verified 2026-08)          │  │
 │  └──────────────────────────────────────────────────────────────┘  │
 │                                                                    │
 │  Exposed ports: 6080 (noVNC), 8080 (landing page)                  │
@@ -401,7 +401,7 @@ NOTE: Story 6 uses `podman exec` to spawn additional robots into a **single** si
 
 == Configuration Properties
 
-The extension contributes 10 settings under **Settings → Preferences → Physical AI**:
+The extension contributes 11 settings under **Settings → Preferences → Physical AI**:
 
 [cols="2,1,1,2"]
 |===
@@ -417,6 +417,7 @@ The extension contributes 10 settings under **Settings → Preferences → Physi
 | `physical-ai.catalogCuratedAllowlist` | string | `ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*` | Comma-separated wildcard patterns for curated catalog view
 | `physical-ai.simulationImageAllowlist` | string | _(empty)_ | Optional comma-separated image refs or patterns for Simulation launch. Empty = default `ros2-*-sim*` / `ros2-*-turtlebot3`. Pin exact tags or digests for demos.
 | `physical-ai.topicPeekTimeoutSeconds` | number | `5` | Timeout in seconds for Topic Monitor Peek (`ros2 topic echo --once`). Whole number from 1 to 30.
+| `physical-ai.simulationGpuPassthrough` | boolean | `true` | On arm64 Mac, pass `/dev/dri` into simulation containers and use virtio-gpu when available. Disable to force llvmpipe. Ignored on amd64.
 |===
 
 == Key Technical Decisions
@@ -499,7 +500,7 @@ The extension contributes 10 settings under **Settings → Preferences → Physi
 
 | Nav2 (local vs OpenShift)
 | Packages in image; stack deferred to OpenShift
-| `ros-jazzy-navigation2` and `entrypoint-nav2.sh` ship in `ros2-jazzy-sim`. Local **Go** uses `cmd_vel` (APPENG-5920). Autonomous Nav2 (`navigate_to_pose`) targets OpenShift (APPENG-5767).
+| `ros-jazzy-navigation2` and `entrypoint-nav2.sh` ship in `ros2-jazzy-sim`. Lidar/IMU sensors work on Mac (2026-08). Local **Go** still uses `cmd_vel` (no Nav2 obstacle avoidance). Autonomous Nav2 (`navigate_to_pose`) targets OpenShift (APPENG-5767).
 
 | Robot spawn mechanism
 | `podman exec -d` via `process.exec()`
@@ -510,19 +511,18 @@ The extension contributes 10 settings under **Settings → Preferences → Physi
 | Podman/`@podman-desktop/api` manage images and containers (create/start/stop/list/build). They do not provide ROS 2/DDS, Gazebo spawn, or the Xvfb/noVNC stack. Entrypoints (`entrypoint-gazebo.sh`, `entrypoint-spawn-robot.sh`, …) orchestrate that stack inside the image; Topic Monitor / Peek / nav use `podman exec` + ROS CLI (`#execRosBash`). A native ROS client or in-container bridge would reduce CLI execs but is a separate architecture bet — not “replace scripts with Podman.” Internal detail: `.internal/tech-reference.md` (Bash scripts vs Podman).
 
 | Ogre2 Sensors on arm64
-| Removed from world SDF (2026-07 spike)
-| Reported segfault with llvmpipe during S6-1; re-verify on current Gazebo/Mesa (see Open Questions). Sensors plugin removed from world SDF; visuals and physics unaffected.
+| Re-enabled in world SDF (2026-08)
+| 2026-07 segfault not reproduced on current Gazebo Harmonic + Mesa (llvmpipe or virtio-gpu), verified with `scripts/test-sensors-gpu.sh`.
 |===
 
 == Resolved Questions
 
 * **noVNC vs alternatives:** noVNC chosen and implemented. Xvfb + x11vnc + websockify stack baked into the simulation image, served on port 6080. Lightweight and works without GPU.
-* **Mac GPU and rendering:** LibKrun can expose the host GPU to the VM via virtio-gpu (API translation to Metal on Apple Silicon). Our sim image forces `llvmpipe` software rendering because Gazebo Ogre2 was unreliable through virtio-gpu during the S6-1 spike — not because GPU passthrough is impossible. Demo visuals work at 1024×768 without enabling GPU in Podman Machine.
-* **Ogre2 Sensors plugin:** Removed from the world SDF during S6-1 after a reported segfault under software rendering. Re-verify on current stack; if still broken, track upstream fix or conditional re-enable on OpenShift/amd64 (see Open Questions and plan wishlist).
+* **Mac GPU and rendering:** On arm64 Mac, simulation launch passes `/dev/dri` and sets `PHYSICAL_AI_USE_GPU=1` (preference **Simulation GPU passthrough**, default on). The entrypoint uses virtio-gpu when `/dev/dri` is present; otherwise falls back to `llvmpipe`. amd64 always uses software rendering. Xvfb + noVNC stack is unchanged.
+* **Ogre2 Sensors plugin:** Re-enabled in world SDF (2026-08). A 2026-07 segfault under llvmpipe is **not reproduced** on current Gazebo Harmonic + Mesa (`scripts/test-sensors-gpu.sh`). Lidar (`/scan`) and IMU publish after spawn; Nav2 stack launch remains deferred (see Nav2 row in Key Technical Decisions).
 
 == Open Questions
 
-* **Ogre2 Sensors re-verification:** Re-test `gz-sim-sensors-system` on arm64 with current Gazebo Harmonic + Mesa (llvmpipe and virtio-gpu paths). If reproducible, file/link upstream issue; if fixed, re-enable Sensors and wire Nav2 for OpenShift. Time-permitting: investigate whether we can contribute a fix upstream.
 * **Topic monitor bridge:** Topic Monitor currently uses `podman exec` + `ros2` CLI (acceptable; Podman has no ROS API). Open: keep CLI polling long-term, or add a lightweight in-container HTTP/WS bridge for Hz/streaming (see Phase C/D in peek polish notes)?
 * **Multi-robot resource limits:** How many TurtleBot3 instances can run in a single container before the Podman VM hits memory limits?
 

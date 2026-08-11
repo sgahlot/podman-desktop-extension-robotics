@@ -46,7 +46,7 @@ Drivers:
 | [APPENG-5767](#story-4) | OpenShift deployment bridge | ⚪ Not Started | 0/3 done |
 | [Spike](#story-5) | Local-first deployment of reference demos | 🅿️ Parked (Kind OOM) | 0/6 proposed |
 | [Story 6](#story-6) | Podman-only simulation workflow (ROSCon demo) | 🟡 In Progress | 5/6 done — **demo path complete; S6-6 deferred** |
-| [FIX](#fix-arch-aware-sim) | Make simulation image build arch-aware | ✅ Done | Naming + labels fixed; Ogre2 Sensors deferred |
+| [FIX](#fix-arch-aware-sim) | Make simulation image build arch-aware | ✅ Done | Naming + labels fixed; GPU passthrough + Sensors re-enabled (2026-08) |
 | [Security](#security-hardening) | Security hardening | ✅ Done | Shell injection, exec/launch lockdown, image trust, defense-in-depth + follow-up fixes |
 
 > **Legend:** ✅ Done · 🟠 In Review · 🟡 In Progress / Almost Done · ⚪ Not Started · 🅿️ Parked · 🔴 Must fix
@@ -169,7 +169,7 @@ If you only ever build one sim image and never reuse the base, the two-phase spl
 | ✅ | APPENG-5771 | Container orchestration for ROS2 + Gazebo launch via Podman pod | Implemented via [Story 6](stories/story6-podman-sim.md) S6-1/S6-3/S6-4. Podman-only (no pods/compose): backend lifecycle API + Simulation page + one-click launch. |
 | ✅ | APPENG-5772 | Integrate noVNC or web-based video stream for simulation visualization | Implemented via [Story 6](stories/story6-podman-sim.md) S6-1/S6-4. noVNC stack (Xvfb + x11vnc + websockify) in sim image, "Open in Browser" on Simulation page. |
 | ✅ | APPENG-5773 | Build topic monitor panel showing active ROS2 topics and message rates | Topic Monitor page (`/topics`): lists active ROS2 topics with message types, publisher/subscriber counts. Uses `podman exec` (attached) to run `ros2 topic list` + `ros2 topic info` inside the simulation container. Auto-refreshes every 5s. Accessible from Dashboard card and Simulation page "View Topics" button. Hz measurement deferred. |
-| 🟠 | APPENG-5920 | Add navigation UI for driving robots in simulation | **In Review.** Per-robot X/Y + **Go** on Simulation page. Local/Mac: `cmd_vel` turn/drive (no obstacle avoidance — Sensors off). OpenShift Nav2 (`navigate_to_pose`) deferred — prefer CPU first, GPU optional. |
+| 🟠 | APPENG-5920 | Add navigation UI for driving robots in simulation | **In Review.** Per-robot X/Y + **Go** on Simulation page. Local/Mac: `cmd_vel` turn/drive (lidar/IMU publish; Nav2 stack not launched — no obstacle avoidance). OpenShift Nav2 (`navigate_to_pose`) deferred. |
 | 🟠 | APPENG-5922 | Topic Monitor drill-down | **In Review.** Expandable rows: `ros2 topic info -v` pub/sub node names. On-demand fetch (not polled). |
 | 🟠 | APPENG-5923 | Topic Monitor message peek | **In Review.** Peek via `ros2 topic echo --once` (1–30s timeout); Tree/Raw, Copy, schema, topology badges. |
 
@@ -415,7 +415,7 @@ Captured during initial scaffold implementation.
 >
 > **Status (2026-07-28):** Kind spike parked on branch `spike/repo-b-kind-attempt` after Nav2 OOMKill (~4 Gi) on arm64. **Story 6** is the ROSCon Podman-only path. Resume Story 5 when tackling K8s / OpenShift.
 >
-> **Revisit note (2026-08-10):** The Kind OOM was from a **multi-pod** layout (control plane + Gazebo + per-robot Nav2 + Zenoh) with high memory requests — not from Kind itself. A **lean Kind spike** can mirror Story 6: **one** Deployment/Pod running `ros2-jazzy-sim` (Gazebo + noVNC + in-image spawn via `kubectl exec`), NodePort/`kubectl port-forward` for 6080, `kind load` for the image. Kind still adds API-server/etcd overhead (and on Mac often VM → Kind → pod), so budget more RAM than bare Podman (~5.7 GB), but a single-sim pod is far more realistic than Repo B’s chart. This does **not** by itself enable Nav2 (Sensors still off under llvmpipe). Prefer this packaging spike before full multi-pod Helm or APPENG-5778.
+> **Revisit note (2026-08-10):** The Kind OOM was from a **multi-pod** layout (control plane + Gazebo + per-robot Nav2 + Zenoh) with high memory requests — not from Kind itself. A **lean Kind spike** can mirror Story 6: **one** Deployment/Pod running `ros2-jazzy-sim` (Gazebo + noVNC + in-image spawn via `kubectl exec`), NodePort/`kubectl port-forward` for 6080, `kind load` for the image. Kind still adds API-server/etcd overhead (and on Mac often VM → Kind → pod), so budget more RAM than bare Podman (~5.7 GB), but a single-sim pod is far more realistic than Repo B’s chart. Nav2 stack launch remains a separate wiring step. Prefer this packaging spike before full multi-pod Helm or APPENG-5778.
 >
 > **Research note (2026-07-27):** Both reference repos were reviewed independently against this story. Goal and ownership model are sound; details below incorporate corrections (especially Repo A distro) and Mac/Kind spike risks that were previously under-specified.
 
@@ -460,7 +460,7 @@ This bridges Story 2 (single-robot sim) and Story 4 (OpenShift bridge) by learni
 - **Scaling:** `values.yaml` `robots:` list → one Nav2 Deployment + sidecar per robot
 - **Demo:** `demo/meet_demo.py` (Nav2 Simple Commander — robots swap positions)
 - **Resources (order of magnitude):** Gazebo ~4–8 CPU / 4–8 Gi; each Nav2 ~2–4 CPU / 2–4 Gi — size Docker Desktop / Kind node accordingly
-- **GPU:** `gazebo.gpu=true` for NVIDIA nodes; **not available on Mac** — expect llvmpipe / software GL
+- **GPU:** `gazebo.gpu=true` for NVIDIA nodes on OpenShift; on Mac Podman, virtio-gpu via `/dev/dri` passthrough (default on arm64)
 
 ### Why Zenoh (both repos)
 
@@ -526,7 +526,7 @@ Story 1 (images) ✅
 
 | Option | Pros | Cons | Notes |
 |--------|------|------|-------|
-| **Kind (lean / single sim)** | Proves K8s packaging; aligns with APPENG-5778; same image as Story 6 | Control-plane + nested VM overhead on Mac; no GPU | **Preferred Kind revisit** — one Deployment of `ros2-jazzy-sim`, port-forward 6080, spawn via `kubectl exec`. See Story 5 revisit note (2026-08-10). |
+| **Kind (lean / single sim)** | Proves K8s packaging; aligns with APPENG-5778; same image as Story 6 | Control-plane + nested VM overhead on Mac | **Preferred Kind revisit** — one Deployment of `ros2-jazzy-sim`, port-forward 6080, spawn via `kubectl exec`. See Story 5 revisit note (2026-08-10). |
 | **Kind (Repo B multi-pod)** | Closer to OpenShift fleet chart | OOM on arm64 Mac (~4 Gi) | Parked — do not resume until lean path works and/or larger host |
 | **Minikube** | Ingress UX; mature | Heavier on Mac | Fallback if Kind networking bites |
 | **Plain Podman** | Repo A already has scripts; Story 6 path; fast smoke | Does not prove Helm path | Default for ROSCon / Story 3 |
@@ -555,7 +555,7 @@ Items that improve polish or operability but are **not** required for the ROSCon
 |--------|------|------|-------|
 | 💡 | Build / push UI | **Download full build log** | Build/push progress in the UI keeps only the newest ~500 log lines (memory safety). A true “Download full log” needs uncapped logs written to a temp file during the build, plus a download action and cleanup on cancel/complete/reload. Do **not** expose a Settings toggle for “full vs capped” display — prefer download of the full file when this is implemented. |
 | 💡 | Build / push UI | Persist progress across extension reload | Progress Maps are in-memory today; reloading the extension clears build/push/pull state. Nice-to-have later if long builds + reload becomes a common pain. |
-| 💡 | Simulation | **Re-verify Ogre2 Sensors on arm64** | Removed during S6-1 after reported segfault with llvmpipe. **TODO (time-permitting):** re-test on current Gazebo Harmonic + Mesa (llvmpipe and virtio-gpu); file/link upstream issue if still broken; investigate upstream fix contribution. If fixed, re-enable Sensors and wire Nav2 for OpenShift. Conditionally include Sensors in world SDF on amd64/OpenShift deploy profile. |
+| 💡 | Simulation | **Upstream Ogre2 Sensors issue** | 2026-08 re-verification: no segfault on current Gazebo/Mesa (`scripts/test-sensors-gpu.sh`). Sensors re-enabled. If regressions appear, file upstream gz-sim issue with repro. |
 | 💡 | Simulation / Image Builder | **Humble + noVNC Mac parity (+ optional Quick Start)** | Time-permitting. See notes below. |
 
 > **Legend:** 💡 Wishlist · promote to 🅿️ follow-up or a Jira sub-task when scheduled
@@ -564,14 +564,14 @@ Items that improve polish or operability but are **not** required for the ROSCon
 
 **Context:** Quick Start and the Simulation page browser demo (`Open in Browser`, interactive spawn) target **Jazzy** (`ros2-jazzy-sim:noble` + noVNC). Humble already **runs on Mac** for ROS itself via the multi-arch `sloretz` base preset, but `ros2-humble-turtlebot3` has no noVNC stack and a bare entrypoint — so it does not match Story 6 UX. Do **not** add a peer Humble Quick Start until that parity exists (or label it clearly as non-browser).
 
-**Feasible in principle:** The display stack is distro-agnostic Ubuntu packages (`xvfb`, `x11vnc`, `novnc`, `websockify`, `openbox`) plus the same entrypoint pattern as `ros2-jazzy-sim` (Xvfb → VNC → websockify → Gazebo GUI under `LIBGL_ALWAYS_SOFTWARE` / llvmpipe). That part can be ported to Humble.
+**Feasible in principle:** The display stack is distro-agnostic Ubuntu packages (`xvfb`, `x11vnc`, `novnc`, `websockify`, `openbox`) plus the same entrypoint pattern as `ros2-jazzy-sim` (Xvfb → VNC → websockify → Gazebo GUI). GPU vs `llvmpipe` follows the same `PHYSICAL_AI_USE_GPU` / Preferences pattern as Jazzy.
 
 **What actually made Mac work for Jazzy** was not noVNC alone — it was **Tier 1 arm64 binaries** on Ubuntu Noble for ROS 2 Jazzy + Gazebo Harmonic + Nav2. Story 6 originally moved off Humble partly because Humble `ros-gz` / Nav2 packaging on arm64 looked like an amd64/QEMU path.
 
 **Spike before scheduling (exit criteria):**
 
-1. On Apple Silicon Podman: install/run Humble + `ros-gz` (or equivalent) + Gazebo GUI under llvmpipe without QEMU; note Fortress vs Harmonic pairing.
-2. Port (or share) noVNC entrypoints/worlds/spawn scripts; confirm Sensors/llvmpipe workarounds still apply.
+1. On Apple Silicon Podman: install/run Humble + `ros-gz` (or equivalent) + Gazebo GUI (virtio-gpu or llvmpipe); note Fortress vs Harmonic pairing.
+2. Port (or share) noVNC entrypoints/worlds/spawn scripts; reuse Sensors + GPU patterns from Jazzy sim.
 3. Simulation page + `#detectRosDistro` work against a Humble noVNC image tag.
 4. Only then: optional Image Builder Quick Start button (`humble` + `sloretz`), clearly secondary to Jazzy.
 
@@ -598,7 +598,7 @@ Items that improve polish or operability but are **not** required for the ROSCon
 | ✅ | S6-5 | Add TurtleBot3 (podman exec spawn) |
 | ⚪ | S6-6 | Customize Hardware card *(stretch)* |
 
-**Key finding (S6-1):** Ogre2 Sensors plugin crashes on arm64 llvmpipe — removed from world SDF. Visuals/physics work; only simulated sensor data lost (acceptable for demo).
+**Key finding (S6-1, updated 2026-08):** Ogre2 Sensors plugin temporarily removed during S6-1 (reported arm64 llvmpipe segfault). Re-verified on current Gazebo/Mesa — no crash; plugin re-enabled. arm64 launch passes `/dev/dri` by default (virtio-gpu).
 
 ---
 
@@ -618,7 +618,7 @@ The Jazzy simulation profile is hardcoded to arm64 naming and assumptions throug
 
 3. **Containerfile is actually arch-agnostic:** `ros2-jazzy-sim-arm64/Containerfile` uses `FROM $LOCAL_BASE_IMAGE` and `apt install ros-jazzy-*` — apt resolves packages for the host architecture. The image builds and runs on amd64. The only arm64-specific part is the name.
 
-4. **Ogre2 workaround may not be needed on amd64:** The Sensors plugin was removed from the world SDF because Ogre2 segfaults on arm64 llvmpipe. On amd64 with a native GPU, this removal is unnecessary — users lose simulated sensor data for no reason.
+4. **Ogre2 Sensors (2026-08):** Segfault from S6-1 not reproduced on current stack; plugin re-enabled. Lidar/IMU topics publish after spawn on Mac.
 
 5. **Quick Start label:** Says "TurtleBot3 Sim (Jazzy arm64)" — confusing on amd64 Linux.
 
@@ -640,13 +640,7 @@ The extension technically works on amd64 Linux (the Containerfile is arch-agnost
 | 6 | Update `jazzy-arm64` base image preset label to be less arm64-specific, or keep both `jazzy` and `jazzy-arm64` presets with clear labels | `SimulationBaseImages.ts` |
 | 7 | Update golden image names in README, plan doc, and story docs | READMEs, plan doc, design.adoc, story docs |
 
-**Step 5 (world SDF) has two approaches:**
-
-- **Option A — Two world files:** `tb3_sandbox.sdf` (amd64, with Sensors) and `tb3_sandbox_nosensors.sdf` (arm64, without). Entrypoint selects based on `uname -m`. Simple but duplicates the SDF.
-- **Option B — Single xacro with conditional:** Use the existing `.sdf.xacro` with a parameter to include/exclude the Sensors plugin. Entrypoint passes the flag based on arch. Cleaner, but xacro processing adds a build-time dependency.
-- **Option C — Always exclude Sensors for now:** Keep the current world SDF (no Sensors), document that sensor simulation is unavailable. Simplest, but amd64 users lose sensor data unnecessarily. Add Sensors back as a follow-up when tested on amd64.
-
-**Recommendation:** Start with steps 1–4 and 6–7 (naming fixes, no functional change). For step 5, go with **Option C for now** (always exclude Sensors) and add an item to the wishlist to conditionally enable Sensors on amd64 once tested. This avoids scope creep while fixing the confusing naming immediately.
+**Step 5 (world SDF) — updated 2026-08:** Sensors plugin **re-enabled** for all arches after re-verification (`scripts/test-sensors-gpu.sh`). Historical options A/B/C below; current world includes `gz-sim-sensors-system`. GPU: arm64 launch passes `/dev/dri` (preference **Simulation GPU passthrough**).
 
 #### Validation
 
@@ -701,3 +695,4 @@ Comprehensive security audit and hardening of the extension's backend API, entry
 - **In Review + Story 6 polish (2026-08-10):** APPENG-5920 / 5922 / 5923 marked **In Review** in plan and story docs. Ready Now points at 5774 / OpenShift spike / deferred S6-6. Story 6 demo path framed complete; ROSCon e2e checklist added in story6 doc. S6-6 still stretch/out of scope.
 - **Kind lean path (2026-08-10):** Documented revisit of Kind using a **single** `ros2-jazzy-sim` Deployment (Story 6 parity) instead of Repo B multi-pod Nav2 charts that OOM’d on arm64. Updated Story 5 status, local deployment options, APPENG-5778 note, and Ready Now.
 - **Story 3 = Podman Compose (2026-08-10):** Clarified APPENG-5774/Story 3 deliverable is **Podman Compose** multi-container fleet (not scale-in-one-container alone). Story 6 multi-spawn remains a lightweight demo path.
+- **GPU + Sensors (2026-08-11):** arm64 simulation launch passes `/dev/dri` by default (**Simulation GPU passthrough** preference). Ogre2 Sensors re-enabled after re-verification (`scripts/test-sensors-gpu.sh`); `/scan` and `/imu` publish after spawn. Nav2 stack launch still deferred; **Go** remains `cmd_vel`.

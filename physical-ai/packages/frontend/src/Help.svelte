@@ -89,7 +89,7 @@ import { router } from 'tinro';
           <strong>Add TurtleBot3</strong> — Spawns a robot into the running world via <span class="font-mono">podman exec</span> (name + X/Y/yaw).
         </div>
         <div>
-          <strong>Navigate</strong> — Each spawned robot has a "Go" button with target X/Y coordinates. The robot turns toward the target and drives in a straight line at 0.2 m/s. Status shows: Driving &rarr; Drove to (X, Y) / Failed. No obstacle avoidance &mdash; pick targets with a clear line of sight.
+          <strong>Navigate</strong> — Each spawned robot has a "Go" button with target X/Y coordinates. The robot turns toward the target and drives in a straight line at 0.2 m/s. Status shows: Driving &rarr; Drove to (X, Y) / Failed. Lidar/IMU topics publish after spawn; <strong>Go</strong> does not use them for obstacle avoidance (Nav2 not launched from the UI).
         </div>
       </div>
     </div>
@@ -140,7 +140,7 @@ import { router } from 'tinro';
         <p>&#8226; Arch warnings appear only when the selected preset does not support your host architecture.</p>
         <p>&#8226; Pull progress may jump as layers are discovered — that is normal.</p>
         <p>&#8226; The extension remembers your last visited page.</p>
-        <p>&#8226; For Gazebo on Mac, prefer Jazzy Noble over Humble (avoids QEMU).</p>
+        <p>&#8226; On Apple Silicon, simulation launch passes <span class="font-mono">/dev/dri</span> by default (virtio-gpu). Disable <strong>Simulation GPU passthrough</strong> in Preferences to force software rendering.</p>
         <p>&#8226; noVNC may show Disconnected after an idle background tab — auto-reconnect or refresh; the sim is still running.</p>
         <p>&#8226; After <strong>Stop &amp; remove</strong>, close the Gazebo browser tab yourself (the extension cannot close it).</p>
         <p>&#8226; Demo flow: Image Builder → Launch → Open in Browser → Add TurtleBot3 → Go → Topics → Stop &amp; remove.</p>

@@ -33,7 +33,7 @@
 
 **Description:** Provide browser-based visualization of the running Gazebo simulation so developers never need to touch a terminal or install GUI tools locally.
 
-**Implemented in [Story 6](story6-podman-sim.md).** noVNC display stack (Xvfb + x11vnc + websockify) baked into the simulation image. "Open in Browser" button on the Simulation page opens `localhost:6080`. Software rendering via llvmpipe (Ogre2 Sensors plugin removed due to arm64 segfault — visuals/physics unaffected).
+**Implemented in [Story 6](story6-podman-sim.md).** noVNC display stack (Xvfb + x11vnc + websockify) baked into the simulation image. "Open in Browser" button on the Simulation page opens `localhost:6080`. On arm64 Mac, launch passes `/dev/dri` by default (virtio-gpu); `llvmpipe` fallback when GPU passthrough is disabled in Preferences.
 
 ---
 
@@ -73,9 +73,9 @@
 
 ### Implementation Notes
 
-**Done (local / Mac):** Direct velocity control. Backend queries robot pose via `gz model -m <name> -p`, then publishes `cmd_vel` Twist messages to turn and drive in a straight line. No obstacle avoidance — Ogre2 Sensors crash on arm64 llvmpipe blocks Nav2 (no lidar/costmap data). Per-robot X/Y + **Go**, status feedback, Help, tests.
+**Done (local / Mac):** Direct velocity control. Backend queries robot pose via `gz model -m <name> -p`, then publishes `cmd_vel` Twist messages to turn and drive in a straight line. Lidar/IMU topics publish after spawn (2026-08), but **Go** does not use them — no obstacle avoidance until Nav2 is wired. Per-robot X/Y + **Go**, status feedback, Help, tests.
 
-**Deferred (OpenShift):** Nav2 autonomous navigation with obstacle avoidance. Re-enable Ogre2 Sensors for the OpenShift deploy profile, launch Nav2 per robot (`entrypoint-nav2.sh`), and send goals via `navigate_to_pose`. Prefer CPU/software GL first — GPU optional, not required. Verify in-cluster. Partial plumbing today: Nav2 packages and `entrypoint-nav2.sh` in `ros2-jazzy-sim`; `sendNavigationGoal` still uses `cmd_vel`. Wiring `navigate_to_pose` + Sensors + in-cluster verify is Story 4 / follow-up — not required to close local 5920 scope.
+**Deferred (OpenShift):** Nav2 autonomous navigation with obstacle avoidance. Launch Nav2 per robot (`entrypoint-nav2.sh`) and send goals via `navigate_to_pose`. Verify in-cluster. Partial plumbing today: Nav2 packages and `entrypoint-nav2.sh` in `ros2-jazzy-sim`; `sendNavigationGoal` still uses `cmd_vel`. Wiring `navigate_to_pose` + in-cluster verify is Story 4 / follow-up — not required to close local 5920 scope.
 
 **New files:**
 - `packages/backend/assets/ros2-jazzy-sim/entrypoint-nav2.sh` — launches Nav2 navigation stack (unused from UI on arm64; ready for OpenShift wiring)

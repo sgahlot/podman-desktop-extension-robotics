@@ -17,7 +17,7 @@ Current container bases are **Ubuntu interim** (official `ros` / OSRF / sloretz 
 
 - **Podman Desktop** — 1.28+ (tested with 1.28.x and 1.29.x). Extension API `@podman-desktop/api@1.28.3`
 - **Podman** — 5.x or 6.x (tested with 5.8.5 and 6.0.2)
-- **Machine CPUs** — minimum 4, recommended 6+. Gazebo + noVNC are CPU-bound under software rendering.
+- **Machine CPUs** — minimum 4, recommended 6+. Gazebo + noVNC; arm64 uses virtio-gpu by default.
 - **Machine Memory** — minimum 4 GB, recommended 8 GB. Single sim container uses ~2.5–3 GB. Default ~5.7 GB works for 1–2 robots. Increase to 8 GB for 3+ robots.
 - **Machine Disk** — minimum 30 GB, recommended 50+ GB. Base image ~1.5 GB, sim image ~3 GB, plus build cache layers.
 
@@ -25,7 +25,7 @@ To check or change Podman Machine resources: open **Settings → Resources → P
 
 ### Platform notes
 
-- **Mac Apple Silicon (arm64)**: Use the Jazzy Quick Start — builds natively, no QEMU. VM backend is LibKrun (default). LibKrun can expose the host GPU via virtio-gpu (API translation to Metal), but the sim image forces software rendering (`llvmpipe`) for Gazebo stability — see [GPU and rendering](#gpu-and-rendering).
+- **Mac Apple Silicon (arm64)**: Use the Jazzy Quick Start — builds natively, no QEMU. VM backend is LibKrun (default). Simulation launch passes `/dev/dri` by default (virtio-gpu); see [GPU and rendering](#gpu-and-rendering).
 - **Linux amd64**: Use Humble (sloretz or osrf base) or Jazzy (Noble or amd64 preset). Native GPU rendering may work but is untested.
 - **Windows**: Untested.
 
@@ -36,9 +36,9 @@ To check or change Podman Machine resources: open **Settings → Resources → P
 3. **Image Builder** → Quick Start **TurtleBot3 Sim (Jazzy)** → Phase 1 Build → Phase 2 Build
 4. **Simulation** → Launch → Open in Browser → Add TurtleBot3 → optional **Go** (X/Y) and Topic Monitor **Peek**
 5. **Stop & remove** when done — close the Gazebo (noVNC) browser tab manually if it is still open
-6. Adjust defaults under **Settings → Preferences → Physical AI**
+6. Adjust defaults under **Settings → Preferences → Physical AI** (including **Simulation GPU passthrough** on Mac)
 
-Idle noVNC tabs may show Disconnected; reconnect or refresh — the simulation is still running. Sensors (lidar/camera) are off under software rendering on Mac, so **Go** has no obstacle avoidance.
+Idle noVNC tabs may show Disconnected; reconnect or refresh — the simulation is still running. Lidar/IMU topics are available after spawn when using a current sim image; **Go** uses open-loop `cmd_vel` (Nav2 deferred to OpenShift).
 
 ## Settings
 
@@ -46,6 +46,7 @@ Idle noVNC tabs may show Disconnected; reconnect or refresh — the simulation i
 - **Catalog view mode** — `all` (default) or `curated`
 - **Catalog curated allowlist** — comma-separated repo name patterns (`*` wildcard), default `ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*`
 - **Simulation image allowlist** — optional comma-separated image refs or patterns for Simulation launch. Empty = default `ros2-*-sim*` / `ros2-*-turtlebot3`. Pin exact tags or `@sha256:…` digests for demos. Local image *content* is still trusted once selected.
+- **Simulation GPU passthrough** — on arm64 Mac, pass `/dev/dri` into sim containers (default on). Disable to force software rendering (`llvmpipe`).
 - **Topic peek timeout** — seconds to wait for Topic Monitor **Peek** (`ros2 topic echo --once`). Whole number 1–30; default 5.
 - Image Builder wizard defaults (robot, distro, middleware, engine, base preset)
 
@@ -84,13 +85,13 @@ Bundled Containerfile contexts live under `assets/` in this package.
 
 ### GPU and rendering
 
-On Mac, Podman Machine uses **LibKrun**. The host GPU can be exposed to the Linux VM via **virtio-gpu** (API translation — e.g. Vulkan through MoltenVK to Apple Metal). Podman Desktop may show “Default GPU enabled (LibKrun)” when GPU is enabled in Machine settings.
+On Mac, Podman Machine uses **LibKrun**. The host GPU is exposed to the Linux VM via **virtio-gpu** (API translation to Metal). Containers do **not** see `/dev/dri` unless the device is passed at launch.
 
-Gazebo’s Ogre2 rendering engine was unreliable through virtio-gpu on arm64 during development, and Ogre2 Sensors (`gz-sim-sensors-system`) was reported to segfault under software rendering. We therefore **force software rendering** in the sim entrypoint:
-- `LIBGL_ALWAYS_SOFTWARE=1` — tells Mesa to skip hardware GPU detection
-- `GALLIUM_DRIVER=llvmpipe` — selects the LLVM-based CPU rasterizer
+**Default on Apple Silicon (arm64):** Simulation launch passes `/dev/dri/card0` and `/dev/dri/renderD128` and sets `PHYSICAL_AI_USE_GPU=1`. The entrypoint uses hardware rendering when `/dev/dri` is present; otherwise it falls back to `llvmpipe`. Disable under **Settings → Preferences → Physical AI → Simulation GPU passthrough** to always use software rendering.
 
-This is stable and sufficient at 1024x768. Gazebo visuals and physics work normally; simulated sensor data (camera images, depth maps) is unavailable because the Sensors plugin was removed from the world SDF. **TODO (time-permitting):** re-verify whether the Sensors segfault still occurs on current Gazebo/Mesa and whether virtio-gpu works for Gazebo without forcing llvmpipe.
+On **amd64**, launch always forces `llvmpipe` (no GPU passthrough).
+
+**Ogre2 Sensors (2026-08 re-verification):** The `gz-sim-sensors-system` plugin no longer segfaults on current Gazebo Harmonic + Mesa (llvmpipe or virtio-gpu). It is re-enabled in `tb3_sandbox.sdf.xacro`. Lidar (`/scan`) and IMU topics are available after spawn.
 
 On **Linux with a native GPU** (not in a VM), Ogre2 may work without these workarounds, **but this has not been tested.**
 

@@ -30,7 +30,7 @@
 
 1. Launch base Gazebo image (empty world + noVNC) from Simulation page
 2. Click "Add TurtleBot3" → robot appears in the running sim via `podman exec`
-3. Set target X/Y and click **Go** (`cmd_vel` drive — no obstacle avoidance; Sensors off)
+3. Set target X/Y and click **Go** (`cmd_vel` drive — no obstacle avoidance; Nav2 not launched from UI)
 4. *(Stretch / deferred)* "Customize Hardware" → swap camera sensor (S6-6 — not started)
 
 ---
@@ -65,7 +65,7 @@ New directory: `packages/backend/assets/ros2-jazzy-sim/`
 | File | Description |
 |------|-------------|
 | `Containerfile` | Ubuntu 24.04 + ROS Jazzy apt packages + noVNC display stack. Key packages: `ros-jazzy-navigation2`, `ros-jazzy-nav2-bringup`, `ros-jazzy-nav2-minimal-tb3-sim`, `ros-jazzy-ros-gz-bridge`, `ros-jazzy-ros-gz-sim`, `ros-jazzy-gz-sim-vendor`, `xvfb`, `x11vnc`, `novnc`, `python3-websockify`, `openbox`. Ubuntu uses `libgl1`/`libegl1` (not mesa variants). ROS prefix: `/opt/ros/jazzy/`. |
-| `entrypoint-gazebo.sh` | Starts Xvfb → openbox → x11vnc → websockify (noVNC on 6080) → Gazebo server + GUI. Software rendering (llvmpipe). Optionally spawns robots from `ROBOTS` env var. |
+| `entrypoint-gazebo.sh` | Starts Xvfb → openbox → x11vnc → websockify (noVNC on 6080) → Gazebo server + GUI. arm64: virtio-gpu when `/dev/dri` present (`PHYSICAL_AI_USE_GPU=1`), else `llvmpipe`. Optionally spawns robots from `ROBOTS` env var. |
 | `entrypoint-spawn-robot.sh` | Accepts robot name + position as args. Sources ROS2, calls `spawn_tb3.launch.py` + `robot_state_publisher`. Used by `podman exec` for interactive robot add. |
 | `worlds/tb3_sandbox.sdf.xacro` | Sandbox world from repo-b reference. |
 | `www/index.html` | Simple landing page with noVNC link. |
@@ -96,9 +96,9 @@ New directory: `packages/backend/assets/ros2-jazzy-sim/`
 - `SimulationProfiles.ts` — added Jazzy sim profile with `assetDir: 'ros2-jazzy-sim'`, `imageName: 'ros2-jazzy-sim'`
 - `SimulationBaseImages.ts` — added `jazzy-noble` preset (Ubuntu 24.04 Noble, multi-arch, `imageRef: 'docker.io/library/ros:jazzy-ros-base'`)
 
-**Key finding — Ogre2 segfault on arm64 llvmpipe (2026-07):** The `gz-sim-sensors-system` plugin was reported to crash with a segfault (`Ogre::GL3PlusRenderSystem::_createRenderWindow`) under llvmpipe on arm64. Workaround: removed `<plugin filename="gz-sim-sensors-system">` from `tb3_sandbox.sdf.xacro`. Physics, visuals, and robot spawning work; simulated sensor rendering is off.
+**Historical (2026-07):** `gz-sim-sensors-system` was reported to segfault under llvmpipe on arm64; plugin was temporarily removed from `tb3_sandbox.sdf.xacro`.
 
-**Re-verification TODO (2026-08-11):** Re-test Sensors plugin on current Gazebo Harmonic + Mesa (llvmpipe and virtio-gpu). Initial re-test on running `ros2-jazzy-sim:noble` did **not** reproduce a segfault for server/GUI smoke tests — confirm with full TB3 spawn + sensor topics. If still broken in realistic scenarios, file upstream; time-permitting investigate upstream fix. If fixed, re-enable Sensors for OpenShift Nav2 path.
+**Current (2026-08-11):** Re-tested on Gazebo Harmonic + Mesa — **no segfault** under llvmpipe or virtio-gpu (`scripts/test-sensors-gpu.sh`). Sensors plugin **re-enabled**. After spawn, `/robot_N/scan` and `/robot_N/imu` publish via `ros_gz_bridge`.
 
 **Build fix:** The Containerfile initially listed `xacro` in the noVNC apt-get layer; on Ubuntu Noble it's `ros-jazzy-xacro` and was already installed as a dependency. Removed the duplicate to fix build error (exit code 100).
 
@@ -222,7 +222,7 @@ Implemented in `SimulationPage.svelte` Section 3 — all in the same file as S6-
 
 ## S6-6: Customize Hardware *(stretch — deferred)*
 
-Swap camera sensor on a robot. **Out of scope for the current polish pass.** Likely: parametric xacro with camera type arg passed via `podman exec`. Blocked in practice by Ogre2 Sensors remaining off on arm64 (camera data needs Sensors).
+Swap camera sensor on a robot. **Out of scope for the current polish pass.** Likely: parametric xacro with camera type arg passed via `podman exec`. Sensors plugin is enabled (2026-08); camera topic wiring for customize-hardware UX is still TBD.
 
 ---
 
@@ -231,9 +231,9 @@ Swap camera sensor on a robot. **Out of scope for the current polish pass.** Lik
 | Risk | Mitigation | Status |
 |------|------------|--------|
 | Gazebo + noVNC + Nav2 tight in 5.7GB VM | Measure in S6-1. Single container ~2-3GB. If tight, recommend `podman machine set --memory 8192`. | ✅ Fits — tested on Mac M3 Pro with default VM |
-| Software rendering too slow for demo | Test in S6-1. Reduce resolution if needed. | ✅ Acceptable at 1024x768x16 with llvmpipe |
+| Software rendering fallback | Disable GPU passthrough in Preferences | `llvmpipe` at 1024×768 still acceptable if virtio-gpu misbehaves |
 | `ros-jazzy-nav2-minimal-tb3-sim` missing on arm64 | Verify in S6-1. If missing, build from source. | ✅ Available — arm64 binary packages exist |
-| Ogre2 Sensors plugin crash on arm64 | *Discovered during S6-1.* Removed `gz-sim-sensors-system` from world SDF. | ✅ Resolved — visuals/physics work, only sensor rendering lost |
+| Ogre2 Sensors plugin on arm64 | Re-enabled 2026-08; segfault not reproduced on current stack | ✅ `/scan` and `/imu` after spawn |
 | Port 6080 conflict | Check for running sim containers before launch; warn user. | ✅ Handled — single-sim enforcement in UI |
 
 ---
@@ -252,14 +252,14 @@ Swap camera sensor on a robot. **Out of scope for the current polish pass.** Lik
 
 ### ROSCon demo checklist (via extension)
 
-Run this on a Mac with Podman Desktop + the Physical AI extension loaded. Expect Sensors off (no lidar/camera costmap) and **Go** without obstacle avoidance.
+Run this on a Mac with Podman Desktop + the Physical AI extension loaded. Expect `/scan` and `/imu` after spawn; **Go** still uses open-loop `cmd_vel` (Nav2 not launched from UI).
 
 1. [ ] **Image Builder** → Quick Start **TurtleBot3 Sim (Jazzy)** → Phase 1 Build → Phase 2 Build (or pull golden `ros2-jazzy-sim:noble`)
 2. [ ] **Simulation** → Launch the sim image → container shows **running**
 3. [ ] **Open in Browser** → Gazebo GUI via noVNC (`/vnc.html` with autoconnect + reconnect). Idle background tabs may disconnect; reconnect or refresh — sim still running
 4. [ ] **Add TurtleBot3** → robot appears in Gazebo
-5. [ ] Set target **X/Y** → **Go** → robot turns/drives (`cmd_vel`); status shows Driving → Drove to / Failed
-6. [ ] **View Topics** / Topic Monitor → expand a topic → **Peek** one message
+5. [ ] **View Topics** / Topic Monitor → `/robot_1/scan`, `/robot_1/imu` → **Peek**
+6. [ ] Set target **X/Y** → **Go** → robot turns/drives (`cmd_vel`); status shows Driving → Drove to / Failed
 7. [ ] **Stop & remove** → toast + on-page hint to close the Gazebo browser tab manually (container is deleted in one step)
 
 ### Deferred
