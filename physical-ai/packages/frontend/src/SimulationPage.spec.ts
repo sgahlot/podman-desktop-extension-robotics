@@ -170,5 +170,36 @@ describe('SimulationPage', () => {
       expect(mockStopSimulation).not.toHaveBeenCalled();
     });
     expect(await screen.findByText(/Close the Gazebo \(noVNC\) browser tab/)).toBeTruthy();
+    expect(screen.queryByText('pai-sim-run')).toBeNull();
+  });
+
+  it('hides Add TurtleBot3 until a simulation is running', async () => {
+    mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
+    mockListSimulationContainers.mockResolvedValue([]);
+
+    render(SimulationPage);
+    await screen.findByRole('button', { name: 'Launch' });
+    expect(screen.queryByRole('button', { name: 'Add TurtleBot3' })).toBeNull();
+    expect(screen.queryByText('Launch a simulation first to add robots.')).toBeNull();
+  });
+
+  it('shows Navigate on spawned robots when a simulation is running', async () => {
+    mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
+    mockListSimulationContainers.mockResolvedValue([
+      {
+        id: 'abc123def456',
+        name: 'pai-sim-run',
+        imageTag: SIM_IMAGE,
+        state: 'running',
+        ports: ['6080:6080/tcp'],
+        labels: {},
+      },
+    ]);
+    mockExecInSimulation.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
+
+    render(SimulationPage);
+    await screen.findByRole('button', { name: 'Add TurtleBot3' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add TurtleBot3' }));
+    expect(await screen.findByRole('button', { name: 'Navigate' })).toBeTruthy();
   });
 });

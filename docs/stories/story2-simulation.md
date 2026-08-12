@@ -71,11 +71,11 @@
 
 ## APPENG-5920: Navigation UI — 🟠 In Review
 
-**Description:** Add a "Go" button with target X/Y coordinates on the Simulation page that drives a robot to the specified location.
+**Description:** Add a "Navigate" button with target X/Y coordinates on the Simulation page that drives a robot to the specified location.
 
 ### Implementation Notes
 
-**Done (local / Mac, Jazzy):** Nav2 autonomous navigation. Backend launches Nav2 via `entrypoint-nav2.sh` when needed, seeds AMCL from current pose, and sends `navigate_to_pose` goals. Per-robot X/Y + **Go**, status feedback (Navigating / Reached / Failed), Help, tests.
+**Done (local / Mac, Jazzy):** Nav2 autonomous navigation. Backend launches Nav2 via `entrypoint-nav2.sh` when needed, seeds AMCL from current pose, and sends `navigate_to_pose` goals. Per-robot X/Y + **Navigate**, status feedback (Navigating / Reached / Failed), Help, tests.
 
 **Humble fallback:** Direct velocity control via `cmd_vel` (turn + drive) when image tag includes `humble`.
 
@@ -89,12 +89,12 @@
 - `packages/backend/assets/ros2-jazzy-sim/Containerfile` — added COPY + chmod for `entrypoint-nav2.sh`
 - `packages/shared/src/PhysicalAiApi.ts` — `sendNavigationGoal()`
 - `packages/backend/src/api-impl.ts` — `sendNavigationGoal` queries pose, publishes turn/drive/stop via attached `podman exec`
-- `packages/frontend/src/SimulationPage.svelte` — per-robot navigation controls (X/Y inputs, Go button, status with snapshotted coordinates)
+- `packages/frontend/src/SimulationPage.svelte` — per-robot navigation controls (X/Y inputs, Navigate button, status with snapshotted coordinates)
 - `packages/frontend/src/Help.svelte` — added Navigate section under Simulation
 - `packages/backend/src/api-impl.spec.ts` — tests for `sendNavigationGoal`
 
 **Architecture:**
-1. User clicks "Go" → frontend calls `sendNavigationGoal(containerId, robotName, x, y)`
+1. User clicks "Navigate" → frontend calls `sendNavigationGoal(containerId, robotName, x, y)`
 2. Backend queries current pose, computes heading, publishes turn then drive via `ros2 topic pub`
 3. Backend sends stop command, returns `NavigationGoalResult`
 4. Frontend shows status: Driving → Drove to (X, Y) / Failed
@@ -166,7 +166,7 @@ See plan notes (2026-08-04): `getRosTopicDetail`, expandable UI, on-demand fetch
 
 ## APPENG-5981: Wire Simulation Go to Local Nav2 — In Review
 
-**Description:** Replace open-loop `cmd_vel` **Go** with Nav2 autonomous navigation for local Jazzy simulation (follow-on to APPENG-5980).
+**Description:** Wire the **Navigate** button (formerly open-loop `cmd_vel` **Go**) to Nav2 autonomous navigation for local Jazzy simulation (follow-on to APPENG-5980).
 
 **Scope:**
 - Launch Nav2 via `/entrypoint-nav2.sh` when not already running (per robot namespace)
@@ -178,7 +178,7 @@ See plan notes (2026-08-04): `getRosTopicDetail`, expandable UI, on-demand fetch
 **Out of scope:** dedicated boundary min/max UI (Nav2/map rejects invalid goals); multi-waypoint routing.
 
 **Acceptance criteria:**
-- **Go** on Jazzy sim uses Nav2 with obstacle-aware planning
+- **Navigate** on Jazzy sim uses Nav2 with obstacle-aware planning
 - UI reflects action result (reached / failed)
 - Backend tests cover Nav2 goal path (mocked exec)
 - Docs/help text updated

@@ -30,7 +30,7 @@
 
 1. Launch base Gazebo image (empty world + noVNC) from Simulation page
 2. Click "Add TurtleBot3" → robot appears in the running sim via `podman exec`
-3. Set target X/Y and click **Go** (Jazzy: Nav2 `navigate_to_pose` with obstacle avoidance; Humble: open-loop `cmd_vel`)
+3. Set target X/Y and click **Navigate** (Jazzy: Nav2 `navigate_to_pose` with obstacle avoidance; Humble: open-loop `cmd_vel`)
 4. *(Stretch / deferred)* "Customize Hardware" → swap camera sensor (S6-6 — not started)
 
 ---
@@ -252,14 +252,14 @@ Swap camera sensor on a robot. **Out of scope for the current polish pass.** Lik
 
 ### ROSCon demo checklist (via extension)
 
-Run this on a Mac with Podman Desktop + the Physical AI extension loaded. Expect `/scan` and `/imu` after spawn; **Go** on Jazzy sim uses Nav2 (`navigate_to_pose`).
+Run this on a Mac with Podman Desktop + the Physical AI extension loaded. Expect `/scan` and `/imu` after spawn; **Navigate** on Jazzy sim uses Nav2 (`navigate_to_pose`).
 
 1. [ ] **Image Builder** → Quick Start **TurtleBot3 Sim (Jazzy)** → Phase 1 Build → Phase 2 Build (or pull golden `ros2-jazzy-sim:noble`)
 2. [ ] **Simulation** → Launch the sim image → container shows **running**
 3. [ ] **Open in Browser** → Gazebo GUI via noVNC (`/vnc.html` with autoconnect + reconnect). Idle background tabs may disconnect; reconnect or refresh — sim still running
 4. [ ] **Add TurtleBot3** → robot appears in Gazebo
 5. [ ] **View Topics** / Topic Monitor → `/robot_1/scan`, `/robot_1/imu` → **Peek**
-6. [ ] Set target **X/Y** → **Go** → robot navigates via Nav2 (Jazzy) or turns/drives via `cmd_vel` (Humble); status shows Navigating → Reached / Failed
+6. [ ] Set target **X/Y** → **Navigate** → robot navigates via Nav2 (Jazzy) or turns/drives via `cmd_vel` (Humble); status shows Navigating → Reached / Failed
 7. [ ] **Stop & remove** → toast + on-page hint to close the Gazebo browser tab manually (container is deleted in one step)
 
 ### Deferred

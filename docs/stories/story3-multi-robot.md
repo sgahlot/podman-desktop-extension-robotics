@@ -30,7 +30,7 @@ Story 6’s single-container **Add TurtleBot3 × N** remains a useful **lightwei
 
 **Related (not Story 3):** Single-container multi-spawn stays in Simulation / Story 6. Lean Kind = one sim Deployment (plan Story 5 note). Multi-pod Nav2 Kind charts stay parked.
 
-**Out of scope for early Story 3:** multi-robot Nav2 fleet orchestration per robot; local **Go** on Jazzy already uses `navigate_to_pose` (5981). OpenShift Routes remain Story 4.
+**Out of scope for early Story 3:** multi-robot Nav2 fleet orchestration per robot; local **Navigate** on Jazzy already uses `navigate_to_pose` (5981). OpenShift Routes remain Story 4.
 
 ---
 

@@ -113,7 +113,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 * Dashboard landing page with feature cards
 * Image catalog browser with All/Curated views and pull progress _(APPENG-5770, done)_
 * Image Builder for base and simulation images with Quick Start preset _(done)_
-* Simulation page — launch, status, open in browser, stop & remove, add TurtleBot3, per-robot X/Y + **Go** (Jazzy: Nav2 `navigate_to_pose`; Humble: `cmd_vel`). Lidar/IMU sensors active on Mac (2026-08).
+* Simulation page — launch, status, open in browser, stop & remove, add TurtleBot3, per-robot X/Y + **Navigate** (Jazzy: Nav2 `navigate_to_pose`; Humble: `cmd_vel`). Lidar/IMU sensors active on Mac (2026-08).
 * In-extension Help page _(done)_
 * ROS2 topic monitor — active topics, message types, pub/sub counts _(APPENG-5773, done)_
 * Fleet status dashboard _(APPENG-5776, planned — Story 3)_
@@ -207,7 +207,7 @@ export abstract class PhysicalAiApi {
   // Topic Monitor (APPENG-5773)
   abstract listRosTopics(containerId: string): Promise<TopicInfo[]>;
 
-  // Navigation Go (APPENG-5920 / APPENG-5981) — Jazzy Nav2; Humble cmd_vel fallback
+  // Navigation (Navigate button, APPENG-5920 / APPENG-5981) — Jazzy Nav2; Humble cmd_vel fallback
   abstract sendNavigationGoal(containerId: string, robotName: string, x: number, y: number): Promise<NavigationGoalResult>;
 }
 ----
@@ -225,7 +225,7 @@ export abstract class PhysicalAiApi {
 | `types/SimulationContainer.ts` | `SimLaunchOptions`, `SimContainerInfo`, `ExecResult`, container label constants
 | `types/CatalogCurated.ts` | `DEFAULT_CURATED_ALLOWLIST`, `parseCuratedAllowlist()`, `repoMatchesAllowlist()`, `filterCuratedRepos()` — wildcard pattern matching for curated allowlist
 | `types/TopicInfo.ts` | `TopicInfo` — name, type, publishers, subscribers for ROS2 topic monitoring
-| `types/NavigationGoalResult.ts` | `NavigationGoalResult` — status + message for Go / nav goal feedback (Nav2 on Jazzy, cmd_vel on Humble)
+| `types/NavigationGoalResult.ts` | `NavigationGoalResult` — status + message for Navigate / nav goal feedback (Nav2 on Jazzy, cmd_vel on Humble)
 |===
 
 == Data Flow
@@ -499,8 +499,8 @@ The extension contributes 11 settings under **Settings → Preferences → Physi
 | Pod-based approach (Story 2/5) caused OOM at 4 GiB on arm64. Single container with Gazebo + noVNC baked in fits default 5.7 GB Podman VM. Nav2 packages are in the image but the navigation stack is not launched locally.
 
 | Nav2 (local vs OpenShift)
-| Jazzy local Nav2 on Go; OpenShift Story 4
-| `ros-jazzy-navigation2` and `entrypoint-nav2.sh` ship in `ros2-jazzy-sim`. Local **Go** on Jazzy launches Nav2 and sends `navigate_to_pose` with obstacle-aware planning (APPENG-5981). Humble images keep `cmd_vel` fallback. OpenShift wiring remains Story 4 (APPENG-5767).
+| Jazzy local Nav2 on Navigate; OpenShift Story 4
+| `ros-jazzy-navigation2` and `entrypoint-nav2.sh` ship in `ros2-jazzy-sim`. Local **Navigate** on Jazzy launches Nav2 and sends `navigate_to_pose` with obstacle-aware planning (APPENG-5981). Humble images keep `cmd_vel` fallback. OpenShift wiring remains Story 4 (APPENG-5767).
 
 | Robot spawn mechanism
 | `podman exec -d` via `process.exec()`
@@ -519,7 +519,7 @@ The extension contributes 11 settings under **Settings → Preferences → Physi
 
 * **noVNC vs alternatives:** noVNC chosen and implemented. Xvfb + x11vnc + websockify stack baked into the simulation image, served on port 6080. Lightweight and works without GPU.
 * **Mac GPU and rendering:** On arm64 Mac, simulation launch passes `/dev/dri` and sets `PHYSICAL_AI_USE_GPU=1` (preference **Simulation GPU passthrough**, default on). The entrypoint uses virtio-gpu when `/dev/dri` is present; otherwise falls back to `llvmpipe`. amd64 always uses software rendering. Xvfb + noVNC stack is unchanged.
-* **Ogre2 Sensors plugin:** Re-enabled in world SDF (2026-08). A 2026-07 segfault under llvmpipe is **not reproduced** on current Gazebo Harmonic + Mesa (`scripts/test-sensors-gpu.sh`). Lidar (`/scan`) and IMU publish after spawn; Nav2 stack launch remains deferred (see Nav2 row in Key Technical Decisions).
+* **Ogre2 Sensors plugin:** Re-enabled in world SDF (2026-08). A 2026-07 segfault under llvmpipe is **not reproduced** on current Gazebo Harmonic + Mesa (`scripts/test-sensors-gpu.sh`). Lidar (`/scan`) and IMU publish after spawn; on Jazzy, Nav2 is launched locally for the **Navigate** button (`navigate_to_pose`, APPENG-5981) — see Nav2 row in Key Technical Decisions.
 
 == Open Questions
 

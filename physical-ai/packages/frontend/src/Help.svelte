@@ -62,7 +62,7 @@ import { router } from 'tinro';
           <strong>Phase 1: Base Image</strong> — Humble: <span class="font-mono">sloretz</span> (<span class="font-mono">:sloretz</span>) or <span class="font-mono">osrf</span> (<span class="font-mono">:osrf</span>). Jazzy: Ubuntu Noble preset (tag <span class="font-mono">:noble</span>). Official Jazzy amd64 preset uses tag <span class="font-mono">:latest</span>.
         </div>
         <div>
-          <strong>Phase 2: Simulation Image</strong> — Layers Gazebo, TurtleBot3 spawn assets, and noVNC (Jazzy) on your Phase 1 local base. Nav2 packages are included; on Jazzy sim, **Go** launches Nav2 for obstacle-aware navigation. Disabled until the base exists locally.
+          <strong>Phase 2: Simulation Image</strong> — Layers Gazebo, TurtleBot3 spawn assets, and noVNC (Jazzy) on your Phase 1 local base. Nav2 packages are included; on Jazzy sim, **Navigate** launches Nav2 for obstacle-aware navigation. Disabled until the base exists locally.
         </div>
         <div>
           <strong>Cancel / Push</strong> — Cancel aborts an in-progress <strong>build</strong> or <strong>push</strong>. Push requires registry login via Podman Desktop &rarr; Settings &rarr; Registries. Image Builder also shows whether the current <span class="font-mono">quay.io/…</span> tag exists on Quay (public repos only; private repos show as unavailable).
@@ -89,7 +89,7 @@ import { router } from 'tinro';
           <strong>Add TurtleBot3</strong> — Spawns a robot into the running world via <span class="font-mono">podman exec</span> (name + X/Y/yaw).
         </div>
         <div>
-          <strong>Navigate</strong> — Each spawned robot has a "Go" button with target X/Y coordinates (map frame). On Jazzy sim images, the extension launches Nav2 if needed and sends a <span class="font-mono">navigate_to_pose</span> goal with lidar-based obstacle avoidance. Status shows: Navigating &rarr; Reached (X, Y) / Failed. Humble images still use open-loop <span class="font-mono">cmd_vel</span> (turn + drive, no obstacle avoidance). Run one simulation at a time when using **Go** (default ROS domain is shared across containers).
+          <strong>Navigate</strong> — Each spawned robot has a <strong>Navigate</strong> button with target X/Y coordinates (map frame). On Jazzy sim images, the extension launches Nav2 if needed and sends a <span class="font-mono">navigate_to_pose</span> goal with lidar-based obstacle avoidance. Status shows: Navigating &rarr; Reached (X, Y) / Failed. Humble images still use open-loop <span class="font-mono">cmd_vel</span> (turn + drive, no obstacle avoidance). Run one simulation at a time when navigating (default ROS domain is shared across containers).
         </div>
       </div>
     </div>
@@ -143,7 +143,7 @@ import { router } from 'tinro';
         <p>&#8226; On Apple Silicon, simulation launch passes <span class="font-mono">/dev/dri</span> by default (virtio-gpu). Disable <strong>Simulation GPU passthrough</strong> in Preferences to force software rendering.</p>
         <p>&#8226; noVNC may show Disconnected after an idle background tab — auto-reconnect or refresh; the sim is still running.</p>
         <p>&#8226; After <strong>Stop &amp; remove</strong>, close the Gazebo browser tab yourself (the extension cannot close it).</p>
-        <p>&#8226; Demo flow: Image Builder → Launch → Open in Browser → Add TurtleBot3 → Go → Topics → Stop &amp; remove.</p>
+        <p>&#8226; Demo flow: Image Builder → Launch → Open in Browser → Add TurtleBot3 → Navigate → Topics → Stop &amp; remove.</p>
       </div>
     </div>
 

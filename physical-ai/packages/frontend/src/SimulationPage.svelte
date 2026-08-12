@@ -13,6 +13,8 @@ let launching = false;
 let launchError = '';
 let actionError = '';
 let actionInfo = '';
+/** Container ids removed this session — hide until list API stops returning them. */
+let removedContainerIds: string[] = [];
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let simImageAllowlist = '';
 
@@ -64,7 +66,9 @@ async function loadImages() {
 
 async function pollContainers() {
   try {
-    containers = await physicalAiClient.listSimulationContainers();
+    const listed = await physicalAiClient.listSimulationContainers();
+    removedContainerIds = removedContainerIds.filter(id => listed.some(c => c.id === id));
+    containers = listed.filter(c => !removedContainerIds.includes(c.id));
     if (containers.some(c => c.state === 'running')) {
       launchError = '';
     }
@@ -88,6 +92,7 @@ async function launchSim() {
   launching = true;
   launchError = '';
   actionError = '';
+  actionInfo = '';
   try {
     await physicalAiClient.launchSimulation(selectedImage, '', undefined);
     spawnedRobots = [];
@@ -111,6 +116,8 @@ async function stopSim(id: string) {
   actionInfo = '';
   try {
     await physicalAiClient.deleteSimulation(id);
+    removedContainerIds = [...removedContainerIds, id];
+    containers = containers.filter(c => c.id !== id);
     spawnedRobots = [];
     actionInfo = SIM_STOPPED_BROWSER_HINT;
     await pollContainers();
@@ -241,16 +248,17 @@ async function navigateRobot(index: number) {
     {/if}
   </div>
 
+  {#if actionError}
+    <span class="text-xs pai-text-error max-w-lg">{actionError}</span>
+  {/if}
+  {#if actionInfo}
+    <span class="text-xs text-[var(--pd-content-text)] max-w-lg">{actionInfo}</span>
+  {/if}
+
   <!-- Section 2: Running containers -->
   {#if containers.length > 0}
     <div class="flex flex-col gap-2 max-w-lg">
       <h2 class="text-sm font-medium text-[var(--pd-content-header)]">Simulation Containers</h2>
-      {#if actionError}
-        <span class="text-xs pai-text-error">{actionError}</span>
-      {/if}
-      {#if actionInfo}
-        <span class="text-xs text-[var(--pd-content-text)]">{actionInfo}</span>
-      {/if}
 
       {#each containers as container (container.id)}
         <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3 flex flex-col gap-2">
@@ -281,12 +289,10 @@ async function navigateRobot(index: number) {
     </div>
   {/if}
 
-  <!-- Section 3: Add Robot -->
-  <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-lg {hasRunning ? '' : 'opacity-50'}">
+  <!-- Section 3: Add Robot (only when a simulation is running) -->
+  {#if hasRunning}
+  <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-lg">
     <h2 class="text-sm font-medium text-[var(--pd-content-header)] mb-2">Add TurtleBot3</h2>
-    {#if !hasRunning}
-      <p class="text-xs pai-text-muted">Launch a simulation first to add robots.</p>
-    {:else}
       <div class="flex flex-col gap-2">
         <div class="grid grid-cols-4 gap-2">
           <div class="flex flex-col gap-1">
@@ -368,7 +374,7 @@ async function navigateRobot(index: number) {
                   <button on:click={() => navigateRobot(i)}
                     disabled={robot.navStatus === 'navigating'}
                     class="pai-btn pai-btn-primary pai-btn-sm">
-                    Go
+                    Navigate
                   </button>
                   <span class="text-xs {robot.navStatus === 'reached' ? 'pai-text-success'
                     : robot.navStatus === 'failed' ? 'pai-text-error'
@@ -385,6 +391,6 @@ async function navigateRobot(index: number) {
           </div>
         {/if}
       </div>
-    {/if}
   </div>
+  {/if}
 </div>
