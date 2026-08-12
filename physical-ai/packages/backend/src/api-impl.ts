@@ -974,14 +974,10 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       return;
     }
 
-    await this.#execDetached(containerId, [
-      '-e',
-      `PHYSICAL_AI_SPAWN_X=${pose.x.toFixed(4)}`,
-      '-e',
-      `PHYSICAL_AI_SPAWN_Y=${pose.y.toFixed(4)}`,
-      NAV2_ENTRYPOINT,
-      robotName,
-    ]);
+    await this.#execDetached(containerId, NAV2_ENTRYPOINT, [robotName], {
+      PHYSICAL_AI_SPAWN_X: pose.x.toFixed(4),
+      PHYSICAL_AI_SPAWN_Y: pose.y.toFixed(4),
+    });
 
     for (let attempt = 0; attempt < 45; attempt++) {
       await PhysicalAiApiImpl.#sleep(1000);
@@ -992,12 +988,32 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         [robotName],
       );
       if (again.exitCode === 0 && again.stdout.includes('navigate_to_pose')) {
+        break;
+      }
+      if (attempt === 44) {
+        throw new Error(
+          `Nav2 stack for "${robotName}" did not become ready (navigate_to_pose action missing).`,
+        );
+      }
+    }
+
+    // entrypoint-nav2.sh publishes AMCL initial pose after ~12s; wait for map frame.
+    for (let attempt = 0; attempt < 30; attempt++) {
+      await PhysicalAiApiImpl.#sleep(1000);
+      const tf = await this.#execRosBash(
+        containerId,
+        distro,
+        'timeout 5 ros2 run tf2_ros tf2_echo map base_link --ros-args -p use_sim_time:=true ' +
+          '-r /tf:=/$1/tf -r /tf_static:=/$1/tf_static 2>&1',
+        [robotName],
+      );
+      if (/Translation:/i.test(tf.stdout)) {
         return;
       }
     }
 
     throw new Error(
-      `Nav2 stack for "${robotName}" did not become ready (navigate_to_pose action missing).`,
+      `Nav2 stack for "${robotName}" action is up but map→base_link TF is not available yet.`,
     );
   }
 
@@ -1137,9 +1153,19 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
   }
 
-  async #execDetached(containerId: string, command: string[]): Promise<void> {
+  async #execDetached(
+    containerId: string,
+    entrypoint: string,
+    args: string[],
+    env: Record<string, string> = {},
+  ): Promise<void> {
     const id = await this.#assertSimulationContainer(containerId);
-    await extensionApi.process.exec('podman', ['exec', '-d', id, ...command]);
+    const argv: string[] = ['exec', '-d'];
+    for (const [key, value] of Object.entries(env)) {
+      argv.push('-e', `${key}=${value}`);
+    }
+    argv.push(id, entrypoint, ...args);
+    await extensionApi.process.exec('podman', argv);
   }
 
   static #sleep(ms: number): Promise<void> {

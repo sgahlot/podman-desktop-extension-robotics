@@ -182,3 +182,5 @@ See plan notes (2026-08-04): `getRosTopicDetail`, expandable UI, on-demand fetch
 - UI reflects action result (reached / failed)
 - Backend tests cover Nav2 goal path (mocked exec)
 - Docs/help text updated
+
+**Validation (2026-08-12):** `scripts/test-nav2-go-e2e.sh` on Mac (`pai-sim-5981-e2e`, `ros2-jazzy-sim:noble`) — spawn `robot_1`, launch Nav2, `navigate_to_pose` to `(1.0, 1.0)` **SUCCEEDED** (~15s nav time). Backend waits for `map→base_link` TF after Nav2 launch before sending goals.

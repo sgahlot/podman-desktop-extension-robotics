@@ -1503,6 +1503,13 @@ describe('PhysicalAiApiImpl', () => {
         if (bashScript?.includes('send_goal')) {
           return { stdout: goalOutput, stderr: '', command: 'podman' } as any;
         }
+        if (bashScript?.includes('tf2_echo map base_link')) {
+          return {
+            stdout: 'At time 1.0\n- Translation: [-1.972, -0.517, 0.010]\n',
+            stderr: '',
+            command: 'podman',
+          } as any;
+        }
         return { stdout: '', stderr: '', command: 'podman' } as any;
       });
     }
@@ -1549,6 +1556,7 @@ describe('PhysicalAiApiImpl', () => {
 
       const promise = api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
       await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(1000);
       const result = await promise;
 
       expect(result.status).toBe('reached');
@@ -1559,7 +1567,10 @@ describe('PhysicalAiApiImpl', () => {
       const detachedArgs = detachedCall![1] as string[];
       expect(detachedArgs).toContain(NAV2_ENTRYPOINT);
       expect(detachedArgs).toContain('robot_1');
-      expect(detachedArgs.some(a => a.startsWith('PHYSICAL_AI_SPAWN_X='))).toBe(true);
+      const dIdx = detachedArgs.indexOf('-d');
+      expect(detachedArgs.indexOf(CONTAINER_ID)).toBeGreaterThan(dIdx);
+      expect(detachedArgs.indexOf(NAV2_ENTRYPOINT)).toBeGreaterThan(detachedArgs.indexOf(CONTAINER_ID));
+      expect(detachedArgs.some(a => a === 'PHYSICAL_AI_SPAWN_X=0.0000' || a.startsWith('PHYSICAL_AI_SPAWN_X='))).toBe(true);
       expect(detachedArgs.some(a => a.startsWith('PHYSICAL_AI_SPAWN_Y='))).toBe(true);
     });
 
