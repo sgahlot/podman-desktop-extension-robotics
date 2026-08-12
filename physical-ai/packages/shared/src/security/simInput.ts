@@ -47,6 +47,7 @@ export function assertNumericArg(value: string, label: string): string {
 
 export const SPAWN_ENTRYPOINT = '/entrypoint-spawn-robot.sh';
 export const GAZEBO_ENTRYPOINT = '/entrypoint-gazebo.sh';
+export const NAV2_ENTRYPOINT = '/entrypoint-nav2.sh';
 
 /**
  * Validates execInSimulation argv: only spawn entrypoint + name + x + y + yaw.

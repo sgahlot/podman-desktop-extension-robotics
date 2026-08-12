@@ -374,8 +374,8 @@ async function navigateRobot(index: number) {
                     : robot.navStatus === 'failed' ? 'pai-text-error'
                     : robot.navStatus === 'navigating' ? 'pai-text-accent'
                     : 'pai-text-muted'}">
-                    {robot.navStatus === 'navigating' ? 'Driving...'
-                      : robot.navStatus === 'reached' && robot.navReached ? `Drove to (${robot.navReached.x}, ${robot.navReached.y})`
+                    {robot.navStatus === 'navigating' ? 'Navigating...'
+                      : robot.navStatus === 'reached' && robot.navReached ? `Reached (${robot.navReached.x}, ${robot.navReached.y})`
                       : robot.navStatus === 'failed' ? 'Failed'
                       : ''}
                   </span>

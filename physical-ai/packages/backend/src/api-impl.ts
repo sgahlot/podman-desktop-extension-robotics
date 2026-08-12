@@ -14,6 +14,7 @@ import {
   assertRobotName,
   assertRosTopicName,
   assertRosDistro,
+  NAV2_ENTRYPOINT,
   assertSpawnExecCommand,
   assertLaunchCmd,
   assertLaunchEnv,
@@ -902,7 +903,112 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const safeRobot = assertRobotName(robotName);
     const distro = await this.#detectRosDistro(id);
 
-    const pose = await this.#getRobotPose(id, safeRobot, distro);
+    if (distro === 'jazzy') {
+      return this.#sendNav2NavigationGoal(id, safeRobot, x, y, distro);
+    }
+    return this.#sendCmdVelNavigationGoal(id, safeRobot, x, y, distro);
+  }
+
+  async #sendNav2NavigationGoal(
+    containerId: string,
+    robotName: string,
+    x: number,
+    y: number,
+    distro: SupportedRosDistro,
+  ): Promise<NavigationGoalResult> {
+    const pose = await this.#getRobotPose(containerId, robotName, distro);
+    const distance = Math.hypot(x - pose.x, y - pose.y);
+    if (distance < 0.1) {
+      return { status: 'reached', message: `Already at (${x}, ${y})` };
+    }
+
+    await this.#ensureNav2Running(containerId, robotName, pose, distro);
+
+    const targetYaw = Math.atan2(y - pose.y, x - pose.x);
+    const qw = Math.cos(targetYaw / 2);
+    const qz = Math.sin(targetYaw / 2);
+
+    const result = await this.#execRosBash(
+      containerId,
+      distro,
+      'timeout "$1" ros2 action send_goal "/$2/navigate_to_pose" nav2_msgs/action/NavigateToPose ' +
+        '"{pose: {header: {frame_id: map}, pose: {position: {x: $3, y: $4, z: 0.0}, ' +
+        'orientation: {x: 0.0, y: 0.0, z: $5, w: $6}}}}" --feedback 2>&1',
+      [
+        '180',
+        robotName,
+        x.toFixed(4),
+        y.toFixed(4),
+        qz.toFixed(6),
+        qw.toFixed(6),
+      ],
+    );
+
+    const output = `${result.stdout}\n${result.stderr}`;
+    if (/Goal finished with status: SUCCEEDED|Succeed/i.test(output)) {
+      return { status: 'reached', message: `Navigated to (${x}, ${y}) via Nav2` };
+    }
+    if (/Goal finished with status:/i.test(output)) {
+      const statusLine = output.split('\n').find(line => /Goal finished with status:/i.test(line));
+      return { status: 'failed', message: statusLine?.trim() ?? 'Nav2 goal failed' };
+    }
+    if (result.exitCode !== 0 && !/timeout/i.test(output)) {
+      return { status: 'failed', message: result.stderr || 'Nav2 navigation failed' };
+    }
+    return { status: 'failed', message: 'Nav2 navigation timed out or did not succeed' };
+  }
+
+  async #ensureNav2Running(
+    containerId: string,
+    robotName: string,
+    pose: { x: number; y: number; yaw: number },
+    distro: SupportedRosDistro,
+  ): Promise<void> {
+    const check = await this.#execRosBash(
+      containerId,
+      distro,
+      'ros2 action list 2>/dev/null | grep -F "/$1/navigate_to_pose"',
+      [robotName],
+    );
+    if (check.exitCode === 0 && check.stdout.includes('navigate_to_pose')) {
+      return;
+    }
+
+    await this.#execDetached(containerId, [
+      '-e',
+      `PHYSICAL_AI_SPAWN_X=${pose.x.toFixed(4)}`,
+      '-e',
+      `PHYSICAL_AI_SPAWN_Y=${pose.y.toFixed(4)}`,
+      NAV2_ENTRYPOINT,
+      robotName,
+    ]);
+
+    for (let attempt = 0; attempt < 45; attempt++) {
+      await PhysicalAiApiImpl.#sleep(1000);
+      const again = await this.#execRosBash(
+        containerId,
+        distro,
+        'ros2 action list 2>/dev/null | grep -F "/$1/navigate_to_pose"',
+        [robotName],
+      );
+      if (again.exitCode === 0 && again.stdout.includes('navigate_to_pose')) {
+        return;
+      }
+    }
+
+    throw new Error(
+      `Nav2 stack for "${robotName}" did not become ready (navigate_to_pose action missing).`,
+    );
+  }
+
+  async #sendCmdVelNavigationGoal(
+    containerId: string,
+    robotName: string,
+    x: number,
+    y: number,
+    distro: SupportedRosDistro,
+  ): Promise<NavigationGoalResult> {
+    const pose = await this.#getRobotPose(containerId, robotName, distro);
     const dx = x - pose.x;
     const dy = y - pose.y;
     const targetAngle = Math.atan2(dy, dx);
@@ -920,40 +1026,40 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       const turnSpeed = 0.5 * Math.sign(turnDelta);
       const turnDuration = Math.min(Math.ceil(Math.abs(turnDelta) / 0.5), 8);
       await this.#execRosBash(
-        id,
+        containerId,
         distro,
         'timeout "$1" ros2 topic pub --rate 10 "/$2/cmd_vel" geometry_msgs/msg/Twist "{angular: {z: $3}}" || true',
-        [String(turnDuration), safeRobot, turnSpeed.toFixed(2)],
+        [String(turnDuration), robotName, turnSpeed.toFixed(2)],
       );
       await this.#execRosBash(
-        id,
+        containerId,
         distro,
         'ros2 topic pub --once "/$1/cmd_vel" geometry_msgs/msg/Twist "{}"',
-        [safeRobot],
+        [robotName],
       );
     }
 
     const speed = 0.2;
     const durationSec = Math.min(Math.ceil(distance / speed), 30);
     const result = await this.#execRosBash(
-      id,
+      containerId,
       distro,
       'timeout "$1" ros2 topic pub --rate 10 "/$2/cmd_vel" geometry_msgs/msg/Twist "{linear: {x: $3}}" || true',
-      [String(durationSec), safeRobot, String(speed)],
+      [String(durationSec), robotName, String(speed)],
     );
 
     await this.#execRosBash(
-      id,
+      containerId,
       distro,
       'ros2 topic pub --once "/$1/cmd_vel" geometry_msgs/msg/Twist "{}"',
-      [safeRobot],
+      [robotName],
     );
 
     if (result.exitCode !== 0 && !/timeout/i.test(result.stderr)) {
       return { status: 'failed', message: result.stderr || 'Drive command failed' };
     }
 
-    const finalPose = await this.#getRobotPose(id, safeRobot, distro);
+    const finalPose = await this.#getRobotPose(containerId, robotName, distro);
     const remaining = Math.hypot(x - finalPose.x, y - finalPose.y);
     if (remaining < 0.35) {
       return {
@@ -1029,6 +1135,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         stderr: runErr.stderr ?? runErr.message ?? String(err),
       };
     }
+  }
+
+  async #execDetached(containerId: string, command: string[]): Promise<void> {
+    const id = await this.#assertSimulationContainer(containerId);
+    await extensionApi.process.exec('podman', ['exec', '-d', id, ...command]);
+  }
+
+  static #sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   async #detectRosDistro(containerId: string): Promise<SupportedRosDistro> {

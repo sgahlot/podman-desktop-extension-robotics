@@ -38,7 +38,7 @@ To check or change Podman Machine resources: open **Settings → Resources → P
 5. **Stop & remove** when done — close the Gazebo (noVNC) browser tab manually if it is still open
 6. Adjust defaults under **Settings → Preferences → Physical AI** (including **Simulation GPU passthrough** on Mac)
 
-Idle noVNC tabs may show Disconnected; reconnect or refresh — the simulation is still running. Lidar/IMU topics are available after spawn when using a current sim image; **Go** uses open-loop `cmd_vel` (Nav2 deferred to OpenShift).
+Idle noVNC tabs may show Disconnected; reconnect or refresh — the simulation is still running. Lidar/IMU topics are available after spawn when using a current sim image; **Go** on Jazzy sim uses Nav2 (`navigate_to_pose`) with obstacle-aware planning (Humble images still use open-loop `cmd_vel`).
 
 ## Settings
 
@@ -66,7 +66,7 @@ Build via Image Builder (or CLI against `assets/`), then push:
 ### Simulation images (Phase 2 outputs, built on top of a base)
 
 - `quay.io/<ns>/ros2-humble-turtlebot3:sloretz` — Humble TurtleBot3 sim (layers on the sloretz base).
-- `quay.io/<ns>/ros2-jazzy-sim:noble` — The Jazzy sim: Gazebo + noVNC (Nav2 packages in image; stack deferred to OpenShift).
+- `quay.io/<ns>/ros2-jazzy-sim:noble` — The Jazzy sim: Gazebo + noVNC + Nav2 (launched on **Go** via `entrypoint-nav2.sh`).
 
 ## Coming Soon
 

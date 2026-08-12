@@ -17,7 +17,7 @@
 | 🟠 | APPENG-5922 | Topic Monitor drill-down — **In Review** |
 | 🟠 | APPENG-5923 | Topic Monitor message peek — **In Review** |
 | ⚪ | APPENG-5980 | Local Nav2 feasibility spike on Apple Silicon (Mac) — **New** |
-| ⚪ | APPENG-5981 | Add boundary-constrained TurtleBot target validation in Simulation page — **New** |
+| ⚪ | APPENG-5981 | Wire Simulation Go to local Nav2 (`navigate_to_pose`) — **In progress** |
 
 > **See also:** [Story 6 (Podman-only simulation)](story6-podman-sim.md) implements the core of this story (APPENG-5771 container orchestration + APPENG-5772 noVNC) using a Podman-only approach for the ROSCon demo.
 
@@ -75,9 +75,11 @@
 
 ### Implementation Notes
 
-**Done (local / Mac):** Direct velocity control. Backend queries robot pose via `gz model -m <name> -p`, then publishes `cmd_vel` Twist messages to turn and drive in a straight line. Lidar/IMU topics publish after spawn (2026-08), but **Go** does not use them — no obstacle avoidance until Nav2 is wired. Per-robot X/Y + **Go**, status feedback, Help, tests.
+**Done (local / Mac, Jazzy):** Nav2 autonomous navigation. Backend launches Nav2 via `entrypoint-nav2.sh` when needed, seeds AMCL from current pose, and sends `navigate_to_pose` goals. Per-robot X/Y + **Go**, status feedback (Navigating / Reached / Failed), Help, tests.
 
-**Deferred (OpenShift):** Nav2 autonomous navigation with obstacle avoidance. Launch Nav2 per robot (`entrypoint-nav2.sh`) and send goals via `navigate_to_pose`. Verify in-cluster. Partial plumbing today: Nav2 packages and `entrypoint-nav2.sh` in `ros2-jazzy-sim`; `sendNavigationGoal` still uses `cmd_vel`. Wiring `navigate_to_pose` + in-cluster verify is Story 4 / follow-up — not required to close local 5920 scope.
+**Humble fallback:** Direct velocity control via `cmd_vel` (turn + drive) when image tag includes `humble`.
+
+**OpenShift:** Same action path reusable in-cluster (Story 4 / APPENG-5767).
 
 **New files:**
 - `packages/backend/assets/ros2-jazzy-sim/entrypoint-nav2.sh` — launches Nav2 navigation stack (unused from UI on arm64; ready for OpenShift wiring)
@@ -158,16 +160,25 @@ See plan notes (2026-08-04): `getRosTopicDetail`, expandable UI, on-demand fetch
 - `entrypoint-nav2.sh` now uses `bringup_launch.py` with `use_namespace:=True`, `tb3_sandbox` map, and runtime-patched params (`lib/patch-nav2-params.py` rewrites absolute `/scan`, `/odom`, `/map` topics to relative names).
 - `entrypoint-spawn-robot.sh` remaps `robot_state_publisher` TF output to `/robot_1/tf` and `/robot_1/tf_static` so namespaced Nav2 sees the full `odom -> base_footprint -> base_link` chain.
 - Re-test result: MPPI critics configure, map loads on `/robot_1/map`, scan subscription succeeds; activation requires a fresh robot spawn after the TF remap change.
-- Result: **conditional go** for local Nav2 on Mac after image rebuild + robot respawn; wire `navigate_to_pose` from UI remains follow-up work.
+- Result: **go** for local Nav2 on Mac (5980); APPENG-5981 wires Simulation **Go** to `navigate_to_pose`.
 
 ---
 
-## APPENG-5981: Boundary-Constrained Target Validation — ⚪ New
+## APPENG-5981: Wire Simulation Go to Local Nav2 — In progress
 
-**Description:** Add boundary-aware Go target validation in the Simulation page to prevent out-of-bounds navigation commands.
+**Description:** Replace open-loop `cmd_vel` **Go** with Nav2 autonomous navigation for local Jazzy simulation (follow-on to APPENG-5980).
 
-**Planned scope:**
-- Define initial min/max X/Y bounds for local simulation targets
-- Validate and block invalid targets in UI before command dispatch
-- Keep current in-bounds flow unchanged
-- Add tests and update help text
+**Scope:**
+- Launch Nav2 via `/entrypoint-nav2.sh` when not already running (per robot namespace)
+- Backend `sendNavigationGoal` sends `/robot_N/navigate_to_pose` on Jazzy sim images
+- Seed AMCL initial pose from current robot pose when starting Nav2
+- Preserve per-robot navigating / reached / failed UI status
+- Keep `cmd_vel` fallback for Humble/non-Nav2 images
+
+**Out of scope:** dedicated boundary min/max UI (Nav2/map rejects invalid goals); multi-waypoint routing.
+
+**Acceptance criteria:**
+- **Go** on Jazzy sim uses Nav2 with obstacle-aware planning
+- UI reflects action result (reached / failed)
+- Backend tests cover Nav2 goal path (mocked exec)
+- Docs/help text updated

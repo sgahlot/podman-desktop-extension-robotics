@@ -173,7 +173,7 @@ If you only ever build one sim image and never reuse the base, the two-phase spl
 | 🟠 | APPENG-5922 | Topic Monitor drill-down | **In Review.** Expandable rows: `ros2 topic info -v` pub/sub node names. On-demand fetch (not polled). |
 | 🟠 | APPENG-5923 | Topic Monitor message peek | **In Review.** Peek via `ros2 topic echo --once` (1–30s timeout); Tree/Raw, Copy, schema, topology badges. |
 | ⚪ | APPENG-5980 | Local Nav2 feasibility spike on Apple Silicon (Mac) | **New.** Timeboxed feasibility spike for local Nav2 on Mac: run matrix (llvmpipe / GPU passthrough), validate sensor + planner/controller stability, and deliver go/no-go with constraints. |
-| ⚪ | APPENG-5981 | Add boundary-constrained TurtleBot target validation in Simulation page | **New.** Enforce min/max X/Y bounds for Go targets, block out-of-bounds commands, and surface clear in-UI validation feedback. |
+| ⚪ | APPENG-5981 | Wire Simulation Go to local Nav2 (`navigate_to_pose`) | **In progress.** Backend launches Nav2 on Go, sends map-frame goals; UI status Navigating/Reached. Manual tb3_sandbox demo pending. |
 
 ---
 
@@ -355,7 +355,7 @@ A Miro board would be useful for a team kickoff/planning session where people ne
 | 🟠 | APPENG-5922 | Sub-task | APPENG-5765 | Topic Monitor drill-down |
 | 🟠 | APPENG-5923 | Sub-task | APPENG-5765 | Topic Monitor message peek |
 | ⚪ | APPENG-5980 | Sub-task | APPENG-5765 | Local Nav2 feasibility spike on Apple Silicon (Mac) |
-| ⚪ | APPENG-5981 | Sub-task | APPENG-5765 | Add boundary-constrained TurtleBot target validation in Simulation page |
+| ⚪ | APPENG-5981 | Sub-task | APPENG-5765 | Wire Simulation Go to local Nav2 (`navigate_to_pose`) |
 | ⚪ | APPENG-5774 | Sub-task | APPENG-5766 | Podman Compose multi-container orchestration for 2+ robots |
 | ⚪ | APPENG-5775 | Sub-task | APPENG-5766 | Zenoh router and DDS bridge sidecar auto-configuration |
 | ⚪ | APPENG-5776 | Sub-task | APPENG-5766 | Fleet status panel in the extension UI |
@@ -700,4 +700,4 @@ Comprehensive security audit and hardening of the extension's backend API, entry
 - **Kind lean path (2026-08-10):** Documented revisit of Kind using a **single** `ros2-jazzy-sim` Deployment (Story 6 parity) instead of Repo B multi-pod Nav2 charts that OOM’d on arm64. Updated Story 5 status, local deployment options, APPENG-5778 note, and Ready Now.
 - **Story 3 = Podman Compose (2026-08-10):** Clarified APPENG-5774/Story 3 deliverable is **Podman Compose** multi-container fleet (not scale-in-one-container alone). Story 6 multi-spawn remains a lightweight demo path.
 - **GPU + Sensors (2026-08-11):** arm64 simulation launch passes `/dev/dri` by default (**Simulation GPU passthrough** preference). Ogre2 Sensors re-enabled after re-verification (`scripts/test-sensors-gpu.sh`); `/scan` and `/imu` publish after spawn. Nav2 stack launch still deferred; **Go** remains `cmd_vel`.
-- **New Story 2 follow-ups (2026-08-11):** Added APPENG-5980 (local Nav2 feasibility spike on Mac) and APPENG-5981 (boundary-constrained target validation). Initial 5980 run (`scripts/test-nav2-local-feasibility.sh`) found two blockers: namespaced Nav2 param wiring (`No critics defined for FollowPath`) and split TF publishing (`odom` on `/robot_1/tf`, static chain on global `/tf_static`). **5980 update (2026-08-12):** fixed via `bringup_launch.py` + `use_namespace`, runtime params patch, and spawn TF remaps; conditional go pending image rebuild and robot respawn validation.
+- **New Story 2 follow-ups (2026-08-11):** Added APPENG-5980 (local Nav2 feasibility spike on Mac) and APPENG-5981 (wire Go to Nav2). Initial 5980 run found namespaced param wiring and split TF publishing blockers; **5980 update (2026-08-12):** fixed and validated go (`navigate_to_pose` active on Mac). **5981** scopes UI/backend wiring from cmd_vel to Nav2.

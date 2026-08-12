@@ -2,7 +2,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { ExtensionContext } from '@podman-desktop/api';
 import { PhysicalAiApiImpl } from './api-impl';
 import { SIM_CONTAINER_LABEL, SIM_CONTAINER_LABEL_VALUE, SIM_STOPPED_BROWSER_HINT } from '/@shared/src/types/SimulationContainer';
-import { SPAWN_ENTRYPOINT, GAZEBO_ENTRYPOINT } from '/@shared/src/security/simInput';
+import { SPAWN_ENTRYPOINT, GAZEBO_ENTRYPOINT, NAV2_ENTRYPOINT } from '/@shared/src/security/simInput';
 
 vi.mock('@podman-desktop/api', () => ({
   provider: {
@@ -1361,7 +1361,7 @@ describe('PhysicalAiApiImpl', () => {
     });
   });
 
-  describe('sendNavigationGoal', () => {
+  describe('sendNavigationGoal (humble cmd_vel)', () => {
     const CONTAINER_ID = 'abc123def456';
     const GZ_POSE_ORIGIN = 'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
     const GZ_POSE_AT_TARGET = 'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [2.000000 2.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
@@ -1384,7 +1384,7 @@ describe('PhysicalAiApiImpl', () => {
 
     beforeEach(() => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
-        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+        simContainer(CONTAINER_ID, 'quay.io/ns/ros2-humble-turtlebot3:sloretz'),
       ] as any);
     });
 
@@ -1470,6 +1470,109 @@ describe('PhysicalAiApiImpl', () => {
       const args = execArgs(0);
       expect(args[0]).toBe('exec');
       expect(args).not.toContain('-d');
+    });
+  });
+
+  describe('sendNavigationGoal (jazzy Nav2)', () => {
+    const CONTAINER_ID = 'abc123def456';
+    const GZ_POSE_ORIGIN = 'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
+
+    function mockNav2Exec(options?: {
+      actionReadyInitially?: boolean;
+      goalOutput?: string;
+    }) {
+      const actionReadyInitially = options?.actionReadyInitially ?? true;
+      const goalOutput = options?.goalOutput ?? 'Goal finished with status: SUCCEEDED\n';
+      let actionChecks = 0;
+      vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+        const argv = args as string[];
+        if (argv.some(a => typeof a === 'string' && a.includes('gz model'))) {
+          return { stdout: GZ_POSE_ORIGIN, stderr: '', command: 'podman' } as any;
+        }
+        if (argv.includes('-d')) {
+          return { stdout: '', stderr: '', command: 'podman' } as any;
+        }
+        const bashScript = argv.find((a): a is string => typeof a === 'string' && a.includes('source'));
+        if (bashScript?.includes('action list')) {
+          actionChecks++;
+          if (actionReadyInitially || actionChecks > 1) {
+            return { stdout: '/robot_1/navigate_to_pose\n', stderr: '', command: 'podman' } as any;
+          }
+          throw { exitCode: 1, stdout: '', stderr: '', message: 'grep exit 1' };
+        }
+        if (bashScript?.includes('send_goal')) {
+          return { stdout: goalOutput, stderr: '', command: 'podman' } as any;
+        }
+        return { stdout: '', stderr: '', command: 'podman' } as any;
+      });
+    }
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as any);
+    });
+
+    it('returns reached when Nav2 goal succeeds', async () => {
+      mockNav2Exec();
+
+      const result = await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
+      expect(result.status).toBe('reached');
+      expect(result.message).toContain('Nav2');
+    });
+
+    it('returns failed when Nav2 goal reports non-success status', async () => {
+      mockNav2Exec({ goalOutput: 'Goal finished with status: ABORTED\n' });
+
+      const result = await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
+      expect(result.status).toBe('failed');
+      expect(result.message).toContain('ABORTED');
+    });
+
+    it('sends navigate_to_pose with robot name as positional arg', async () => {
+      mockNav2Exec();
+
+      await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 3.5, -1.0);
+      const goalCall = vi.mocked(extensionApi.process.exec).mock.calls.find(c =>
+        (c[1] as string[] | undefined)?.some(a => typeof a === 'string' && a.includes('send_goal')),
+      );
+      expect(goalCall).toBeDefined();
+      const goalArgs = goalCall![1] as string[];
+      const goalCmd = goalArgs.find(arg => arg.includes('send_goal'));
+      expect(goalCmd).toContain('/$2/navigate_to_pose');
+      expect(goalArgs).toContain('robot_1');
+      expect(goalCmd).not.toContain('/robot_1/navigate_to_pose');
+    });
+
+    it('launches Nav2 detached with spawn pose env when action server missing', async () => {
+      mockNav2Exec({ actionReadyInitially: false });
+
+      const promise = api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
+      await vi.advanceTimersByTimeAsync(1000);
+      const result = await promise;
+
+      expect(result.status).toBe('reached');
+      const detachedCall = vi.mocked(extensionApi.process.exec).mock.calls.find(c =>
+        (c[1] as string[] | undefined)?.includes('-d'),
+      );
+      expect(detachedCall).toBeDefined();
+      const detachedArgs = detachedCall![1] as string[];
+      expect(detachedArgs).toContain(NAV2_ENTRYPOINT);
+      expect(detachedArgs).toContain('robot_1');
+      expect(detachedArgs.some(a => a.startsWith('PHYSICAL_AI_SPAWN_X='))).toBe(true);
+      expect(detachedArgs.some(a => a.startsWith('PHYSICAL_AI_SPAWN_Y='))).toBe(true);
+    });
+
+    it('returns already-at-target when distance is tiny', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: 'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [2.000000 2.000000 0.010000]\n    [0.000000 0.000000 0.000000]',
+        stderr: '',
+        command: 'podman',
+      } as any);
+
+      const result = await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
+      expect(result.status).toBe('reached');
+      expect(result.message).toContain('Already');
     });
   });
 
