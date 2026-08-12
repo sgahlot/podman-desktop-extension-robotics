@@ -169,7 +169,7 @@ If you only ever build one sim image and never reuse the base, the two-phase spl
 | ✅ | APPENG-5771 | Container orchestration for ROS2 + Gazebo launch via Podman pod | Implemented via [Story 6](stories/story6-podman-sim.md) S6-1/S6-3/S6-4. Podman-only (no pods/compose): backend lifecycle API + Simulation page + one-click launch. |
 | ✅ | APPENG-5772 | Integrate noVNC or web-based video stream for simulation visualization | Implemented via [Story 6](stories/story6-podman-sim.md) S6-1/S6-4. noVNC stack (Xvfb + x11vnc + websockify) in sim image, "Open in Browser" on Simulation page. |
 | ✅ | APPENG-5773 | Build topic monitor panel showing active ROS2 topics and message rates | Topic Monitor page (`/topics`): lists active ROS2 topics with message types, publisher/subscriber counts. Uses `podman exec` (attached) to run `ros2 topic list` + `ros2 topic info` inside the simulation container. Auto-refreshes every 5s. Accessible from Dashboard card and Simulation page "View Topics" button. Hz measurement deferred. |
-| 🟠 | APPENG-5920 | Add navigation UI for driving robots in simulation | **In Review.** Per-robot X/Y + **Go** on Simulation page. Local/Mac: `cmd_vel` turn/drive (lidar/IMU publish; Nav2 stack not launched — no obstacle avoidance). OpenShift Nav2 (`navigate_to_pose`) deferred. |
+| 🟠 | APPENG-5920 | Add navigation UI for driving robots in simulation | **In Review.** Per-robot X/Y + **Go** on Simulation page. Jazzy: Nav2 `navigate_to_pose` (5981); Humble: `cmd_vel` fallback. |
 | 🟠 | APPENG-5922 | Topic Monitor drill-down | **In Review.** Expandable rows: `ros2 topic info -v` pub/sub node names. On-demand fetch (not polled). |
 | 🟠 | APPENG-5923 | Topic Monitor message peek | **In Review.** Peek via `ros2 topic echo --once` (1–30s timeout); Tree/Raw, Copy, schema, topology badges. |
 | ⚪ | APPENG-5980 | Local Nav2 feasibility spike on Apple Silicon (Mac) | **New.** Timeboxed feasibility spike for local Nav2 on Mac: run matrix (llvmpipe / GPU passthrough), validate sensor + planner/controller stability, and deliver go/no-go with constraints. |
@@ -250,7 +250,7 @@ Story 1 (Scaffolding + images)  ──  Foundation; must be first  ✅
 | Priority | Scope | Issues |
 |----------|--------|--------|
 | **MVP-critical** (ROSCon demo) | Stories 1 + 6 (+ Story 2 via 5771/5772) | Image Builder, Catalog, Simulation launch/spawn/noVNC |
-| **🟠 Story 2 sub-tasks In Review** | APPENG-5920 + 5922 + 5923 | Local Go (`cmd_vel`), Topic drill-down, Peek — pending review |
+| **🟠 Story 2 sub-tasks In Review** | APPENG-5920 + 5922 + 5923 | Go UI (Jazzy Nav2 / Humble cmd_vel), Topic drill-down, Peek — pending review |
 | **Parked** | Story 5 | Kind spike; resume for K8s/OpenShift path |
 | **Stretch** | Stories 3–4 | 6 sub-tasks (`APPENG-5774`–`5779`), including docs |
 
@@ -271,7 +271,7 @@ Now that the scaffold (APPENG-5768) is complete, sub-tasks have fine-grained dep
     ├── ✅ APPENG-5773 (Topic monitor UI) ── DONE
     │       ├── 🟠 APPENG-5922 (Topic drill-down)    ◀── IN REVIEW
     │       └── 🟠 APPENG-5923 (Topic message peek)  ◀── IN REVIEW
-    ├── 🟠 APPENG-5920 (Nav Go UI / cmd_vel) ── IN REVIEW (OpenShift Nav2 deferred)
+    ├── 🟠 APPENG-5920 (Nav Go UI) ── IN REVIEW (5981 wires Jazzy Nav2)
     │
     ├── 🅿️ S5-1…S5-6 (Story 5 Kind/OpenShift spike) ── PARKED (branch spike/repo-b-kind-attempt)
     │
@@ -699,5 +699,5 @@ Comprehensive security audit and hardening of the extension's backend API, entry
 - **In Review + Story 6 polish (2026-08-10):** APPENG-5920 / 5922 / 5923 marked **In Review** in plan and story docs. Ready Now points at 5774 / OpenShift spike / deferred S6-6. Story 6 demo path framed complete; ROSCon e2e checklist added in story6 doc. S6-6 still stretch/out of scope.
 - **Kind lean path (2026-08-10):** Documented revisit of Kind using a **single** `ros2-jazzy-sim` Deployment (Story 6 parity) instead of Repo B multi-pod Nav2 charts that OOM’d on arm64. Updated Story 5 status, local deployment options, APPENG-5778 note, and Ready Now.
 - **Story 3 = Podman Compose (2026-08-10):** Clarified APPENG-5774/Story 3 deliverable is **Podman Compose** multi-container fleet (not scale-in-one-container alone). Story 6 multi-spawn remains a lightweight demo path.
-- **GPU + Sensors (2026-08-11):** arm64 simulation launch passes `/dev/dri` by default (**Simulation GPU passthrough** preference). Ogre2 Sensors re-enabled after re-verification (`scripts/test-sensors-gpu.sh`); `/scan` and `/imu` publish after spawn. Nav2 stack launch still deferred; **Go** remains `cmd_vel`.
+- **GPU + Sensors (2026-08-11):** arm64 simulation launch passes `/dev/dri` by default (**Simulation GPU passthrough** preference). Ogre2 Sensors re-enabled after re-verification (`scripts/test-sensors-gpu.sh`); `/scan` and `/imu` publish after spawn.
 - **New Story 2 follow-ups (2026-08-11):** Added APPENG-5980 (local Nav2 feasibility spike on Mac) and APPENG-5981 (wire Go to Nav2). Initial 5980 run found namespaced param wiring and split TF publishing blockers; **5980 update (2026-08-12):** fixed and validated go (`navigate_to_pose` active on Mac). **5981** scopes UI/backend wiring from cmd_vel to Nav2.
