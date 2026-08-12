@@ -225,7 +225,7 @@ export abstract class PhysicalAiApi {
 | `types/SimulationContainer.ts` | `SimLaunchOptions`, `SimContainerInfo`, `ExecResult`, container label constants
 | `types/CatalogCurated.ts` | `DEFAULT_CURATED_ALLOWLIST`, `parseCuratedAllowlist()`, `repoMatchesAllowlist()`, `filterCuratedRepos()` — wildcard pattern matching for curated allowlist
 | `types/TopicInfo.ts` | `TopicInfo` — name, type, publishers, subscribers for ROS2 topic monitoring
-| `types/NavigationGoalResult.ts` | `NavigationGoalResult` — status + message for Go / nav goal feedback (`cmd_vel` today)
+| `types/NavigationGoalResult.ts` | `NavigationGoalResult` — status + message for Go / nav goal feedback (Nav2 on Jazzy, cmd_vel on Humble)
 |===
 
 == Data Flow

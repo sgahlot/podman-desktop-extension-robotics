@@ -17,7 +17,7 @@
 | 🟠 | APPENG-5922 | Topic Monitor drill-down — **In Review** |
 | 🟠 | APPENG-5923 | Topic Monitor message peek — **In Review** |
 | ⚪ | APPENG-5980 | Local Nav2 feasibility spike on Apple Silicon (Mac) — **New** |
-| ⚪ | APPENG-5981 | Wire Simulation Go to local Nav2 (`navigate_to_pose`) — **In progress** |
+| ⚪ | APPENG-5981 | Wire Simulation Go to local Nav2 (`navigate_to_pose`) — **In Review** (e2e validated; UI smoke optional) |
 
 > **See also:** [Story 6 (Podman-only simulation)](story6-podman-sim.md) implements the core of this story (APPENG-5771 container orchestration + APPENG-5772 noVNC) using a Podman-only approach for the ROSCon demo.
 
@@ -164,7 +164,7 @@ See plan notes (2026-08-04): `getRosTopicDetail`, expandable UI, on-demand fetch
 
 ---
 
-## APPENG-5981: Wire Simulation Go to Local Nav2 — In progress
+## APPENG-5981: Wire Simulation Go to Local Nav2 — In Review
 
 **Description:** Replace open-loop `cmd_vel` **Go** with Nav2 autonomous navigation for local Jazzy simulation (follow-on to APPENG-5980).
 
@@ -183,4 +183,4 @@ See plan notes (2026-08-04): `getRosTopicDetail`, expandable UI, on-demand fetch
 - Backend tests cover Nav2 goal path (mocked exec)
 - Docs/help text updated
 
-**Validation (2026-08-12):** `scripts/test-nav2-go-e2e.sh` on Mac (`pai-sim-5981-e2e`, `ros2-jazzy-sim:noble`) — spawn `robot_1`, launch Nav2, `navigate_to_pose` to `(1.0, 1.0)` **SUCCEEDED** (~15s nav time). Backend waits for `map→base_link` TF after Nav2 launch before sending goals.
+**Validation (2026-08-12):** `scripts/test-nav2-go-e2e.sh` on Mac (`ros2-jazzy-sim:noble`, fresh `pai-sim-*` container) — spawn `robot_1`, launch Nav2, `navigate_to_pose` to `(1.0, 1.0)` **SUCCEEDED** (~55s, 5 recoveries — obstacle-aware routing). Backend uses `map→base_link` TF readiness (not action list alone; avoids false positives from other sim containers on the default ROS domain).

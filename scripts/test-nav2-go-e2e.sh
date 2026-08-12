@@ -8,7 +8,10 @@
 # Usage:
 #   ./scripts/test-nav2-go-e2e.sh [container_id] [goal_x] [goal_y]
 #
-# Defaults: goal (1.0, 1.0) — reachable on tb3_sandbox without leaving the map.
+# Defaults: goal (1.0, 1.0) — reachable on tb3_sandbox. Use (2.0, 2.0) to exercise routing around sandbox walls.
+#
+# Note: use a freshly launched sim (stop & remove stale containers). Long-running sims can hit Gazebo sim-time
+# jumps that break map→base_link TF lookups.
 set -euo pipefail
 
 CONTAINER_ID="${1:-}"
@@ -50,54 +53,53 @@ SPAWN_Y="$(printf '%s\n' "${POSE_OUT}" | rg -o -- '-?[0-9]+\.[0-9]+' | sed -n '2
 echo "Current pose: (${SPAWN_X}, ${SPAWN_Y})"
 echo
 
-if ! ros_exec "ros2 topic list 2>/dev/null" | rg -q "/${ROBOT_NAME}/cmd_vel"; then
-  echo "ERROR: /${ROBOT_NAME}/cmd_vel not found — is ${ROBOT_NAME} spawned?"
+spawn_ready=0
+for ((i = 1; i <= 30; i++)); do
+  if ros_exec "ros2 topic list 2>/dev/null" | rg -q "/${ROBOT_NAME}/cmd_vel"; then
+    spawn_ready=1
+    break
+  fi
+  sleep 2
+done
+if [[ "${spawn_ready}" -ne 1 ]]; then
+  echo "ERROR: /${ROBOT_NAME}/cmd_vel not found after 60s — spawn ${ROBOT_NAME} first."
   exit 1
 fi
 
-if ! ros_exec "ros2 action list 2>/dev/null" | rg -q "/${ROBOT_NAME}/navigate_to_pose"; then
-  echo "Nav2 not running — launching /entrypoint-nav2.sh (AMCL seed: ${SPAWN_X}, ${SPAWN_Y})..."
-  podman exec -d \
-    -e "PHYSICAL_AI_SPAWN_X=${SPAWN_X}" \
-    -e "PHYSICAL_AI_SPAWN_Y=${SPAWN_Y}" \
-    "${CONTAINER_ID}" \
-    /entrypoint-nav2.sh "${ROBOT_NAME}"
+nav2_running() {
+  ros_exec 'pgrep -f "bringup_launch.py.*namespace:='"${ROBOT_NAME}"'" >/dev/null && echo running || true' | rg -q running
+}
 
-  ready=0
-  for ((i = 1; i <= MAX_WAIT_SEC; i++)); do
-    if ros_exec "ros2 action list 2>/dev/null" | rg -q "/${ROBOT_NAME}/navigate_to_pose"; then
-      ready=1
-      echo "Nav2 action server ready after ${i}s."
+if ! ros_exec "timeout 5 ros2 run tf2_ros tf2_echo map base_link --ros-args -p use_sim_time:=true -r /tf:=/${ROBOT_NAME}/tf -r /tf_static:=/${ROBOT_NAME}/tf_static 2>&1" | rg -q 'Translation:'; then
+  if nav2_running; then
+    echo "Nav2 bringup already running — waiting for map→base_link TF..."
+  else
+    echo "Nav2 not ready — launching /entrypoint-nav2.sh (AMCL seed: ${SPAWN_X}, ${SPAWN_Y})..."
+    podman exec -d \
+      -e "PHYSICAL_AI_SPAWN_X=${SPAWN_X}" \
+      -e "PHYSICAL_AI_SPAWN_Y=${SPAWN_Y}" \
+      "${CONTAINER_ID}" \
+      /entrypoint-nav2.sh "${ROBOT_NAME}"
+  fi
+
+  tf_ready=0
+  for ((i = 1; i <= 60; i++)); do
+    TF_OUT="$(
+      ros_exec "timeout 5 ros2 run tf2_ros tf2_echo map base_link --ros-args -p use_sim_time:=true -r /tf:=/${ROBOT_NAME}/tf -r /tf_static:=/${ROBOT_NAME}/tf_static 2>&1" || true
+    )"
+    if printf '%s\n' "${TF_OUT}" | rg -q 'Translation:'; then
+      tf_ready=1
+      echo "map→base_link TF ready after ${i}s."
       break
     fi
     sleep 1
   done
-  if [[ "${ready}" -ne 1 ]]; then
-    echo "ERROR: Nav2 did not expose /${ROBOT_NAME}/navigate_to_pose within ${MAX_WAIT_SEC}s"
+  if [[ "${tf_ready}" -ne 1 ]]; then
+    echo "ERROR: map→base_link TF not available within 60s after Nav2 launch"
     exit 1
   fi
-  echo "Waiting 15s for AMCL initial pose..."
-  sleep 15
 else
-  echo "Nav2 already running (/navigate_to_pose present)."
-fi
-
-echo "Checking map→base_link TF before sending goal..."
-tf_ready=0
-for ((i = 1; i <= 30; i++)); do
-  TF_OUT="$(
-    ros_exec "timeout 5 ros2 run tf2_ros tf2_echo map base_link --ros-args -p use_sim_time:=true -r /tf:=/${ROBOT_NAME}/tf -r /tf_static:=/${ROBOT_NAME}/tf_static 2>&1" || true
-  )"
-  if printf '%s\n' "${TF_OUT}" | rg -q 'Translation:'; then
-    tf_ready=1
-    echo "map→base_link TF ready (attempt ${i})."
-    break
-  fi
-  sleep 1
-done
-if [[ "${tf_ready}" -ne 1 ]]; then
-  echo "ERROR: map→base_link TF not available within 30s"
-  exit 1
+  echo "Nav2 already ready (map→base_link TF present)."
 fi
 
 echo

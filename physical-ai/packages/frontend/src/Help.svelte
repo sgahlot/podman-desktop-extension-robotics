@@ -89,7 +89,7 @@ import { router } from 'tinro';
           <strong>Add TurtleBot3</strong> — Spawns a robot into the running world via <span class="font-mono">podman exec</span> (name + X/Y/yaw).
         </div>
         <div>
-          <strong>Navigate</strong> — Each spawned robot has a "Go" button with target X/Y coordinates (map frame). On Jazzy sim images, the extension launches Nav2 if needed and sends a <span class="font-mono">navigate_to_pose</span> goal with lidar-based obstacle avoidance. Status shows: Navigating &rarr; Reached (X, Y) / Failed. Humble images still use open-loop <span class="font-mono">cmd_vel</span> (turn + drive, no obstacle avoidance).
+          <strong>Navigate</strong> — Each spawned robot has a "Go" button with target X/Y coordinates (map frame). On Jazzy sim images, the extension launches Nav2 if needed and sends a <span class="font-mono">navigate_to_pose</span> goal with lidar-based obstacle avoidance. Status shows: Navigating &rarr; Reached (X, Y) / Failed. Humble images still use open-loop <span class="font-mono">cmd_vel</span> (turn + drive, no obstacle avoidance). Run one simulation at a time when using **Go** (default ROS domain is shared across containers).
         </div>
       </div>
     </div>

@@ -964,14 +964,22 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     pose: { x: number; y: number; yaw: number },
     distro: SupportedRosDistro,
   ): Promise<void> {
-    const check = await this.#execRosBash(
-      containerId,
-      distro,
-      'ros2 action list 2>/dev/null | grep -F "/$1/navigate_to_pose"',
-      [robotName],
-    );
-    if (check.exitCode === 0 && check.stdout.includes('navigate_to_pose')) {
+    // Do not trust action list alone — other sim containers on the default ROS domain
+    // can expose /robot_N/navigate_to_pose before this container's Nav2 stack is up.
+    if (await this.#hasMapBaseLinkTf(containerId, robotName, distro)) {
       return;
+    }
+
+    if (await this.#isNav2BringupRunning(containerId, robotName, distro)) {
+      for (let attempt = 0; attempt < 60; attempt++) {
+        await PhysicalAiApiImpl.#sleep(1000);
+        if (await this.#hasMapBaseLinkTf(containerId, robotName, distro)) {
+          return;
+        }
+      }
+      throw new Error(
+        `Nav2 bringup for "${robotName}" is running but map→base_link TF never became available.`,
+      );
     }
 
     await this.#execDetached(containerId, NAV2_ENTRYPOINT, [robotName], {
@@ -979,42 +987,46 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       PHYSICAL_AI_SPAWN_Y: pose.y.toFixed(4),
     });
 
-    for (let attempt = 0; attempt < 45; attempt++) {
+    for (let attempt = 0; attempt < 60; attempt++) {
       await PhysicalAiApiImpl.#sleep(1000);
-      const again = await this.#execRosBash(
-        containerId,
-        distro,
-        'ros2 action list 2>/dev/null | grep -F "/$1/navigate_to_pose"',
-        [robotName],
-      );
-      if (again.exitCode === 0 && again.stdout.includes('navigate_to_pose')) {
-        break;
-      }
-      if (attempt === 44) {
-        throw new Error(
-          `Nav2 stack for "${robotName}" did not become ready (navigate_to_pose action missing).`,
-        );
-      }
-    }
-
-    // entrypoint-nav2.sh publishes AMCL initial pose after ~12s; wait for map frame.
-    for (let attempt = 0; attempt < 30; attempt++) {
-      await PhysicalAiApiImpl.#sleep(1000);
-      const tf = await this.#execRosBash(
-        containerId,
-        distro,
-        'timeout 5 ros2 run tf2_ros tf2_echo map base_link --ros-args -p use_sim_time:=true ' +
-          '-r /tf:=/$1/tf -r /tf_static:=/$1/tf_static 2>&1',
-        [robotName],
-      );
-      if (/Translation:/i.test(tf.stdout)) {
+      if (await this.#hasMapBaseLinkTf(containerId, robotName, distro)) {
         return;
       }
     }
 
     throw new Error(
-      `Nav2 stack for "${robotName}" action is up but map→base_link TF is not available yet.`,
+      `Nav2 stack for "${robotName}" did not become ready (map→base_link TF missing). ` +
+        'Stop other sim containers or use a fresh simulation before Go.',
     );
+  }
+
+  async #hasMapBaseLinkTf(
+    containerId: string,
+    robotName: string,
+    distro: SupportedRosDistro,
+  ): Promise<boolean> {
+    const tf = await this.#execRosBash(
+      containerId,
+      distro,
+      'timeout 5 ros2 run tf2_ros tf2_echo map base_link --ros-args -p use_sim_time:=true ' +
+        '-r /tf:=/$1/tf -r /tf_static:=/$1/tf_static 2>&1',
+      [robotName],
+    );
+    return /Translation:/i.test(tf.stdout);
+  }
+
+  async #isNav2BringupRunning(
+    containerId: string,
+    robotName: string,
+    distro: SupportedRosDistro,
+  ): Promise<boolean> {
+    const result = await this.#execRosBash(
+      containerId,
+      distro,
+      'pgrep -f "bringup_launch.py.*namespace:=$1" >/dev/null && echo running || true',
+      [robotName],
+    );
+    return result.stdout.includes('running');
   }
 
   async #sendCmdVelNavigationGoal(

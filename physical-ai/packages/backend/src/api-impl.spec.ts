@@ -1478,12 +1478,12 @@ describe('PhysicalAiApiImpl', () => {
     const GZ_POSE_ORIGIN = 'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
 
     function mockNav2Exec(options?: {
-      actionReadyInitially?: boolean;
+      tfReadyInitially?: boolean;
       goalOutput?: string;
     }) {
-      const actionReadyInitially = options?.actionReadyInitially ?? true;
+      const tfReadyInitially = options?.tfReadyInitially ?? true;
       const goalOutput = options?.goalOutput ?? 'Goal finished with status: SUCCEEDED\n';
-      let actionChecks = 0;
+      let tfChecks = 0;
       vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
         const argv = args as string[];
         if (argv.some(a => typeof a === 'string' && a.includes('gz model'))) {
@@ -1493,22 +1493,19 @@ describe('PhysicalAiApiImpl', () => {
           return { stdout: '', stderr: '', command: 'podman' } as any;
         }
         const bashScript = argv.find((a): a is string => typeof a === 'string' && a.includes('source'));
-        if (bashScript?.includes('action list')) {
-          actionChecks++;
-          if (actionReadyInitially || actionChecks > 1) {
-            return { stdout: '/robot_1/navigate_to_pose\n', stderr: '', command: 'podman' } as any;
-          }
-          throw { exitCode: 1, stdout: '', stderr: '', message: 'grep exit 1' };
-        }
         if (bashScript?.includes('send_goal')) {
           return { stdout: goalOutput, stderr: '', command: 'podman' } as any;
         }
         if (bashScript?.includes('tf2_echo map base_link')) {
-          return {
-            stdout: 'At time 1.0\n- Translation: [-1.972, -0.517, 0.010]\n',
-            stderr: '',
-            command: 'podman',
-          } as any;
+          tfChecks++;
+          if (tfReadyInitially || tfChecks > 1) {
+            return {
+              stdout: 'At time 1.0\n- Translation: [-1.972, -0.517, 0.010]\n',
+              stderr: '',
+              command: 'podman',
+            } as any;
+          }
+          return { stdout: 'Waiting for transform map -> base_link\n', stderr: '', command: 'podman' } as any;
         }
         return { stdout: '', stderr: '', command: 'podman' } as any;
       });
@@ -1551,8 +1548,8 @@ describe('PhysicalAiApiImpl', () => {
       expect(goalCmd).not.toContain('/robot_1/navigate_to_pose');
     });
 
-    it('launches Nav2 detached with spawn pose env when action server missing', async () => {
-      mockNav2Exec({ actionReadyInitially: false });
+    it('launches Nav2 detached with spawn pose env when map TF is missing', async () => {
+      mockNav2Exec({ tfReadyInitially: false });
 
       const promise = api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
       await vi.advanceTimersByTimeAsync(1000);

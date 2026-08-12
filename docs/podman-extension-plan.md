@@ -173,7 +173,7 @@ If you only ever build one sim image and never reuse the base, the two-phase spl
 | 🟠 | APPENG-5922 | Topic Monitor drill-down | **In Review.** Expandable rows: `ros2 topic info -v` pub/sub node names. On-demand fetch (not polled). |
 | 🟠 | APPENG-5923 | Topic Monitor message peek | **In Review.** Peek via `ros2 topic echo --once` (1–30s timeout); Tree/Raw, Copy, schema, topology badges. |
 | ⚪ | APPENG-5980 | Local Nav2 feasibility spike on Apple Silicon (Mac) | **New.** Timeboxed feasibility spike for local Nav2 on Mac: run matrix (llvmpipe / GPU passthrough), validate sensor + planner/controller stability, and deliver go/no-go with constraints. |
-| ⚪ | APPENG-5981 | Wire Simulation Go to local Nav2 (`navigate_to_pose`) | **In progress.** Backend launches Nav2 on Go, sends map-frame goals; UI status Navigating/Reached. Manual tb3_sandbox demo pending. |
+| ⚪ | APPENG-5981 | Wire Simulation Go to local Nav2 (`navigate_to_pose`) | **In Review.** TF-based Nav2 readiness, e2e PASS on Mac (5 recoveries on tb3_sandbox). Use one fresh sim at a time (default ROS domain). |
 
 ---
 
