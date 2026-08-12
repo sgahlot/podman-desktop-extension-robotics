@@ -32,20 +32,52 @@ export ROS_LOG_DIR="${HOME}/.ros/log"
 # shellcheck disable=SC1090
 source "${PHYSICAL_AI_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
 
-echo "[nav2] Starting Nav2 navigation stack for ${ROBOT_NAME}..."
+PATCH_SCRIPT="${SCRIPT_DIR}/lib/patch-nav2-params.py"
+[[ -f "${PATCH_SCRIPT}" ]] || PATCH_SCRIPT="/usr/local/lib/physical-ai/patch-nav2-params.py"
+if [[ ! -f "${PATCH_SCRIPT}" ]]; then
+  echo "error: patch-nav2-params.py not found (tried ${SCRIPT_DIR}/lib/ and /usr/local/lib/physical-ai/)" >&2
+  exit 1
+fi
 
-ros2 launch nav2_bringup navigation_launch.py \
+PARAMS_FILE="${HOME}/nav2-${ROBOT_NAME}-params.yaml"
+MAP_FILE="${PHYSICAL_AI_NAV2_MAP:-/opt/ros/jazzy/share/nav2_bringup/maps/tb3_sandbox.yaml}"
+
+python3 "${PATCH_SCRIPT}" --output "${PARAMS_FILE}"
+
+echo "[nav2] Starting Nav2 bringup for ${ROBOT_NAME} (map: ${MAP_FILE})..."
+
+# navigation_launch.py alone applies RewrittenYaml root_key without PushROSNamespace,
+# which leaves params under ${ROBOT_NAME} while nodes stay at /. bringup_launch.py
+# applies both, which matches namespaced robot topics (/robot_1/scan, /robot_1/tf, ...).
+ros2 launch nav2_bringup bringup_launch.py \
   namespace:="${ROBOT_NAME}" \
+  use_namespace:=True \
+  use_composition:=False \
   use_sim_time:=True \
-  autostart:=True &
+  autostart:=True \
+  slam:=False \
+  use_localization:=True \
+  map:="${MAP_FILE}" \
+  params_file:="${PARAMS_FILE}" &
 NAV2_PID=$!
+
+# AMCL needs an initial pose before it publishes map->odom. Defaults match spawn entrypoint.
+SPAWN_X="${PHYSICAL_AI_SPAWN_X:--2.0}"
+SPAWN_Y="${PHYSICAL_AI_SPAWN_Y:--0.5}"
+(
+  sleep 12
+  ros2 topic pub --once "/${ROBOT_NAME}/initialpose" geometry_msgs/msg/PoseWithCovarianceStamped \
+    "{header: {frame_id: map}, pose: {pose: {position: {x: ${SPAWN_X}, y: ${SPAWN_Y}, z: 0.0}, orientation: {w: 1.0}}, covariance: [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.06853891909122467]}}" \
+    --use-sim-time
+) &
+INITIAL_POSE_PID=$!
 
 echo "[nav2] Nav2 launched for ${ROBOT_NAME} (PID ${NAV2_PID}). Waiting..."
 
 term_handler() {
   echo "[nav2] Shutting down Nav2 for ${ROBOT_NAME}..."
-  kill "${NAV2_PID}" 2>/dev/null || true
-  wait "${NAV2_PID}" 2>/dev/null || true
+  kill "${INITIAL_POSE_PID}" "${NAV2_PID}" 2>/dev/null || true
+  wait "${INITIAL_POSE_PID}" "${NAV2_PID}" 2>/dev/null || true
 }
 
 trap term_handler SIGTERM SIGINT

@@ -57,6 +57,8 @@ SPAWN_PID=$!
 ros2 run robot_state_publisher robot_state_publisher \
   --ros-args \
   --remap __ns:=/"${ROBOT_NAME}" \
+  -r "/tf:=/${ROBOT_NAME}/tf" \
+  -r "/tf_static:=/${ROBOT_NAME}/tf_static" \
   -p use_sim_time:=true \
   -p "robot_description:=$(cat "${URDF_FILE}")" &
 RSP_PID=$!

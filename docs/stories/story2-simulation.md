@@ -16,6 +16,8 @@
 | 🟠 | APPENG-5920 | Add navigation UI for driving robots in simulation — **In Review** |
 | 🟠 | APPENG-5922 | Topic Monitor drill-down — **In Review** |
 | 🟠 | APPENG-5923 | Topic Monitor message peek — **In Review** |
+| ⚪ | APPENG-5980 | Local Nav2 feasibility spike on Apple Silicon (Mac) — **New** |
+| ⚪ | APPENG-5981 | Add boundary-constrained TurtleBot target validation in Simulation page — **New** |
 
 > **See also:** [Story 6 (Podman-only simulation)](story6-podman-sim.md) implements the core of this story (APPENG-5771 container orchestration + APPENG-5772 noVNC) using a Podman-only approach for the ROSCon demo.
 
@@ -130,3 +132,42 @@ See plan notes (2026-08-04): `getRosTopicDetail`, expandable UI, on-demand fetch
 - Improved idle-topic timeout copy
 
 **Tests:** shared peek helpers; backend peek + schema; frontend topology/schema/peek
+
+---
+
+## APPENG-5980: Local Nav2 Feasibility Spike (Apple Silicon) — ⚪ New
+
+**Description:** Timeboxed feasibility spike to determine whether Nav2 can run reliably in the local Podman simulation path on Apple Silicon Mac.
+
+**Planned output:** a go/no-go decision with constraints, blockers, and recommended next step (local enablement vs keep Nav2 deferred to OpenShift).
+
+**Validation matrix (initial):**
+- llvmpipe rendering (software)
+- GPU passthrough enabled (`/dev/dri`)
+- Sensors publishing after spawn (`/scan`, `/imu`)
+- Nav2 bringup lifecycle/action availability
+- Basic goal attempt + observed behavior
+
+**First run findings (2026-08-11):**
+- Repro script added: `scripts/test-nav2-local-feasibility.sh`
+- Sensors are present locally (`/robot_1/scan`, `/robot_1/imu`) and GPU device nodes are visible in-container (`/dev/dri/*`).
+- Legacy path (`navigation_launch.py namespace:=robot_1`) fails at `controller_server` with `No critics defined for FollowPath` because `RewrittenYaml` wraps params under the namespace key but `navigation_launch.py` does not push that namespace onto nodes.
+- Non-namespaced `navigation_launch.py` loads MPPI critics but stalls on activation waiting for TF `base_link -> odom` because odom TF is on `/robot_1/tf` while `robot_state_publisher` publishes static TF to global `/tf_static`.
+
+**Fix implemented (2026-08-12):**
+- `entrypoint-nav2.sh` now uses `bringup_launch.py` with `use_namespace:=True`, `tb3_sandbox` map, and runtime-patched params (`lib/patch-nav2-params.py` rewrites absolute `/scan`, `/odom`, `/map` topics to relative names).
+- `entrypoint-spawn-robot.sh` remaps `robot_state_publisher` TF output to `/robot_1/tf` and `/robot_1/tf_static` so namespaced Nav2 sees the full `odom -> base_footprint -> base_link` chain.
+- Re-test result: MPPI critics configure, map loads on `/robot_1/map`, scan subscription succeeds; activation requires a fresh robot spawn after the TF remap change.
+- Result: **conditional go** for local Nav2 on Mac after image rebuild + robot respawn; wire `navigate_to_pose` from UI remains follow-up work.
+
+---
+
+## APPENG-5981: Boundary-Constrained Target Validation — ⚪ New
+
+**Description:** Add boundary-aware Go target validation in the Simulation page to prevent out-of-bounds navigation commands.
+
+**Planned scope:**
+- Define initial min/max X/Y bounds for local simulation targets
+- Validate and block invalid targets in UI before command dispatch
+- Keep current in-bounds flow unchanged
+- Add tests and update help text
