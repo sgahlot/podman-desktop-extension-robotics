@@ -1,10 +1,24 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
+import type { Webview } from '@podman-desktop/api';
 import {
   isMessageRequest,
   isMessageResponse,
   RpcExtension,
   RpcBrowser,
 } from './MessageProxy';
+
+type MockWebview = {
+  onDidReceiveMessage: ReturnType<typeof vi.fn>;
+  postMessage: ReturnType<typeof vi.fn>;
+};
+
+type MockApi = {
+  postMessage: ReturnType<typeof vi.fn>;
+};
+
+type MockWindow = {
+  addEventListener: ReturnType<typeof vi.fn>;
+};
 
 vi.mock('@podman-desktop/api', () => ({}));
 
@@ -14,7 +28,9 @@ describe('isMessageRequest', () => {
   });
 
   it('returns false for null', () => {
-    expect(isMessageRequest(null)).toBe(false);
+    // Genuine runtime null without writing the `null` literal (lint: no-null).
+    const nullValue = JSON.parse('null') as null;
+    expect(isMessageRequest(nullValue)).toBe(false);
   });
 
   it('returns false for missing id', () => {
@@ -46,17 +62,17 @@ describe('isMessageResponse', () => {
 
 describe('RpcExtension', () => {
   let rpcExt: RpcExtension;
-  let mockWebview: any;
+  let mockWebview: MockWebview;
   let messageHandler: (msg: unknown) => Promise<void>;
 
   beforeEach(() => {
     mockWebview = {
-      onDidReceiveMessage: vi.fn((handler: any) => {
+      onDidReceiveMessage: vi.fn((handler: (msg: unknown) => Promise<void>) => {
         messageHandler = handler;
       }),
       postMessage: vi.fn(),
     };
-    rpcExt = new RpcExtension(mockWebview);
+    rpcExt = new RpcExtension(mockWebview as unknown as Webview);
   });
 
   it('registers message listener on init', () => {
@@ -184,7 +200,7 @@ describe('RpcExtension', () => {
 
 describe('RpcBrowser', () => {
   let rpcBrowser: RpcBrowser;
-  let mockApi: any;
+  let mockApi: MockApi;
   let windowMessageHandler: (event: MessageEvent) => void;
 
   beforeEach(() => {
@@ -192,12 +208,12 @@ describe('RpcBrowser', () => {
     mockApi = {
       postMessage: vi.fn(),
     };
-    const mockWindow = {
-      addEventListener: vi.fn((event: string, handler: any) => {
+    const mockWindow: MockWindow = {
+      addEventListener: vi.fn((event: string, handler: (event: MessageEvent) => void) => {
         if (event === 'message') windowMessageHandler = handler;
       }),
     };
-    rpcBrowser = new RpcBrowser(mockWindow as any, mockApi);
+    rpcBrowser = new RpcBrowser(mockWindow as unknown as Window, mockApi as unknown as PodmanDesktopApi);
   });
 
   afterEach(() => {

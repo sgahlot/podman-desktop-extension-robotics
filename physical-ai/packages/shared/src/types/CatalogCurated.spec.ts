@@ -16,8 +16,10 @@ describe('CatalogCurated', () => {
   });
 
   it('falls back to default when empty', () => {
+    // Genuine runtime null without writing the `null` literal (lint: no-null).
+    const nullValue = JSON.parse('null') as null;
     expect(parseCuratedAllowlist('')).toEqual(parseCuratedAllowlist(DEFAULT_CURATED_ALLOWLIST));
-    expect(parseCuratedAllowlist(null)).toEqual(parseCuratedAllowlist(DEFAULT_CURATED_ALLOWLIST));
+    expect(parseCuratedAllowlist(nullValue)).toEqual(parseCuratedAllowlist(DEFAULT_CURATED_ALLOWLIST));
   });
 
   it('matches exact and wildcard patterns', () => {

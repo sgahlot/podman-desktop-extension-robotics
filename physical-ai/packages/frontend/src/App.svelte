@@ -10,6 +10,7 @@ import Help from './Help.svelte';
 import ImageBuilder from './SimulationSetup.svelte';
 import SimulationPage from './SimulationPage.svelte';
 import TopicMonitor from './TopicMonitor.svelte';
+import DeployOpenShift from './DeployOpenShift.svelte';
 
 router.mode.hash();
 
@@ -42,6 +43,9 @@ onMount(() => {
       </Route>
       <Route path="/topics" breadcrumb="Topic Monitor">
         <TopicMonitor />
+      </Route>
+      <Route path="/deploy" breadcrumb="Deploy to OpenShift">
+        <DeployOpenShift />
       </Route>
     </div>
   </main>

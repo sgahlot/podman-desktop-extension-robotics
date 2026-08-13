@@ -9,7 +9,6 @@ import {
   PEEK_MAX_BYTES,
   PEEK_TIMEOUT_MIN_SEC,
   PEEK_TIMEOUT_MAX_SEC,
-  PEEK_TIMEOUT_DEFAULT_SEC,
 } from './topicPeek';
 
 describe('assertPeekTimeoutSeconds', () => {

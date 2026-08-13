@@ -16,13 +16,14 @@ import {
   defaultBaseImageForDistro,
 } from '/@shared/src/types/SimulationBaseImages';
 import type { SimulationBaseImageId } from '/@shared/src/types/SimulationBaseImages';
-import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
+import type { SimulationConfig, TargetArch } from '/@shared/src/types/SimulationConfig';
 
 let robot = 'turtlebot3';
 let distro = 'humble';
 let middleware = 'dds';
 let engine = 'gazebo';
 let baseImage: SimulationBaseImageId = DEFAULT_SIMULATION_BASE_IMAGE;
+let targetArch: TargetArch = 'amd64';
 
 let loading = true;
 let saving = false;
@@ -30,7 +31,7 @@ let saveSuccess = false;
 let saveError = '';
 
 let ns = 'ecosystem-appeng';
-let hostArch = 'amd64';
+let hostArch: TargetArch = 'amd64';
 let baseTag = '';
 let simTag = '';
 let lastConfigKey = '';
@@ -39,7 +40,8 @@ let simBusy = false;
 let baseImageExists = false;
 
 $: buildBusy = baseBusy || simBusy;
-$: currentConfig = { robot, distro, middleware, engine, baseImage } as SimulationConfig;
+$: currentConfig = { robot, distro, middleware, engine, baseImage, targetArch } as SimulationConfig;
+$: crossArch = targetArch !== hostArch;
 $: profile = resolveSimulationProfile(currentConfig);
 $: simSupported = profile ? hasSimulationSupport(profile) : false;
 $: availableBaseImages = baseImagesForDistro(distro);
@@ -51,7 +53,7 @@ $: {
   }
 }
 $: {
-  const key = `${ns}|${robot}|${distro}|${middleware}|${engine}|${baseImage}`;
+  const key = `${ns}|${robot}|${distro}|${middleware}|${engine}|${baseImage}|${targetArch}`;
   if (!buildBusy && key !== lastConfigKey) {
     lastConfigKey = key;
     baseTag = baseImageTag(ns, currentConfig) ?? '';
@@ -76,7 +78,9 @@ onMount(async () => {
     // default is fine
   }
   try {
-    hostArch = await physicalAiClient.getHostArch();
+    const arch = await physicalAiClient.getHostArch();
+    hostArch = arch === 'arm64' ? 'arm64' : 'amd64';
+    targetArch = hostArch;
   } catch {
     // default is fine
   }
@@ -87,6 +91,7 @@ onMount(async () => {
     middleware = config.middleware;
     engine = config.engine;
     baseImage = config.baseImage ?? DEFAULT_SIMULATION_BASE_IMAGE;
+    if (config.targetArch) targetArch = config.targetArch;
   } catch {
     // defaults are fine
   } finally {
@@ -231,6 +236,28 @@ async function applyQuickStart() {
         {/if}
       </div>
 
+      <div class="flex flex-col gap-1">
+        <label for="targetArch" class="text-xs text-[var(--pd-content-text)]">Target architecture</label>
+        <select
+          id="targetArch"
+          bind:value={targetArch}
+          disabled={buildBusy}
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
+        >
+          <option value="amd64">amd64 (x86_64 — OpenShift / Linux clusters)</option>
+          <option value="arm64">arm64 (Apple Silicon — local)</option>
+        </select>
+        <span class="text-xs text-[var(--pd-content-text)] opacity-80">
+          Host is {hostArch}. Deploying to OpenShift needs an <span class="font-mono">amd64</span> image.
+        </span>
+        {#if crossArch}
+          <span class="text-xs pai-text-warning">
+            &#9888; Cross-building {targetArch} on a {hostArch} host uses QEMU emulation — expect a
+            significantly slower build. Images are tagged <span class="font-mono">-{targetArch}</span>.
+          </span>
+        {/if}
+      </div>
+
       <div class="flex flex-row items-center gap-3 mt-2">
         <button on:click={save} disabled={saving || buildBusy} class="pai-btn pai-btn-primary">
           {saving ? 'Saving...' : 'Save'}
@@ -253,6 +280,7 @@ async function applyQuickStart() {
         <div><strong>Distro:</strong> ROS2 {distro}</div>
         <div><strong>Middleware:</strong> {middleware.toUpperCase()}</div>
         <div><strong>Engine:</strong> {engine}</div>
+        <div><strong>Target arch:</strong> {targetArch}{crossArch ? ' (cross-build via emulation)' : ' (native)'}</div>
         <div><strong>Base image:</strong> {basePreset.label}</div>
         <div class="font-mono break-all opacity-80">{basePreset.imageRef}</div>
         {#if profile}

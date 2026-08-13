@@ -5,8 +5,23 @@ import type { QuayRepository, QuayTag, PullProgress, BuildProgress, PushProgress
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from '/@shared/src/types/SimulationContainer';
 import { SIM_CONTAINER_LABEL, SIM_CONTAINER_LABEL_VALUE, SIM_CONTAINER_PREFIX, SIM_STOPPED_BROWSER_HINT } from '/@shared/src/types/SimulationContainer';
-import { formatSimulationConfig, resolveSimulationProfile } from '/@shared/src/types/SimulationProfiles';
+import { formatSimulationConfig, resolveSimulationProfile, archTagSuffix, platformForArch } from '/@shared/src/types/SimulationProfiles';
 import { resolveSimulationBaseImage } from '/@shared/src/types/SimulationBaseImages';
+import type {
+  OpenShiftDeployConfig,
+  OpenShiftDeployResult,
+  OpenShiftContext,
+  OpenShiftWorkload,
+} from '/@shared/src/types/OpenShiftDeploy';
+import {
+  buildOpenShiftManifests,
+  manifestsToYaml,
+  assertNamespace,
+  assertK8sName,
+  PART_OF_LABEL,
+  PART_OF_VALUE,
+} from '/@shared/src/openshift/manifests';
+import { readFile } from 'node:fs/promises';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
 import type { TopicInfo, TopicDetailInfo, TopicNodeInfo, TopicPeekResult, TopicSchemaResult } from '/@shared/src/types/TopicInfo';
 import type { NavigationGoalResult } from '/@shared/src/types/NavigationGoalResult';
@@ -33,6 +48,17 @@ import { appendProgressLog } from './progressLogs';
 const QUAY_API_BASE = 'https://quay.io/api/v1';
 /** How long completed progress entries stay queryable for the UI. */
 const PROGRESS_RETENTION_MS = 30_000;
+
+/**
+ * First non-empty string among the arguments, or '' if none.
+ * Preserves the "skip blank" behavior of `a || b` for strings (which `??` does not).
+ */
+function firstNonEmpty(...values: (string | undefined)[]): string {
+  for (const value of values) {
+    if (value && value.length > 0) return value;
+  }
+  return '';
+}
 /** Cap concurrent in-flight pull/build/push ops. */
 const MAX_IN_FLIGHT_OPS = 5;
 
@@ -110,8 +136,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return data.tags;
   }
 
-  async getPullProgress(image: string): Promise<PullProgress | null> {
-    return this.activePulls.get(image) || null;
+  async getPullProgress(image: string): Promise<PullProgress | undefined> {
+    return this.activePulls.get(image);
   }
 
   async listLocalImages(): Promise<string[]> {
@@ -205,6 +231,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     tag: string,
     assetDir: string,
     buildargs?: { [key: string]: string },
+    platform?: string,
   ): void {
     this.#assertCanStartOp(this.activeBuilds, tag, 'build');
     const podmanConnection = this.#getRunningPodmanConnection();
@@ -276,6 +303,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         provider: podmanConnection.connection,
         abortController,
         ...(buildargs ? { buildargs } : {}),
+        ...(platform ? { platform } : {}),
       },
     ).then(() => {
       this.buildAbortControllers.delete(tag);
@@ -367,7 +395,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
         this.activePulls.set(imageToPull, {
           image: imageToPull,
-          status: totalSize > 0 ? 'Downloading' : (event.status || ''),
+          status: totalSize > 0 ? 'Downloading' : (event.status ?? ''),
           currentMB: totalSize > 0
             ? Math.round(totalCurrent / (1024 * 1024) * 10) / 10
             : undefined,
@@ -392,8 +420,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     });
   }
 
-  async getBuildProgress(tag: string): Promise<BuildProgress | null> {
-    return this.activeBuilds.get(tag) || null;
+  async getBuildProgress(tag: string): Promise<BuildProgress | undefined> {
+    return this.activeBuilds.get(tag);
   }
 
   async buildBaseImage(tag: string, config: SimulationConfig): Promise<void> {
@@ -405,9 +433,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       );
     }
     const baseImage = resolveSimulationBaseImage(config.baseImage);
-    this.#startImageBuild(tag, profile.baseAssetDir, {
-      ROS_BASE_IMAGE: baseImage.imageRef,
-    });
+    this.#startImageBuild(
+      tag,
+      profile.baseAssetDir,
+      { ROS_BASE_IMAGE: baseImage.imageRef },
+      platformForArch(config.targetArch),
+    );
   }
 
   async buildSimulationImage(tag: string, config: SimulationConfig): Promise<void> {
@@ -426,14 +457,18 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
     const ns = await this.getDefaultNamespace();
     const baseImage = resolveSimulationBaseImage(config.baseImage);
-    const localBaseTag = `quay.io/${ns}/${profile.baseImageName}:${baseImage.imageTag}`;
-    this.#startImageBuild(tag, profile.assetDir, {
-      LOCAL_BASE_IMAGE: localBaseTag,
-    });
+    // The Phase 1 base carries the same arch suffix, so point FROM at it.
+    const localBaseTag = `quay.io/${ns}/${profile.baseImageName}:${baseImage.imageTag}${archTagSuffix(config.targetArch)}`;
+    this.#startImageBuild(
+      tag,
+      profile.assetDir,
+      { LOCAL_BASE_IMAGE: localBaseTag },
+      platformForArch(config.targetArch),
+    );
   }
 
-  async getPushProgress(tag: string): Promise<PushProgress | null> {
-    return this.activePushes.get(tag) || null;
+  async getPushProgress(tag: string): Promise<PushProgress | undefined> {
+    return this.activePushes.get(tag);
   }
 
   async getHostArch(): Promise<string> {
@@ -510,7 +545,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   async getTopicPeekTimeoutSeconds(): Promise<number> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
     const raw = config.get<number>('topicPeekTimeoutSeconds');
-    if (raw === undefined || raw === null) {
+    if (raw === undefined) {
       return PEEK_TIMEOUT_DEFAULT_SEC;
     }
     return assertPeekTimeoutSeconds(raw);
@@ -524,7 +559,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async launchSimulation(imageTag: string, containerName: string, options?: SimLaunchOptions): Promise<string> {
     const allowlist = await this.getSimulationImageAllowlist();
-    const safeImageTag = assertLaunchImageTag(imageTag, allowlist || null);
+    const safeImageTag = assertLaunchImageTag(imageTag, allowlist);
     const engineId = await this.#getEngineId(safeImageTag);
     const name = containerName
       ? assertContainerName(containerName)
@@ -613,7 +648,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       await extensionApi.process.exec('podman', ['rm', '-f', id]);
     } catch (err: unknown) {
       const runErr = err as { stderr?: string; message?: string };
-      const detail = runErr.stderr?.trim() || runErr.message || String(err);
+      const detail = firstNonEmpty(runErr.stderr?.trim(), runErr.message, String(err));
       // Already gone is success
       if (!/no such container|not found/i.test(detail)) {
         throw new Error(`Failed to remove simulation container: ${detail}`);
@@ -775,7 +810,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       const pubSection = result.stdout.match(/Publisher count:[\s\S]*?(?=Subscription count:|$)/);
       if (pubSection) {
         let match;
-        while ((match = nodePattern.exec(pubSection[0])) !== null) {
+        while ((match = nodePattern.exec(pubSection[0]))) {
           publishers.push({ nodeName: match[1].trim(), nodeNamespace: match[2].trim() });
         }
       }
@@ -784,7 +819,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       if (subSection) {
         const subPattern = /Node name:\s*(.+)\s*\n\s*Node namespace:\s*(.+)/g;
         let match;
-        while ((match = subPattern.exec(subSection[0])) !== null) {
+        while ((match = subPattern.exec(subSection[0]))) {
           subscribers.push({ nodeName: match[1].trim(), nodeNamespace: match[2].trim() });
         }
       }
@@ -1234,7 +1269,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
           if (!trimmed) continue;
           try {
             const parsed = JSON.parse(trimmed);
-            const msg = parsed.status || parsed.stream || parsed.error;
+            const msg = firstNonEmpty(parsed.status, parsed.stream, parsed.error);
             if (msg) {
               appendProgressLog(progress.logs, msg);
               progress.status = msg;
@@ -1303,5 +1338,149 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
 
     this.#scheduleProgressCleanup(this.activePushes, tag, 'push');
+  }
+
+  // --- OpenShift deployment (APPENG-5777) ---
+
+  async getOpenShiftContext(): Promise<OpenShiftContext | undefined> {
+    try {
+      const uri = extensionApi.kubernetes.getKubeconfig();
+      const kubeconfigPath = uri.fsPath;
+      const content = await readFile(kubeconfigPath, 'utf-8');
+      // `current-context:` is a top-level scalar — read it without a YAML parser.
+      const match = content.match(/^current-context:\s*["']?([^"'\s]+)["']?\s*$/m);
+      if (!match) return undefined;
+      return { context: match[1], kubeconfigPath };
+    } catch {
+      return undefined;
+    }
+  }
+
+  async generateOpenShiftManifests(config: OpenShiftDeployConfig): Promise<{ yaml: string }> {
+    const manifests = buildOpenShiftManifests(config);
+    return { yaml: manifestsToYaml(manifests) };
+  }
+
+  async deployToOpenShift(config: OpenShiftDeployConfig): Promise<OpenShiftDeployResult> {
+    // Validates name/namespace/image and builds the objects.
+    const manifests = buildOpenShiftManifests(config);
+    const ctx = await this.getOpenShiftContext();
+    if (!ctx) {
+      throw new Error(
+        'No current Kubernetes/OpenShift context found. Log in first (e.g. `oc login`).',
+      );
+    }
+
+    await extensionApi.kubernetes.createResources(ctx.context, manifests);
+
+    const routeUrl = await this.#readRouteUrl(config.namespace, config.name);
+    const applied = manifests.map(m => String(m.kind));
+    return {
+      name: config.name,
+      namespace: config.namespace,
+      routeUrl,
+      applied,
+      message: routeUrl
+        ? `Deployed to ${config.namespace}. Route: ${routeUrl}`
+        : `Deployed to ${config.namespace}. Route not admitted yet — refresh in a moment or check the OpenShift console.`,
+    };
+  }
+
+  async listOpenShiftDeployments(namespace: string): Promise<OpenShiftWorkload[]> {
+    const ns = assertNamespace(namespace);
+    let stdout: string;
+    try {
+      const res = await extensionApi.process.exec('oc', [
+        'get',
+        'deployment',
+        '-n',
+        ns,
+        '-l',
+        `${PART_OF_LABEL}=${PART_OF_VALUE}`,
+        '-o',
+        'json',
+      ]);
+      stdout = res.stdout ?? '';
+    } catch (err: unknown) {
+      throw new Error(this.#ocErrorMessage(err, `list deployments in ${ns}`));
+    }
+
+    let parsed: { items?: unknown[] };
+    try {
+      parsed = JSON.parse(stdout || '{"items":[]}');
+    } catch {
+      return [];
+    }
+    const items = Array.isArray(parsed.items) ? parsed.items : [];
+
+    const workloads: OpenShiftWorkload[] = [];
+    for (const raw of items) {
+      const d = raw as {
+        metadata?: { name?: string };
+        spec?: { replicas?: number; template?: { spec?: { containers?: Array<{ image?: string }> } } };
+        status?: { readyReplicas?: number };
+      };
+      const name = d.metadata?.name;
+      if (!name) continue;
+      const replicas = d.spec?.replicas ?? 0;
+      const readyReplicas = d.status?.readyReplicas ?? 0;
+      const image = d.spec?.template?.spec?.containers?.[0]?.image;
+      const routeUrl = await this.#readRouteUrl(ns, name);
+      workloads.push({
+        name,
+        namespace: ns,
+        replicas,
+        readyReplicas,
+        ready: replicas > 0 && readyReplicas >= replicas,
+        image,
+        routeUrl,
+      });
+    }
+    return workloads;
+  }
+
+  async deleteOpenShiftDeployment(namespace: string, name: string): Promise<void> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    try {
+      await extensionApi.process.exec('oc', [
+        'delete',
+        'deployment,service,route',
+        safeName,
+        '-n',
+        ns,
+        '--ignore-not-found',
+      ]);
+    } catch (err: unknown) {
+      throw new Error(this.#ocErrorMessage(err, `delete ${safeName} in ${ns}`));
+    }
+  }
+
+  /** Best-effort Route host lookup; returns undefined if not admitted or oc unavailable. */
+  async #readRouteUrl(namespace: string, name: string): Promise<string | undefined> {
+    try {
+      const res = await extensionApi.process.exec('oc', [
+        'get',
+        'route',
+        name,
+        '-n',
+        namespace,
+        '-o',
+        'jsonpath={.spec.host}',
+      ]);
+      const host = res.stdout?.trim();
+      return host ? `https://${host}` : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  #ocErrorMessage(err: unknown, action: string): string {
+    const e = err as { stderr?: string; message?: string; code?: string };
+    const detail = firstNonEmpty(e.stderr?.trim(), e.message, String(err));
+    if (/ENOENT|not found|command not found/i.test(detail) && /oc\b/.test(detail + (e.code ?? ''))) {
+      return `Could not run "oc" to ${action}. Ensure the OpenShift CLI is installed and on PATH.`;
+    }
+    return `Failed to ${action}: ${detail}`;
   }
 }

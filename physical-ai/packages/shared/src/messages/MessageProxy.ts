@@ -160,13 +160,12 @@ export class RpcBrowser {
   }
 
   getProxy<T>(): T {
-    const thisRef = this;
     const proxyHandler: ProxyHandler<object> = {
-      get(_target, prop, _receiver) {
+      get: (_target, prop, _receiver) => {
         if (typeof prop === 'string') {
           return (...args: unknown[]) => {
             const channel = prop.toString();
-            return thisRef.invoke(channel, ...args);
+            return this.invoke(channel, ...args);
           };
         }
         return Reflect.get(_target, prop, _receiver);

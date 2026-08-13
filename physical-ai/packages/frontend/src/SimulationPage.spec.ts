@@ -15,20 +15,20 @@ const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
   physicalAiClient: {
-    getSimulationImageAllowlist: (...args: any[]) => mockGetSimulationImageAllowlist(...args),
-    listLocalImages: (...args: any[]) => mockListLocalImages(...args),
-    listSimulationContainers: (...args: any[]) => mockListSimulationContainers(...args),
-    launchSimulation: (...args: any[]) => mockLaunchSimulation(...args),
-    deleteSimulation: (...args: any[]) => mockDeleteSimulation(...args),
-    stopSimulation: (...args: any[]) => mockStopSimulation(...args),
-    openSimulationInBrowser: (...args: any[]) => mockOpenSimulationInBrowser(...args),
-    execInSimulation: (...args: any[]) => mockExecInSimulation(...args),
-    sendNavigationGoal: (...args: any[]) => mockSendNavigationGoal(...args),
+    getSimulationImageAllowlist: (...args: unknown[]) => mockGetSimulationImageAllowlist(...args),
+    listLocalImages: (...args: unknown[]) => mockListLocalImages(...args),
+    listSimulationContainers: (...args: unknown[]) => mockListSimulationContainers(...args),
+    launchSimulation: (...args: unknown[]) => mockLaunchSimulation(...args),
+    deleteSimulation: (...args: unknown[]) => mockDeleteSimulation(...args),
+    stopSimulation: (...args: unknown[]) => mockStopSimulation(...args),
+    openSimulationInBrowser: (...args: unknown[]) => mockOpenSimulationInBrowser(...args),
+    execInSimulation: (...args: unknown[]) => mockExecInSimulation(...args),
+    sendNavigationGoal: (...args: unknown[]) => mockSendNavigationGoal(...args),
   },
 }));
 
 vi.mock('tinro', () => ({
-  router: { goto: (...args: any[]) => mockGoto(...args) },
+  router: { goto: (...args: unknown[]) => mockGoto(...args) },
 }));
 
 const SIM_IMAGE = 'quay.io/ns/ros2-jazzy-sim:noble';

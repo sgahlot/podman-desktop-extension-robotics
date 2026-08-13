@@ -72,7 +72,7 @@ export function imageRefMatchesAllowlist(imageRef: string, patterns: string[]): 
 /** True if a local tag should appear in the Simulation image picker. */
 export function isSimLaunchImageRef(
   imageRef: string,
-  allowlistRaw?: string | undefined | null,
+  allowlistRaw?: string | null,
 ): boolean {
   try {
     assertLaunchImageTag(imageRef, allowlistRaw);

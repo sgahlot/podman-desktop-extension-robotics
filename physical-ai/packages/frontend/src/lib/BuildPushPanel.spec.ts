@@ -12,13 +12,13 @@ const mockGetPushProgress = vi.fn();
 
 vi.mock('../api/client', () => ({
   physicalAiClient: {
-    listLocalImages: (...args: any[]) => mockListLocalImages(...args),
-    getImageTags: (...args: any[]) => mockGetImageTags(...args),
-    getBuildProgress: (...args: any[]) => mockGetBuildProgress(...args),
-    cancelBuild: (...args: any[]) => mockCancelBuild(...args),
-    pushImage: (...args: any[]) => mockPushImage(...args),
-    cancelPush: (...args: any[]) => mockCancelPush(...args),
-    getPushProgress: (...args: any[]) => mockGetPushProgress(...args),
+    listLocalImages: (...args: unknown[]) => mockListLocalImages(...args),
+    getImageTags: (...args: unknown[]) => mockGetImageTags(...args),
+    getBuildProgress: (...args: unknown[]) => mockGetBuildProgress(...args),
+    cancelBuild: (...args: unknown[]) => mockCancelBuild(...args),
+    pushImage: (...args: unknown[]) => mockPushImage(...args),
+    cancelPush: (...args: unknown[]) => mockCancelPush(...args),
+    getPushProgress: (...args: unknown[]) => mockGetPushProgress(...args),
   },
 }));
 
@@ -32,8 +32,8 @@ describe('BuildPushPanel', () => {
     buildImage.mockResolvedValue(undefined);
     mockListLocalImages.mockResolvedValue([]);
     mockGetImageTags.mockResolvedValue([]);
-    mockGetBuildProgress.mockResolvedValue(null);
-    mockGetPushProgress.mockResolvedValue(null);
+    mockGetBuildProgress.mockResolvedValue(undefined);
+    mockGetPushProgress.mockResolvedValue(undefined);
     mockCancelBuild.mockResolvedValue(undefined);
   });
 

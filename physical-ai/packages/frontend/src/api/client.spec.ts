@@ -31,7 +31,7 @@ describe('client', () => {
     });
 
     it('returns default state when no state stored', async () => {
-      mockGetState.mockReturnValue(null);
+      mockGetState.mockReturnValue(undefined);
       const { getRouterState } = await import('./client');
       expect(getRouterState()).toEqual({ url: '/' });
     });

@@ -15,20 +15,20 @@ const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
   physicalAiClient: {
-    listCatalogImages: (...args: any[]) => mockListCatalogImages(...args),
-    getImageTags: (...args: any[]) => mockGetImageTags(...args),
-    listLocalImages: (...args: any[]) => mockListLocalImages(...args),
-    pullImage: (...args: any[]) => mockPullImage(...args),
-    getPullProgress: (...args: any[]) => mockGetPullProgress(...args),
-    getDefaultNamespace: (...args: any[]) => mockGetDefaultNamespace(...args),
-    getCatalogViewMode: (...args: any[]) => mockGetCatalogViewMode(...args),
-    setCatalogViewMode: (...args: any[]) => mockSetCatalogViewMode(...args),
-    getCatalogCuratedAllowlist: (...args: any[]) => mockGetCatalogCuratedAllowlist(...args),
+    listCatalogImages: (...args: unknown[]) => mockListCatalogImages(...args),
+    getImageTags: (...args: unknown[]) => mockGetImageTags(...args),
+    listLocalImages: (...args: unknown[]) => mockListLocalImages(...args),
+    pullImage: (...args: unknown[]) => mockPullImage(...args),
+    getPullProgress: (...args: unknown[]) => mockGetPullProgress(...args),
+    getDefaultNamespace: (...args: unknown[]) => mockGetDefaultNamespace(...args),
+    getCatalogViewMode: (...args: unknown[]) => mockGetCatalogViewMode(...args),
+    setCatalogViewMode: (...args: unknown[]) => mockSetCatalogViewMode(...args),
+    getCatalogCuratedAllowlist: (...args: unknown[]) => mockGetCatalogCuratedAllowlist(...args),
   },
 }));
 
 vi.mock('tinro', () => ({
-  router: { goto: (...args: any[]) => mockGoto(...args) },
+  router: { goto: (...args: unknown[]) => mockGoto(...args) },
 }));
 
 describe('ImageCatalog', () => {

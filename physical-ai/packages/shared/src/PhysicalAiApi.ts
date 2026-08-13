@@ -8,21 +8,27 @@ import type {
   TopicSchemaResult,
 } from './types/TopicInfo';
 import type { NavigationGoalResult } from './types/NavigationGoalResult';
+import type {
+  OpenShiftDeployConfig,
+  OpenShiftDeployResult,
+  OpenShiftContext,
+  OpenShiftWorkload,
+} from './types/OpenShiftDeploy';
 
 export abstract class PhysicalAiApi {
   abstract getStatus(): Promise<string>;
   abstract listCatalogImages(namespace: string): Promise<QuayRepository[]>;
   abstract getImageTags(namespace: string, name: string): Promise<QuayTag[]>;
   abstract pullImage(fullImageName: string, tag: string): Promise<void>;
-  abstract getPullProgress(image: string): Promise<PullProgress | null>;
+  abstract getPullProgress(image: string): Promise<PullProgress | undefined>;
   abstract listLocalImages(): Promise<string[]>;
   abstract buildBaseImage(tag: string, config: SimulationConfig): Promise<void>;
   abstract buildSimulationImage(tag: string, config: SimulationConfig): Promise<void>;
   abstract cancelBuild(tag: string): Promise<void>;
-  abstract getBuildProgress(tag: string): Promise<BuildProgress | null>;
+  abstract getBuildProgress(tag: string): Promise<BuildProgress | undefined>;
   abstract pushImage(tag: string): Promise<void>;
   abstract cancelPush(tag: string): Promise<void>;
-  abstract getPushProgress(tag: string): Promise<PushProgress | null>;
+  abstract getPushProgress(tag: string): Promise<PushProgress | undefined>;
   abstract getDefaultNamespace(): Promise<string>;
   abstract getHostArch(): Promise<string>;
   abstract getCatalogViewMode(): Promise<'all' | 'curated'>;
@@ -51,4 +57,16 @@ export abstract class PhysicalAiApi {
   /** Copy text via the host clipboard (webview Clipboard API is unavailable). */
   abstract copyToClipboard(text: string): Promise<void>;
   abstract sendNavigationGoal(containerId: string, robotName: string, x: number, y: number): Promise<NavigationGoalResult>;
+
+  // --- OpenShift deployment (APPENG-5777) ---
+  /** Current Kubernetes/OpenShift context from the kubeconfig, or undefined if none. */
+  abstract getOpenShiftContext(): Promise<OpenShiftContext | undefined>;
+  /** Render the Deployment/Service/Route manifests as a YAML preview (no side effects). */
+  abstract generateOpenShiftManifests(config: OpenShiftDeployConfig): Promise<{ yaml: string }>;
+  /** Apply the manifests to the current context and return the Route URL when available. */
+  abstract deployToOpenShift(config: OpenShiftDeployConfig): Promise<OpenShiftDeployResult>;
+  /** List physical-ai-managed deployments in a namespace. */
+  abstract listOpenShiftDeployments(namespace: string): Promise<OpenShiftWorkload[]>;
+  /** Delete the Deployment/Service/Route for a named workload. */
+  abstract deleteOpenShiftDeployment(namespace: string, name: string): Promise<void>;
 }
