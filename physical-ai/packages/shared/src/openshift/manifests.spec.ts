@@ -24,7 +24,7 @@ interface DeploymentManifest {
           env: { name: string; value: string }[];
           ports: { containerPort: number }[];
           readinessProbe: { tcpSocket: { port: number } };
-          resources: { limits: Record<string, string> };
+          resources: { requests: Record<string, string>; limits: Record<string, string> };
         }[];
       };
     };
@@ -121,6 +121,15 @@ describe('buildOpenShiftManifests', () => {
     expect(container.resources.limits['nvidia.com/gpu']).toBeUndefined();
   });
 
+  it('guarantees 4 CPUs for software rendering so the sim runs at real-time', () => {
+    // llvmpipe on 2 cores collapses RTF to ~0.1 and Nav2 goals never finish;
+    // 4 guaranteed cores (requests == limits) keep RTF ~1.0.
+    const [deployment] = buildOpenShiftManifests(config);
+    const container = (deployment as unknown as DeploymentManifest).spec.template.spec.containers[0];
+    expect(container.resources.requests.cpu).toBe('4');
+    expect(container.resources.limits.cpu).toBe('4');
+  });
+
   it('requests a GPU and uses hardware rendering when useGpu is set', () => {
     const [deployment] = buildOpenShiftManifests({ ...config, useGpu: true });
     const container = (deployment as unknown as DeploymentManifest).spec.template.spec.containers[0];
@@ -130,6 +139,8 @@ describe('buildOpenShiftManifests', () => {
     expect(env.GALLIUM_DRIVER).toBeUndefined();
     expect(env.PHYSICAL_AI_USE_GPU).toBe('1');
     expect(container.resources.limits['nvidia.com/gpu']).toBe('1');
+    // GPU does the rendering, so the CPU ask drops back to 2.
+    expect(container.resources.limits.cpu).toBe('2');
   });
 
   it('exposes the noVNC port via an edge-terminated Route', () => {

@@ -75,9 +75,15 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
         { name: 'LIBGL_ALWAYS_SOFTWARE', value: '1' },
         { name: 'GALLIUM_DRIVER', value: 'llvmpipe' },
       ];
+  // Software (llvmpipe) rendering is CPU-bound: the Gazebo GUI client alone needs
+  // ~2.3 cores to sustain real-time, so a 2-core cap collapses the sim to ~0.1
+  // real-time factor — Nav2 drives the robot but it crawls and goals never finish.
+  // 4 guaranteed cores keep RTF ~1.0 and navigation completes. With a GPU the
+  // render load moves off the CPU, so 2 cores is plenty.
+  const requests: Record<string, string> = useGpu ? { cpu: '1', memory: '2Gi' } : { cpu: '4', memory: '2Gi' };
   const limits: Record<string, string> = useGpu
     ? { cpu: '2', memory: '4Gi', [GPU_RESOURCE]: '1' }
-    : { cpu: '2', memory: '4Gi' };
+    : { cpu: '4', memory: '4Gi' };
 
   const deployment = {
     apiVersion: 'apps/v1',
@@ -101,7 +107,7 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
               env,
               ports: [{ name: 'novnc', containerPort: NOVNC_CONTAINER_PORT }],
               resources: {
-                requests: { cpu: '500m', memory: '2Gi' },
+                requests,
                 limits,
               },
               readinessProbe: {

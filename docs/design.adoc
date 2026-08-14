@@ -523,6 +523,10 @@ The extension contributes 11 settings under **Settings → Preferences → Physi
 | In-cluster GPU rendering (deploy-time toggle)
 | "Cluster has a GPU" checkbox on Deploy to OpenShift
 | One amd64 image serves both cluster types without a rebuild. **Off (default):** software env forces llvmpipe + headless EGL (row above). **On:** Deployment requests `nvidia.com/gpu: 1` and sets `PHYSICAL_AI_USE_GPU=1`; the entrypoint sees a GPU request without `/dev/dri` (the NVIDIA GPU operator exposes `/dev/nvidia*`, not DRI) and renders off-screen via **hardware EGL** (`--headless-rendering`, no surfaceless override). GPU-on path is **implemented but unverified** (no GPU cluster available).
+
+| In-cluster CPU sizing (no GPU)
+| 4 guaranteed CPUs for the software-rendering pod
+| With software rendering the Gazebo GUI client (`gz sim -g`, rendering the scene for noVNC) alone needs **~2.3 cores**; on a 2-core cap the real-time factor collapses to **~0.01–0.14**, so Nav2 *does* drive the robot but it crawls and `navigate_to_pose` never finishes within the 180s timeout — the UI hangs on "Navigating…". Bumping the Deployment to **4 CPUs (requests == limits, guaranteed)** restores **RTF ~1.0** and goals complete (`SUCCEEDED`), verified live on `sgahlot-pd-extn` (2026-08-14). RTF is capped at real-time, so 6/8 cores add only multi-robot headroom. The bottleneck is the GUI, **not** the depth camera (server-side sensors ~0.4 core), so dropping sensors would not lower the floor. GPU path stays at 2 CPUs (render load moves off-CPU). Detail: `.internal/tech-reference.md` (in-cluster rendering).
 |===
 
 == Resolved Questions
@@ -531,6 +535,7 @@ The extension contributes 11 settings under **Settings → Preferences → Physi
 * **Mac GPU and rendering:** On arm64 Mac, simulation launch passes `/dev/dri` and sets `PHYSICAL_AI_USE_GPU=1` (preference **Simulation GPU passthrough**, default on). The entrypoint uses virtio-gpu when `/dev/dri` is present; otherwise falls back to `llvmpipe`. amd64 always uses software rendering. Xvfb + noVNC stack is unchanged.
 * **Ogre2 Sensors plugin:** Re-enabled in world SDF (2026-08). A 2026-07 segfault under llvmpipe is **not reproduced** on current Gazebo Harmonic + Mesa (`scripts/test-sensors-gpu.sh`) — **on arm64/virtio-gpu**. Lidar (`/scan`) and IMU publish after spawn; on Jazzy, Nav2 is launched locally for the **Navigate** button (`navigate_to_pose`, APPENG-5981) — see Nav2 row in Key Technical Decisions.
 * **In-cluster sensor rendering (amd64/llvmpipe):** The arm64 "no segfault" result does **not** carry over to OpenShift. On amd64 with pure llvmpipe (no GPU) the sensors plugin still **SIGSEGVs** on spawn (on-screen GLX under software GL). Fixed by rendering the Gazebo server off-screen via **EGL** (`--headless-rendering` + `EGL_PLATFORM=surfaceless` + mesa-EGL packages). A deploy-time **"Cluster has a GPU"** toggle switches to hardware EGL (`nvidia.com/gpu`) for GPU clusters (unverified). See the two in-cluster rows in Key Technical Decisions and `.internal/tech-reference.md`.
+* **In-cluster Navigate hang (no GPU):** After the EGL fix, Navigate initially hung on "Navigating…" in-cluster. Root cause was **not** a Nav2/TF/bridge bug — the stack was healthy (robot localized, action server up, controller publishing `cmd_vel`). It was **CPU starvation**: on a 2-core pod software rendering pins the real-time factor at ~0.01–0.14, so the robot barely moves and the goal times out. Raising the software-rendering pod to **4 guaranteed CPUs** restored RTF ~1.0 and Navigate completes. See the "In-cluster CPU sizing" row in Key Technical Decisions.
 
 == Open Questions
 
