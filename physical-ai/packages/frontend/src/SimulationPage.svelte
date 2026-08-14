@@ -142,12 +142,24 @@ async function spawnRobot() {
   spawnStatus = '';
   try {
     await physicalAiClient.execInSimulation(runningContainer.id, [
-      '/entrypoint-spawn-robot.sh', robotName, robotX, robotY, robotYaw,
+      '/entrypoint-spawn-robot.sh',
+      robotName,
+      robotX,
+      robotY,
+      robotYaw,
     ]);
-    spawnedRobots = [...spawnedRobots, {
-      name: robotName, x: robotX, y: robotY, status: 'Spawned',
-      navStatus: 'idle', navTarget: { x: '2.0', y: '2.0' }, navReached: null,
-    }];
+    spawnedRobots = [
+      ...spawnedRobots,
+      {
+        name: robotName,
+        x: robotX,
+        y: robotY,
+        status: 'Spawned',
+        navStatus: 'idle',
+        navTarget: { x: '2.0', y: '2.0' },
+        navReached: null,
+      },
+    ];
     robotCounter++;
     robotName = `robot_${robotCounter}`;
     spawnStatus = '';
@@ -172,9 +184,7 @@ async function navigateRobot(index: number) {
   spawnedRobots = [...spawnedRobots];
 
   try {
-    const result = await physicalAiClient.sendNavigationGoal(
-      runningContainer.id, robot.name, targetX, targetY,
-    );
+    const result = await physicalAiClient.sendNavigationGoal(runningContainer.id, robot.name, targetX, targetY);
     spawnedRobots[index] = {
       ...spawnedRobots[index],
       navStatus: result.status === 'reached' ? 'reached' : 'failed',
@@ -188,13 +198,13 @@ async function navigateRobot(index: number) {
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
-  <button on:click={() => router.goto('/')} class="pai-link self-start">
-    &larr; Back to Dashboard
-  </button>
+  <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
   <h1 class="text-3xl text-[var(--pd-content-header)]">Simulation</h1>
   <p class="text-sm text-[var(--pd-content-text)]">
-    Launch a Gazebo world (empty by default), view it in the browser via noVNC, then add TurtleBot3 robots interactively.
-    Only local images matching the simulation allowlist can be launched (default <span class="font-mono">ros2-*-sim*</span> / <span class="font-mono">ros2-*-turtlebot3</span>).
+    Launch a Gazebo world (empty by default), view it in the browser via noVNC, then add TurtleBot3 robots
+    interactively. Only local images matching the simulation allowlist can be launched (default <span class="font-mono"
+      >ros2-*-sim*</span>
+    / <span class="font-mono">ros2-*-turtlebot3</span>).
   </p>
 
   <!-- Section 1: Launch -->
@@ -216,7 +226,9 @@ async function navigateRobot(index: number) {
             → Quick Start <span class="font-mono">TurtleBot3 Sim (Jazzy)</span>
           </li>
           <li>Build <strong>Phase 1</strong> (base), then <strong>Phase 2</strong> (sim)</li>
-          <li>Return here and Launch — the world starts empty; use <strong>Add TurtleBot3</strong> below to spawn a robot</li>
+          <li>
+            Return here and Launch — the world starts empty; use <strong>Add TurtleBot3</strong> below to spawn a robot
+          </li>
         </ol>
       </div>
     {:else}
@@ -226,8 +238,7 @@ async function navigateRobot(index: number) {
           id="simImage"
           bind:value={selectedImage}
           disabled={launching || hasRunning}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]"
-        >
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]">
           {#each localSimImages as img}
             <option value={img}>{img}</option>
           {/each}
@@ -236,8 +247,7 @@ async function navigateRobot(index: number) {
         <button
           on:click={launchSim}
           disabled={launching || hasRunning || !selectedImage}
-          class="pai-btn pai-btn-primary self-start mt-1"
-        >
+          class="pai-btn pai-btn-primary self-start mt-1">
           {launching ? 'Launching...' : 'Launch'}
         </button>
 
@@ -261,9 +271,12 @@ async function navigateRobot(index: number) {
       <h2 class="text-sm font-medium text-[var(--pd-content-header)]">Simulation Containers</h2>
 
       {#each containers as container (container.id)}
-        <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3 flex flex-col gap-2">
+        <div
+          class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3 flex flex-col gap-2">
           <div class="flex items-center gap-2">
-            <span class="inline-block w-2 h-2 rounded-full {container.state === 'running' ? 'bg-green-500' : 'bg-gray-400'}"></span>
+            <span
+              class="inline-block w-2 h-2 rounded-full {container.state === 'running' ? 'bg-green-500' : 'bg-gray-400'}"
+            ></span>
             <span class="text-sm font-medium text-[var(--pd-content-header)]">{container.name}</span>
             <span class="text-xs pai-text-muted ml-auto">{container.state}</span>
           </div>
@@ -273,9 +286,7 @@ async function navigateRobot(index: number) {
           {/if}
           <div class="flex gap-2 mt-1">
             {#if container.state === 'running'}
-              <button on:click={openInBrowser} class="pai-btn pai-btn-primary text-xs">
-                Open in Browser
-              </button>
+              <button on:click={openInBrowser} class="pai-btn pai-btn-primary text-xs"> Open in Browser </button>
               <button on:click={() => router.goto('/topics')} class="pai-btn pai-btn-primary text-xs">
                 View Topics
               </button>
@@ -291,8 +302,8 @@ async function navigateRobot(index: number) {
 
   <!-- Section 3: Add Robot (only when a simulation is running) -->
   {#if hasRunning}
-  <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-lg">
-    <h2 class="text-sm font-medium text-[var(--pd-content-header)] mb-2">Add TurtleBot3</h2>
+    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-lg">
+      <h2 class="text-sm font-medium text-[var(--pd-content-header)] mb-2">Add TurtleBot3</h2>
       <div class="flex flex-col gap-2">
         <div class="grid grid-cols-4 gap-2">
           <div class="flex flex-col gap-1">
@@ -302,8 +313,7 @@ async function navigateRobot(index: number) {
               type="text"
               bind:value={robotName}
               disabled={spawning}
-              class="px-2 py-1 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]"
-            />
+              class="px-2 py-1 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]" />
           </div>
           <div class="flex flex-col gap-1">
             <label for="robotX" class="text-xs text-[var(--pd-content-text)]">X</label>
@@ -312,8 +322,7 @@ async function navigateRobot(index: number) {
               type="text"
               bind:value={robotX}
               disabled={spawning}
-              class="px-2 py-1 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]"
-            />
+              class="px-2 py-1 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]" />
           </div>
           <div class="flex flex-col gap-1">
             <label for="robotY" class="text-xs text-[var(--pd-content-text)]">Y</label>
@@ -322,8 +331,7 @@ async function navigateRobot(index: number) {
               type="text"
               bind:value={robotY}
               disabled={spawning}
-              class="px-2 py-1 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]"
-            />
+              class="px-2 py-1 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]" />
           </div>
           <div class="flex flex-col gap-1">
             <label for="robotYaw" class="text-xs text-[var(--pd-content-text)]">Yaw</label>
@@ -332,16 +340,11 @@ async function navigateRobot(index: number) {
               type="text"
               bind:value={robotYaw}
               disabled={spawning}
-              class="px-2 py-1 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]"
-            />
+              class="px-2 py-1 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]" />
           </div>
         </div>
 
-        <button
-          on:click={spawnRobot}
-          disabled={spawning || !robotName}
-          class="pai-btn pai-btn-primary self-start"
-        >
+        <button on:click={spawnRobot} disabled={spawning || !robotName} class="pai-btn pai-btn-primary self-start">
           {spawning ? 'Spawning...' : 'Add TurtleBot3'}
         </button>
 
@@ -361,29 +364,43 @@ async function navigateRobot(index: number) {
                 <div class="flex items-end gap-2">
                   <div class="flex flex-col gap-0.5">
                     <label for="navX-{robot.name}" class="text-[10px] pai-text-muted">X</label>
-                    <input id="navX-{robot.name}" type="text" bind:value={robot.navTarget.x}
+                    <input
+                      id="navX-{robot.name}"
+                      type="text"
+                      bind:value={robot.navTarget.x}
                       disabled={robot.navStatus === 'navigating'}
                       class="w-16 px-1.5 py-0.5 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]" />
                   </div>
                   <div class="flex flex-col gap-0.5">
                     <label for="navY-{robot.name}" class="text-[10px] pai-text-muted">Y</label>
-                    <input id="navY-{robot.name}" type="text" bind:value={robot.navTarget.y}
+                    <input
+                      id="navY-{robot.name}"
+                      type="text"
+                      bind:value={robot.navTarget.y}
                       disabled={robot.navStatus === 'navigating'}
                       class="w-16 px-1.5 py-0.5 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]" />
                   </div>
-                  <button on:click={() => navigateRobot(i)}
+                  <button
+                    on:click={() => navigateRobot(i)}
                     disabled={robot.navStatus === 'navigating'}
                     class="pai-btn pai-btn-primary pai-btn-sm">
                     Navigate
                   </button>
-                  <span class="text-xs {robot.navStatus === 'reached' ? 'pai-text-success'
-                    : robot.navStatus === 'failed' ? 'pai-text-error'
-                    : robot.navStatus === 'navigating' ? 'pai-text-accent'
-                    : 'pai-text-muted'}">
-                    {robot.navStatus === 'navigating' ? 'Navigating...'
-                      : robot.navStatus === 'reached' && robot.navReached ? `Reached (${robot.navReached.x}, ${robot.navReached.y})`
-                      : robot.navStatus === 'failed' ? 'Failed'
-                      : ''}
+                  <span
+                    class="text-xs {robot.navStatus === 'reached'
+                      ? 'pai-text-success'
+                      : robot.navStatus === 'failed'
+                        ? 'pai-text-error'
+                        : robot.navStatus === 'navigating'
+                          ? 'pai-text-accent'
+                          : 'pai-text-muted'}">
+                    {robot.navStatus === 'navigating'
+                      ? 'Navigating...'
+                      : robot.navStatus === 'reached' && robot.navReached
+                        ? `Reached (${robot.navReached.x}, ${robot.navReached.y})`
+                        : robot.navStatus === 'failed'
+                          ? 'Failed'
+                          : ''}
                   </span>
                 </div>
               </div>
@@ -391,6 +408,6 @@ async function navigateRobot(index: number) {
           </div>
         {/if}
       </div>
-  </div>
+    </div>
   {/if}
 </div>

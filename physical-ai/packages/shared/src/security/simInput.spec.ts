@@ -55,9 +55,7 @@ describe('simInput security validators', () => {
     ]);
 
     expect(() => assertSpawnExecCommand(['bash', '-c', 'id'])).toThrow(/Only/);
-    expect(() => assertSpawnExecCommand([SPAWN_ENTRYPOINT, 'robot;x', '0', '0', '0'])).toThrow(
-      /Invalid robot name/,
-    );
+    expect(() => assertSpawnExecCommand([SPAWN_ENTRYPOINT, 'robot;x', '0', '0', '0'])).toThrow(/Invalid robot name/);
     expect(() => assertNumericArg('1;id', 'x')).toThrow(/must be a number/);
   });
 

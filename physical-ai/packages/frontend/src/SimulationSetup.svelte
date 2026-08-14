@@ -62,7 +62,10 @@ $: {
 }
 
 async function checkBaseImageExists() {
-  if (!baseTag) { baseImageExists = false; return; }
+  if (!baseTag) {
+    baseImageExists = false;
+    return;
+  }
   try {
     const local = await physicalAiClient.listLocalImages();
     baseImageExists = local.includes(baseTag);
@@ -108,7 +111,9 @@ async function save() {
   try {
     await physicalAiClient.saveSimulationConfig(currentConfig);
     saveSuccess = true;
-    setTimeout(() => { saveSuccess = false; }, 3000);
+    setTimeout(() => {
+      saveSuccess = false;
+    }, 3000);
   } catch (e) {
     saveError = e instanceof Error ? e.message : 'Failed to save';
   } finally {
@@ -116,12 +121,14 @@ async function save() {
   }
 }
 
-async function applyQuickStart() {
+async function applyQuickStart(arch?: TargetArch) {
   robot = 'turtlebot3';
   distro = 'jazzy';
   middleware = 'dds';
   engine = 'gazebo';
   baseImage = 'jazzy-noble';
+  // OpenShift clusters are amd64; the local preset keeps whatever arch is selected.
+  if (arch) targetArch = arch;
   // Let reactive tags update before save
   await tick();
   await save();
@@ -130,9 +137,7 @@ async function applyQuickStart() {
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
-  <button on:click={() => router.goto('/')} class="pai-link self-start">
-    &larr; Back to Dashboard
-  </button>
+  <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
   <h1 class="text-3xl text-[var(--pd-content-header)]">Image Builder</h1>
   <p class="text-sm text-[var(--pd-content-text)]">
     Configure, build, and push ROS2 base and simulation container images.
@@ -141,30 +146,48 @@ async function applyQuickStart() {
   {#if loading}
     <div class="text-sm text-[var(--pd-content-text)]">Loading configuration...</div>
   {:else}
-    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-md">
-      <h2 class="text-sm font-medium text-[var(--pd-content-header)] mb-2">Quick Start</h2>
-      <p class="text-xs text-[var(--pd-content-text)] mb-3">
-        Configure TurtleBot3 + Jazzy, save preferences, and jump to Phase 1 Build.
-      </p>
-      <button
-        on:click={applyQuickStart}
-        disabled={buildBusy || saving}
-        class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] cursor-pointer hover:border-[var(--pd-content-header)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        TurtleBot3 Sim (Jazzy)
-      </button>
+    <div class="flex flex-col sm:flex-row gap-4 max-w-2xl">
+      <!-- Local (host-native) Quick Start -->
+      <div
+        class="flex-1 rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 flex flex-col">
+        <h2 class="text-sm font-medium text-[var(--pd-content-header)] mb-2">Quick Start &mdash; Local</h2>
+        <p class="text-xs text-[var(--pd-content-text)] mb-3 flex-1">
+          TurtleBot3 + Jazzy built natively for your {hostArch} host — run the simulation locally in Podman.
+        </p>
+        <button
+          on:click={() => applyQuickStart(hostArch)}
+          disabled={buildBusy || saving}
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] cursor-pointer hover:border-[var(--pd-content-header)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+          TurtleBot3 Sim (Jazzy)
+        </button>
+      </div>
+
+      <!-- OpenShift (amd64) Quick Start -->
+      <div
+        class="flex-1 rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 flex flex-col">
+        <h2 class="text-sm font-medium text-[var(--pd-content-header)] mb-2">Quick Start &mdash; OpenShift</h2>
+        <p class="text-xs text-[var(--pd-content-text)] mb-3 flex-1">
+          TurtleBot3 + Jazzy built for <span class="font-mono">amd64</span> (tagged
+          <span class="font-mono">-amd64</span>) so the image is pullable by an OpenShift cluster. Cross-builds via
+          emulation on a {hostArch} host.
+        </p>
+        <button
+          on:click={() => applyQuickStart('amd64')}
+          disabled={buildBusy || saving}
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] cursor-pointer hover:border-[var(--pd-content-header)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+          TurtleBot3 Sim (Jazzy &middot; amd64)
+        </button>
+      </div>
     </div>
 
     <div class="flex flex-col gap-4 max-w-md">
-
       <div class="flex flex-col gap-1">
         <label for="robot" class="text-xs text-[var(--pd-content-text)]">Robot type</label>
         <select
           id="robot"
           bind:value={robot}
           disabled={buildBusy || !simSupported}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
-        >
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
           <option value="turtlebot3">TurtleBot3</option>
         </select>
         {#if !simSupported}
@@ -178,8 +201,7 @@ async function applyQuickStart() {
           id="distro"
           bind:value={distro}
           disabled={buildBusy}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
-        >
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
           <option value="humble">Humble (simulation/desktop)</option>
           <option value="jazzy">Jazzy (simulation)</option>
         </select>
@@ -191,8 +213,7 @@ async function applyQuickStart() {
           id="middleware"
           bind:value={middleware}
           disabled={buildBusy || !simSupported}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
-        >
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
           <option value="dds">DDS (default)</option>
           <option value="zenoh" disabled>Zenoh (coming soon)</option>
         </select>
@@ -207,8 +228,7 @@ async function applyQuickStart() {
           id="engine"
           bind:value={engine}
           disabled={buildBusy || !simSupported}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
-        >
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
           <option value="gazebo">Gazebo</option>
         </select>
         {#if !simSupported}
@@ -222,8 +242,7 @@ async function applyQuickStart() {
           id="baseImage"
           bind:value={baseImage}
           disabled={buildBusy}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
-        >
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
           {#each availableBaseImages as preset}
             <option value={preset.id}>{preset.label}</option>
           {/each}
@@ -242,18 +261,23 @@ async function applyQuickStart() {
           id="targetArch"
           bind:value={targetArch}
           disabled={buildBusy}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]"
-        >
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
           <option value="amd64">amd64 (x86_64 — OpenShift / Linux clusters)</option>
           <option value="arm64">arm64 (Apple Silicon — local)</option>
         </select>
         <span class="text-xs text-[var(--pd-content-text)] opacity-80">
           Host is {hostArch}. Deploying to OpenShift needs an <span class="font-mono">amd64</span> image.
         </span>
-        {#if crossArch}
+        {#if crossArch && targetArch === 'amd64'}
+          <span class="text-xs pai-text-muted">
+            &#8505; Building an <span class="font-mono">amd64</span> image for OpenShift on a {hostArch} host uses QEMU emulation
+            — this is expected and the build will be slower. Images are tagged
+            <span class="font-mono">-amd64</span>.
+          </span>
+        {:else if crossArch}
           <span class="text-xs pai-text-warning">
-            &#9888; Cross-building {targetArch} on a {hostArch} host uses QEMU emulation — expect a
-            significantly slower build. Images are tagged <span class="font-mono">-{targetArch}</span>.
+            &#9888; Cross-building {targetArch} on a {hostArch} host uses QEMU emulation — expect a significantly slower build.
+            Images are tagged <span class="font-mono">-{targetArch}</span>.
           </span>
         {/if}
       </div>
@@ -270,10 +294,10 @@ async function applyQuickStart() {
           <span class="text-sm pai-text-error">{saveError}</span>
         {/if}
       </div>
-
     </div>
 
-    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-md mt-2">
+    <div
+      class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-md mt-2">
       <h2 class="text-sm font-medium text-[var(--pd-content-header)] mb-2">Current selection</h2>
       <div class="text-xs text-[var(--pd-content-text)] flex flex-col gap-1">
         <div><strong>Robot:</strong> {robot}</div>
@@ -297,9 +321,7 @@ async function applyQuickStart() {
             </div>
           {/if}
         {:else}
-          <div class="mt-1 pai-text-error">
-            No bundled image for this combination yet.
-          </div>
+          <div class="mt-1 pai-text-error">No bundled image for this combination yet.</div>
         {/if}
       </div>
     </div>
@@ -320,15 +342,16 @@ async function applyQuickStart() {
         bind:tag={baseTag}
         bind:busy={baseBusy}
         buildImage={t => physicalAiClient.buildBaseImage(t, currentConfig)}
-        onBuildComplete={() => { baseImageExists = true; }}
+        onBuildComplete={() => {
+          baseImageExists = true;
+        }}
         tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-base:noble"
-        tagInputId="baseTag"
-      />
+        tagInputId="baseTag" />
     {:else}
       <p class="text-sm p-3 rounded pai-banner-error">
         Cannot build: no base image Containerfile is bundled for
-        <span class="font-mono">{distro}/{robot}/{middleware}/{engine}</span>.
-        Choose a supported combination (Humble or Jazzy + TurtleBot3 + DDS + Gazebo).
+        <span class="font-mono">{distro}/{robot}/{middleware}/{engine}</span>. Choose a supported combination (Humble or
+        Jazzy + TurtleBot3 + DDS + Gazebo).
       </p>
     {/if}
 
@@ -343,8 +366,8 @@ async function applyQuickStart() {
         </p>
       {:else}
         <p class="text-sm text-[var(--pd-content-text)]">
-          Builds <span class="font-mono">{profile.assetDir}</span> on top of the base image —
-          Gazebo, Nav2, and TurtleBot3 packages (plus noVNC for Jazzy). Launch starts an empty world; add robots from the Simulation page.
+          Builds <span class="font-mono">{profile.assetDir}</span> on top of the base image — Gazebo, Nav2, and TurtleBot3
+          packages (plus noVNC for Jazzy). Launch starts an empty world; add robots from the Simulation page.
         </p>
       {/if}
 
@@ -354,18 +377,16 @@ async function applyQuickStart() {
         buildImage={t => physicalAiClient.buildSimulationImage(t, currentConfig)}
         tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-sim:noble"
         tagInputId="simTag"
-        disabled={!baseImageExists}
-      />
+        disabled={!baseImageExists} />
     {:else if profile && !simSupported}
       <p class="text-sm p-3 rounded pai-banner-warning">
-        <strong>Not available yet.</strong> Simulation images (Gazebo, Nav2, TurtleBot3) are not yet
-        available for ROS2 {distro}. Only the base image can be built at this time.
+        <strong>Not available yet.</strong> Simulation images (Gazebo, Nav2, TurtleBot3) are not yet available for ROS2 {distro}.
+        Only the base image can be built at this time.
       </p>
     {:else}
       <p class="text-sm p-3 rounded pai-banner-error">
         Cannot build: no simulation Containerfile is bundled for
-        <span class="font-mono">{distro}/{robot}/{middleware}/{engine}</span>.
-        Choose a supported combination.
+        <span class="font-mono">{distro}/{robot}/{middleware}/{engine}</span>. Choose a supported combination.
       </p>
     {/if}
   {/if}

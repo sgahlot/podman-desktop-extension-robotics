@@ -24,6 +24,7 @@ interface DeploymentManifest {
           env: { name: string; value: string }[];
           ports: { containerPort: number }[];
           readinessProbe: { tcpSocket: { port: number } };
+          resources: { limits: Record<string, string> };
         }[];
       };
     };
@@ -70,9 +71,7 @@ describe('assertImageRef', () => {
     );
     expect(assertImageRef('docker.io/library/nginx')).toBeTruthy();
     expect(assertImageRef('registry:5000/team/app:1.2.3')).toBeTruthy();
-    expect(
-      assertImageRef('quay.io/ns/img@sha256:' + 'a'.repeat(64)),
-    ).toBeTruthy();
+    expect(assertImageRef('quay.io/ns/img@sha256:' + 'a'.repeat(64))).toBeTruthy();
   });
 
   it('rejects refs with whitespace or shell metacharacters', () => {
@@ -116,12 +115,38 @@ describe('buildOpenShiftManifests', () => {
     expect(container.readinessProbe.tcpSocket.port).toBe(NOVNC_CONTAINER_PORT);
   });
 
+  it('does not request a GPU by default (software rendering)', () => {
+    const [deployment] = buildOpenShiftManifests(config);
+    const container = (deployment as unknown as DeploymentManifest).spec.template.spec.containers[0];
+    expect(container.resources.limits['nvidia.com/gpu']).toBeUndefined();
+  });
+
+  it('requests a GPU and uses hardware rendering when useGpu is set', () => {
+    const [deployment] = buildOpenShiftManifests({ ...config, useGpu: true });
+    const container = (deployment as unknown as DeploymentManifest).spec.template.spec.containers[0];
+    const env = Object.fromEntries(container.env.map(e => [e.name, e.value]));
+    // Software-rendering env is dropped; the entrypoint uses hardware rendering.
+    expect(env.LIBGL_ALWAYS_SOFTWARE).toBeUndefined();
+    expect(env.GALLIUM_DRIVER).toBeUndefined();
+    expect(env.PHYSICAL_AI_USE_GPU).toBe('1');
+    expect(container.resources.limits['nvidia.com/gpu']).toBe('1');
+  });
+
   it('exposes the noVNC port via an edge-terminated Route', () => {
     const [, service, route] = buildOpenShiftManifests(config);
     expect((service as unknown as ServiceManifest).spec.ports[0].port).toBe(NOVNC_CONTAINER_PORT);
     expect((route as unknown as RouteManifest).spec.to).toEqual({ kind: 'Service', name: config.name });
     expect((route as unknown as RouteManifest).spec.port.targetPort).toBe('novnc');
     expect((route as unknown as RouteManifest).spec.tls.termination).toBe('edge');
+  });
+
+  it('keeps the noVNC WebSocket alive with a long Route timeout', () => {
+    const [, , route] = buildOpenShiftManifests(config);
+    expect(
+      (route as unknown as { metadata: { annotations?: Record<string, string> } }).metadata.annotations?.[
+        'haproxy.router.openshift.io/timeout'
+      ],
+    ).toBe('3600s');
   });
 
   it('validates inputs', () => {

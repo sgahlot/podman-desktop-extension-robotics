@@ -47,20 +47,37 @@ export function assertImageRef(image: string): string {
   return image;
 }
 
+/** GPU device the NVIDIA GPU operator advertises; requested when useGpu is set. */
+export const GPU_RESOURCE = 'nvidia.com/gpu';
+
 /**
  * Build the [Deployment, Service, Route] objects for a single simulation pod.
- * CPU/software rendering only (no GPU in-cluster).
+ * Software (llvmpipe + headless EGL) rendering by default; when `config.useGpu`
+ * is set the pod requests an NVIDIA GPU and the entrypoint uses hardware rendering.
  */
 export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<string, unknown>[] {
   const name = assertK8sName(config.name, 'deployment name');
   const namespace = assertNamespace(config.namespace);
   const image = assertImageRef(config.image);
+  const useGpu = config.useGpu === true;
 
   const labels = {
     app: name,
     'app.kubernetes.io/name': name,
     [PART_OF_LABEL]: PART_OF_VALUE,
   };
+
+  // GPU on: signal the entrypoint to use hardware rendering and request a GPU device.
+  // GPU off: force software (llvmpipe) — the entrypoint then uses headless EGL for sensors.
+  const env = useGpu
+    ? [{ name: 'PHYSICAL_AI_USE_GPU', value: '1' }]
+    : [
+        { name: 'LIBGL_ALWAYS_SOFTWARE', value: '1' },
+        { name: 'GALLIUM_DRIVER', value: 'llvmpipe' },
+      ];
+  const limits: Record<string, string> = useGpu
+    ? { cpu: '2', memory: '4Gi', [GPU_RESOURCE]: '1' }
+    : { cpu: '2', memory: '4Gi' };
 
   const deployment = {
     apiVersion: 'apps/v1',
@@ -76,18 +93,16 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
             {
               name: 'sim',
               image,
-              imagePullPolicy: 'IfNotPresent',
+              // Always: sim images iterate under a fixed tag (e.g. :noble-amd64); IfNotPresent
+              // would serve a node-cached stale image after a re-push, hiding fixes.
+              imagePullPolicy: 'Always',
               // ENTRYPOINT is /bin/bash; the gazebo entrypoint is the arg (mirrors local launch).
               command: ['/bin/bash', '/entrypoint-gazebo.sh'],
-              // No GPU in-cluster: force software (llvmpipe) rendering.
-              env: [
-                { name: 'LIBGL_ALWAYS_SOFTWARE', value: '1' },
-                { name: 'GALLIUM_DRIVER', value: 'llvmpipe' },
-              ],
+              env,
               ports: [{ name: 'novnc', containerPort: NOVNC_CONTAINER_PORT }],
               resources: {
                 requests: { cpu: '500m', memory: '2Gi' },
-                limits: { cpu: '2', memory: '4Gi' },
+                limits,
               },
               readinessProbe: {
                 tcpSocket: { port: NOVNC_CONTAINER_PORT },
@@ -115,7 +130,14 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
   const route = {
     apiVersion: 'route.openshift.io/v1',
     kind: 'Route',
-    metadata: { name, namespace, labels },
+    metadata: {
+      name,
+      namespace,
+      labels,
+      // noVNC is a long-lived WebSocket; the default 30s HAProxy timeout would sever
+      // an idle canvas and make the sim "connect then drop". Keep the tunnel open.
+      annotations: { 'haproxy.router.openshift.io/timeout': '3600s' },
+    },
     spec: {
       to: { kind: 'Service', name },
       port: { targetPort: 'novnc' },

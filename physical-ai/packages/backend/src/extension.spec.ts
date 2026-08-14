@@ -21,7 +21,11 @@ vi.mock('@podman-desktop/api', () => {
     commands: { registerCommand: vi.fn(() => ({ dispose: vi.fn() })) },
     containerEngine: { listImages: vi.fn(), pullImage: vi.fn(), buildImage: vi.fn(), pushImage: vi.fn() },
     configuration: { getConfiguration: vi.fn() },
-    Uri: { joinPath: vi.fn((...parts: Array<string | { fsPath: string }>) => ({ fsPath: parts.map(p => (typeof p === 'string' ? p : p.fsPath)).join('/') })) },
+    Uri: {
+      joinPath: vi.fn((...parts: Array<string | { fsPath: string }>) => ({
+        fsPath: parts.map(p => (typeof p === 'string' ? p : p.fsPath)).join('/'),
+      })),
+    },
     Disposable: { create: vi.fn() },
   };
 });
@@ -72,7 +76,9 @@ describe('extension', () => {
     vi.mocked(extensionApi.window.createWebviewPanel).mockImplementation(
       () => mockPanel() as unknown as ReturnType<typeof extensionApi.window.createWebviewPanel>,
     );
-    vi.mocked(extensionApi.commands.registerCommand).mockReturnValue({ dispose: vi.fn() } as unknown as extensionApi.Disposable);
+    vi.mocked(extensionApi.commands.registerCommand).mockReturnValue({
+      dispose: vi.fn(),
+    } as unknown as extensionApi.Disposable);
 
     vi.mocked(extensionApi.Uri.joinPath).mockImplementation(
       (...parts: Array<string | { fsPath: string }>) =>
@@ -98,10 +104,7 @@ describe('extension', () => {
 
       await activate(MOCK_CONTEXT);
 
-      expect(extensionApi.commands.registerCommand).toHaveBeenCalledWith(
-        'physical-ai.open',
-        expect.any(Function),
-      );
+      expect(extensionApi.commands.registerCommand).toHaveBeenCalledWith('physical-ai.open', expect.any(Function));
       expect(MOCK_CONTEXT.subscriptions).toHaveLength(2);
     });
 
@@ -137,10 +140,7 @@ describe('extension', () => {
 
       await activate(MOCK_CONTEXT);
 
-      expect(fs.promises.readFile).toHaveBeenCalledWith(
-        expect.stringContaining('media/index.html'),
-        'utf8',
-      );
+      expect(fs.promises.readFile).toHaveBeenCalledWith(expect.stringContaining('media/index.html'), 'utf8');
     });
 
     it('rewrites script src to webview URIs', async () => {
@@ -156,9 +156,7 @@ describe('extension', () => {
     });
 
     it('rewrites css href to webview URIs', async () => {
-      vi.mocked(fs.promises.readFile).mockResolvedValue(
-        '<html><link rel="stylesheet" href="index-abc.css"></html>',
-      );
+      vi.mocked(fs.promises.readFile).mockResolvedValue('<html><link rel="stylesheet" href="index-abc.css"></html>');
 
       await activate(MOCK_CONTEXT);
 

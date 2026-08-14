@@ -64,7 +64,8 @@ describe('SimulationSetup (Image Builder)', () => {
     await waitFor(() => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
-    expect(screen.getByText('Quick Start')).toBeTruthy();
+    expect(screen.getByText('Quick Start — Local')).toBeTruthy();
+    expect(screen.getByText('Quick Start — OpenShift')).toBeTruthy();
     expect(screen.getByLabelText('ROS distro')).toBeTruthy();
   });
 
@@ -101,6 +102,29 @@ describe('SimulationSetup (Image Builder)', () => {
           middleware: 'dds',
           engine: 'gazebo',
           baseImage: 'jazzy-noble',
+        }),
+      );
+    });
+  });
+
+  it('OpenShift Quick Start saves jazzy config targeting amd64', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    render(SimulationSetup);
+    await waitFor(() => {
+      expect(screen.queryByText('Loading configuration...')).toBeNull();
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · amd64)' }));
+
+    await waitFor(() => {
+      expect(mockSaveSimulationConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          robot: 'turtlebot3',
+          distro: 'jazzy',
+          middleware: 'dds',
+          engine: 'gazebo',
+          baseImage: 'jazzy-noble',
+          targetArch: 'amd64',
         }),
       );
     });

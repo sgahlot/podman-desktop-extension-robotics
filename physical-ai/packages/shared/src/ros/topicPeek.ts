@@ -71,15 +71,11 @@ export function cleanEchoOutput(raw: string): CleanEchoResult {
  * Surface ROS/sim time from common stamp shapes without a full YAML parse.
  */
 export function extractMessageStamp(yaml: string): string | undefined {
-  const stampBlock = yaml.match(
-    /(?:^|\n)\s*(?:stamp|clock):\s*\n\s*sec:\s*(-?\d+)\s*\n\s*nanosec:\s*(\d+)/,
-  );
+  const stampBlock = yaml.match(/(?:^|\n)\s*(?:stamp|clock):\s*\n\s*sec:\s*(-?\d+)\s*\n\s*nanosec:\s*(\d+)/);
   if (stampBlock) {
     return `sec=${stampBlock[1]} nanosec=${stampBlock[2]}`;
   }
-  const inline = yaml.match(
-    /(?:^|\n)\s*(?:stamp|clock):\s*\{\s*sec:\s*(-?\d+)\s*,\s*nanosec:\s*(\d+)\s*\}/,
-  );
+  const inline = yaml.match(/(?:^|\n)\s*(?:stamp|clock):\s*\{\s*sec:\s*(-?\d+)\s*,\s*nanosec:\s*(\d+)\s*\}/);
   if (inline) {
     return `sec=${inline[1]} nanosec=${inline[2]}`;
   }
@@ -125,8 +121,7 @@ export function parseEchoYamlTree(yaml: string): YamlTreeNode[] {
       const rest = line.slice(2).trim();
       const kv = rest.match(/^([^:]+):\s*(.*)$/);
       if (kv) {
-        const child: YamlTreeNode =
-          kv[2] === '' ? { key: kv[1].trim() } : { key: kv[1].trim(), value: kv[2] };
+        const child: YamlTreeNode = kv[2] === '' ? { key: kv[1].trim() } : { key: kv[1].trim(), value: kv[2] };
         node = { key: `[${parent.length}]`, children: [child] };
         parent.push(node);
         if (kv[2] === '') {
@@ -168,8 +163,7 @@ export function shortMessageType(type: string): string {
 }
 
 /** ROS 2 interface names passed to `ros2 interface show`. */
-export const ROS_MESSAGE_TYPE_RE =
-  /^[a-zA-Z][a-zA-Z0-9_]*\/(msg|srv|action)\/[A-Za-z][A-Za-z0-9_]*$/;
+export const ROS_MESSAGE_TYPE_RE = /^[a-zA-Z][a-zA-Z0-9_]*\/(msg|srv|action)\/[A-Za-z][A-Za-z0-9_]*$/;
 
 export function assertRosMessageType(type: string): string {
   if (!ROS_MESSAGE_TYPE_RE.test(type)) {

@@ -52,15 +52,33 @@ set -u
 export TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-waffle}"
 export GZ_SIM_RESOURCE_PATH="/opt/ros/jazzy/share:/opt/ros/jazzy/share/nav2_minimal_tb3_sim/models:${GZ_SIM_RESOURCE_PATH:-}"
 
-# Rendering: GPU passthrough when extension sets PHYSICAL_AI_USE_GPU=1 and /dev/dri exists.
+# Rendering: three paths, selected by PHYSICAL_AI_USE_GPU and what GPU devices exist.
+# Server-side sensor rendering (camera/lidar) is separate from the GUI canvas:
+#   1. GPU + /dev/dri (Mac virtio-gpu passthrough) → GLX on the Xvfb display (hardware).
+#   2. GPU but no /dev/dri (NVIDIA GPU operator in-cluster exposes /dev/nvidia*, not DRI)
+#      → hardware rendering off-screen via EGL (--headless-rendering, NO surfaceless/llvmpipe
+#      so EGL binds the NVIDIA device). UNVERIFIED: no GPU cluster available to test.
+#   3. No GPU (in-cluster llvmpipe) → the sensors plugin's Ogre2/GL3Plus GLX
+#      createRenderWindow SIGSEGVs, taking the whole server down. Render off-screen via
+#      software EGL (surfaceless + --headless-rendering); the GUI still uses the X display.
+GZ_SERVER_RENDER_FLAG=""
 if [[ "${PHYSICAL_AI_USE_GPU:-0}" == "1" ]] && [[ -e /dev/dri/renderD128 ]]; then
-  echo "[gazebo] GPU passthrough enabled (/dev/dri present), using hardware rendering"
+  echo "[gazebo] GPU passthrough enabled (/dev/dri present), using hardware GLX rendering"
   unset LIBGL_ALWAYS_SOFTWARE
   unset GALLIUM_DRIVER
+elif [[ "${PHYSICAL_AI_USE_GPU:-0}" == "1" ]]; then
+  echo "[gazebo] GPU requested without /dev/dri (assuming NVIDIA), using hardware headless EGL"
+  unset LIBGL_ALWAYS_SOFTWARE
+  unset GALLIUM_DRIVER
+  # No EGL_PLATFORM override: let EGL pick the NVIDIA device instead of Mesa surfaceless.
+  GZ_SERVER_RENDER_FLAG="--headless-rendering"
 else
-  echo "[gazebo] Using software rendering (llvmpipe)..."
+  echo "[gazebo] Using software rendering (llvmpipe) with headless EGL for sensors..."
   export LIBGL_ALWAYS_SOFTWARE=1
   export GALLIUM_DRIVER=llvmpipe
+  # Off-screen EGL via Mesa's surfaceless platform (no display, no GLX window).
+  export EGL_PLATFORM=surfaceless
+  GZ_SERVER_RENDER_FLAG="--headless-rendering"
 fi
 
 export DISPLAY=":${DISPLAY_NUM}"
@@ -95,7 +113,10 @@ xacro -o "${WORLD_SDF}" \
   "/opt/ros2-demo/worlds/tb3_sandbox.sdf.xacro"
 
 echo "[gazebo] Starting Gazebo server..."
-gz sim -r -s "${WORLD_SDF}" &
+# ${GZ_SERVER_RENDER_FLAG} is intentionally unquoted: empty → no arg (GPU path),
+# or "--headless-rendering" (software path). The value never contains spaces.
+# shellcheck disable=SC2086
+gz sim -r -s ${GZ_SERVER_RENDER_FLAG} "${WORLD_SDF}" &
 GZ_SERVER_PID=$!
 
 # --- 7. Wait for Gazebo to be ready ---

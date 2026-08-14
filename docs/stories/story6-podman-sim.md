@@ -65,7 +65,7 @@ New directory: `packages/backend/assets/ros2-jazzy-sim/`
 | File | Description |
 |------|-------------|
 | `Containerfile` | Ubuntu 24.04 + ROS Jazzy apt packages + noVNC display stack. Key packages: `ros-jazzy-navigation2`, `ros-jazzy-nav2-bringup`, `ros-jazzy-nav2-minimal-tb3-sim`, `ros-jazzy-ros-gz-bridge`, `ros-jazzy-ros-gz-sim`, `ros-jazzy-gz-sim-vendor`, `xvfb`, `x11vnc`, `novnc`, `python3-websockify`, `openbox`. Ubuntu uses `libgl1`/`libegl1` (not mesa variants). ROS prefix: `/opt/ros/jazzy/`. |
-| `entrypoint-gazebo.sh` | Starts Xvfb → openbox → x11vnc → websockify (noVNC on 6080) → Gazebo server + GUI. arm64: virtio-gpu when `/dev/dri` present (`PHYSICAL_AI_USE_GPU=1`), else `llvmpipe`. Optionally spawns robots from `ROBOTS` env var. |
+| `entrypoint-gazebo.sh` | Starts Xvfb → openbox → x11vnc → websockify (noVNC on 6080) → Gazebo server + GUI. Three render paths by `PHYSICAL_AI_USE_GPU` + device probe: (1) GPU + `/dev/dri` → hardware GLX (Mac virtio-gpu); (2) GPU without `/dev/dri` → hardware headless EGL (NVIDIA GPU operator in-cluster, *unverified*); (3) no GPU → software llvmpipe + surfaceless headless EGL (in-cluster). Optionally spawns robots from `ROBOTS` env var. |
 | `entrypoint-spawn-robot.sh` | Accepts robot name + position as args. Sources ROS2, calls `spawn_tb3.launch.py` + `robot_state_publisher`. Used by `podman exec` for interactive robot add. |
 | `worlds/tb3_sandbox.sdf.xacro` | Sandbox world from repo-b reference. |
 | `www/index.html` | Simple landing page with noVNC link. |
@@ -100,6 +100,8 @@ New directory: `packages/backend/assets/ros2-jazzy-sim/`
 
 **Current (2026-08-11):** Re-tested on Gazebo Harmonic + Mesa — **no segfault** under llvmpipe or virtio-gpu (`scripts/test-sensors-gpu.sh`). Sensors plugin **re-enabled**. After spawn, `/robot_N/scan` and `/robot_N/imu` publish via `ros_gz_bridge`.
 
+> **⚠️ In-cluster segfault + fix (2026-08-13, amd64/llvmpipe — see [Story 4 Milestone 2](story4-openshift-bridge.md)):** The 2026-08-11 "no segfault" verification was on **arm64 Mac with virtio-gpu/Mesa** — a different render path. On **OpenShift (amd64, pure llvmpipe, no GPU)** the server still **SIGSEGVs (exit 139)** the moment a sensor-bearing robot spawns: `SensorsPrivate::RenderThread → Ogre2RenderEngine::CreateRenderWindow → GL3PlusRenderSystem::_createRenderWindow` — the sensors plugin tries to create an on-screen **GLX** window under software GL and crashes. There is no liveness probe, so the crash restarts the pod and wipes every spawned robot (looks like "robots vanished + noVNC won't reconnect"). **Fix:** render the *server* off-screen via **EGL**. `entrypoint-gazebo.sh` software-rendering branch now exports `EGL_PLATFORM=surfaceless` and passes `--headless-rendering` to `gz sim -s` (the GUI still renders on the Xvfb X display for noVNC); the `Containerfile` adds `libgl1-mesa-dri libegl-mesa0 libgbm1` for software EGL. This keeps `/scan` so Nav2 obstacle avoidance still works in-cluster. **Do not remove `--headless-rendering` / the mesa-EGL packages without re-testing on amd64.**
+
 **Build fix:** The Containerfile initially listed `xacro` in the noVNC apt-get layer; on Ubuntu Noble it's `ros-jazzy-xacro` and was already installed as a dependency. Removed the duplicate to fix build error (exit code 100).
 
 ---
@@ -123,6 +125,8 @@ Modified `SimulationSetup.svelte`:
 - Button pre-fills: `robot=turtlebot3, distro=jazzy, middleware=dds, engine=gazebo, baseImage=jazzy-noble`
 - Updated Jazzy distro label from "Jazzy (base image only)" to "Jazzy (simulation)"
 - Quick Start **saves** preferences and scrolls to Phase 1 Build (user still clicks Build explicitly; no auto-build)
+
+**Update (2026-08-13, APPENG-5777):** Split into two Quick Start panels — **Local** (`TurtleBot3 Sim (Jazzy)`, host-native arch) and **OpenShift** (`TurtleBot3 Sim (Jazzy · amd64)`, sets `targetArch=amd64` so the image is cluster-pullable). The multi-arch `jazzy-noble` base is kept for both — with `--platform linux/amd64` the build selects its amd64 layer, and the `noble` tag lines up with the Deploy to OpenShift default (`ros2-jazzy-sim:noble-amd64`). The cross-build (amd64 on an arm64 host) is shown as a neutral informational note, not a warning, since it is the expected OpenShift path from a Mac.
 
 ---
 
@@ -234,6 +238,7 @@ Swap camera sensor on a robot. **Out of scope for the current polish pass.** Lik
 | Software rendering fallback | Disable GPU passthrough in Preferences | `llvmpipe` at 1024×768 still acceptable if virtio-gpu misbehaves |
 | `ros-jazzy-nav2-minimal-tb3-sim` missing on arm64 | Verify in S6-1. If missing, build from source. | ✅ Available — arm64 binary packages exist |
 | Ogre2 Sensors plugin on arm64 | Re-enabled 2026-08; segfault not reproduced on current stack | ✅ `/scan` and `/imu` after spawn |
+| Ogre2 Sensors plugin on amd64/llvmpipe (in-cluster) | GLX createRenderWindow SIGSEGVs headless; render server off-screen via EGL (`--headless-rendering` + `EGL_PLATFORM=surfaceless` + mesa-EGL pkgs) | ✅ Fixed 2026-08-13 (verify on amd64 rebuild) |
 | Port 6080 conflict | Check for running sim containers before launch; warn user. | ✅ Handled — single-sim enforcement in UI |
 
 ---

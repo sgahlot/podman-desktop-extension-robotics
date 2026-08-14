@@ -1,7 +1,8 @@
 /**
  * Types for the "Deploy to OpenShift" flow (APPENG-5777).
  * Milestone 1 deploys a single simulation container (Gazebo + noVNC) reachable
- * via an OpenShift Route. Robot spawn + Nav2 in-cluster are a fast follow.
+ * via an OpenShift Route. Milestone 2 adds in-cluster robot spawn + Nav2 (see
+ * spawnRobotInOpenShift / sendOpenShiftNavigationGoal in PhysicalAiApi).
  */
 
 export interface OpenShiftDeployConfig {
@@ -14,6 +15,12 @@ export interface OpenShiftDeployConfig {
    * `quay.io/<ns>/ros2-jazzy-sim:noble-amd64`.
    */
   image: string;
+  /**
+   * When true, the cluster has a GPU (NVIDIA GPU operator): request `nvidia.com/gpu`
+   * and let the entrypoint use hardware (EGL) rendering. Default false = software
+   * (llvmpipe + headless EGL), the safe no-GPU default. See the entrypoint's render branch.
+   */
+  useGpu?: boolean;
 }
 
 export interface OpenShiftDeployResult {

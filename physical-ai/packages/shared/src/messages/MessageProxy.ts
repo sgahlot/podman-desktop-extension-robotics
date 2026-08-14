@@ -94,22 +94,15 @@ export class RpcExtension {
     });
   }
 
-  register(
-    channel: string,
-    method: (...args: unknown[]) => Promise<unknown>,
-    maxArgs: number = method.length,
-  ): void {
+  register(channel: string, method: (...args: unknown[]) => Promise<unknown>, maxArgs: number = method.length): void {
     this.methods.set(channel, async (...args: unknown[]) => {
       // method.length is 0 for mocks / zero-param handlers — skip those.
       if (maxArgs > 0 && args.length > maxArgs) {
-        throw new Error(
-          `Too many arguments for ${channel}: got ${args.length}, expected at most ${maxArgs}`,
-        );
+        throw new Error(`Too many arguments for ${channel}: got ${args.length}, expected at most ${maxArgs}`);
       }
       return method(...args);
     });
   }
-
 }
 
 export interface Subscriber {

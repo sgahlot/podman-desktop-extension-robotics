@@ -31,8 +31,20 @@
   font-size: 0.875rem;
   line-height: 1.25rem;
   border-radius: 0.25rem;
-  border: none;
+  /* Bare .pai-btn is the secondary/default button; -primary/-danger override below. */
+  border: 1px solid var(--pd-button-secondary-line, var(--pd-content-card-border, #d1d5db));
+  background-color: var(--pd-button-secondary-bg, var(--pd-input-field-bg, transparent));
+  color: var(--pd-button-secondary-text, var(--pd-content-text, inherit));
   cursor: pointer;
+}
+
+.pai-btn:hover:not(:disabled) {
+  background-color: var(--pd-button-secondary-hover-bg, var(--pd-content-card-hover-inset-bg, rgba(127, 127, 127, 0.12)));
+}
+
+.pai-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .pai-btn-sm {
@@ -43,10 +55,12 @@
 .pai-btn-primary {
   background-color: var(--pai-accent);
   color: var(--pai-accent-text);
+  border-color: var(--pai-accent);
 }
 
 .pai-btn-primary:hover:not(:disabled) {
   background-color: var(--pai-accent-hover);
+  border-color: var(--pai-accent-hover);
 }
 
 .pai-btn-primary:disabled {
@@ -57,6 +71,7 @@
 .pai-btn-danger {
   background-color: var(--pai-danger-bg);
   color: var(--pai-danger-text);
+  border-color: var(--pai-danger-bg);
 }
 
 .pai-link {

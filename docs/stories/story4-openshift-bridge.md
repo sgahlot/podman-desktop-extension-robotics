@@ -34,9 +34,34 @@ Build the "Deploy to OpenShift" capability **into the extension** (not run from 
 - **Native apply** — deploy uses `extensionApi.kubernetes.createResources` on the JS objects (no `oc apply` / shell for the deploy path).
 - **Backend methods** (`api-impl.ts`): `getOpenShiftContext` (reads current context from the kubeconfig), `generateOpenShiftManifests` (preview), `deployToOpenShift` (apply + best-effort Route URL via `oc get route -o jsonpath`), `listOpenShiftDeployments` / `deleteOpenShiftDeployment` (filtered by the `part-of` label).
 - **Frontend** (`DeployOpenShift.svelte`, reachable from the Dashboard / `/deploy`): shows the cluster context, a name/namespace/image form defaulted to the current sim config's amd64 tag, a manifest preview, a Deploy action, and a list of managed workloads with ready-count, Route links, and delete.
-- **amd64 build (Phase A)** — the cluster is amd64 while the Mac host is arm64, so the Image Builder gained a **Target Architecture** selector (amd64 / arm64) with a cross-arch build warning, so a cluster-pullable amd64 image can be built from Podman Desktop.
+- **amd64 build (Phase A)** — the cluster is amd64 while the Mac host is arm64, so the Image Builder gained a **Target Architecture** selector (amd64 / arm64), so a cluster-pullable amd64 image can be built from Podman Desktop. A dedicated **Quick Start — OpenShift** panel (`TurtleBot3 Sim (Jazzy · amd64)`) one-clicks the correct settings with `targetArch=amd64`. The multi-arch `jazzy-noble` base is reused (with `--platform linux/amd64` the build selects its amd64 layer; its `noble` tag matches the Deploy default `ros2-jazzy-sim:noble-amd64`). Cross-building amd64 on an arm64 host is surfaced as a neutral informational note (expected, slower via QEMU) rather than a warning.
 
-**Deferred (fast-follow, not in Milestone 1):** login handling, GPU in-cluster, in-cluster robot spawn + Nav2, and fleet / multi-robot (Story 3). Local Kind validation is APPENG-5778.
+**Milestone 2 — in-cluster robot spawn + Nav2 (done, same branch):**
+
+Drive a deployed pod the same way as a local simulation, reusing the existing spawn/Nav2 orchestration.
+
+- **`ExecTarget` abstraction** (`api-impl.ts`) — a discriminated union (`{ kind: 'podman', id }` | `{ kind: 'oc', pod, namespace }`) threaded through every spawn / Nav2 / pose helper so only the transport differs. `podman exec` and `oc exec … --` are built by one `#attachedArgv` switch; `#execDetached` keeps `podman exec -d` for local and backgrounds the remote process with `nohup … &` inside `bash -c` for `oc` (which has no detached flag). Remote args are single-quoted for injection safety.
+- **Backend methods**: `spawnRobotInOpenShift` (resolves a Running pod via `oc get pods -l app=<name>`, then runs `/entrypoint-spawn-robot.sh` detached) and `sendOpenShiftNavigationGoal` (reads the deployment image to detect the distro, then Nav2 on Jazzy / cmd_vel on Humble — the same code paths as the local `sendNavigationGoal`). Input validation reuses `assertSpawnExecCommand` / `assertRobotName`.
+- **Frontend** (`DeployOpenShift.svelte`): each **ready** workload card gains a Robots panel — a name / X / Y / Yaw spawn form and, per spawned robot, target X/Y inputs, a Navigate button, and a live nav status (idle / navigating / reached / failed).
+- **Tests**: backend specs cover the `oc exec` argv + `nohup` backgrounding, pod resolution failure, distro routing (Jazzy Nav2 vs Humble cmd_vel), and injection rejection; a new `DeployOpenShift.spec.ts` covers the spawn → navigate UI flow. Existing podman-path tests are unchanged, guarding against regressions from the refactor.
+
+**Milestone 2 — post-integration fixes (2026-08-13, verified against `sgahlot-pd-extn`):**
+
+Live-cluster testing surfaced four issues; each has a code-level fix (all need an **amd64 sim rebuild + redeploy** to take effect — the first three live in the image/manifest):
+
+1. **Sensor render segfault (the big one).** Spawning a robot crashed the pod (`RESTARTS`, exit **139 = SIGSEGV**) because the `gz-sim-sensors-system` plugin tried to create an on-screen **GLX** window under **llvmpipe** (no GPU in-cluster) — `SensorsPrivate::RenderThread → Ogre2RenderEngine::CreateRenderWindow → GL3PlusRenderSystem::_createRenderWindow`. With no liveness probe, the crash restarted the pod and wiped all spawned robots (presented as "robots vanished + noVNC won't reconnect"). **Fix:** off-screen **EGL** for the server — `entrypoint-gazebo.sh` software path sets `EGL_PLATFORM=surfaceless` + `gz sim -s --headless-rendering`; `Containerfile` adds `libgl1-mesa-dri libegl-mesa0 libgbm1`. Keeps `/scan` for Nav2. (Full detail in [Story 6](story6-podman-sim.md#s6-1-jazzy-arm64-containerfile--entrypoints).) The arm64-Mac "sensors OK" verification did **not** cover this because virtio-gpu/Mesa is a different render path than amd64/llvmpipe.
+2. **noVNC WebSocket dropped after ~30s.** The edge Route had no timeout, so HAProxy severed the long-lived noVNC socket. **Fix:** `manifests.ts` Route sets `haproxy.router.openshift.io/timeout: 3600s`.
+3. **Re-pushed image not picked up.** `imagePullPolicy: IfNotPresent` served a node-cached stale image after a re-push under the same tag (`:noble-amd64`), hiding fixes. **Fix:** `imagePullPolicy: Always`.
+4. **"Open" Route link did nothing.** A raw `<a target="_blank">` doesn't open a browser from a Podman Desktop webview. **Fix:** new backend `openUrlInBrowser` → `extensionApi.env.openExternal`; the workload/deploy-result links call it. Also gave bare `.pai-btn` a real secondary-button look (Preview/Refresh/Spawn/Navigate had rendered as plain text).
+
+**Deploy-time GPU toggle (2026-08-14):** The Deploy form gained a **"Cluster has a GPU (NVIDIA GPU operator)"** checkbox (`useGpu` on `OpenShiftDeployConfig`), so the same image serves both a no-GPU and a GPU cluster without a rebuild:
+
+- **Off (default, safe):** container env forces software rendering (`LIBGL_ALWAYS_SOFTWARE=1`, `GALLIUM_DRIVER=llvmpipe`); the entrypoint then uses headless EGL for the sensors (fix #1 above). No GPU requested.
+- **On:** env sets `PHYSICAL_AI_USE_GPU=1` (drops the software vars) and the Deployment adds `resources.limits['nvidia.com/gpu']=1`. The entrypoint's render branch sees the GPU request but no `/dev/dri` (the NVIDIA GPU operator exposes `/dev/nvidia*`, not DRI) and renders the server **off-screen via hardware EGL** (`--headless-rendering`, no Mesa `surfaceless`/llvmpipe override).
+
+> ⚠️ The GPU-on path is **structurally implemented but UNVERIFIED** — no GPU-enabled cluster was available to test. The no-GPU (software) path is the tested default. Verify the NVIDIA/EGL branch when a GPU cluster is available.
+
+**Deferred (fast-follow, not yet done):** login handling, GPU-in-cluster verification (above), and fleet / multi-robot (Story 3). Local Kind validation is APPENG-5778.
 
 ---
 

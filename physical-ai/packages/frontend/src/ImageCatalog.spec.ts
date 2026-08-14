@@ -57,9 +57,7 @@ describe('ImageCatalog', () => {
   });
 
   it('loads repos on mount', async () => {
-    mockListCatalogImages.mockResolvedValue([
-      { name: 'ros2-base', namespace: 'ecosystem-appeng' },
-    ]);
+    mockListCatalogImages.mockResolvedValue([{ name: 'ros2-base', namespace: 'ecosystem-appeng' }]);
     render(ImageCatalog);
     await waitFor(() => {
       expect(screen.getByText(/ros2-base/)).toBeTruthy();
@@ -117,9 +115,7 @@ describe('ImageCatalog', () => {
   });
 
   it('expands repo to show tags', async () => {
-    mockListCatalogImages.mockResolvedValue([
-      { name: 'ros2-base', namespace: 'ecosystem-appeng' },
-    ]);
+    mockListCatalogImages.mockResolvedValue([{ name: 'ros2-base', namespace: 'ecosystem-appeng' }]);
     mockGetImageTags.mockResolvedValue([
       { name: 'latest', size: 1024000, last_modified: '2026-01-15T10:00:00Z', manifest_digest: 'sha256:abc123def456' },
     ]);
@@ -135,9 +131,7 @@ describe('ImageCatalog', () => {
   });
 
   it('shows Pull button for non-local tags', async () => {
-    mockListCatalogImages.mockResolvedValue([
-      { name: 'ros2-base', namespace: 'ecosystem-appeng' },
-    ]);
+    mockListCatalogImages.mockResolvedValue([{ name: 'ros2-base', namespace: 'ecosystem-appeng' }]);
     mockGetImageTags.mockResolvedValue([
       { name: 'v1.0', size: 2048000, last_modified: '2026-01-15T10:00:00Z', manifest_digest: 'sha256:abc123def456' },
     ]);
@@ -171,9 +165,7 @@ describe('ImageCatalog', () => {
   });
 
   it('clears stale results when namespace is emptied', async () => {
-    mockListCatalogImages.mockResolvedValue([
-      { name: 'ros2-base', namespace: 'ecosystem-appeng' },
-    ]);
+    mockListCatalogImages.mockResolvedValue([{ name: 'ros2-base', namespace: 'ecosystem-appeng' }]);
     render(ImageCatalog);
     await waitFor(() => {
       expect(screen.getByText(/ros2-base/)).toBeTruthy();

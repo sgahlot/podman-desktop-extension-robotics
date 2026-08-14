@@ -43,7 +43,7 @@ Drivers:
 | [APPENG-5764](#story-1) | Extension scaffolding and base image catalog | ✅ Done | 4/4 done, 2 follow-ups parked |
 | [APPENG-5765](#story-2) | Single robot simulation workflow | 🟡 In Progress | Original + Topic Monitor done; APPENG-5920/5922/5923 **In Review**; APPENG-5980/5981 **New** |
 | [APPENG-5766](#story-3) | Multi-robot local scaling | ⚪ Not Started | 0/3 done |
-| [APPENG-5767](#story-4) | OpenShift deployment bridge | 🟡 In Progress | APPENG-5777 Milestone 1 (single-sim deploy) done; 5778/5779 not started |
+| [APPENG-5767](#story-4) | OpenShift deployment bridge | 🟡 In Progress | APPENG-5777 M1 (single-sim deploy) + M2 (in-cluster spawn + Nav2) done; 5778/5779 not started |
 | [Spike](#story-5) | Local-first deployment of reference demos | 🅿️ Parked (Kind OOM) | 0/6 proposed |
 | [Story 6](#story-6) | Podman-only simulation workflow (ROSCon demo) | 🟡 In Progress | 5/6 done — **demo path complete; S6-6 deferred** |
 | [FIX](#fix-arch-aware-sim) | Make simulation image build arch-aware | ✅ Done | Naming + labels fixed; GPU passthrough + Sensors re-enabled (2026-08) |
@@ -217,7 +217,7 @@ If you only ever build one sim image and never reuse the base, the two-phase spl
 
 | Status | Key | Summary | Description |
 |--------|-----|---------|-------------|
-| 🟡 | APPENG-5777 | Generate K8s manifests from running Podman pod configuration + deploy to OpenShift | **Milestone 1 done** (branch `feature/APPENG-5777-openshift-deploy`): deploy a single Gazebo + noVNC sim container from within the extension via `kubernetes.createResources` (Deployment/Service/edge-TLS Route, CPU/software rendering, `part-of=physical-ai` label), with manifest preview, workload list/delete + Route URL, and an amd64 Target-Architecture build selector. Deferred: login, GPU in-cluster, in-cluster spawn + Nav2, fleet. |
+| 🟡 | APPENG-5777 | Generate K8s manifests from running Podman pod configuration + deploy to OpenShift | **Milestone 1 done** (branch `feature/APPENG-5777-openshift-deploy`): deploy a single Gazebo + noVNC sim container from within the extension via `kubernetes.createResources` (Deployment/Service/edge-TLS Route, CPU/software rendering, `part-of=physical-ai` label), with manifest preview, workload list/delete + Route URL, and an amd64 Target-Architecture build selector. **Milestone 2 done** (same branch): in-cluster robot spawn + Nav2 via an `ExecTarget` abstraction that reuses the local spawn/Nav2 orchestration over `oc exec` (`nohup` for detached, Jazzy Nav2 / Humble cmd_vel by image distro), with per-workload spawn + navigate UI. Deferred: login, GPU in-cluster, fleet. |
 | ⚪ | APPENG-5778 | Kind cluster integration for local validation | Deploy generated (or hand-written lean) manifests to Kind. Prefer a **single-sim Deployment** of `ros2-jazzy-sim` first (Story 6 parity); multi-pod Nav2 charts remain a later / heavier path. See Story 5 revisit note (2026-08-10). |
 | ⚪ | APPENG-5779 | Getting-started guide for the full workflow | Write end-to-end documentation covering the full developer journey: installing the extension, launching a robot simulation, scaling to a fleet, and deploying to OpenShift. |
 

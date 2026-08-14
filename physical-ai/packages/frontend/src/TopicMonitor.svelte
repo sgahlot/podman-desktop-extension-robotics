@@ -239,9 +239,7 @@ onDestroy(() => {
 </script>
 
 <div class="flex flex-col p-4 gap-4 w-full flex-1 min-h-0 min-w-0 overflow-auto">
-  <button on:click={() => router.goto('/')} class="pai-link self-start">
-    &larr; Back to Dashboard
-  </button>
+  <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
   <h1 class="text-3xl text-[var(--pd-content-header)]">Topic Monitor</h1>
   <p class="text-sm text-[var(--pd-content-text)]">
     Inspect active ROS2 topics, message types, and publisher/subscriber counts in a running simulation.
@@ -262,18 +260,13 @@ onDestroy(() => {
         <select
           id="containerSelect"
           bind:value={selectedContainerId}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]"
-        >
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]">
           {#each runningContainers as c}
             <option value={c.id}>{c.name} — {c.imageTag}</option>
           {/each}
         </select>
       </div>
-      <button
-        on:click={refresh}
-        disabled={loading}
-        class="pai-btn pai-btn-primary"
-      >
+      <button on:click={refresh} disabled={loading} class="pai-btn pai-btn-primary">
         {loading ? 'Refreshing...' : 'Refresh'}
       </button>
     </div>
@@ -289,7 +282,8 @@ onDestroy(() => {
     {:else if topics.length > 0}
       <div class="text-xs pai-text-muted">{topics.length} active topics</div>
 
-      <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] overflow-x-auto">
+      <div
+        class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] overflow-x-auto">
         <table class="w-full text-xs table-fixed">
           <thead>
             <tr class="text-left text-[var(--pd-content-text)] border-b border-[var(--pd-content-card-border)]">
@@ -303,15 +297,14 @@ onDestroy(() => {
             {#each topics as topic}
               <tr
                 class="border-b border-[var(--pd-content-card-border)] cursor-pointer hover:bg-[var(--pd-content-bg)] transition-colors"
-                on:click={() => toggleTopicDetail(topic.name)}
-              >
+                on:click={() => toggleTopicDetail(topic.name)}>
                 <td class="p-3 pr-4 font-mono font-medium text-[var(--pd-content-header)] break-all">
-                  <span class="inline-block w-4 text-center text-[var(--pd-content-text)]">{expandedTopic === topic.name ? '▼' : '▶'}</span>
+                  <span class="inline-block w-4 text-center text-[var(--pd-content-text)]"
+                    >{expandedTopic === topic.name ? '▼' : '▶'}</span>
                   {topic.name}
                   <span
                     class="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-sans font-normal pai-text-muted border border-[var(--pd-content-card-border)]"
-                    title={topic.type}
-                  >{shortMessageType(topic.type)}</span>
+                    title={topic.type}>{shortMessageType(topic.type)}</span>
                 </td>
                 <td class="p-3 pr-4 font-mono text-[var(--pd-content-text)] break-all">{topic.type}</td>
                 <td class="p-3 pr-4 text-right text-[var(--pd-content-text)]">{topic.publishers}</td>
@@ -328,7 +321,8 @@ onDestroy(() => {
                       <div class="flex flex-col gap-4 min-w-0 max-w-full">
                         <!-- Soft topology: two columns (topic already in header); long names wrap -->
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
-                          <div class="min-w-0 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3">
+                          <div
+                            class="min-w-0 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3">
                             <div class="text-xs font-medium text-[var(--pd-content-header)] mb-2">
                               Publishers ({topicDetail.publishers.length})
                             </div>
@@ -338,12 +332,14 @@ onDestroy(() => {
                               {#each topicDetail.publishers as pub}
                                 <div
                                   class="text-xs font-mono text-[var(--pd-content-text)] break-all py-0.5"
-                                  title={nodePath(pub)}
-                                >{nodePath(pub)}</div>
+                                  title={nodePath(pub)}>
+                                  {nodePath(pub)}
+                                </div>
                               {/each}
                             {/if}
                           </div>
-                          <div class="min-w-0 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3">
+                          <div
+                            class="min-w-0 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3">
                             <div class="text-xs font-medium text-[var(--pd-content-header)] mb-2">
                               Subscribers ({topicDetail.subscribers.length})
                             </div>
@@ -353,8 +349,9 @@ onDestroy(() => {
                               {#each topicDetail.subscribers as sub}
                                 <div
                                   class="text-xs font-mono text-[var(--pd-content-text)] break-all py-0.5"
-                                  title={nodePath(sub)}
-                                >{nodePath(sub)}</div>
+                                  title={nodePath(sub)}>
+                                  {nodePath(sub)}
+                                </div>
                               {/each}
                             {/if}
                           </div>
@@ -368,8 +365,7 @@ onDestroy(() => {
                           <button
                             type="button"
                             class="text-xs pai-link"
-                            on:click|stopPropagation={() => (showSchema = !showSchema)}
-                          >
+                            on:click|stopPropagation={() => (showSchema = !showSchema)}>
                             {showSchema ? 'Hide message schema' : 'Show message schema'}
                           </button>
                           {#if showSchema}
@@ -380,8 +376,7 @@ onDestroy(() => {
                                 <span class="text-xs pai-text-error">{schemaError}</span>
                               {:else if schema?.schema}
                                 <pre
-                                  class="rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] font-mono text-xs text-[var(--pd-content-text)] p-2 overflow-auto max-h-40 whitespace-pre-wrap break-all"
-                                >{schema.schema}</pre>
+                                  class="rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] font-mono text-xs text-[var(--pd-content-text)] p-2 overflow-auto max-h-40 whitespace-pre-wrap break-all">{schema.schema}</pre>
                               {/if}
                             </div>
                           {/if}
@@ -394,8 +389,7 @@ onDestroy(() => {
                               type="button"
                               class="pai-btn pai-btn-primary text-xs"
                               disabled={peeking}
-                              on:click={e => peekTopic(topic.name, e)}
-                            >
+                              on:click={e => peekTopic(topic.name, e)}>
                               {peeking ? 'Peeking...' : 'Peek'}
                             </button>
                             <span class="text-xs pai-text-muted">
@@ -411,8 +405,7 @@ onDestroy(() => {
                             <div
                               class="rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3 flex flex-col gap-2 min-w-0"
                               role="region"
-                              aria-label="Peek message"
-                            >
+                              aria-label="Peek message">
                               <div class="flex flex-row flex-wrap items-start justify-between gap-2 min-w-0">
                                 <div class="text-xs text-[var(--pd-content-text)] flex flex-col gap-0.5 min-w-0 flex-1">
                                   <div class="break-all">
@@ -440,28 +433,25 @@ onDestroy(() => {
                                 </div>
                                 <div class="flex flex-row items-center gap-2 shrink-0">
                                   {#if peekTreeUsable}
-                                    <div class="inline-flex rounded border border-[var(--pd-content-card-border)] overflow-hidden">
+                                    <div
+                                      class="inline-flex rounded border border-[var(--pd-content-card-border)] overflow-hidden">
                                       <button
                                         type="button"
                                         class="px-2 py-1 text-xs {peekView === 'tree'
                                           ? 'bg-[var(--pd-content-bg)] text-[var(--pd-content-header)]'
                                           : 'text-[var(--pd-content-text)]'}"
-                                        on:click={() => (peekView = 'tree')}
-                                      >Tree</button>
+                                        on:click={() => (peekView = 'tree')}>Tree</button>
                                       <button
                                         type="button"
-                                        class="px-2 py-1 text-xs border-l border-[var(--pd-content-card-border)] {peekView === 'raw'
+                                        class="px-2 py-1 text-xs border-l border-[var(--pd-content-card-border)] {peekView ===
+                                        'raw'
                                           ? 'bg-[var(--pd-content-bg)] text-[var(--pd-content-header)]'
                                           : 'text-[var(--pd-content-text)]'}"
-                                        on:click={() => (peekView = 'raw')}
-                                      >Raw</button>
+                                        on:click={() => (peekView = 'raw')}>Raw</button>
                                     </div>
                                   {/if}
-                                  <button
-                                    type="button"
-                                    class="pai-btn text-xs"
-                                    on:click={copyPeek}
-                                  >{copyFeedback || 'Copy'}</button>
+                                  <button type="button" class="pai-btn text-xs" on:click={copyPeek}
+                                    >{copyFeedback || 'Copy'}</button>
                                 </div>
                               </div>
 
@@ -471,8 +461,7 @@ onDestroy(() => {
                                 </div>
                               {:else}
                                 <pre
-                                  class="font-mono text-xs text-[var(--pd-content-text)] overflow-auto max-h-64 whitespace-pre-wrap break-all m-0"
-                                >{peekResult.message}</pre>
+                                  class="font-mono text-xs text-[var(--pd-content-text)] overflow-auto max-h-64 whitespace-pre-wrap break-all m-0">{peekResult.message}</pre>
                               {/if}
                             </div>
                           {/if}

@@ -1,12 +1,7 @@
 import type { QuayRepository, QuayTag, PullProgress, BuildProgress, PushProgress } from './types/ImageCatalog';
 import type { SimulationConfig } from './types/SimulationConfig';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from './types/SimulationContainer';
-import type {
-  TopicInfo,
-  TopicDetailInfo,
-  TopicPeekResult,
-  TopicSchemaResult,
-} from './types/TopicInfo';
+import type { TopicInfo, TopicDetailInfo, TopicPeekResult, TopicSchemaResult } from './types/TopicInfo';
 import type { NavigationGoalResult } from './types/NavigationGoalResult';
 import type {
   OpenShiftDeployConfig,
@@ -48,6 +43,8 @@ export abstract class PhysicalAiApi {
   abstract listSimulationContainers(): Promise<SimContainerInfo[]>;
   abstract execInSimulation(containerId: string, command: string[]): Promise<ExecResult>;
   abstract openSimulationInBrowser(hostPort: number, containerPort?: number): Promise<void>;
+  /** Open an external http(s) URL (e.g. an OpenShift Route) in the host browser. */
+  abstract openUrlInBrowser(url: string): Promise<void>;
   abstract listRosTopics(containerId: string): Promise<TopicInfo[]>;
   abstract getRosTopicDetail(containerId: string, topicName: string): Promise<TopicDetailInfo>;
   /** One live message via `ros2 topic echo --once` (bounded wait). */
@@ -56,7 +53,12 @@ export abstract class PhysicalAiApi {
   abstract getRosMessageSchema(containerId: string, messageType: string): Promise<TopicSchemaResult>;
   /** Copy text via the host clipboard (webview Clipboard API is unavailable). */
   abstract copyToClipboard(text: string): Promise<void>;
-  abstract sendNavigationGoal(containerId: string, robotName: string, x: number, y: number): Promise<NavigationGoalResult>;
+  abstract sendNavigationGoal(
+    containerId: string,
+    robotName: string,
+    x: number,
+    y: number,
+  ): Promise<NavigationGoalResult>;
 
   // --- OpenShift deployment (APPENG-5777) ---
   /** Current Kubernetes/OpenShift context from the kubeconfig, or undefined if none. */
@@ -69,4 +71,21 @@ export abstract class PhysicalAiApi {
   abstract listOpenShiftDeployments(namespace: string): Promise<OpenShiftWorkload[]>;
   /** Delete the Deployment/Service/Route for a named workload. */
   abstract deleteOpenShiftDeployment(namespace: string, name: string): Promise<void>;
+  /** Spawn a TurtleBot3 into a deployed simulation pod (mirrors the local spawn). */
+  abstract spawnRobotInOpenShift(
+    namespace: string,
+    name: string,
+    robotName: string,
+    x: string,
+    y: string,
+    yaw: string,
+  ): Promise<void>;
+  /** Drive a spawned robot to (x, y) in a deployed pod (Nav2 on Jazzy, cmd_vel on Humble). */
+  abstract sendOpenShiftNavigationGoal(
+    namespace: string,
+    name: string,
+    robotName: string,
+    x: number,
+    y: number,
+  ): Promise<NavigationGoalResult>;
 }

@@ -4,11 +4,7 @@ import { onMount } from 'svelte';
 import { router } from 'tinro';
 import { simulationImageTag } from '/@shared/src/types/SimulationProfiles';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
-import type {
-  OpenShiftContext,
-  OpenShiftDeployResult,
-  OpenShiftWorkload,
-} from '/@shared/src/types/OpenShiftDeploy';
+import type { OpenShiftContext, OpenShiftDeployResult, OpenShiftWorkload } from '/@shared/src/types/OpenShiftDeploy';
 
 let loading = true;
 let context: OpenShiftContext | undefined = undefined;
@@ -16,6 +12,7 @@ let context: OpenShiftContext | undefined = undefined;
 let name = 'ros2-jazzy-sim';
 let namespace = 'sgahlot-pd-extn';
 let image = 'quay.io/ecosystem-appeng/ros2-jazzy-sim:noble-amd64';
+let useGpu = false;
 
 let previewYaml = '';
 let previewBusy = false;
@@ -30,14 +27,32 @@ let listBusy = false;
 let listError = '';
 let deletingName = '';
 
-$: config = { name, namespace, image };
+// --- In-cluster robot spawn + Nav2, keyed by deployment name ---
+type OcSpawnedRobot = {
+  name: string;
+  x: string;
+  y: string;
+  navStatus: 'idle' | 'navigating' | 'reached' | 'failed';
+  navTarget: { x: string; y: string };
+};
+type SpawnForm = { name: string; x: string; y: string; yaw: string; counter: number };
+let robotsByWorkload: Record<string, OcSpawnedRobot[]> = {};
+let spawnFormByWorkload: Record<string, SpawnForm> = {};
+let spawnBusy: Record<string, boolean> = {};
+let spawnError: Record<string, string> = {};
+
+function newSpawnForm(): SpawnForm {
+  return { name: 'robot_1', x: '-2.0', y: '-0.5', yaw: '0.0', counter: 1 };
+}
+
+$: config = { name, namespace, image, useGpu };
 $: canDeploy = !!context && !!name && !!namespace && !!image && !deploying;
 
 onMount(async () => {
   try {
     context = await physicalAiClient.getOpenShiftContext();
   } catch {
-    context = null;
+    context = undefined;
   }
   // Default the image to the current sim config's amd64 tag, when resolvable.
   try {
@@ -52,6 +67,15 @@ onMount(async () => {
   loading = false;
   refreshWorkloads();
 });
+
+async function openRoute(url: string | undefined) {
+  if (!url) return;
+  try {
+    await physicalAiClient.openUrlInBrowser(url);
+  } catch (e) {
+    listError = e instanceof Error ? e.message : 'Failed to open route';
+  }
+}
 
 async function preview() {
   previewBusy = true;
@@ -82,11 +106,20 @@ async function deploy() {
 }
 
 async function refreshWorkloads() {
-  if (!namespace) { workloads = []; return; }
+  if (!namespace) {
+    workloads = [];
+    return;
+  }
   listBusy = true;
   listError = '';
   try {
     workloads = await physicalAiClient.listOpenShiftDeployments(namespace);
+    for (const w of workloads) {
+      spawnFormByWorkload[w.name] ??= newSpawnForm();
+      robotsByWorkload[w.name] ??= [];
+    }
+    spawnFormByWorkload = spawnFormByWorkload;
+    robotsByWorkload = robotsByWorkload;
   } catch (e) {
     listError = e instanceof Error ? e.message : 'Failed to list deployments';
     workloads = [];
@@ -106,16 +139,67 @@ async function remove(w: OpenShiftWorkload) {
     deletingName = '';
   }
 }
+
+async function spawnRobot(w: OpenShiftWorkload) {
+  const form = spawnFormByWorkload[w.name];
+  if (!form) return;
+  spawnBusy[w.name] = true;
+  spawnError[w.name] = '';
+  spawnBusy = spawnBusy;
+  spawnError = spawnError;
+  try {
+    await physicalAiClient.spawnRobotInOpenShift(w.namespace, w.name, form.name, form.x, form.y, form.yaw);
+    const robots = robotsByWorkload[w.name] ?? [];
+    robots.push({
+      name: form.name,
+      x: form.x,
+      y: form.y,
+      navStatus: 'idle',
+      navTarget: { x: '2.0', y: '0.5' },
+    });
+    robotsByWorkload[w.name] = robots;
+    robotsByWorkload = robotsByWorkload;
+    form.counter += 1;
+    form.name = `robot_${form.counter}`;
+    spawnFormByWorkload = spawnFormByWorkload;
+  } catch (e) {
+    spawnError[w.name] = e instanceof Error ? e.message : 'Spawn failed';
+    spawnError = spawnError;
+  } finally {
+    spawnBusy[w.name] = false;
+    spawnBusy = spawnBusy;
+  }
+}
+
+async function navigateRobot(w: OpenShiftWorkload, index: number) {
+  const robots = robotsByWorkload[w.name];
+  const robot = robots?.[index];
+  if (!robot) return;
+  robot.navStatus = 'navigating';
+  robotsByWorkload = robotsByWorkload;
+  try {
+    const result = await physicalAiClient.sendOpenShiftNavigationGoal(
+      w.namespace,
+      w.name,
+      robot.name,
+      Number(robot.navTarget.x),
+      Number(robot.navTarget.y),
+    );
+    robot.navStatus = result.status === 'reached' ? 'reached' : 'failed';
+  } catch {
+    robot.navStatus = 'failed';
+  } finally {
+    robotsByWorkload = robotsByWorkload;
+  }
+}
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
-  <button on:click={() => router.goto('/')} class="pai-link self-start">
-    &larr; Back to Dashboard
-  </button>
+  <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
   <h1 class="text-3xl text-[var(--pd-content-header)]">Deploy to OpenShift</h1>
   <p class="text-sm text-[var(--pd-content-text)]">
-    Deploy a simulation image (Gazebo + noVNC) to your current OpenShift cluster and reach it via a Route.
-    Build an <span class="font-mono">amd64</span> image first from the Image Builder.
+    Deploy a simulation image (Gazebo + noVNC) to your current OpenShift cluster and reach it via a Route. Build an <span
+      class="font-mono">amd64</span> image first from the Image Builder.
   </p>
 
   {#if loading}
@@ -145,8 +229,7 @@ async function remove(w: OpenShiftWorkload) {
           id="dep-name"
           bind:value={name}
           disabled={deploying}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono"
-        />
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
         <span class="text-xs pai-text-muted">Used for the Deployment, Service and Route (DNS-1123 label).</span>
       </div>
 
@@ -157,8 +240,7 @@ async function remove(w: OpenShiftWorkload) {
           bind:value={namespace}
           on:change={refreshWorkloads}
           disabled={deploying}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono"
-        />
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
       </div>
 
       <div class="flex flex-col gap-1">
@@ -167,9 +249,19 @@ async function remove(w: OpenShiftWorkload) {
           id="dep-image"
           bind:value={image}
           disabled={deploying}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono"
-        />
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
         <span class="text-xs pai-text-muted">e.g. quay.io/&lt;ns&gt;/ros2-jazzy-sim:noble-amd64</span>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="flex flex-row items-center gap-2 text-sm text-[var(--pd-content-text)]">
+          <input type="checkbox" bind:checked={useGpu} disabled={deploying} />
+          Cluster has a GPU (NVIDIA GPU operator)
+        </label>
+        <span class="text-xs pai-text-muted">
+          On: request <span class="font-mono">nvidia.com/gpu</span> and use hardware rendering. Off (default): software rendering
+          (llvmpipe + headless EGL), safe for a no-GPU cluster.
+        </span>
       </div>
 
       <div class="flex flex-row items-center gap-3 mt-2">
@@ -193,9 +285,9 @@ async function remove(w: OpenShiftWorkload) {
           <div>{deployResult.message}</div>
           <div class="text-xs opacity-80">Applied: {deployResult.applied.join(', ')}</div>
           {#if deployResult.routeUrl}
-            <a href={deployResult.routeUrl} target="_blank" rel="noreferrer" class="pai-link">
+            <button on:click={() => openRoute(deployResult?.routeUrl)} class="pai-link self-start">
               Open {deployResult.routeUrl}
-            </a>
+            </button>
           {/if}
         </div>
       {/if}
@@ -204,7 +296,8 @@ async function remove(w: OpenShiftWorkload) {
     {#if previewYaml}
       <div class="max-w-2xl">
         <h2 class="text-sm font-medium text-[var(--pd-content-header)] mb-2">Manifest preview</h2>
-        <pre class="text-xs font-mono p-3 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] overflow-auto max-h-96 whitespace-pre">{previewYaml}</pre>
+        <pre
+          class="text-xs font-mono p-3 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] overflow-auto max-h-96 whitespace-pre">{previewYaml}</pre>
       </div>
     {/if}
 
@@ -224,11 +317,14 @@ async function remove(w: OpenShiftWorkload) {
       {/if}
 
       {#if workloads.length === 0}
-        <p class="text-sm pai-text-muted">No physical-ai deployments in <span class="font-mono">{namespace}</span> yet.</p>
+        <p class="text-sm pai-text-muted">
+          No physical-ai deployments in <span class="font-mono">{namespace}</span> yet.
+        </p>
       {:else}
         <div class="flex flex-col gap-2">
           {#each workloads as w (w.name)}
-            <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3 flex flex-col gap-1">
+            <div
+              class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3 flex flex-col gap-1">
               <div class="flex flex-row items-center justify-between gap-3">
                 <div class="font-medium text-[var(--pd-content-header)] font-mono">{w.name}</div>
                 <div class="flex flex-row items-center gap-2">
@@ -238,8 +334,7 @@ async function remove(w: OpenShiftWorkload) {
                   <button
                     on:click={() => remove(w)}
                     disabled={deletingName === w.name}
-                    class="pai-btn pai-btn-danger text-xs"
-                  >
+                    class="pai-btn pai-btn-danger text-xs">
                     {deletingName === w.name ? 'Deleting…' : 'Delete'}
                   </button>
                 </div>
@@ -248,9 +343,106 @@ async function remove(w: OpenShiftWorkload) {
                 <div class="text-xs font-mono opacity-70 break-all">{w.image}</div>
               {/if}
               {#if w.routeUrl}
-                <a href={w.routeUrl} target="_blank" rel="noreferrer" class="pai-link text-xs">Open {w.routeUrl}</a>
+                <button
+                  on:click={() => openRoute(w.routeUrl)}
+                  class="pai-link pai-link-sm self-start break-all text-left">
+                  Open {w.routeUrl}
+                </button>
               {:else}
                 <span class="text-xs pai-text-muted">Route not admitted yet.</span>
+              {/if}
+
+              <!-- In-cluster robot spawn + Nav2 -->
+              {#if w.ready && spawnFormByWorkload[w.name]}
+                <div class="mt-2 pt-2 border-t border-[var(--pd-content-card-border)] flex flex-col gap-2">
+                  <div class="text-xs font-medium text-[var(--pd-content-header)]">Robots</div>
+
+                  <div class="flex flex-row flex-wrap items-end gap-2">
+                    <div class="flex flex-col gap-1">
+                      <label for="rn-{w.name}" class="text-xs pai-text-muted">Name</label>
+                      <input
+                        id="rn-{w.name}"
+                        bind:value={spawnFormByWorkload[w.name].name}
+                        disabled={spawnBusy[w.name]}
+                        class="w-28 px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
+                    </div>
+                    <div class="flex flex-col gap-1">
+                      <label for="rx-{w.name}" class="text-xs pai-text-muted">X</label>
+                      <input
+                        id="rx-{w.name}"
+                        bind:value={spawnFormByWorkload[w.name].x}
+                        disabled={spawnBusy[w.name]}
+                        class="w-16 px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
+                    </div>
+                    <div class="flex flex-col gap-1">
+                      <label for="ry-{w.name}" class="text-xs pai-text-muted">Y</label>
+                      <input
+                        id="ry-{w.name}"
+                        bind:value={spawnFormByWorkload[w.name].y}
+                        disabled={spawnBusy[w.name]}
+                        class="w-16 px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
+                    </div>
+                    <div class="flex flex-col gap-1">
+                      <label for="ryaw-{w.name}" class="text-xs pai-text-muted">Yaw</label>
+                      <input
+                        id="ryaw-{w.name}"
+                        bind:value={spawnFormByWorkload[w.name].yaw}
+                        disabled={spawnBusy[w.name]}
+                        class="w-16 px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
+                    </div>
+                    <button
+                      on:click={() => spawnRobot(w)}
+                      disabled={spawnBusy[w.name] || !spawnFormByWorkload[w.name].name}
+                      class="pai-btn text-xs">
+                      {spawnBusy[w.name] ? 'Spawning…' : 'Spawn'}
+                    </button>
+                  </div>
+
+                  {#if spawnError[w.name]}
+                    <span class="text-xs pai-text-error">{spawnError[w.name]}</span>
+                  {/if}
+
+                  {#if (robotsByWorkload[w.name] ?? []).length > 0}
+                    <div class="flex flex-col gap-1">
+                      {#each robotsByWorkload[w.name] as robot, i (robot.name)}
+                        <div class="flex flex-row flex-wrap items-center gap-2 text-xs">
+                          <span class="font-mono text-[var(--pd-content-header)] w-24 truncate">{robot.name}</span>
+                          <span class="pai-text-muted">→</span>
+                          <input
+                            aria-label="target X for {robot.name}"
+                            bind:value={robot.navTarget.x}
+                            disabled={robot.navStatus === 'navigating'}
+                            class="w-14 px-2 py-1 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
+                          <input
+                            aria-label="target Y for {robot.name}"
+                            bind:value={robot.navTarget.y}
+                            disabled={robot.navStatus === 'navigating'}
+                            class="w-14 px-2 py-1 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
+                          <button
+                            on:click={() => navigateRobot(w, i)}
+                            disabled={robot.navStatus === 'navigating'}
+                            class="pai-btn text-xs">Navigate</button>
+                          <span
+                            class={robot.navStatus === 'reached'
+                              ? 'pai-text-success'
+                              : robot.navStatus === 'failed'
+                                ? 'pai-text-error'
+                                : robot.navStatus === 'navigating'
+                                  ? 'pai-text-accent'
+                                  : 'pai-text-muted'}>
+                            {robot.navStatus === 'navigating'
+                              ? 'Navigating…'
+                              : robot.navStatus === 'reached'
+                                ? 'Reached'
+                                : robot.navStatus === 'failed'
+                                  ? 'Failed'
+                                  : 'Idle'}
+                          </span>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
               {/if}
             </div>
           {/each}

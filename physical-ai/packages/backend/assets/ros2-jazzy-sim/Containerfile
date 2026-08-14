@@ -32,9 +32,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # noVNC display stack: Xvfb + x11vnc + websockify + openbox
+# Mesa software GL + EGL: libgl1-mesa-dri provides the llvmpipe/swrast driver, and
+# libegl-mesa0 + libgbm1 provide off-screen EGL (surfaceless) so the Gazebo sensors
+# plugin can render camera/lidar headless without a GPU (no GLX window → no segfault).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libegl1 \
+    libgl1-mesa-dri \
+    libegl-mesa0 \
+    libgbm1 \
     mesa-utils \
     xvfb \
     x11vnc \
