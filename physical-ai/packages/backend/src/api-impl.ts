@@ -1154,7 +1154,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   ): Promise<ExecResult> {
     const safeDistro = assertRosDistro(distro);
     const setup = `/opt/ros/${safeDistro}/setup.bash`;
-    return this.#execAttached(target, ['bash', '-c', `source "${setup}" && ${script}`, '_', ...args]);
+    // `oc exec` lands in HOME=/ (not writable), so ROS can't create its log dir
+    // ('//.ros/log') and every rclcpp-based command aborts with exit 250. Point
+    // HOME/ROS_HOME at a writable tmp dir for the cluster path. Local podman
+    // containers already have a writable HOME, so leave that path untouched.
+    const prefix =
+      target.kind === 'oc'
+        ? 'export HOME=/tmp/ros-home ROS_HOME=/tmp/ros-home ROS_LOG_DIR=/tmp/ros-home/log && mkdir -p "$ROS_LOG_DIR" && '
+        : '';
+    return this.#execAttached(target, ['bash', '-c', `${prefix}source "${setup}" && ${script}`, '_', ...args]);
   }
 
   async #assertSimulationContainer(containerId: string): Promise<string> {

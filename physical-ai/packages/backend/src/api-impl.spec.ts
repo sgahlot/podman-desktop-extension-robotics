@@ -1594,6 +1594,8 @@ describe('PhysicalAiApiImpl', () => {
       expect(goalCmd).toContain('/$2/navigate_to_pose');
       expect(goalArgs).toContain('robot_1');
       expect(goalCmd).not.toContain('/robot_1/navigate_to_pose');
+      // Local podman containers have a writable HOME; the oc-only workaround must not leak here.
+      expect(goalCmd).not.toContain('HOME=/tmp/ros-home');
     });
 
     it('launches Nav2 detached with spawn pose env when map TF is missing', async () => {
@@ -2179,6 +2181,22 @@ describe('PhysicalAiApiImpl', () => {
         const goalA = goalCall![1] as string[];
         expect(goalA.slice(0, 5)).toEqual(['exec', '-n', NS, POD, '--']);
         expect(goalA).not.toContain('-d');
+      });
+
+      it('sets a writable HOME/ROS_HOME on the oc exec path so rclcpp can create its log dir', async () => {
+        mockOc('quay.io/ns/ros2-jazzy-sim:noble-amd64');
+
+        await api.sendOpenShiftNavigationGoal(NS, NAME, 'robot_1', 2.0, 2.0);
+
+        const rosCall = vi
+          .mocked(extensionApi.process.exec)
+          .mock.calls.find(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes('send_goal')));
+        const script = (rosCall![1] as string[]).find(a => typeof a === 'string' && a.includes('send_goal'))!;
+        expect(script).toContain('export HOME=/tmp/ros-home');
+        expect(script).toContain('ROS_LOG_DIR=/tmp/ros-home/log');
+        expect(script).toMatch(/mkdir -p "\$ROS_LOG_DIR"/);
+        // prefix must come before the ROS setup source
+        expect(script.indexOf('HOME=/tmp/ros-home')).toBeLessThan(script.indexOf('source'));
       });
 
       it('routes a humble image through the cmd_vel path over oc exec', async () => {
