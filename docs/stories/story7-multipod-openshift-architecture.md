@@ -9,6 +9,14 @@ Podman-Compose fleet plan. Story 3 chose **Zenoh** for inter-container comms
 (APPENG-5775); this doc reuses that decision on the cluster so the laptop and
 cluster topologies stay aligned.
 
+> **Sequencing decision (do OpenShift first).** We tackle multi-pod on
+> **OpenShift first** — OCP has the node headroom to actually run multiple pods,
+> so it's the fastest place to prove the topology (sim pod + Nav2-per-pod + zenoh
+> router). Once it works on the cluster we **backport** the same shape to local
+> Podman (Story 3 / APPENG-5774/5775/5776) and see what does and doesn't
+> translate (multicast, shared memory, resource limits). Local multi-robot is
+> therefore *deferred* behind this OpenShift work, not the other way around.
+
 ---
 
 ## Problem
