@@ -51,7 +51,11 @@ Tackled top-down.
 > node. Escaping the single-node scheduling ceiling and scaling to many robots is
 > a multi-pod problem — see `docs/stories/story7-multipod-openshift-architecture.md`.
 
-### 6. Port Jazzy sim-image improvements to the Humble image  *(parity — backlog)*
+### 6. Redeploy over an active deployment is a silent no-op  *(UX — backlog)*
+- [ ] **Problem:** the sim image uses a **mutable tag** (`:noble-amd64`) and Deploy does an `oc apply`. If a deployment of the same name is already running and the emitted spec is unchanged, `apply` sees no diff → **no rollout**, so a freshly-pushed image is **never pulled** (the running pod keeps the old image; `imagePullPolicy: Always` only pulls on pod *creation*). Found live: after pushing a fixed image, the 21-min-old pod stayed on the old (crashing) image until the user deleted the deployment manually.
+- [ ] **Options to consider:** (a) if a deployment with the target name already exists, **prompt the user** (redeploy/undeploy-first/cancel); (b) on redeploy, force a rollout so a new image is pulled even when the spec is unchanged (e.g. stamp a `kubectl.kubernetes.io/restartedAt`-style pod-template annotation, or delete+recreate). Note the CPU 1→6 change *did* change the spec, so once the extension is rebuilt a redeploy would roll out on its own — but that's incidental; the general mutable-tag case still needs a forced rollout.
+
+### 7. Port Jazzy sim-image improvements to the Humble image  *(parity — backlog)*
 All the sim-image hardening under 5777 targeted **Jazzy only** (`assets/ros2-jazzy-sim/`).
 The Humble image (`assets/ros2-humble-turtlebot3/`) has Gazebo + Nav2 packages but a
 bare entrypoint (`source … ; exec "$@"`) — no noVNC stack, no headless-render/EGL
