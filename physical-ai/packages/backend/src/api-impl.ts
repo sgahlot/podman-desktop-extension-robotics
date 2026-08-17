@@ -77,6 +77,12 @@ import { appendProgressLog } from './progressLogs';
 const QUAY_API_BASE = 'https://quay.io/api/v1';
 /** How long completed progress entries stay queryable for the UI. */
 const PROGRESS_RETENTION_MS = 30_000;
+/**
+ * Seconds to poll for the map→base_link TF after launching Nav2. Sized for the
+ * software-render cold-start (~40–90 s under llvmpipe); GPU/warm paths return
+ * well before this. Pre-warm runs in the background, so a long wait is invisible.
+ */
+const NAV2_TF_POLL_ATTEMPTS = 120;
 
 /**
  * First non-empty string among the arguments, or '' if none.
@@ -718,12 +724,18 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async execInSimulation(containerId: string, command: string[]): Promise<ExecResult> {
-    const { id } = await this.#resolveSimulationContainer(containerId);
-    const safeCommand = assertSpawnExecCommand(command);
+    const { id, image } = await this.#resolveSimulationContainer(containerId);
+    const [, safeRobot, safeX, safeY, safeYaw] = assertSpawnExecCommand(command);
+    const safeCommand = [SPAWN_ENTRYPOINT, safeRobot, safeX, safeY, safeYaw];
     try {
       // Detached: entrypoint backgrounds work; exitCode reflects only whether
       // podman accepted the exec, not whether spawn succeeded inside the container.
       const result = await extensionApi.process.exec('podman', ['exec', '-d', id, ...safeCommand]);
+      // Warm Nav2 in the background so the first Navigate click is instant (Jazzy only).
+      if (image.includes('jazzy')) {
+        const pose = { x: Number(safeX), y: Number(safeY), yaw: Number(safeYaw) };
+        void this.#prewarmNav2({ kind: 'podman', id }, safeRobot, pose, 'jazzy');
+      }
       return {
         exitCode: 0,
         stdout: result.stdout ?? '',
@@ -1021,7 +1033,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
 
     if (await this.#isNav2BringupRunning(target, robotName, distro)) {
-      for (let attempt = 0; attempt < 60; attempt++) {
+      for (let attempt = 0; attempt < NAV2_TF_POLL_ATTEMPTS; attempt++) {
         await PhysicalAiApiImpl.#sleep(1000);
         if (await this.#hasMapBaseLinkTf(target, robotName, distro)) {
           return;
@@ -1035,7 +1047,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       PHYSICAL_AI_SPAWN_Y: pose.y.toFixed(4),
     });
 
-    for (let attempt = 0; attempt < 60; attempt++) {
+    for (let attempt = 0; attempt < NAV2_TF_POLL_ATTEMPTS; attempt++) {
       await PhysicalAiApiImpl.#sleep(1000);
       if (await this.#hasMapBaseLinkTf(target, robotName, distro)) {
         return;
@@ -1046,6 +1058,37 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       `Nav2 stack for "${robotName}" did not become ready (map→base_link TF missing). ` +
         'Stop other sim containers or use a fresh simulation before Go.',
     );
+  }
+
+  /**
+   * Warm the Nav2 stack right after a spawn so the first Navigate click fires
+   * instantly instead of paying the ~40–90 s software-render cold-start. Waits
+   * for the robot to appear in the world (spawn is detached), then launches Nav2
+   * via #ensureNav2Running. Fire-and-forget: never throws — a failure just means
+   * the later Navigate click pays the cold-start as before. Jazzy (Nav2) only.
+   */
+  async #prewarmNav2(
+    target: ExecTarget,
+    robotName: string,
+    pose: { x: number; y: number; yaw: number },
+    distro: SupportedRosDistro,
+  ): Promise<void> {
+    try {
+      let appeared = false;
+      for (let attempt = 0; attempt < 30 && !appeared; attempt++) {
+        await PhysicalAiApiImpl.#sleep(1000);
+        try {
+          await this.#getRobotPose(target, robotName, distro);
+          appeared = true;
+        } catch {
+          // Robot not in the world yet — keep polling.
+        }
+      }
+      if (!appeared) return;
+      await this.#ensureNav2Running(target, robotName, pose, distro);
+    } catch (err) {
+      console.error(`[physical-ai] Nav2 pre-warm for "${robotName}" failed (non-fatal):`, err);
+    }
   }
 
   async #hasMapBaseLinkTf(target: ExecTarget, robotName: string, distro: SupportedRosDistro): Promise<boolean> {
@@ -1527,7 +1570,20 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     // Reuse the same argv validation as the local spawn path.
     const [, safeRobot, safeX, safeY, safeYaw] = assertSpawnExecCommand([SPAWN_ENTRYPOINT, robotName, x, y, yaw]);
     const pod = await this.#resolveOpenShiftPod(ns, safeName);
-    await this.#execDetached({ kind: 'oc', pod, namespace: ns }, SPAWN_ENTRYPOINT, [safeRobot, safeX, safeY, safeYaw]);
+    const target = { kind: 'oc', pod, namespace: ns } as const;
+    await this.#execDetached(target, SPAWN_ENTRYPOINT, [safeRobot, safeX, safeY, safeYaw]);
+
+    // Warm Nav2 in the background so the first Navigate click is instant (Jazzy only).
+    // The spawn already succeeded — never let pre-warm setup surface as an error.
+    try {
+      const image = await this.#openShiftDeploymentImage(ns, safeName);
+      if (image.includes('jazzy')) {
+        const pose = { x: Number(safeX), y: Number(safeY), yaw: Number(safeYaw) };
+        void this.#prewarmNav2(target, safeRobot, pose, 'jazzy');
+      }
+    } catch (err) {
+      console.error('[physical-ai] Nav2 pre-warm setup failed (non-fatal):', err);
+    }
   }
 
   async sendOpenShiftNavigationGoal(

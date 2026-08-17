@@ -46,4 +46,47 @@ model, leaving no orphans behind.
 
 ---
 
+## Item 2 — Pre-warm Nav2 at spawn (first-navigate cold-start)
+
+Spawning a robot should start warming Nav2 in the background so the **first**
+Navigate click is (near-)instant instead of paying the ~40–90 s software-render
+cold-start.
+
+### Cluster path (Deploy to OpenShift)
+
+1. Deploy `ros2-jazzy-sim`; wait until ready.
+2. Spawn `robot_1`. **Do not click Navigate yet** — start a stopwatch.
+3. Watch the pod: the Nav2 bringup should start on its own within a few seconds
+   of the spawn (no Navigate click):
+   ```bash
+   oc exec <pod> -n sgahlot-pd-extn -- \
+     bash -lc 'pgrep -af "bringup_launch.py.*namespace:=robot_1" | wc -l'   # → non-zero
+   ```
+4. Give it ~60–90 s (open noVNC, pick a target meanwhile). Confirm TF is up:
+   ```bash
+   oc exec <pod> -n sgahlot-pd-extn -- bash -lc \
+     'export HOME=/tmp/ros-home; source /opt/ros/jazzy/setup.bash; \
+      timeout 5 ros2 run tf2_ros tf2_echo map base_link \
+      -r /tf:=/robot_1/tf -r /tf_static:=/robot_1/tf_static 2>&1 | grep -m1 Translation'
+   ```
+5. **Now** click **Navigate** → it should reach the goal without the long initial
+   stall (Nav2 was already warm). Compare wall-clock to the pre-fix behaviour
+   (first click used to hang ~40–90 s before moving).
+6. **No double-launch:** confirm only **one** `bringup_launch.py` for `robot_1`
+   (re-run step 3's `pgrep` after clicking Navigate — still one stack, the click
+   reused the pre-warmed one).
+
+### Local path (Simulation page)
+
+1. Launch a Jazzy sim, open noVNC, **Add TurtleBot3** `robot_1`.
+2. Without clicking Navigate:
+   `podman exec <container> bash -lc 'pgrep -af "bringup_launch.py.*namespace:=robot_1" | wc -l'` → non-zero within a few seconds.
+3. Wait ~60 s, then **Navigate** → near-instant start.
+
+### Notes
+- **Humble** deployments must **not** pre-warm (Humble uses open-loop `cmd_vel`,
+  no Nav2). If testing a Humble image, step 3's `pgrep` should stay **0**.
+- Pre-warm never surfaces errors — if it fails, the first Navigate just pays the
+  cold-start as before (no regression).
+
 <!-- Append new items below as they are implemented. -->

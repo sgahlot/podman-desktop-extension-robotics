@@ -1710,6 +1710,28 @@ describe('PhysicalAiApiImpl', () => {
       ]);
     });
 
+    it('warms Nav2 in the background after a jazzy spawn', async () => {
+      const GZ_POSE =
+        'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
+      vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+        const argv = args as string[];
+        if (argv.some(a => typeof a === 'string' && a.includes('gz model'))) {
+          return { stdout: GZ_POSE, stderr: '', command: 'podman' } as extensionApi.RunResult;
+        }
+        // TF never ready + pgrep empty → forces a Nav2 launch.
+        return { stdout: '', stderr: '', command: 'podman' } as extensionApi.RunResult;
+      });
+
+      await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '-0.5', '0.0']);
+      // Pre-warm is fire-and-forget, parked on its first poll sleep; drive it.
+      await vi.advanceTimersByTimeAsync(1500);
+
+      const launched = vi
+        .mocked(extensionApi.process.exec)
+        .mock.calls.some(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes(NAV2_ENTRYPOINT)));
+      expect(launched).toBe(true);
+    });
+
     it('rejects arbitrary commands', async () => {
       await expect(api.execInSimulation(CONTAINER_ID, ['bash', '-c', 'id'])).rejects.toThrow(/Only /);
     });
@@ -2118,11 +2140,14 @@ describe('PhysicalAiApiImpl', () => {
       const NAME = 'ros2-jazzy-sim';
       const POD = 'ros2-jazzy-sim-abc-123';
 
-      function mockPodLookup(pod: string = POD) {
+      function mockPodLookup(pod: string = POD, image = 'quay.io/ns/ros2-jazzy-sim:noble-amd64') {
         vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
           const a = args as string[];
           if (a[0] === 'get' && a[1] === 'pods') {
             return { stdout: pod, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          if (a[0] === 'get' && a[1] === 'deployment') {
+            return { stdout: image, stderr: '', command: 'oc' } as extensionApi.RunResult;
           }
           return { stdout: '', stderr: '', command: 'oc' } as extensionApi.RunResult;
         });
@@ -2165,6 +2190,41 @@ describe('PhysicalAiApiImpl', () => {
       it('throws when no running pod is found', async () => {
         mockPodLookup('');
         await expect(api.spawnRobotInOpenShift(NS, NAME, 'robot_1', '0', '0', '0')).rejects.toThrow(/No running pod/);
+      });
+
+      it('warms Nav2 in the background after a jazzy spawn', async () => {
+        const GZ_POSE =
+          'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
+        vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+          const a = args as string[];
+          if (a[0] === 'get' && a[1] === 'pods') return { stdout: POD, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          if (a[0] === 'get' && a[1] === 'deployment')
+            return { stdout: 'quay.io/ns/ros2-jazzy-sim:noble-amd64', stderr: '', command: 'oc' } as extensionApi.RunResult;
+          const script = a.find((s): s is string => typeof s === 'string' && s.includes('source'));
+          if (script?.includes('gz model')) return { stdout: GZ_POSE, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          // TF never ready + pgrep empty → forces a Nav2 launch.
+          return { stdout: '', stderr: '', command: 'oc' } as extensionApi.RunResult;
+        });
+
+        await api.spawnRobotInOpenShift(NS, NAME, 'robot_1', '-2.0', '-0.5', '0.0');
+        // Pre-warm is fire-and-forget, parked on its first poll sleep; drive it.
+        await vi.advanceTimersByTimeAsync(1500);
+
+        const launched = vi
+          .mocked(extensionApi.process.exec)
+          .mock.calls.some(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes(NAV2_ENTRYPOINT)));
+        expect(launched).toBe(true);
+      });
+
+      it('does not warm Nav2 for a humble spawn', async () => {
+        mockPodLookup(POD, 'quay.io/ns/ros2-humble-turtlebot3:sloretz-amd64');
+        await api.spawnRobotInOpenShift(NS, NAME, 'robot_1', '-2.0', '-0.5', '0.0');
+        await vi.advanceTimersByTimeAsync(5000);
+
+        const launched = vi
+          .mocked(extensionApi.process.exec)
+          .mock.calls.some(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes(NAV2_ENTRYPOINT)));
+        expect(launched).toBe(false);
       });
     });
 
