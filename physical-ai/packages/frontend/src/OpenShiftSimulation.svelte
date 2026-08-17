@@ -13,6 +13,8 @@ let name = 'ros2-jazzy-sim';
 let namespace = 'sgahlot-pd-extn';
 let image = 'quay.io/ecosystem-appeng/ros2-jazzy-sim:noble-amd64';
 let useGpu = false;
+/** Guaranteed CPU count for the software-render pod; dial to your node sizes. */
+let cpu = 8;
 
 let previewYaml = '';
 let previewBusy = false;
@@ -33,7 +35,7 @@ let deletingName = '';
 // --- In-cluster robot spawn + Nav2, keyed by deployment name ---
 let robotsByWorkload: Record<string, RobotEntry[]> = {};
 
-$: config = { name, namespace, image, useGpu };
+$: config = { name, namespace, image, useGpu, cpu };
 $: canDeploy = !!context && !!name && !!namespace && !!image && !deploying;
 
 onMount(async () => {
@@ -257,6 +259,23 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
         <span class="text-xs pai-text-muted">
           On: request <span class="font-mono">nvidia.com/gpu</span> and use hardware rendering. Off (default): software rendering
           (llvmpipe + headless EGL), safe for a no-GPU cluster.
+        </span>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label for="dep-cpu" class="text-xs text-[var(--pd-content-text)]">Software-render CPUs</label>
+        <input
+          id="dep-cpu"
+          type="number"
+          min="1"
+          max="64"
+          step="1"
+          bind:value={cpu}
+          disabled={deploying || useGpu}
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono w-24" />
+        <span class="text-xs pai-text-muted">
+          Guaranteed CPUs (requests == limits) for the pod. Default 8; dial to your node sizes — an N-CPU pod only
+          schedules on nodes with &ge; N allocatable. Ignored when GPU is on.
         </span>
       </div>
 

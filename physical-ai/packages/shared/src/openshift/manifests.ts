@@ -51,6 +51,21 @@ export function assertImageRef(image: string): string {
 export const GPU_RESOURCE = 'nvidia.com/gpu';
 
 /**
+ * Default guaranteed CPU count for the software-render pod. Chosen because
+ * llvmpipe + Gazebo + Nav2 burst past ~6 cores and CFS throttling causes
+ * micro-stutter; 8 leaves headroom. Configurable per cluster via `config.cpu`.
+ */
+export const DEFAULT_SW_RENDER_CPU = 8;
+
+/** Validate a user-supplied CPU count: a whole number of cores in a sane range. */
+export function assertCpuCount(cpu: number): number {
+  if (typeof cpu !== 'number' || !Number.isInteger(cpu) || cpu < 1 || cpu > 64) {
+    throw new Error(`Invalid CPU count "${cpu}". Use a whole number of cores between 1 and 64.`);
+  }
+  return cpu;
+}
+
+/**
  * Build the [Deployment, Service, Route] objects for a single simulation pod.
  * Software (llvmpipe + headless EGL) rendering by default; when `config.useGpu`
  * is set the pod requests an NVIDIA GPU and the entrypoint uses hardware rendering.
@@ -83,15 +98,19 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
   // ~0.3-0.6 and the robot moves slowly and jerkily. 6 cores ran near real-time
   // but Gazebo/Ogre still size thread pools to the node's nproc (not the quota),
   // so bursts oversubscribe the quota and CFS throttling causes residual
-  // micro-stutter. 8 guaranteed cores widen the quota so those bursts fit,
-  // smoothing the stutter and leaving headroom for multi-robot scenes. (The
-  // complementary image-level fix is to cap Ogre/GZ/OMP/llvmpipe thread pools to
-  // the quota so pools stop oversubscribing at any core count.) With a GPU the
-  // render load moves off the CPU, so 2 cores is plenty.
-  const requests: Record<string, string> = useGpu ? { cpu: '1', memory: '2Gi' } : { cpu: '8', memory: '2Gi' };
+  // micro-stutter. 8 guaranteed cores (the default) widen the quota so those
+  // bursts fit, smoothing the stutter and leaving headroom for multi-robot
+  // scenes. The count is configurable via `config.cpu` so users can dial it to
+  // their node sizes (an 8-CPU Guaranteed pod only fits nodes with >=8 allocatable
+  // — see story7-multipod-openshift-architecture.md). The complementary image-level
+  // fix caps Ogre/GZ/OMP/llvmpipe thread pools to the quota so pools stop
+  // oversubscribing at any core count. With a GPU the render load moves off the
+  // CPU, so 2 cores is plenty.
+  const cpu = useGpu ? '' : String(assertCpuCount(config.cpu ?? DEFAULT_SW_RENDER_CPU));
+  const requests: Record<string, string> = useGpu ? { cpu: '1', memory: '2Gi' } : { cpu, memory: '2Gi' };
   const limits: Record<string, string> = useGpu
     ? { cpu: '2', memory: '4Gi', [GPU_RESOURCE]: '1' }
-    : { cpu: '8', memory: '4Gi' };
+    : { cpu, memory: '4Gi' };
 
   const deployment = {
     apiVersion: 'apps/v1',

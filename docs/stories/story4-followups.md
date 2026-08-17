@@ -37,9 +37,14 @@ Tackled top-down.
 - [x] Next **free** `robot_N` suggested after each spawn; duplicate names blocked.
 
 ### 5. Residual stutter from CFS throttling  *(perf — lowest priority; warm nav already smooth)*
-- [x] **Partial (in-extension): bumped software-render to 8 guaranteed CPUs** (`manifests.ts`, requests == limits == `8`). Container sees `nproc=16` but was capped at 6; Gazebo/Ogre size thread pools to nproc → bursts exceed quota → ~98% of 100ms periods throttled → micro-freezes even at avg RTF ~1.0. 8 cores widen the quota so bursts fit and leave headroom for multi-robot. **Not yet live-validated on the cluster.**
-- [ ] **Remaining (image-level, the proper fix): cap render/physics thread pools to the quota** so pools stop oversubscribing at *any* core count. Set in the sim Containerfile/entrypoint: `OMP_NUM_THREADS`, Ogre worker threads, GZ physics island threads, and `LP_NUM_THREADS` (llvmpipe/Mesa software rasterizer). Deferred — needs an image rebuild by the user; tune so the cap doesn't drop RTF. Complementary to the 8-CPU bump. See `docs/stories/story5-image-thread-caps.md`.
+- [x] **In-extension: software-render CPUs now configurable, default 8** (`manifests.ts` + `OpenShiftDeployConfig.cpu` + a **Software-render CPUs** field on the OpenShift tab). Container sees `nproc=16` but was capped at 6; Gazebo/Ogre size thread pools to nproc → bursts exceed quota → ~98% of 100ms periods throttled → micro-freezes even at avg RTF ~1.0. 8 cores (default) widen the quota so bursts fit and leave headroom for multi-robot; users can dial it to their node sizes (validated: 1–64, `assertCpuCount`). **Not yet live-validated on the cluster.**
+- [x] **Image-level (the proper fix): cap render/physics thread pools to the quota** — `entrypoint-gazebo.sh` now derives the cgroup CPU quota (v2 `cpu.max`, v1 fallback) and caps `OMP_/OPENBLAS_/LP_/MESA_/GALLIUM_NUM_THREADS` to it, so pools stop oversubscribing at *any* core count. Only caps when a quota exists (the unlimited local path is left alone); override with `PHYSICAL_AI_CPU_CAP`. Complementary to the CPU bump. See `docs/stories/story5-image-thread-caps.md`. **Needs an image rebuild + push by the user, then live-validate.**
+  - Not env-cappable: Ogre2 render workers and DART physics *island* threads (a world `<physics>` SDF setting). Revisit the world file only if stutter persists after the env caps.
 - [ ] **Alternative (real smoothness fix): GPU** — offloads the render off the CPU entirely (the `useGpu` path already requests `nvidia.com/gpu` + hardware rendering).
+
+> **Beyond a single pod:** the CPU/thread work above stabilizes one pod on one
+> node. Escaping the single-node scheduling ceiling and scaling to many robots is
+> a multi-pod problem — see `docs/stories/story7-multipod-openshift-architecture.md`.
 
 ---
 

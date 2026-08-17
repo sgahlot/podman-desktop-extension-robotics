@@ -131,23 +131,49 @@ Applies to **both** tabs (shared `RobotControls`).
 4. **Skips gaps:** with robots `robot_1` and `robot_3` present, spawning fills
    and then suggests the next free number rather than reusing a taken one.
 
-## Item 5 (partial) — 8 guaranteed CPUs for software rendering
+## Item 5 — Configurable software-render CPUs + image thread caps
 
-In-extension part only (the thread-cap image fix is deferred — see
-`story5-image-thread-caps.md`).
+Two parts: the **configurable CPU count** (in-extension, live now) and the
+**thread caps** (image-level — needs the user's rebuilt image first).
 
-1. On the **OpenShift** tab, **Preview manifests** with the GPU box **unchecked**
-   → the Deployment shows `resources.requests.cpu: "8"` and
-   `resources.limits.cpu: "8"` (was 6).
-2. Deploy, spawn a robot, **Navigate**: motion should be at least as smooth as
-   the 6-CPU build, with fewer micro-freezes during active nav. Optional, in the
-   pod during nav:
+### Configurable CPU count (extension)
+
+1. On the **OpenShift** tab, the deploy form shows a **Software-render CPUs**
+   field defaulting to **8**. With the GPU box **unchecked**, **Preview
+   manifests** → the Deployment shows `resources.requests.cpu: "8"` and
+   `resources.limits.cpu: "8"`.
+2. Change the field to **6**, **Preview** again → both now show `"6"`. (Any whole
+   number 1–64; out-of-range is rejected by `assertCpuCount`.)
+3. Tick the **GPU** box → the CPU field disables (greyed) and Preview shows
+   `cpu: "1"`/`"2"` + `nvidia.com/gpu: "1"` regardless of the field (GPU offloads
+   the render).
+4. Deploy at 8, spawn a robot, **Navigate**: motion at least as smooth as the
+   6-CPU build. Optional, in the pod during nav:
    ```bash
    oc exec <pod> -n sgahlot-pd-extn -- cat /sys/fs/cgroup/cpu.stat
    ```
    `nr_throttled` should climb more slowly than on the 6-CPU build.
-3. With the GPU box **checked**, Preview still shows `cpu: "1"`/`"2"` +
-   `nvidia.com/gpu: "1"` (unchanged — the bump is software-render only).
+5. **Scheduling note:** an N-CPU Guaranteed pod only lands on a node with ≥ N
+   *allocatable* CPU. If it sits `Pending`, lower the field or check node
+   headroom (`oc describe node`). See `story7-multipod-openshift-architecture.md`.
+
+### Thread caps (needs the rebuilt image)
+
+After the user rebuilds + pushes the sim image with the updated
+`entrypoint-gazebo.sh`:
+
+6. Deploy (software render), then in the pod:
+   ```bash
+   oc exec <pod> -n sgahlot-pd-extn -- \
+     bash -lc 'echo nproc=$(nproc); echo LP=$LP_NUM_THREADS OMP=$OMP_NUM_THREADS'
+   ```
+   `nproc` still shows the node count, but `LP`/`OMP` show the **quota** (e.g. 8),
+   and the entrypoint logged `capping render/physics thread pools to 8 CPU(s)`.
+7. During active nav, `cat /sys/fs/cgroup/cpu.stat` → `nr_throttled` grows far
+   slower than before (was ~98% of periods), RTF stays ≈ 1.0, motion smoother.
+8. **Local (podman) sanity:** no cgroup quota → the caps are *not* set (the
+   entrypoint skips the block), so a beefy laptop isn't throttled. Confirm with
+   the same `echo LP=$LP_NUM_THREADS` (empty) unless `PHYSICAL_AI_CPU_CAP` is set.
 
 <!-- Append new items below as they are implemented. -->
 

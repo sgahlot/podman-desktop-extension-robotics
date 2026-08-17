@@ -121,7 +121,7 @@ describe('buildOpenShiftManifests', () => {
     expect(container.resources.limits['nvidia.com/gpu']).toBeUndefined();
   });
 
-  it('guarantees 8 CPUs for software rendering so navigation runs smoothly', () => {
+  it('guarantees 8 CPUs by default for software rendering so navigation runs smoothly', () => {
     // llvmpipe on 2 cores collapses RTF to ~0.1 (goals never finish); 4 cores let
     // goals complete but sit at ~90% utilization during active nav, so RTF sags to
     // ~0.3-0.6 and motion is slow/jerky. 6 cores ran near real-time but Gazebo/Ogre
@@ -132,6 +132,26 @@ describe('buildOpenShiftManifests', () => {
     const container = (deployment as unknown as DeploymentManifest).spec.template.spec.containers[0];
     expect(container.resources.requests.cpu).toBe('8');
     expect(container.resources.limits.cpu).toBe('8');
+  });
+
+  it('honours a configurable software-render CPU count (requests == limits)', () => {
+    const [deployment] = buildOpenShiftManifests({ ...config, cpu: 6 });
+    const container = (deployment as unknown as DeploymentManifest).spec.template.spec.containers[0];
+    expect(container.resources.requests.cpu).toBe('6');
+    expect(container.resources.limits.cpu).toBe('6');
+  });
+
+  it('rejects an invalid CPU count', () => {
+    expect(() => buildOpenShiftManifests({ ...config, cpu: 0 })).toThrow();
+    expect(() => buildOpenShiftManifests({ ...config, cpu: 2.5 })).toThrow();
+    expect(() => buildOpenShiftManifests({ ...config, cpu: 128 })).toThrow();
+  });
+
+  it('ignores the CPU count under GPU (render offloads to the GPU)', () => {
+    const [deployment] = buildOpenShiftManifests({ ...config, useGpu: true, cpu: 16 });
+    const container = (deployment as unknown as DeploymentManifest).spec.template.spec.containers[0];
+    expect(container.resources.requests.cpu).toBe('1');
+    expect(container.resources.limits.cpu).toBe('2');
   });
 
   it('requests a GPU and uses hardware rendering when useGpu is set', () => {

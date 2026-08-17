@@ -52,6 +52,46 @@ set -u
 export TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-waffle}"
 export GZ_SIM_RESOURCE_PATH="/opt/ros/jazzy/share:/opt/ros/jazzy/share/nav2_minimal_tb3_sim/models:${GZ_SIM_RESOURCE_PATH:-}"
 
+# Cap render/physics thread pools to the CPU quota so they stop oversubscribing it
+# (Story 5 / story5-image-thread-caps.md). The container sees the node's nproc, but
+# under a cgroup CPU quota (e.g. the OpenShift Guaranteed pod) Gazebo/Ogre/llvmpipe/
+# OpenMP size their pools to nproc and burst past the quota → CFS throttling → the
+# micro-stutter seen even at avg RTF ~1.0. Widening the quota (the configurable CPU
+# count) helps; capping the pools removes the oversubscription at any core count.
+# Cap only when a quota exists — the unlimited local (podman) path has no quota and
+# no throttling, so leave it alone. Override/force with PHYSICAL_AI_CPU_CAP.
+_pai_cpu_cap() {
+  if [[ -n "${PHYSICAL_AI_CPU_CAP:-}" ]]; then
+    echo "${PHYSICAL_AI_CPU_CAP}"
+    return
+  fi
+  local q p
+  if [[ -r /sys/fs/cgroup/cpu.max ]]; then                                              # cgroup v2
+    read -r q p < /sys/fs/cgroup/cpu.max
+    if [[ "${q}" != "max" && -n "${p}" && "${p}" -gt 0 ]]; then
+      echo $(( (q + p - 1) / p ))
+      return
+    fi
+  elif [[ -r /sys/fs/cgroup/cpu/cpu.cfs_quota_us && -r /sys/fs/cgroup/cpu/cpu.cfs_period_us ]]; then  # cgroup v1
+    read -r q < /sys/fs/cgroup/cpu/cpu.cfs_quota_us
+    read -r p < /sys/fs/cgroup/cpu/cpu.cfs_period_us
+    if [[ "${q}" -gt 0 && "${p}" -gt 0 ]]; then
+      echo $(( (q + p - 1) / p ))
+      return
+    fi
+  fi
+  echo ""   # no quota (unlimited) → don't cap
+}
+PAI_CPU_CAP="$(_pai_cpu_cap)"
+if [[ -n "${PAI_CPU_CAP}" && "${PAI_CPU_CAP}" -ge 1 ]]; then
+  echo "[gazebo] capping render/physics thread pools to ${PAI_CPU_CAP} CPU(s) (cgroup quota)"
+  export OMP_NUM_THREADS="${OMP_NUM_THREADS:-${PAI_CPU_CAP}}"       # OpenMP (collision/physics libs)
+  export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-${PAI_CPU_CAP}}"
+  export LP_NUM_THREADS="${LP_NUM_THREADS:-${PAI_CPU_CAP}}"        # llvmpipe/Mesa software rasterizer (biggest hog)
+  export MESA_NUM_THREADS="${MESA_NUM_THREADS:-${PAI_CPU_CAP}}"    # some Mesa builds read this instead
+  export GALLIUM_NUM_THREADS="${GALLIUM_NUM_THREADS:-${PAI_CPU_CAP}}"
+fi
+
 # Rendering: three paths, selected by PHYSICAL_AI_USE_GPU and what GPU devices exist.
 # Server-side sensor rendering (camera/lidar) is separate from the GUI canvas:
 #   1. GPU + /dev/dri (Mac virtio-gpu passthrough) → GLX on the Xvfb display (hardware).

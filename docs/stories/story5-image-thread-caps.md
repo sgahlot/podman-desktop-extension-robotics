@@ -1,8 +1,15 @@
 # Item 5 (remaining) — Cap sim thread pools to the CPU quota
 
-**Status:** prepped, **needs an image rebuild by the user** (not doable in an
-extension-only pass). Complementary to the already-shipped 8-CPU bump
-(`manifests.ts`); see `story4-followups.md` item 5.
+**Status:** ✅ **implemented in `entrypoint-gazebo.sh`** (derive-from-cgroup form
+below) — **needs an image rebuild + push by the user**, then live-validate.
+Complementary to the configurable CPU count (`manifests.ts` + `config.cpu`,
+default 8); see `story4-followups.md` item 5 and
+`story7-multipod-openshift-architecture.md` for the multi-pod direction.
+
+The shipped block caps `OMP_/OPENBLAS_/LP_/MESA_/GALLIUM_NUM_THREADS` to the
+cgroup quota (v2 `cpu.max`, v1 `cfs_quota_us/cfs_period_us` fallback), and **only
+when a quota exists** so the unlimited local path is untouched. Override/force
+with `PHYSICAL_AI_CPU_CAP`. The reference design below is retained for context.
 
 ## Why
 

@@ -21,6 +21,14 @@ export interface OpenShiftDeployConfig {
    * (llvmpipe + headless EGL), the safe no-GPU default. See the entrypoint's render branch.
    */
   useGpu?: boolean;
+  /**
+   * Guaranteed CPU count (requests == limits) for the **software-render** pod, so
+   * users can dial it to their cluster's node sizes. Default `DEFAULT_SW_RENDER_CPU`.
+   * Ignored when `useGpu` is set (GPU offloads the render, so CPU is fixed low).
+   * See `story7-multipod-openshift-architecture.md` for why a single pod's request
+   * must fit on one node.
+   */
+  cpu?: number;
 }
 
 export interface OpenShiftDeployResult {
