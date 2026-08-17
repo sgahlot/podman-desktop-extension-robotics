@@ -96,22 +96,38 @@ fi
 # Server-side sensor rendering (camera/lidar) is separate from the GUI canvas:
 #   1. GPU + /dev/dri (Mac virtio-gpu passthrough) → GLX on the Xvfb display (hardware).
 #   2. GPU but no /dev/dri (NVIDIA GPU operator in-cluster exposes /dev/nvidia*, not DRI)
-#      → hardware rendering off-screen via EGL (--headless-rendering, NO surfaceless/llvmpipe
-#      so EGL binds the NVIDIA device). UNVERIFIED: no GPU cluster available to test.
+#      → the *server* renders sensors off-screen via EGL (--headless-rendering, NO
+#      surfaceless/llvmpipe so EGL binds the NVIDIA device), but Xvfb + the GUI are pinned
+#      to software GL (XVFB_GUI_GL): with no DRI render node, GLX against the NVIDIA driver
+#      segfaults Xvfb and takes the whole display down. So the GUI canvas is CPU-rendered
+#      here — hardware GLX for the GUI would need /dev/dri, which the operator doesn't expose.
 #   3. No GPU (in-cluster llvmpipe) → the sensors plugin's Ogre2/GL3Plus GLX
 #      createRenderWindow SIGSEGVs, taking the whole server down. Render off-screen via
 #      software EGL (surfaceless + --headless-rendering); the GUI still uses the X display.
 GZ_SERVER_RENDER_FLAG=""
+# Env prefix used to launch Xvfb and the Gazebo GUI (the X-attached parts). Empty by
+# default (they inherit the process env). On the NVIDIA no-DRI path we force these two
+# onto the software rasterizer — see that branch for why.
+XVFB_GUI_GL=()
 if [[ "${PHYSICAL_AI_USE_GPU:-0}" == "1" ]] && [[ -e /dev/dri/renderD128 ]]; then
   echo "[gazebo] GPU passthrough enabled (/dev/dri present), using hardware GLX rendering"
   unset LIBGL_ALWAYS_SOFTWARE
   unset GALLIUM_DRIVER
 elif [[ "${PHYSICAL_AI_USE_GPU:-0}" == "1" ]]; then
-  echo "[gazebo] GPU requested without /dev/dri (assuming NVIDIA), using hardware headless EGL"
+  echo "[gazebo] GPU requested without /dev/dri (assuming NVIDIA): hardware headless EGL for the server, software GL for Xvfb/GUI"
+  # The gz *server* renders sensors off-screen on the NVIDIA device via EGL. Leave
+  # LIBGL_ALWAYS_SOFTWARE/GALLIUM unset and DON'T set EGL_PLATFORM so EGL binds the
+  # NVIDIA device (not Mesa surfaceless).
   unset LIBGL_ALWAYS_SOFTWARE
   unset GALLIUM_DRIVER
-  # No EGL_PLATFORM override: let EGL pick the NVIDIA device instead of Mesa surfaceless.
   GZ_SERVER_RENDER_FLAG="--headless-rendering"
+  # Xvfb and the GUI must NOT touch the NVIDIA driver: there is no /dev/dri render
+  # node in the pod, so Xvfb's GLX init (`+extension GLX`) binds libEGL_nvidia/
+  # libnvidia-egl-gbm and SEGFAULTs, killing the whole display (openbox/x11vnc/GUI
+  # then can't open :99). Pin just these two to the software rasterizer; the server
+  # still renders sensors on the GPU. The GUI canvas is CPU-rendered here (hardware
+  # GLX for the GUI would need /dev/dri, which the NVIDIA operator doesn't expose).
+  XVFB_GUI_GL=(env LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe)
 else
   echo "[gazebo] Using software rendering (llvmpipe) with headless EGL for sensors..."
   export LIBGL_ALWAYS_SOFTWARE=1
@@ -125,7 +141,10 @@ export DISPLAY=":${DISPLAY_NUM}"
 
 # --- 1. Virtual framebuffer ---
 echo "[gazebo] Starting Xvfb on display ${DISPLAY} at ${RESOLUTION}..."
-Xvfb "${DISPLAY}" -screen 0 "${RESOLUTION}" +extension GLX +render -noreset &
+# ${XVFB_GUI_GL[@]} is an env prefix (empty except on the NVIDIA no-DRI path, where it
+# pins Xvfb's GLX to the software rasterizer so it can't segfault binding NVIDIA EGL/GBM).
+# The [@]+ guard keeps the empty-array expansion safe under `set -u` on older bash.
+"${XVFB_GUI_GL[@]+"${XVFB_GUI_GL[@]}"}" Xvfb "${DISPLAY}" -screen 0 "${RESOLUTION}" +extension GLX +render -noreset &
 XVFB_PID=$!
 sleep 2
 
@@ -206,7 +225,9 @@ fi
 echo "[gazebo] Launching Gazebo GUI..."
 for i in $(seq 1 30); do
   if gz topic -l 2>/dev/null | grep -q "/world/${WORLD_NAME}/"; then
-    gz sim -g &
+    # Same software-GL prefix as Xvfb: the GUI's GLX canvas must stay off the NVIDIA
+    # driver on the no-DRI path (no /dev/dri render node), else it can't connect to :99.
+    "${XVFB_GUI_GL[@]+"${XVFB_GUI_GL[@]}"}" gz sim -g &
     GZ_GUI_PID=$!
     echo "[gazebo] Gazebo GUI launched."
     break

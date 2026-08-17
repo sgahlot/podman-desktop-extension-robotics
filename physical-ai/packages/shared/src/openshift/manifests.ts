@@ -57,6 +57,17 @@ export const GPU_RESOURCE = 'nvidia.com/gpu';
  */
 export const DEFAULT_SW_RENDER_CPU = 8;
 
+/**
+ * Guaranteed CPU count for the GPU pod. The GPU only offloads *sensor* rendering
+ * (the gz server's off-screen EGL); on an NVIDIA-operator cluster there is no
+ * /dev/dri render node, so the Gazebo GUI canvas stays software-rendered (~2.3
+ * cores) and active Nav2 adds ~1 more. requests==limits==6 keeps that off the CFS
+ * throttle (2 cores froze the GUI, which manifested as the noVNC screen never
+ * painting). 6 fits a g5.2xlarge GPU node (~7 CPU allocatable); raise only if the
+ * node is bigger. Not user-configurable — the GPU node size, not preference, bounds it.
+ */
+export const GPU_POD_CPU = 6;
+
 /** Validate a user-supplied CPU count: a whole number of cores in a sane range. */
 export function assertCpuCount(cpu: number): number {
   if (typeof cpu !== 'number' || !Number.isInteger(cpu) || cpu < 1 || cpu > 64) {
@@ -154,12 +165,14 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
   // their node sizes (an 8-CPU Guaranteed pod only fits nodes with >=8 allocatable
   // — see story7-multipod-openshift-architecture.md). The complementary image-level
   // fix caps Ogre/GZ/OMP/llvmpipe thread pools to the quota so pools stop
-  // oversubscribing at any core count. With a GPU the render load moves off the
-  // CPU, so 2 cores is plenty.
-  const cpu = useGpu ? '' : String(assertCpuCount(config.cpu ?? DEFAULT_SW_RENDER_CPU));
-  const requests: Record<string, string> = useGpu ? { cpu: '1', memory: '2Gi' } : { cpu, memory: '2Gi' };
+  // oversubscribing at any core count. With a GPU only the *sensor* render moves
+  // off the CPU — the GUI canvas is still software-rendered on a no-DRI cluster
+  // (see entrypoint-gazebo.sh path 2), so the GPU pod still needs ~GPU_POD_CPU
+  // cores (requests==limits) or the GUI throttles and the noVNC view never paints.
+  const cpu = useGpu ? String(GPU_POD_CPU) : String(assertCpuCount(config.cpu ?? DEFAULT_SW_RENDER_CPU));
+  const requests: Record<string, string> = { cpu, memory: '2Gi' };
   const limits: Record<string, string> = useGpu
-    ? { cpu: '2', memory: '4Gi', [GPU_RESOURCE]: '1' }
+    ? { cpu, memory: '4Gi', [GPU_RESOURCE]: '1' }
     : { cpu, memory: '4Gi' };
 
   // GPU nodes are usually tainted so only GPU workloads land there; tolerate the
