@@ -264,12 +264,33 @@ else
 fi
 
 # --- 9. Launch Gazebo GUI ---
+# The GUI (gz sim -g) is the least latency-sensitive process here — it only draws
+# for the remote noVNC viewer. Under a tight CPU quota (small in-cluster nodes,
+# especially the no-DRI GPU path where the GUI canvas stays software-rendered) its
+# ~3-4 cores of llvmpipe render contend with the gz *server's* physics thread, so
+# the server gets scheduled late, the real-time factor swings (measured 0.4-1.4),
+# and the robot's motion turns jumpy (with a transient stale-pose "double" render
+# during a stall). Renicing the GUI lets physics/Nav2 win the CPU — proven live to
+# steady RTF (min 0.39 -> ~0.83). It still renders full-rate when there's slack and
+# only yields under load (x11vnc downsamples it for noVNC regardless). We can't
+# raise the server's priority instead (that needs CAP_SYS_NICE, denied in-cluster).
+# Override/disable with PHYSICAL_AI_GUI_NICE (empty = don't renice).
+PHYSICAL_AI_GUI_NICE="${PHYSICAL_AI_GUI_NICE:-19}"
+GUI_NICE=()
+if [[ -n "${PHYSICAL_AI_GUI_NICE}" ]]; then
+  if [[ "${PHYSICAL_AI_GUI_NICE}" =~ ^-?[0-9]+$ ]]; then
+    GUI_NICE=(nice -n "${PHYSICAL_AI_GUI_NICE}")
+  else
+    echo "[gazebo] WARN: ignoring invalid PHYSICAL_AI_GUI_NICE '${PHYSICAL_AI_GUI_NICE}' (want an integer)"
+  fi
+fi
 echo "[gazebo] Launching Gazebo GUI..."
 for i in $(seq 1 30); do
   if gz topic -l 2>/dev/null | grep -q "/world/${WORLD_NAME}/"; then
     # Same software-GL prefix as Xvfb: the GUI's GLX canvas must stay off the NVIDIA
     # driver on the no-DRI path (no /dev/dri render node), else it can't connect to :99.
-    "${XVFB_GUI_GL[@]+"${XVFB_GUI_GL[@]}"}" gz sim -g &
+    # ${GUI_NICE[@]} deprioritizes it so the server/Nav2 win a saturated CPU quota.
+    "${GUI_NICE[@]+"${GUI_NICE[@]}"}" "${XVFB_GUI_GL[@]+"${XVFB_GUI_GL[@]}"}" gz sim -g &
     GZ_GUI_PID=$!
     echo "[gazebo] Gazebo GUI launched."
     break
