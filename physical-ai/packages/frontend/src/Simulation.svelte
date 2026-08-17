@@ -2,7 +2,7 @@
 import { router } from 'tinro';
 import LocalSimulation from './LocalSimulation.svelte';
 import OpenShiftSimulation from './OpenShiftSimulation.svelte';
-import RelatedLinks from './lib/RelatedLinks.svelte';
+import QuickLinks from './lib/QuickLinks.svelte';
 
 $: tab = $router.path.startsWith('/simulation/openshift') ? 'openshift' : 'local';
 </script>
@@ -10,7 +10,7 @@ $: tab = $router.path.startsWith('/simulation/openshift') ? 'openshift' : 'local
 <div class="flex flex-col p-4 gap-4 h-full overflow-hidden">
   <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
   <h1 class="text-3xl text-[var(--pd-content-header)]">Simulation</h1>
-  <RelatedLinks
+  <QuickLinks
     links={[
       { label: 'Topic Monitor', to: '/topics' },
       { label: 'Image Builder', to: '/build' },
