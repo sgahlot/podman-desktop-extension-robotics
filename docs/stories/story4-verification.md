@@ -131,5 +131,24 @@ Applies to **both** tabs (shared `RobotControls`).
 4. **Skips gaps:** with robots `robot_1` and `robot_3` present, spawning fills
    and then suggests the next free number rather than reusing a taken one.
 
+## Item 5 (partial) — 8 guaranteed CPUs for software rendering
+
+In-extension part only (the thread-cap image fix is deferred — see
+`story5-image-thread-caps.md`).
+
+1. On the **OpenShift** tab, **Preview manifests** with the GPU box **unchecked**
+   → the Deployment shows `resources.requests.cpu: "8"` and
+   `resources.limits.cpu: "8"` (was 6).
+2. Deploy, spawn a robot, **Navigate**: motion should be at least as smooth as
+   the 6-CPU build, with fewer micro-freezes during active nav. Optional, in the
+   pod during nav:
+   ```bash
+   oc exec <pod> -n sgahlot-pd-extn -- cat /sys/fs/cgroup/cpu.stat
+   ```
+   `nr_throttled` should climb more slowly than on the 6-CPU build.
+3. With the GPU box **checked**, Preview still shows `cpu: "1"`/`"2"` +
+   `nvidia.com/gpu: "1"` (unchanged — the bump is software-render only).
+
 <!-- Append new items below as they are implemented. -->
+
 

@@ -80,13 +80,18 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
   // planner/controller/costmaps add ~1 more, so total demand is ~3.6 cores. A
   // 2-core cap collapses the sim to ~0.1 real-time factor (goals never finish);
   // 4 cores let goals complete but sit at ~90% utilization, so RTF sags to
-  // ~0.3-0.6 and the robot moves slowly and jerkily. 6 guaranteed cores keep
-  // ~60% utilization with headroom, so navigation runs smoothly at ~real-time.
-  // With a GPU the render load moves off the CPU, so 2 cores is plenty.
-  const requests: Record<string, string> = useGpu ? { cpu: '1', memory: '2Gi' } : { cpu: '6', memory: '2Gi' };
+  // ~0.3-0.6 and the robot moves slowly and jerkily. 6 cores ran near real-time
+  // but Gazebo/Ogre still size thread pools to the node's nproc (not the quota),
+  // so bursts oversubscribe the quota and CFS throttling causes residual
+  // micro-stutter. 8 guaranteed cores widen the quota so those bursts fit,
+  // smoothing the stutter and leaving headroom for multi-robot scenes. (The
+  // complementary image-level fix is to cap Ogre/GZ/OMP/llvmpipe thread pools to
+  // the quota so pools stop oversubscribing at any core count.) With a GPU the
+  // render load moves off the CPU, so 2 cores is plenty.
+  const requests: Record<string, string> = useGpu ? { cpu: '1', memory: '2Gi' } : { cpu: '8', memory: '2Gi' };
   const limits: Record<string, string> = useGpu
     ? { cpu: '2', memory: '4Gi', [GPU_RESOURCE]: '1' }
-    : { cpu: '6', memory: '4Gi' };
+    : { cpu: '8', memory: '4Gi' };
 
   const deployment = {
     apiVersion: 'apps/v1',

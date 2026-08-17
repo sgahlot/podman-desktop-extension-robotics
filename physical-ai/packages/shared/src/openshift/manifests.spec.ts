@@ -121,15 +121,17 @@ describe('buildOpenShiftManifests', () => {
     expect(container.resources.limits['nvidia.com/gpu']).toBeUndefined();
   });
 
-  it('guarantees 6 CPUs for software rendering so navigation runs smoothly', () => {
+  it('guarantees 8 CPUs for software rendering so navigation runs smoothly', () => {
     // llvmpipe on 2 cores collapses RTF to ~0.1 (goals never finish); 4 cores let
     // goals complete but sit at ~90% utilization during active nav, so RTF sags to
-    // ~0.3-0.6 and motion is slow/jerky. 6 guaranteed cores (requests == limits)
-    // keep ~60% utilization with headroom, so navigation runs near real-time.
+    // ~0.3-0.6 and motion is slow/jerky. 6 cores ran near real-time but Gazebo/Ogre
+    // thread pools (sized to nproc, not the quota) still burst past it, so CFS
+    // throttling left residual micro-stutter. 8 guaranteed cores (requests ==
+    // limits) widen the quota so those bursts fit, with headroom for multi-robot.
     const [deployment] = buildOpenShiftManifests(config);
     const container = (deployment as unknown as DeploymentManifest).spec.template.spec.containers[0];
-    expect(container.resources.requests.cpu).toBe('6');
-    expect(container.resources.limits.cpu).toBe('6');
+    expect(container.resources.requests.cpu).toBe('8');
+    expect(container.resources.limits.cpu).toBe('8');
   });
 
   it('requests a GPU and uses hardware rendering when useGpu is set', () => {
