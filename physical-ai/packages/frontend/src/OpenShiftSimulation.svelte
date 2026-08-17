@@ -2,6 +2,7 @@
 import { physicalAiClient } from './api/client';
 import { onMount, onDestroy } from 'svelte';
 import { simulationImageTag } from '/@shared/src/types/SimulationProfiles';
+import { DEFAULT_GPU_TOLERATION } from '/@shared/src/openshift/manifests';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import type { OpenShiftContext, OpenShiftDeployResult, OpenShiftWorkload } from '/@shared/src/types/OpenShiftDeploy';
 import RobotControls, { type RobotEntry } from './RobotControls.svelte';
@@ -19,6 +20,12 @@ let useGpu = false;
  * editable per deploy.
  */
 let cpu = 8;
+/**
+ * Taint the GPU pod must tolerate to land on a GPU node (`key[=value][:effect]`).
+ * GPU MachineSets commonly taint their nodes; without this the pod sits Pending.
+ * Only sent when GPU is enabled.
+ */
+let gpuToleration = DEFAULT_GPU_TOLERATION;
 
 let previewYaml = '';
 let previewBusy = false;
@@ -40,7 +47,7 @@ let deletingName = '';
 let robotsByWorkload: Record<string, RobotEntry[]> = {};
 let warmTimer: ReturnType<typeof setInterval> | null = null;
 
-$: config = { name, namespace, image, useGpu, cpu };
+$: config = { name, namespace, image, useGpu, cpu, gpuToleration: useGpu ? gpuToleration : undefined };
 $: canDeploy = !!context && !!name && !!namespace && !!image && !deploying;
 
 onMount(async () => {
@@ -323,6 +330,23 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
           (llvmpipe + headless EGL), safe for a no-GPU cluster.
         </span>
       </div>
+
+      {#if useGpu}
+        <div class="flex flex-col gap-1">
+          <label for="dep-gpu-tol" class="text-xs text-[var(--pd-content-text)]">GPU node taint toleration</label>
+          <input
+            id="dep-gpu-tol"
+            bind:value={gpuToleration}
+            disabled={deploying}
+            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
+          <span class="text-xs pai-text-muted">
+            <span class="font-mono">key[=value][:effect]</span> — GPU nodes are usually tainted so only GPU workloads
+            land there; without a matching toleration the pod stays Pending. Default
+            <span class="font-mono">{DEFAULT_GPU_TOLERATION}</span>; a bare <span class="font-mono">key:effect</span>
+            tolerates it via <span class="font-mono">Exists</span>.
+          </span>
+        </div>
+      {/if}
 
       <div class="flex flex-col gap-1">
         <label for="dep-cpu" class="text-xs text-[var(--pd-content-text)]">Software-render CPUs</label>

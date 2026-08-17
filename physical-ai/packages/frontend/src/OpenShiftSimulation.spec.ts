@@ -101,7 +101,7 @@ describe('OpenShiftSimulation', () => {
     });
   });
 
-  it('passes useGpu when the GPU checkbox is ticked', async () => {
+  it('passes useGpu and the default GPU toleration when the GPU checkbox is ticked', async () => {
     mockDeployToOpenShift.mockResolvedValue({
       name: 'ros2-jazzy-sim',
       namespace: 'sgahlot-pd-extn',
@@ -114,7 +114,27 @@ describe('OpenShiftSimulation', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Deploy' }));
 
     await waitFor(() => {
-      expect(mockDeployToOpenShift).toHaveBeenCalledWith(expect.objectContaining({ useGpu: true }));
+      expect(mockDeployToOpenShift).toHaveBeenCalledWith(
+        expect.objectContaining({ useGpu: true, gpuToleration: 'g5-gpu=true:NoSchedule' }),
+      );
+    });
+  });
+
+  it('omits the GPU toleration on the software-render path', async () => {
+    mockDeployToOpenShift.mockResolvedValue({
+      name: 'ros2-jazzy-sim',
+      namespace: 'sgahlot-pd-extn',
+      applied: ['Deployment', 'Service', 'Route'],
+      message: 'Deployed',
+    });
+    render(DeployOpenShift);
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
+
+    await waitFor(() => {
+      expect(mockDeployToOpenShift).toHaveBeenCalledWith(
+        expect.objectContaining({ useGpu: false, gpuToleration: undefined }),
+      );
     });
   });
 

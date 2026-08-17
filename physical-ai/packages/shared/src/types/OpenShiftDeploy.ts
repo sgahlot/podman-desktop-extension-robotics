@@ -29,6 +29,14 @@ export interface OpenShiftDeployConfig {
    * must fit on one node.
    */
   cpu?: number;
+  /**
+   * Taint the GPU pod must tolerate to land on a GPU node, as `key[=value][:effect]`
+   * (e.g. `g5-gpu=true:NoSchedule`). GPU MachineSets commonly taint their nodes so
+   * only GPU workloads schedule there; without a matching toleration the pod sits
+   * Pending. Only used when `useGpu` is set; defaults to `DEFAULT_GPU_TOLERATION`.
+   * A bare `key:effect` (no value) tolerates the taint via `Exists`.
+   */
+  gpuToleration?: string;
 }
 
 export interface OpenShiftDeployResult {

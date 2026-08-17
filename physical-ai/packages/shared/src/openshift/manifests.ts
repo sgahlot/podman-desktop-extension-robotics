@@ -66,6 +66,56 @@ export function assertCpuCount(cpu: number): number {
 }
 
 /**
+ * Default GPU-node taint to tolerate. GPU MachineSets taint their nodes so only
+ * GPU workloads land there; this matches the common `g5-gpu=true:NoSchedule`
+ * taint. Override per cluster via `config.gpuToleration`.
+ */
+export const DEFAULT_GPU_TOLERATION = 'g5-gpu=true:NoSchedule';
+
+/** Taint effects Kubernetes accepts on a toleration. */
+const TOLERATION_EFFECTS = ['NoSchedule', 'PreferNoSchedule', 'NoExecute'];
+
+/** A single Kubernetes toleration object (the shape the pod spec expects). */
+export interface KubeToleration {
+  key: string;
+  operator: 'Equal' | 'Exists';
+  value?: string;
+  effect: string;
+}
+
+// A taint/label key: optional DNS-subdomain prefix ('/') then a name segment.
+const TOLERATION_KEY_RE = /^([a-z0-9]([a-z0-9.-]*[a-z0-9])?\/)?[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$/;
+
+/**
+ * Parse a `key[=value][:effect]` toleration spec into a Kubernetes toleration.
+ * With a value → `Equal`; without → `Exists`. `effect` defaults to `NoSchedule`.
+ * The effect is split off first (only when it's a known effect), so keys that
+ * contain a '/' prefix (e.g. `nvidia.com/gpu`) parse correctly.
+ */
+export function parseGpuToleration(raw: string): KubeToleration {
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    throw new Error(`Invalid GPU toleration "${raw}". Expected key[=value][:effect], e.g. g5-gpu=true:NoSchedule.`);
+  }
+  let rest = raw.trim();
+  let effect = 'NoSchedule';
+  const colon = rest.lastIndexOf(':');
+  if (colon !== -1) {
+    const maybeEffect = rest.slice(colon + 1);
+    if (TOLERATION_EFFECTS.includes(maybeEffect)) {
+      effect = maybeEffect;
+      rest = rest.slice(0, colon);
+    }
+  }
+  const eq = rest.indexOf('=');
+  const key = eq === -1 ? rest : rest.slice(0, eq);
+  const value = eq === -1 ? undefined : rest.slice(eq + 1);
+  if (!TOLERATION_KEY_RE.test(key)) {
+    throw new Error(`Invalid GPU toleration key "${key}". Use a taint key like g5-gpu or nvidia.com/gpu.`);
+  }
+  return value !== undefined ? { key, operator: 'Equal', value, effect } : { key, operator: 'Exists', effect };
+}
+
+/**
  * Build the [Deployment, Service, Route] objects for a single simulation pod.
  * Software (llvmpipe + headless EGL) rendering by default; when `config.useGpu`
  * is set the pod requests an NVIDIA GPU and the entrypoint uses hardware rendering.
@@ -112,6 +162,11 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
     ? { cpu: '2', memory: '4Gi', [GPU_RESOURCE]: '1' }
     : { cpu, memory: '4Gi' };
 
+  // GPU nodes are usually tainted so only GPU workloads land there; tolerate the
+  // taint or the pod sits Pending on the only nodes that have a GPU. Software pods
+  // don't want a GPU node, so no toleration there.
+  const tolerations = useGpu ? [parseGpuToleration(config.gpuToleration ?? DEFAULT_GPU_TOLERATION)] : undefined;
+
   const deployment = {
     apiVersion: 'apps/v1',
     kind: 'Deployment',
@@ -122,6 +177,7 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
       template: {
         metadata: { labels },
         spec: {
+          ...(tolerations ? { tolerations } : {}),
           containers: [
             {
               name: 'sim',

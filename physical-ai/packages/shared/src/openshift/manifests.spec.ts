@@ -4,6 +4,7 @@ import {
   assertK8sName,
   assertNamespace,
   assertImageRef,
+  parseGpuToleration,
   toYaml,
   manifestsToYaml,
   NOVNC_CONTAINER_PORT,
@@ -18,6 +19,7 @@ interface DeploymentManifest {
   spec: {
     template: {
       spec: {
+        tolerations?: { key: string; operator: string; value?: string; effect: string }[];
         containers: {
           image: string;
           command: string[];
@@ -167,6 +169,32 @@ describe('buildOpenShiftManifests', () => {
     expect(container.resources.limits.cpu).toBe('2');
   });
 
+  it('tolerates the default GPU-node taint when useGpu is set', () => {
+    const [deployment] = buildOpenShiftManifests({ ...config, useGpu: true });
+    const spec = (deployment as unknown as DeploymentManifest).spec.template.spec;
+    expect(spec.tolerations).toEqual([{ key: 'g5-gpu', operator: 'Equal', value: 'true', effect: 'NoSchedule' }]);
+  });
+
+  it('honors a custom GPU toleration', () => {
+    const [deployment] = buildOpenShiftManifests({
+      ...config,
+      useGpu: true,
+      gpuToleration: 'nvidia.com/gpu:NoSchedule',
+    });
+    const spec = (deployment as unknown as DeploymentManifest).spec.template.spec;
+    expect(spec.tolerations).toEqual([{ key: 'nvidia.com/gpu', operator: 'Exists', effect: 'NoSchedule' }]);
+  });
+
+  it('adds no toleration on the software-render path', () => {
+    const spec = (buildOpenShiftManifests(config)[0] as unknown as DeploymentManifest).spec.template.spec;
+    expect(spec.tolerations).toBeUndefined();
+  });
+
+  it('rejects an invalid GPU toleration', () => {
+    expect(() => buildOpenShiftManifests({ ...config, useGpu: true, gpuToleration: '' })).toThrow();
+    expect(() => buildOpenShiftManifests({ ...config, useGpu: true, gpuToleration: 'BAD KEY=x' })).toThrow();
+  });
+
   it('exposes the noVNC port via an edge-terminated Route', () => {
     const [, service, route] = buildOpenShiftManifests(config);
     expect((service as unknown as ServiceManifest).spec.ports[0].port).toBe(NOVNC_CONTAINER_PORT);
@@ -188,6 +216,49 @@ describe('buildOpenShiftManifests', () => {
     expect(() => buildOpenShiftManifests({ ...config, name: 'BAD' })).toThrow();
     expect(() => buildOpenShiftManifests({ ...config, namespace: 'BAD NS' })).toThrow();
     expect(() => buildOpenShiftManifests({ ...config, image: 'evil; rm -rf /' })).toThrow();
+  });
+});
+
+describe('parseGpuToleration', () => {
+  it('parses key=value:effect as an Equal toleration', () => {
+    expect(parseGpuToleration('g5-gpu=true:NoSchedule')).toEqual({
+      key: 'g5-gpu',
+      operator: 'Equal',
+      value: 'true',
+      effect: 'NoSchedule',
+    });
+  });
+
+  it('parses a bare key:effect as an Exists toleration', () => {
+    expect(parseGpuToleration('nvidia.com/gpu:NoExecute')).toEqual({
+      key: 'nvidia.com/gpu',
+      operator: 'Exists',
+      effect: 'NoExecute',
+    });
+  });
+
+  it('defaults the effect to NoSchedule when omitted', () => {
+    expect(parseGpuToleration('g5-gpu=true')).toEqual({
+      key: 'g5-gpu',
+      operator: 'Equal',
+      value: 'true',
+      effect: 'NoSchedule',
+    });
+  });
+
+  it('does not treat a prefixed key as an effect', () => {
+    // The ':' split only fires for a known effect, so nvidia.com/gpu stays whole.
+    expect(parseGpuToleration('nvidia.com/gpu')).toEqual({
+      key: 'nvidia.com/gpu',
+      operator: 'Exists',
+      effect: 'NoSchedule',
+    });
+  });
+
+  it('rejects empty or malformed specs', () => {
+    expect(() => parseGpuToleration('')).toThrow();
+    expect(() => parseGpuToleration('   ')).toThrow();
+    expect(() => parseGpuToleration('bad key=x')).toThrow();
   });
 });
 
