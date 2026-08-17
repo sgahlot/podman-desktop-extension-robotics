@@ -96,38 +96,77 @@ fi
 # Server-side sensor rendering (camera/lidar) is separate from the GUI canvas:
 #   1. GPU + /dev/dri (Mac virtio-gpu passthrough) → GLX on the Xvfb display (hardware).
 #   2. GPU but no /dev/dri (NVIDIA GPU operator in-cluster exposes /dev/nvidia*, not DRI)
-#      → the *server* renders sensors off-screen via EGL (--headless-rendering, NO
-#      surfaceless/llvmpipe so EGL binds the NVIDIA device), but Xvfb + the GUI are pinned
-#      to software GL (XVFB_GUI_GL): with no DRI render node, GLX against the NVIDIA driver
-#      segfaults Xvfb and takes the whole display down. So the GUI canvas is CPU-rendered
-#      here — hardware GLX for the GUI would need /dev/dri, which the operator doesn't expose.
+#      → the *server* renders sensors off-screen via EGL pinned to the NVIDIA vendor
+#      (--headless-rendering), while Xvfb + the GUI are pinned to the Mesa vendor
+#      (software). With no DRI render node, letting Xvfb's GLX init bind the NVIDIA EGL
+#      driver segfaults it and takes the whole display down. glvnd picks the EGL vendor by
+#      priority number, which varies by cluster, so we resolve each vendor's ICD by name
+#      and select it explicitly per process (see _pai_find_egl_vendor). The GUI canvas is
+#      CPU-rendered here — hardware GLX for the GUI would need /dev/dri, which the operator
+#      doesn't expose.
 #   3. No GPU (in-cluster llvmpipe) → the sensors plugin's Ogre2/GL3Plus GLX
 #      createRenderWindow SIGSEGVs, taking the whole server down. Render off-screen via
 #      software EGL (surfaceless + --headless-rendering); the GUI still uses the X display.
+# Resolve a glvnd EGL vendor ICD by name, e.g. _pai_find_egl_vendor nvidia. glvnd
+# picks the vendor by the *lowest priority number* in egl_vendor.d, and that numbering
+# is NOT stable across clusters/base images (Mesa could be 10_ and NVIDIA 50_, or vice
+# versa). So we never rely on the order — we look the vendor up by name and pin it
+# explicitly via __EGL_VENDOR_LIBRARY_FILENAMES. Prints the first match, or nothing.
+_pai_find_egl_vendor() {  # $1: vendor substring (nvidia|mesa)
+  local d f
+  for d in /usr/share/glvnd/egl_vendor.d /etc/glvnd/egl_vendor.d; do
+    [[ -d "${d}" ]] || continue
+    for f in "${d}"/*"$1"*.json; do
+      [[ -e "${f}" ]] && { echo "${f}"; return 0; }   # -e guards the no-match literal glob
+    done
+  done
+  return 1
+}
+
 GZ_SERVER_RENDER_FLAG=""
-# Env prefix used to launch Xvfb and the Gazebo GUI (the X-attached parts). Empty by
-# default (they inherit the process env). On the NVIDIA no-DRI path we force these two
-# onto the software rasterizer — see that branch for why.
+# Env prefixes used to launch the parts with distinct GL/EGL needs. Empty by default
+# (they inherit the process env); populated only on the NVIDIA no-DRI path, where the
+# server is pinned to the NVIDIA EGL vendor and Xvfb/GUI to the Mesa (software) vendor.
 XVFB_GUI_GL=()
+GZ_SERVER_GL=()
 if [[ "${PHYSICAL_AI_USE_GPU:-0}" == "1" ]] && [[ -e /dev/dri/renderD128 ]]; then
   echo "[gazebo] GPU passthrough enabled (/dev/dri present), using hardware GLX rendering"
   unset LIBGL_ALWAYS_SOFTWARE
   unset GALLIUM_DRIVER
 elif [[ "${PHYSICAL_AI_USE_GPU:-0}" == "1" ]]; then
-  echo "[gazebo] GPU requested without /dev/dri (assuming NVIDIA): hardware headless EGL for the server, software GL for Xvfb/GUI"
+  echo "[gazebo] GPU requested without /dev/dri (assuming NVIDIA): NVIDIA EGL for the server, Mesa (software) GL for Xvfb/GUI"
   # The gz *server* renders sensors off-screen on the NVIDIA device via EGL. Leave
   # LIBGL_ALWAYS_SOFTWARE/GALLIUM unset and DON'T set EGL_PLATFORM so EGL binds the
   # NVIDIA device (not Mesa surfaceless).
   unset LIBGL_ALWAYS_SOFTWARE
   unset GALLIUM_DRIVER
   GZ_SERVER_RENDER_FLAG="--headless-rendering"
-  # Xvfb and the GUI must NOT touch the NVIDIA driver: there is no /dev/dri render
-  # node in the pod, so Xvfb's GLX init (`+extension GLX`) binds libEGL_nvidia/
-  # libnvidia-egl-gbm and SEGFAULTs, killing the whole display (openbox/x11vnc/GUI
-  # then can't open :99). Pin just these two to the software rasterizer; the server
-  # still renders sensors on the GPU. The GUI canvas is CPU-rendered here (hardware
-  # GLX for the GUI would need /dev/dri, which the NVIDIA operator doesn't expose).
-  XVFB_GUI_GL=(env LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe)
+
+  _mesa_egl="$(_pai_find_egl_vendor mesa || true)"
+  _nvidia_egl="$(_pai_find_egl_vendor nvidia || true)"
+
+  # Server → NVIDIA vendor, pinned by name so its headless EGL binds the GPU even on a
+  # cluster where Mesa has the lower glvnd priority number.
+  if [[ -n "${_nvidia_egl}" ]]; then
+    echo "[gazebo]   server EGL vendor: ${_nvidia_egl}"
+    GZ_SERVER_GL=(env "__EGL_VENDOR_LIBRARY_FILENAMES=${_nvidia_egl}")
+  else
+    echo "[gazebo]   WARN: no NVIDIA EGL vendor ICD found; server EGL falls back to glvnd's default order"
+  fi
+
+  # Xvfb + GUI → Mesa vendor (software). There is no /dev/dri render node in an NVIDIA
+  # operator pod, so if Xvfb's GLX init (`+extension GLX`) lets glvnd pick the NVIDIA
+  # EGL vendor it binds libEGL_nvidia/libnvidia-egl-gbm and SEGFAULTs, taking the whole
+  # display down (openbox/x11vnc/GUI then can't open the display). LIBGL_ALWAYS_SOFTWARE/
+  # GALLIUM steer only Mesa's GL/GLX, NOT glvnd's EGL vendor choice, so we must also pin
+  # __EGL_VENDOR_LIBRARY_FILENAMES at the Mesa ICD. The GUI canvas is CPU-rendered here.
+  XVFB_GUI_GL=(env LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe __GLX_VENDOR_LIBRARY_NAME=mesa)
+  if [[ -n "${_mesa_egl}" ]]; then
+    echo "[gazebo]   Xvfb/GUI EGL vendor: ${_mesa_egl}"
+    XVFB_GUI_GL+=("__EGL_VENDOR_LIBRARY_FILENAMES=${_mesa_egl}")
+  else
+    echo "[gazebo]   WARN: no Mesa EGL vendor ICD found; Xvfb may crash binding the NVIDIA EGL driver"
+  fi
 else
   echo "[gazebo] Using software rendering (llvmpipe) with headless EGL for sensors..."
   export LIBGL_ALWAYS_SOFTWARE=1
@@ -172,10 +211,13 @@ xacro -o "${WORLD_SDF}" \
   "/opt/ros2-demo/worlds/tb3_sandbox.sdf.xacro"
 
 echo "[gazebo] Starting Gazebo server..."
-# ${GZ_SERVER_RENDER_FLAG} is intentionally unquoted: empty → no arg (GPU path),
-# or "--headless-rendering" (software path). The value never contains spaces.
+# ${GZ_SERVER_GL[@]} is an env prefix (empty except on the NVIDIA no-DRI path, where it
+# pins the server's headless EGL to the NVIDIA vendor). ${GZ_SERVER_RENDER_FLAG} is
+# intentionally unquoted: empty → no arg (GPU+DRI path), or "--headless-rendering". The
+# value never contains spaces. The [@]+ guard keeps the empty-array expansion safe under
+# `set -u` on older bash.
 # shellcheck disable=SC2086
-gz sim -r -s ${GZ_SERVER_RENDER_FLAG} "${WORLD_SDF}" &
+"${GZ_SERVER_GL[@]+"${GZ_SERVER_GL[@]}"}" gz sim -r -s ${GZ_SERVER_RENDER_FLAG} "${WORLD_SDF}" &
 GZ_SERVER_PID=$!
 
 # --- 7. Wait for Gazebo to be ready ---
