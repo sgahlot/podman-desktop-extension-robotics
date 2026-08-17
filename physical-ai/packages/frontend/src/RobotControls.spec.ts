@@ -77,32 +77,41 @@ describe('RobotControls', () => {
     await waitFor(() => expect(onRemove).toHaveBeenCalledWith(0));
   });
 
-  it('shows the Nav2 warm-status badge while warming and when ready', () => {
+  it('hides the nav controls while warming, then reveals them when ready', () => {
     const { rerender } = render(RobotControls, {
       robots: [robot('robot_1', { warmStatus: 'warming' })],
       onSpawn: vi.fn(),
       onNavigate: vi.fn(),
       onRemove: vi.fn(),
     });
+    // Warming: only the indicator, no Navigate/Remove/target inputs.
     expect(screen.getByText('Nav2 warming…')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Navigate' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
+    expect(screen.queryByLabelText('target X for robot_1')).toBeNull();
 
+    // Ready: controls appear, and there's no leftover "ready" badge text.
     rerender({
       robots: [robot('robot_1', { warmStatus: 'ready' })],
       onSpawn: vi.fn(),
       onNavigate: vi.fn(),
       onRemove: vi.fn(),
     });
-    expect(screen.getByText('Nav2 ready')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Navigate' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove' })).toBeTruthy();
+    expect(screen.queryByText('Nav2 ready')).toBeNull();
+    expect(screen.queryByText('Nav2 warming…')).toBeNull();
   });
 
-  it('shows "Waiting for Nav2…" when navigating during warm-up', () => {
+  it('keeps the nav controls available when pre-warm failed', () => {
     render(RobotControls, {
-      robots: [robot('robot_1', { navStatus: 'navigating', warmStatus: 'warming' })],
+      robots: [robot('robot_1', { warmStatus: 'failed' })],
       onSpawn: vi.fn(),
       onNavigate: vi.fn(),
       onRemove: vi.fn(),
     });
-    expect(screen.getByText('Waiting for Nav2…')).toBeTruthy();
+    expect(screen.getByText('Nav2 warm-up failed')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Navigate' })).toBeTruthy();
   });
 
   it('uses the custom spawn label', () => {

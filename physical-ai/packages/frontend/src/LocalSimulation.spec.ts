@@ -186,7 +186,8 @@ describe('LocalSimulation', () => {
     expect(screen.queryByText('Launch a simulation first to add robots.')).toBeNull();
   });
 
-  it('shows Navigate on spawned robots when a simulation is running', async () => {
+  it('shows Navigate on spawned robots once Nav2 has warmed up', async () => {
+    vi.useFakeTimers();
     mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
     mockListSimulationContainers.mockResolvedValue([
       {
@@ -199,10 +200,20 @@ describe('LocalSimulation', () => {
       },
     ]);
     mockExecInSimulation.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
+    // Pre-warm reports ready so the nav controls are revealed after a poll tick.
+    mockGetRobotWarmStatus.mockResolvedValue('ready');
 
     render(SimulationPage);
-    await screen.findByRole('button', { name: 'Add TurtleBot3' });
+    await vi.advanceTimersByTimeAsync(100); // onMount + container list
+
     await fireEvent.click(screen.getByRole('button', { name: 'Add TurtleBot3' }));
-    expect(await screen.findByRole('button', { name: 'Navigate' })).toBeTruthy();
+    await vi.advanceTimersByTimeAsync(0); // let the spawn promise settle
+
+    // Jazzy spawn is optimistically 'warming' → Navigate hidden until warm.
+    expect(screen.queryByRole('button', { name: 'Navigate' })).toBeNull();
+
+    // Warm-status poll flips it to 'ready' → controls appear.
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(screen.getByRole('button', { name: 'Navigate' })).toBeTruthy();
   });
 });

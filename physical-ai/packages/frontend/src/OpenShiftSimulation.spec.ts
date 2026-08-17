@@ -119,14 +119,19 @@ describe('OpenShiftSimulation', () => {
   });
 
   it('spawns a robot into a ready workload and then navigates it', async () => {
-    mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
-    mockSendOpenShiftNavigationGoal.mockResolvedValue({ status: 'reached', message: 'ok' });
+    vi.useFakeTimers();
+    try {
+      mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
+      mockSendOpenShiftNavigationGoal.mockResolvedValue({ status: 'reached', message: 'ok' });
+      // Pre-warm reports ready so the nav controls are revealed after a poll tick.
+      mockGetRobotWarmStatusInOpenShift.mockResolvedValue('ready');
 
-    render(DeployOpenShift);
-    const spawnBtn = await screen.findByRole('button', { name: 'Spawn' });
-    await fireEvent.click(spawnBtn);
+      render(DeployOpenShift);
+      await vi.advanceTimersByTimeAsync(100); // onMount + initial list
 
-    await waitFor(() => {
+      await fireEvent.click(screen.getByRole('button', { name: 'Spawn' }));
+      await vi.advanceTimersByTimeAsync(0); // let the spawn promise settle
+
       expect(mockSpawnRobotInOpenShift).toHaveBeenCalledWith(
         'sgahlot-pd-extn',
         'ros2-jazzy-sim',
@@ -135,12 +140,15 @@ describe('OpenShiftSimulation', () => {
         '-0.5',
         '0.0',
       );
-    });
 
-    const navBtn = await screen.findByRole('button', { name: 'Navigate' });
-    await fireEvent.click(navBtn);
+      // Jazzy spawn is optimistically 'warming' → Navigate hidden until warm.
+      expect(screen.queryByRole('button', { name: 'Navigate' })).toBeNull();
 
-    await waitFor(() => {
+      // Warm-status poll flips it to 'ready' → controls appear.
+      await vi.advanceTimersByTimeAsync(3000);
+      await fireEvent.click(screen.getByRole('button', { name: 'Navigate' }));
+      await vi.advanceTimersByTimeAsync(0);
+
       expect(mockSendOpenShiftNavigationGoal).toHaveBeenCalledWith(
         'sgahlot-pd-extn',
         'ros2-jazzy-sim',
@@ -148,8 +156,10 @@ describe('OpenShiftSimulation', () => {
         2.0,
         0.5,
       );
-    });
-    expect(await screen.findByText(/Reached/)).toBeTruthy();
+      expect(screen.getByText(/Reached/)).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('surfaces spawn errors', async () => {

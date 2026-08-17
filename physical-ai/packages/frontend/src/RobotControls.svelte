@@ -156,63 +156,63 @@ async function remove(index: number) {
           <span class="font-mono font-medium text-[var(--pd-content-header)]">{robot.name}</span>
           <span class="pai-text-muted">spawned at ({robot.x}, {robot.y})</span>
           {#if robot.warmStatus === 'warming'}
+            <!-- Still warming: show only the indicator; hide the nav controls so the
+                 user can't fire a goal before Nav2 is up (which stutters/queues). -->
             <span
               class="inline-flex items-center gap-1 pai-text-accent"
-              title="Nav2 is starting in the background; Navigate will fire as soon as it's ready.">
+              title="Nav2 is starting in the background; navigation controls appear once it's ready.">
               <span class="inline-block w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>
               Nav2 warming…
             </span>
-          {:else if robot.warmStatus === 'ready'}
+          {:else}
+            {#if robot.warmStatus === 'failed'}
+              <!-- Pre-warm gave up; controls stay available (the goal can still cold-start Nav2). -->
+              <span class="pai-text-warning" title="Nav2 pre-warm didn't complete; Navigate may cold-start it.">
+                Nav2 warm-up failed
+              </span>
+            {/if}
+            <span class="pai-text-muted">→</span>
+            <input
+              aria-label="target X for {robot.name}"
+              bind:value={robot.navTarget.x}
+              disabled={robot.navStatus === 'navigating'}
+              class="w-14 px-2 py-1 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
+            <input
+              aria-label="target Y for {robot.name}"
+              bind:value={robot.navTarget.y}
+              disabled={robot.navStatus === 'navigating'}
+              class="w-14 px-2 py-1 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
+            <button
+              on:click={() => navigate(i)}
+              disabled={robot.navStatus === 'navigating'}
+              class="pai-btn pai-btn-primary text-xs">
+              Navigate
+            </button>
+            <button
+              on:click={() => remove(i)}
+              disabled={removing[robot.name] || robot.navStatus === 'navigating'}
+              class="pai-btn pai-btn-danger text-xs">
+              {removing[robot.name] ? 'Removing…' : 'Remove'}
+            </button>
             <span
-              class="inline-flex items-center gap-1 pai-text-success"
-              title="Nav2 is up; the first Navigate is instant.">
-              <span class="inline-block w-1.5 h-1.5 rounded-full bg-current"></span>
-              Nav2 ready
+              class={robot.navStatus === 'reached'
+                ? 'pai-text-success'
+                : robot.navStatus === 'failed'
+                  ? 'pai-text-error'
+                  : robot.navStatus === 'navigating'
+                    ? 'pai-text-accent'
+                    : 'pai-text-muted'}>
+              {robot.navStatus === 'navigating'
+                ? 'Navigating…'
+                : robot.navStatus === 'reached'
+                  ? robot.navReached
+                    ? `Reached (${robot.navReached.x}, ${robot.navReached.y})`
+                    : 'Reached'
+                  : robot.navStatus === 'failed'
+                    ? 'Failed'
+                    : 'Idle'}
             </span>
           {/if}
-          <span class="pai-text-muted">→</span>
-          <input
-            aria-label="target X for {robot.name}"
-            bind:value={robot.navTarget.x}
-            disabled={robot.navStatus === 'navigating'}
-            class="w-14 px-2 py-1 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
-          <input
-            aria-label="target Y for {robot.name}"
-            bind:value={robot.navTarget.y}
-            disabled={robot.navStatus === 'navigating'}
-            class="w-14 px-2 py-1 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
-          <button
-            on:click={() => navigate(i)}
-            disabled={robot.navStatus === 'navigating'}
-            class="pai-btn pai-btn-primary text-xs">
-            Navigate
-          </button>
-          <button
-            on:click={() => remove(i)}
-            disabled={removing[robot.name] || robot.navStatus === 'navigating'}
-            class="pai-btn pai-btn-danger text-xs">
-            {removing[robot.name] ? 'Removing…' : 'Remove'}
-          </button>
-          <span
-            class={robot.navStatus === 'reached'
-              ? 'pai-text-success'
-              : robot.navStatus === 'failed'
-                ? 'pai-text-error'
-                : robot.navStatus === 'navigating'
-                  ? 'pai-text-accent'
-                  : 'pai-text-muted'}>
-            {robot.navStatus === 'navigating'
-              ? robot.warmStatus === 'warming'
-                ? 'Waiting for Nav2…'
-                : 'Navigating…'
-              : robot.navStatus === 'reached'
-                ? robot.navReached
-                  ? `Reached (${robot.navReached.x}, ${robot.navReached.y})`
-                  : 'Reached'
-                : robot.navStatus === 'failed'
-                  ? 'Failed'
-                  : 'Idle'}
-          </span>
         </div>
       {/each}
     </div>
