@@ -960,6 +960,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return this.#sendCmdVelNavigationGoal(target, safeRobot, x, y, distro);
   }
 
+  async despawnRobot(containerId: string, robotName: string): Promise<void> {
+    const { id, image } = await this.#resolveSimulationContainer(containerId);
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    await this.#teardownRobot({ kind: 'podman', id }, robotName, distro);
+  }
+
   async #sendNav2NavigationGoal(
     target: ExecTarget,
     robotName: string,
@@ -1140,6 +1146,47 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       return { x: nums[0], y: nums[1], yaw: nums[5] };
     }
     throw new Error(`Could not read pose for robot "${robotName}". Is it spawned in Gazebo?`);
+  }
+
+  /**
+   * Tear down a spawned robot: kill its namespaced ROS processes (the spawn
+   * launch, `robot_state_publisher`, the Nav2 bringup tree, and both entrypoint
+   * wrappers) and remove its model from the Gazebo world. Best-effort — a robot
+   * may be partially up (spawned, no Nav2) or already gone.
+   */
+  async #teardownRobot(target: ExecTarget, robotName: string, distro: SupportedRosDistro): Promise<void> {
+    const safeRobot = assertRobotName(robotName);
+    // Every ROS process for a robot carries its name in a bounded token: the
+    // spawn/Nav2 launches (`namespace:=<R>`, `robot_name:=<R>`), the namespaced
+    // nodes (`__ns:=/<R>`), or the entrypoint wrappers (positional arg). Match on
+    // a right boundary so tearing down `robot_1` never touches `robot_10`. Robot
+    // names are [A-Za-z0-9_-], so there are no ERE metacharacters to escape. The
+    // pattern intentionally omits a bare `/<R>/` branch so it can't match the
+    // pkill shell's own argv (which carries this pattern); the transient
+    // initialpose publisher is a child of the Nav2 wrapper and dies with it.
+    const pattern = `(namespace:=|robot_name:=|__ns:=/|entrypoint-(spawn-robot|nav2)\\.sh )${safeRobot}([ /:]|$)`;
+    // SIGTERM first (the entrypoint scripts trap it and reap their children),
+    // then SIGKILL any straggler. pkill exits non-zero when nothing matches —
+    // swallow it so a partially-up or already-gone robot isn't an error.
+    await this.#execAttached(target, [
+      'bash',
+      '-c',
+      'pkill -TERM -f "$1" || true; sleep 2; pkill -KILL -f "$1" || true',
+      '_',
+      pattern,
+    ]);
+
+    // Remove the model from the world so the GUI drops it too. Discover the world
+    // name from the live topic list so a custom WORLD_NAME still works.
+    await this.#execRosBash(
+      target,
+      distro,
+      'world=$(gz topic -l 2>/dev/null | sed -n "s#^/world/\\([^/]*\\)/.*#\\1#p" | head -n1); ' +
+        'if [ -n "$world" ]; then ' +
+        'gz service -s "/world/$world/remove" --reqtype gz.msgs.Entity --reptype gz.msgs.Boolean ' +
+        '--timeout 3000 --req "name: \\"$1\\", type: MODEL" >/dev/null 2>&1 || true; fi',
+      [safeRobot],
+    );
   }
 
   /**
@@ -1502,6 +1549,16 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       return this.#sendNav2NavigationGoal(target, safeRobot, x, y, distro);
     }
     return this.#sendCmdVelNavigationGoal(target, safeRobot, x, y, distro);
+  }
+
+  async despawnRobotInOpenShift(namespace: string, name: string, robotName: string): Promise<void> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeRobot = assertRobotName(robotName);
+    const image = await this.#openShiftDeploymentImage(ns, safeName);
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName);
+    await this.#teardownRobot({ kind: 'oc', pod, namespace: ns }, safeRobot, distro);
   }
 
   /** Name of a Running pod for the deployment (selected by the `app=<name>` label). */

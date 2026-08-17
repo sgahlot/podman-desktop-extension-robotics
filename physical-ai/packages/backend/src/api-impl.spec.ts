@@ -1637,6 +1637,51 @@ describe('PhysicalAiApiImpl', () => {
     });
   });
 
+  describe('despawnRobot (local)', () => {
+    const CONTAINER_ID = 'abc123def456';
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as unknown as extensionApi.ContainerInfo[]);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '',
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+    });
+
+    it('kills the robot processes (TERM then KILL) with a boundary-anchored pattern and removes the model', async () => {
+      await api.despawnRobot(CONTAINER_ID, 'robot_1');
+
+      const calls = vi.mocked(extensionApi.process.exec).mock.calls;
+      const pkillCall = calls.find(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes('pkill')));
+      expect(pkillCall).toBeDefined();
+      const pkillA = pkillCall![1] as string[];
+      expect(pkillA[0]).toBe('exec');
+      const script = pkillA.find(a => typeof a === 'string' && a.includes('pkill'))!;
+      expect(script).toContain('pkill -TERM -f "$1"');
+      expect(script).toContain('pkill -KILL -f "$1"');
+      const pattern = pkillA[pkillA.length - 1];
+      // Right boundary so robot_1 never matches robot_10, and no bare `/robot/`
+      // branch so the pattern can't match the pkill shell's own argv.
+      expect(pattern).toContain('robot_1([ /:]|$)');
+      expect(pattern).toContain('__ns:=/');
+      expect(pattern).toContain('entrypoint-(spawn-robot|nav2)');
+      expect(pattern).not.toContain('/robot_1/');
+
+      const gzCall = calls.find(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes('gz service')));
+      expect(gzCall).toBeDefined();
+      const gzScript = (gzCall![1] as string[]).find(a => typeof a === 'string' && a.includes('gz service'))!;
+      expect(gzScript).toContain('/world/$world/remove');
+      expect(gzScript).toContain('type: MODEL');
+    });
+
+    it('rejects an injectable robot name', async () => {
+      await expect(api.despawnRobot(CONTAINER_ID, 'robot;id')).rejects.toThrow(/robot name/i);
+    });
+  });
+
   describe('execInSimulation security', () => {
     const CONTAINER_ID = 'abc123def456';
 
@@ -2120,6 +2165,46 @@ describe('PhysicalAiApiImpl', () => {
       it('throws when no running pod is found', async () => {
         mockPodLookup('');
         await expect(api.spawnRobotInOpenShift(NS, NAME, 'robot_1', '0', '0', '0')).rejects.toThrow(/No running pod/);
+      });
+    });
+
+    describe('despawnRobotInOpenShift', () => {
+      const NS = 'sgahlot-pd-extn';
+      const NAME = 'ros2-jazzy-sim';
+      const POD = 'ros2-jazzy-sim-abc-123';
+
+      function mockOc(image = 'quay.io/ns/ros2-jazzy-sim:noble-amd64') {
+        vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+          const a = args as string[];
+          if (a[0] === 'get' && a[1] === 'deployment') {
+            return { stdout: image, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          if (a[0] === 'get' && a[1] === 'pods') {
+            return { stdout: POD, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          return { stdout: '', stderr: '', command: 'oc' } as extensionApi.RunResult;
+        });
+      }
+
+      it('resolves the pod then kills processes and removes the model over oc exec', async () => {
+        mockOc();
+        await api.despawnRobotInOpenShift(NS, NAME, 'robot_1');
+
+        const calls = vi.mocked(extensionApi.process.exec).mock.calls;
+        const pkillCall = calls.find(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes('pkill')));
+        expect(pkillCall).toBeDefined();
+        expect((pkillCall![1] as string[]).slice(0, 5)).toEqual(['exec', '-n', NS, POD, '--']);
+
+        const gzCall = calls.find(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes('gz service')));
+        expect(gzCall).toBeDefined();
+        const gzScript = (gzCall![1] as string[]).find(a => typeof a === 'string' && a.includes('gz service'))!;
+        // oc path gets the writable HOME prefix so `gz` can source ROS under HOME=/.
+        expect(gzScript).toContain('export HOME=/tmp/ros-home');
+      });
+
+      it('rejects an injectable robot name before touching the cluster', async () => {
+        await expect(api.despawnRobotInOpenShift(NS, NAME, 'robot;id')).rejects.toThrow(/robot name/i);
+        expect(extensionApi.process.exec).not.toHaveBeenCalled();
       });
     });
 

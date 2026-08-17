@@ -40,6 +40,7 @@ let robotsByWorkload: Record<string, OcSpawnedRobot[]> = {};
 let spawnFormByWorkload: Record<string, SpawnForm> = {};
 let spawnBusy: Record<string, boolean> = {};
 let spawnError: Record<string, string> = {};
+let removingRobot: Record<string, boolean> = {};
 
 function newSpawnForm(): SpawnForm {
   return { name: 'robot_1', x: '-2.0', y: '-0.5', yaw: '0.0', counter: 1 };
@@ -168,6 +169,28 @@ async function spawnRobot(w: OpenShiftWorkload) {
   } finally {
     spawnBusy[w.name] = false;
     spawnBusy = spawnBusy;
+  }
+}
+
+async function removeRobot(w: OpenShiftWorkload, index: number) {
+  const robots = robotsByWorkload[w.name];
+  const robot = robots?.[index];
+  if (!robot) return;
+  const key = `${w.name}:${robot.name}`;
+  removingRobot[key] = true;
+  removingRobot = removingRobot;
+  spawnError[w.name] = '';
+  spawnError = spawnError;
+  try {
+    await physicalAiClient.despawnRobotInOpenShift(w.namespace, w.name, robot.name);
+    robotsByWorkload[w.name] = robots.filter((_, i) => i !== index);
+    robotsByWorkload = robotsByWorkload;
+  } catch (e) {
+    spawnError[w.name] = e instanceof Error ? e.message : 'Remove failed';
+    spawnError = spawnError;
+  } finally {
+    removingRobot[key] = false;
+    removingRobot = removingRobot;
   }
 }
 
@@ -422,6 +445,12 @@ async function navigateRobot(w: OpenShiftWorkload, index: number) {
                             on:click={() => navigateRobot(w, i)}
                             disabled={robot.navStatus === 'navigating'}
                             class="pai-btn text-xs">Navigate</button>
+                          <button
+                            on:click={() => removeRobot(w, i)}
+                            disabled={removingRobot[`${w.name}:${robot.name}`] || robot.navStatus === 'navigating'}
+                            class="pai-btn pai-btn-danger text-xs">
+                            {removingRobot[`${w.name}:${robot.name}`] ? 'Removing…' : 'Remove'}
+                          </button>
                           <span
                             class={robot.navStatus === 'reached'
                               ? 'pai-text-success'

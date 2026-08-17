@@ -59,6 +59,8 @@ export abstract class PhysicalAiApi {
     x: number,
     y: number,
   ): Promise<NavigationGoalResult>;
+  /** Tear down a spawned robot: kill its ROS processes and remove its Gazebo model. */
+  abstract despawnRobot(containerId: string, robotName: string): Promise<void>;
 
   // --- OpenShift deployment (APPENG-5777) ---
   /** Current Kubernetes/OpenShift context from the kubeconfig, or undefined if none. */
@@ -88,4 +90,6 @@ export abstract class PhysicalAiApi {
     x: number,
     y: number,
   ): Promise<NavigationGoalResult>;
+  /** Tear down a robot in a deployed pod: kill its ROS processes and remove its Gazebo model. */
+  abstract despawnRobotInOpenShift(namespace: string, name: string, robotName: string): Promise<void>;
 }

@@ -25,6 +25,7 @@ let robotYaw = '0.0';
 let spawning = false;
 let spawnStatus = '';
 let robotCounter = 1;
+let removingRobot: Record<string, boolean> = {};
 let spawnedRobots: Array<{
   name: string;
   x: string;
@@ -167,6 +168,24 @@ async function spawnRobot() {
     spawnStatus = `Error: ${e instanceof Error ? e.message : String(e)}`;
   } finally {
     spawning = false;
+  }
+}
+
+async function removeRobot(index: number) {
+  if (!runningContainer) return;
+  const robot = spawnedRobots[index];
+  if (!robot || robot.navStatus === 'navigating') return;
+  removingRobot[robot.name] = true;
+  removingRobot = removingRobot;
+  spawnStatus = '';
+  try {
+    await physicalAiClient.despawnRobot(runningContainer.id, robot.name);
+    spawnedRobots = spawnedRobots.filter((_, i) => i !== index);
+  } catch (e) {
+    spawnStatus = `Error: ${e instanceof Error ? e.message : String(e)}`;
+  } finally {
+    removingRobot[robot.name] = false;
+    removingRobot = removingRobot;
   }
 }
 
@@ -360,6 +379,12 @@ async function navigateRobot(index: number) {
                 <div class="text-xs text-[var(--pd-content-text)] flex items-center gap-2">
                   <span class="font-mono font-medium">{robot.name}</span>
                   <span class="pai-text-muted">spawned at ({robot.x}, {robot.y})</span>
+                  <button
+                    on:click={() => removeRobot(i)}
+                    disabled={removingRobot[robot.name] || robot.navStatus === 'navigating'}
+                    class="pai-btn pai-btn-danger pai-btn-sm ml-auto">
+                    {removingRobot[robot.name] ? 'Removing…' : 'Remove'}
+                  </button>
                 </div>
                 <div class="flex items-end gap-2">
                   <div class="flex flex-col gap-0.5">
