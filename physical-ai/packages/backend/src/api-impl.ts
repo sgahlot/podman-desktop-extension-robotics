@@ -87,6 +87,14 @@ const PROGRESS_RETENTION_MS = 30_000;
 const NAV2_TF_POLL_ATTEMPTS = 120;
 
 /**
+ * Settle after clearing the Nav2 costmaps on a cold start, so they refill from
+ * live (good-TF) scans before navigation plans on them. The local costmap updates
+ * at 5 Hz and the global at 1 Hz, so ~2 s covers at least one good global refill.
+ * Only paid once per fresh Nav2 bringup (the warm path skips the clear entirely).
+ */
+const NAV2_COSTMAP_REFILL_MS = 2000;
+
+/**
  * First non-empty string among the arguments, or '' if none.
  * Preserves the "skip blank" behavior of `a || b` for strings (which `??` does not).
  */
@@ -1065,36 +1073,69 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   ): Promise<void> {
     // Do not trust action list alone — other sim containers on the default ROS domain
     // can expose /robot_N/navigate_to_pose before this container's Nav2 stack is up.
+    // Warm path: TF already present → costmaps are already stable (a warm sim threads
+    // the world with zero progress failures), so return without clearing.
     if (await this.#hasMapBaseLinkTf(target, robotName, distro)) {
       return;
     }
 
-    if (await this.#isNav2BringupRunning(target, robotName, distro)) {
-      for (let attempt = 0; attempt < NAV2_TF_POLL_ATTEMPTS; attempt++) {
-        await PhysicalAiApiImpl.#sleep(1000);
-        if (await this.#hasMapBaseLinkTf(target, robotName, distro)) {
-          return;
-        }
-      }
-      throw new Error(`Nav2 bringup for "${robotName}" is running but map→base_link TF never became available.`);
+    // Cold path: either a bringup is already in flight (e.g. pre-warm) or we launch
+    // one now. Both funnel through the same TF wait + a one-time costmap clear.
+    const bringupRunning = await this.#isNav2BringupRunning(target, robotName, distro);
+    if (!bringupRunning) {
+      await this.#execDetached(target, NAV2_ENTRYPOINT, [robotName], {
+        PHYSICAL_AI_SPAWN_X: pose.x.toFixed(4),
+        PHYSICAL_AI_SPAWN_Y: pose.y.toFixed(4),
+      });
     }
-
-    await this.#execDetached(target, NAV2_ENTRYPOINT, [robotName], {
-      PHYSICAL_AI_SPAWN_X: pose.x.toFixed(4),
-      PHYSICAL_AI_SPAWN_Y: pose.y.toFixed(4),
-    });
 
     for (let attempt = 0; attempt < NAV2_TF_POLL_ATTEMPTS; attempt++) {
       await PhysicalAiApiImpl.#sleep(1000);
       if (await this.#hasMapBaseLinkTf(target, robotName, distro)) {
+        // Cold-start artifact: the first laser scans get marked into the costmaps
+        // while TF is still settling, leaving phantom obstacles that box the robot
+        // in. MPPI then can't make progress, so its SimpleProgressChecker aborts
+        // (0.5 m in 10 s) and Nav2's recovery clears the costmaps — burning ~20 s of
+        // "jumping in place" over a couple of abort/clear cycles before the first
+        // goal moves. Do that clear proactively now that TF is up (then let the maps
+        // refill from good-TF scans), so the first Navigate starts from the same
+        // clean state a warm one has. Verified live: the clear services unblock MPPI
+        // and warm costmaps navigate with zero progress failures.
+        await this.#clearNav2Costmaps(target, robotName, distro);
         return;
       }
     }
 
     throw new Error(
-      `Nav2 stack for "${robotName}" did not become ready (map→base_link TF missing). ` +
-        'Stop other sim containers or use a fresh simulation before Go.',
+      bringupRunning
+        ? `Nav2 bringup for "${robotName}" is running but map→base_link TF never became available.`
+        : `Nav2 stack for "${robotName}" did not become ready (map→base_link TF missing). ` +
+            'Stop other sim containers or use a fresh simulation before Go.',
     );
+  }
+
+  /**
+   * Clear both Nav2 costmaps for a robot, then briefly settle so they refill from
+   * live (good-TF) scans before navigation plans on them. Called once per cold Nav2
+   * bringup to drop the startup phantom obstacles that otherwise trap MPPI in
+   * progress-checker/recovery churn on the first goal (see #ensureNav2Running).
+   * Best-effort: logs and swallows errors — a clear hiccup must never block Navigate.
+   */
+  async #clearNav2Costmaps(target: ExecTarget, robotName: string, distro: SupportedRosDistro): Promise<void> {
+    const safeRobot = assertRobotName(robotName);
+    try {
+      await this.#execRosBash(
+        target,
+        distro,
+        'for cm in local_costmap/clear_entirely_local_costmap global_costmap/clear_entirely_global_costmap; do ' +
+          'timeout 15 ros2 service call "/$1/$cm" nav2_msgs/srv/ClearEntireCostmap "{}" >/dev/null 2>&1 || true; ' +
+          'done',
+        [safeRobot],
+      );
+      await PhysicalAiApiImpl.#sleep(NAV2_COSTMAP_REFILL_MS);
+    } catch (err) {
+      console.error(`[physical-ai] Nav2 costmap clear for "${robotName}" failed (non-fatal):`, err);
+    }
   }
 
   /**

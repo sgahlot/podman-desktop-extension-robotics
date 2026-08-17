@@ -1625,8 +1625,8 @@ describe('PhysicalAiApiImpl', () => {
       mockNav2Exec({ tfReadyInitially: false });
 
       const promise = api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
-      await vi.advanceTimersByTimeAsync(1000);
-      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(1000); // TF poll → becomes ready
+      await vi.advanceTimersByTimeAsync(2000); // cold-start costmap-clear refill settle
       const result = await promise;
 
       expect(result.status).toBe('reached');
@@ -1644,6 +1644,49 @@ describe('PhysicalAiApiImpl', () => {
         true,
       );
       expect(detachedArgs.some(a => a.startsWith('PHYSICAL_AI_SPAWN_Y='))).toBe(true);
+    });
+
+    it('clears both costmaps once on a cold start, before sending the goal', async () => {
+      mockNav2Exec({ tfReadyInitially: false });
+
+      const promise = api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
+      await vi.advanceTimersByTimeAsync(1000); // TF poll → becomes ready
+      await vi.advanceTimersByTimeAsync(2000); // costmap-clear refill settle
+      const result = await promise;
+      expect(result.status).toBe('reached');
+
+      const calls = vi.mocked(extensionApi.process.exec).mock.calls;
+      const clearCall = calls.find(c =>
+        (c[1] as string[] | undefined)?.some(
+          a => typeof a === 'string' && a.includes('clear_entirely_local_costmap'),
+        ),
+      );
+      expect(clearCall).toBeDefined();
+      const clearCmd = (clearCall![1] as string[]).find(a => a.includes('clear_entirely_local_costmap'))!;
+      expect(clearCmd).toContain('clear_entirely_global_costmap');
+      expect(clearCmd).toContain('/$1/'); // robot name passed positionally, not interpolated
+      expect(clearCall![1]).toContain('robot_1');
+
+      // The clear must precede the navigation goal.
+      const clearIdx = calls.indexOf(clearCall!);
+      const goalIdx = calls.findIndex(c =>
+        (c[1] as string[] | undefined)?.some(a => typeof a === 'string' && a.includes('send_goal')),
+      );
+      expect(goalIdx).toBeGreaterThan(clearIdx);
+    });
+
+    it('does not clear costmaps on the warm path (TF already present)', async () => {
+      mockNav2Exec({ tfReadyInitially: true });
+
+      const result = await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
+      expect(result.status).toBe('reached');
+
+      const clearCall = vi
+        .mocked(extensionApi.process.exec)
+        .mock.calls.find(c =>
+          (c[1] as string[] | undefined)?.some(a => typeof a === 'string' && a.includes('clear_entirely')),
+        );
+      expect(clearCall).toBeUndefined();
     });
 
     it('returns already-at-target when distance is tiny', async () => {
