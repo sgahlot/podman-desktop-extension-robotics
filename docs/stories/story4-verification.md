@@ -139,9 +139,11 @@ Two parts: the **configurable CPU count** (in-extension, live now) and the
 ### Configurable CPU count (extension)
 
 1. On the **OpenShift** tab, the deploy form shows a **Software-render CPUs**
-   field defaulting to **8**. With the GPU box **unchecked**, **Preview
-   manifests** → the Deployment shows `resources.requests.cpu: "8"` and
-   `resources.limits.cpu: "8"`.
+   field defaulting to **8** — its value is **seeded from Preferences → Physical
+   AI → Default software-render CPUs** (change that setting to e.g. 5, reopen the
+   tab → the field now starts at 5), and it stays editable per deploy. With the
+   GPU box **unchecked**, **Preview manifests** → the Deployment shows
+   `resources.requests.cpu: "8"` and `resources.limits.cpu: "8"`.
 2. Change the field to **6**, **Preview** again → both now show `"6"`. (Any whole
    number 1–64; out-of-range is rejected by `assertCpuCount`.)
 3. Tick the **GPU** box → the CPU field disables (greyed) and Preview shows
@@ -156,6 +158,17 @@ Two parts: the **configurable CPU count** (in-extension, live now) and the
 5. **Scheduling note:** an N-CPU Guaranteed pod only lands on a node with ≥ N
    *allocatable* CPU. If it sits `Pending`, lower the field or check node
    headroom (`oc describe node`). See `story7-multipod-openshift-architecture.md`.
+   > **Observed 2026-08-17 on the demo cluster:** an 8-CPU deploy went `Pending`
+   > with `0/18 nodes are available … 5 Insufficient cpu` (the other 13 nodes are
+   > tainted: masters, OCS storage, `g5-gpu`, `worker-hp`). The 5 schedulable
+   > 16-core workers were 61–74% requested, so the most free on any one was
+   > ~5970m — below 8000m. **Fix used: set the field to 5** (fits today) or 4 for
+   > headroom. A live confirmation that the configurable field is load-bearing and
+   > that story7's multi-pod split is the durable fix. Quick check:
+   > ```bash
+   > oc get nodes -o custom-columns='NAME:.metadata.name,CPU:.status.allocatable.cpu,TAINTS:.spec.taints[*].key'
+   > oc describe node <schedulable-worker> | grep -A6 'Allocated resources' | grep 'cpu '
+   > ```
 
 ### Thread caps (needs the rebuilt image)
 

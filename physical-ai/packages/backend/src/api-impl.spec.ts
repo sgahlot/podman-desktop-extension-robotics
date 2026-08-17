@@ -1354,6 +1354,29 @@ describe('PhysicalAiApiImpl', () => {
     });
   });
 
+  describe('getDefaultSoftwareRenderCpus', () => {
+    it('returns the built-in default when unset', async () => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue(undefined),
+      } as unknown as extensionApi.Configuration);
+      expect(await api.getDefaultSoftwareRenderCpus()).toBe(8);
+    });
+
+    it('returns a valid configured value', async () => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue(5),
+      } as unknown as extensionApi.Configuration);
+      expect(await api.getDefaultSoftwareRenderCpus()).toBe(5);
+    });
+
+    it('falls back to the default when the setting is out of range', async () => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue(0),
+      } as unknown as extensionApi.Configuration);
+      expect(await api.getDefaultSoftwareRenderCpus()).toBe(8);
+    });
+  });
+
   describe('getRosMessageSchema', () => {
     const CONTAINER_ID = 'abc123def456';
 

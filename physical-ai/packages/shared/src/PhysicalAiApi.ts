@@ -35,6 +35,8 @@ export abstract class PhysicalAiApi {
   abstract getTopicPeekTimeoutSeconds(): Promise<number>;
   /** Validates and persists peek timeout (1–30). Throws a user-facing error if out of range. */
   abstract setTopicPeekTimeoutSeconds(seconds: number): Promise<void>;
+  /** Default software-render CPU count that seeds the OpenShift deploy form (Preferences: physical-ai.defaultSoftwareRenderCpus, 1–64). */
+  abstract getDefaultSoftwareRenderCpus(): Promise<number>;
   abstract getSimulationConfig(): Promise<SimulationConfig>;
   abstract saveSimulationConfig(config: SimulationConfig): Promise<void>;
   abstract launchSimulation(imageTag: string, containerName: string, options?: SimLaunchOptions): Promise<string>;

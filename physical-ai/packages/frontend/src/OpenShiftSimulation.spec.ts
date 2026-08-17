@@ -5,6 +5,7 @@ import DeployOpenShift from './OpenShiftSimulation.svelte';
 const mockGetOpenShiftContext = vi.fn();
 const mockGetDefaultNamespace = vi.fn();
 const mockGetSimulationConfig = vi.fn();
+const mockGetDefaultSoftwareRenderCpus = vi.fn();
 const mockListOpenShiftDeployments = vi.fn();
 const mockDeployToOpenShift = vi.fn();
 const mockDeleteOpenShiftDeployment = vi.fn();
@@ -18,6 +19,7 @@ vi.mock('./api/client', () => ({
     getOpenShiftContext: (...args: unknown[]) => mockGetOpenShiftContext(...args),
     getDefaultNamespace: (...args: unknown[]) => mockGetDefaultNamespace(...args),
     getSimulationConfig: (...args: unknown[]) => mockGetSimulationConfig(...args),
+    getDefaultSoftwareRenderCpus: (...args: unknown[]) => mockGetDefaultSoftwareRenderCpus(...args),
     generateOpenShiftManifests: vi.fn(),
     listOpenShiftDeployments: (...args: unknown[]) => mockListOpenShiftDeployments(...args),
     deployToOpenShift: (...args: unknown[]) => mockDeployToOpenShift(...args),
@@ -47,6 +49,7 @@ describe('OpenShiftSimulation', () => {
     vi.resetAllMocks();
     mockGetOpenShiftContext.mockResolvedValue({ context: 'ctx', kubeconfigPath: '/k/config' });
     mockGetDefaultNamespace.mockResolvedValue('sgahlot-pd-extn');
+    mockGetDefaultSoftwareRenderCpus.mockResolvedValue(8);
     // Keep the default image (avoids exercising simulationImageTag here).
     mockGetSimulationConfig.mockRejectedValue(new Error('no config'));
     mockListOpenShiftDeployments.mockResolvedValue([]);

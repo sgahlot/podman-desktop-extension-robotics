@@ -13,7 +13,11 @@ let name = 'ros2-jazzy-sim';
 let namespace = 'sgahlot-pd-extn';
 let image = 'quay.io/ecosystem-appeng/ros2-jazzy-sim:noble-amd64';
 let useGpu = false;
-/** Guaranteed CPU count for the software-render pod; dial to your node sizes. */
+/**
+ * Guaranteed CPU count for the software-render pod; dial to your node sizes.
+ * Seeded from the physical-ai.defaultSoftwareRenderCpus setting on mount, then
+ * editable per deploy.
+ */
 let cpu = 8;
 
 let previewYaml = '';
@@ -43,6 +47,12 @@ onMount(async () => {
     context = await physicalAiClient.getOpenShiftContext();
   } catch {
     context = undefined;
+  }
+  // Seed the CPU field from the configurable default (still editable per deploy).
+  try {
+    cpu = await physicalAiClient.getDefaultSoftwareRenderCpus();
+  } catch {
+    // keep the built-in default
   }
   // Default the image to the current sim config's amd64 tag, when resolvable.
   try {
@@ -274,8 +284,8 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
           disabled={deploying || useGpu}
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono w-24" />
         <span class="text-xs pai-text-muted">
-          Guaranteed CPUs (requests == limits) for the pod. Default 8; dial to your node sizes — an N-CPU pod only
-          schedules on nodes with &ge; N allocatable. Ignored when GPU is on.
+          Guaranteed CPUs (requests == limits) for the pod. Seeded from Preferences (Default software-render CPUs); dial
+          to your node sizes — an N-CPU pod only schedules on nodes with &ge; N allocatable. Ignored when GPU is on.
         </span>
       </div>
 

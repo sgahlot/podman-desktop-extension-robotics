@@ -34,6 +34,8 @@ import {
   manifestsToYaml,
   assertNamespace,
   assertK8sName,
+  assertCpuCount,
+  DEFAULT_SW_RENDER_CPU,
   PART_OF_LABEL,
   PART_OF_VALUE,
 } from '/@shared/src/openshift/manifests';
@@ -590,6 +592,21 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const safe = assertPeekTimeoutSeconds(seconds);
     const config = extensionApi.configuration.getConfiguration('physical-ai');
     await config.update('topicPeekTimeoutSeconds', safe);
+  }
+
+  async getDefaultSoftwareRenderCpus(): Promise<number> {
+    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const raw = config.get<number>('defaultSoftwareRenderCpus');
+    if (raw === undefined) {
+      return DEFAULT_SW_RENDER_CPU;
+    }
+    // Fall back to the built-in default if the setting is somehow out of range,
+    // rather than throwing — this only seeds the form (deploy still validates).
+    try {
+      return assertCpuCount(raw);
+    } catch {
+      return DEFAULT_SW_RENDER_CPU;
+    }
   }
 
   async launchSimulation(imageTag: string, containerName: string, options?: SimLaunchOptions): Promise<string> {

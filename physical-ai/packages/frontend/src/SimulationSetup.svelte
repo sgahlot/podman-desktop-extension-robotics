@@ -3,6 +3,7 @@ import { physicalAiClient } from './api/client';
 import { onMount, tick } from 'svelte';
 import { router } from 'tinro';
 import BuildPushPanel from './lib/BuildPushPanel.svelte';
+import RelatedLinks from './lib/RelatedLinks.svelte';
 import {
   resolveSimulationProfile,
   hasSimulationSupport,
@@ -139,6 +140,11 @@ async function applyQuickStart(arch?: TargetArch) {
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
   <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
   <h1 class="text-3xl text-[var(--pd-content-header)]">Image Builder</h1>
+  <RelatedLinks
+    links={[
+      { label: 'Image Catalog', to: '/images' },
+      { label: 'Simulation', to: '/simulation' },
+    ]} />
   <p class="text-sm text-[var(--pd-content-text)]">
     Configure, build, and push ROS2 base and simulation container images.
   </p>

@@ -96,6 +96,13 @@
           "type": "boolean",
           "default": true,
           "description": "On Apple Silicon (arm64), pass /dev/dri into simulation containers and use virtio-gpu rendering when available. Disable to force software rendering (llvmpipe). Ignored on amd64 (always software GL)."
+        },
+        "physical-ai.defaultSoftwareRenderCpus": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 64,
+          "default": 8,
+          "description": "Default guaranteed CPU count (requests == limits) for the software-render OpenShift sim pod. Seeds the Software-render CPUs field on the Simulation → OpenShift tab, where it can still be adjusted per deploy. An N-CPU pod only schedules on a node with ≥ N allocatable CPU. Ignored when the cluster-has-a-GPU toggle is on."
         }
       }
     }

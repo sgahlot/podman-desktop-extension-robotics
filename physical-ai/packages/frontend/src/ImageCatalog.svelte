@@ -4,6 +4,7 @@ import { onMount, onDestroy } from 'svelte';
 import { router } from 'tinro';
 import type { QuayRepository, QuayTag, PullProgress } from '/@shared/src/types/ImageCatalog';
 import { filterCuratedRepos, type CatalogViewMode, DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
+import RelatedLinks from './lib/RelatedLinks.svelte';
 
 let namespace = '';
 let filter = '';
@@ -242,6 +243,7 @@ onDestroy(() => {
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
   <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
   <h1 class="text-3xl text-[var(--pd-content-header)]">Image Catalog</h1>
+  <RelatedLinks links={[{ label: 'Image Builder', to: '/build' }]} />
   <p class="text-sm text-[var(--pd-content-text)]">
     Browse and pull ROS2 container images from a Quay.io organization. Bases are Ubuntu interim today (Fedora/RHEL
     migration is tracked separately).

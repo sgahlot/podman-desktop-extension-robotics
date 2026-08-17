@@ -62,7 +62,7 @@ The root `Containerfile` builds an OCI image of the extension. The backend `READ
 
 ## Settings
 
-11 configuration properties under **Settings → Preferences → Physical AI**:
+12 configuration properties under **Settings → Preferences → Physical AI**:
 
 | Preference | Purpose |
 |------------|---------|
@@ -72,6 +72,7 @@ The root `Containerfile` builds an OCI image of the extension. The backend `READ
 | Simulation image allowlist | Optional tag/digest pins for Simulation launch |
 | Topic peek timeout | Seconds for Topic Monitor Peek (1–30, default 5) |
 | Simulation GPU passthrough | On arm64 Mac, pass `/dev/dri` and use virtio-gpu (default on). Disable to force llvmpipe |
+| Default software-render CPUs | Guaranteed CPU count (1–64, default 8) seeding the Software-render CPUs field on the OpenShift tab |
 | Image Builder defaults | Robot, distro, middleware, engine, base preset |
 
 ### Simulation image trust
