@@ -32,6 +32,7 @@ Tackled top-down.
 - [x] "Deployed to…/Open …" result panel persists after delete → cleared when its deployment is deleted.
 - [x] Collapsible "Manifest preview" → Hide/Show toggle.
 - [x] Rename "Deploy to OpenShift" card/page → unified into the **Simulation** page's **OpenShift** tab.
+- [x] **Auto-refresh the deployed-workloads list** — the OpenShift tab now polls `listOpenShiftDeployments` every 3 s (folded into the warm-status timer) via a `silent` refresh (no busy flicker; keeps the last-known list on a transient `oc` error). A just-deployed workload flips to ready and reveals its **Robots** spawn section on its own — no manual **Refresh** click. The manual button still does a normal (busy-indicated) refresh. Test added.
 
 ### ~~4. Spawn name field auto-increment~~  ✅ done (see above)
 - [x] Next **free** `robot_N` suggested after each spawn; duplicate names blocked.

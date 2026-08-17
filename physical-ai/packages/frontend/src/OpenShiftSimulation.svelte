@@ -67,7 +67,12 @@ onMount(async () => {
   }
   loading = false;
   refreshWorkloads();
-  warmTimer = setInterval(pollWarmStatus, 3000);
+  // Auto-refresh the deployment list + robot warm-status so a newly-ready
+  // deployment reveals its Robots section without a manual Refresh click.
+  warmTimer = setInterval(async () => {
+    await refreshWorkloads({ silent: true });
+    await pollWarmStatus();
+  }, 3000);
 });
 
 onDestroy(() => {
@@ -135,15 +140,24 @@ async function deploy() {
   }
 }
 
-async function refreshWorkloads() {
+/**
+ * Refresh the deployed-workloads list. `silent` (used by the auto-refresh timer)
+ * skips the busy indicator and, on a transient error, keeps the last-known list
+ * instead of clearing it — so the periodic poll never flickers the UI.
+ */
+async function refreshWorkloads(opts?: { silent?: boolean }) {
+  const silent = opts?.silent ?? false;
   if (!namespace) {
     workloads = [];
     return;
   }
-  listBusy = true;
-  listError = '';
+  if (!silent) {
+    listBusy = true;
+    listError = '';
+  }
   try {
     workloads = await physicalAiClient.listOpenShiftDeployments(namespace);
+    listError = '';
     // Drop robot state for deployments that no longer exist; seed the rest.
     const names = new Set(workloads.map(w => w.name));
     for (const key of Object.keys(robotsByWorkload)) {
@@ -153,11 +167,19 @@ async function refreshWorkloads() {
       robotsByWorkload[w.name] ??= [];
     }
     robotsByWorkload = robotsByWorkload;
+    // Drop a stale result panel if its deployment is gone.
+    if (deployedName && !names.has(deployedName)) {
+      deployResult = null;
+      deployedName = '';
+    }
   } catch (e) {
-    listError = e instanceof Error ? e.message : 'Failed to list deployments';
-    workloads = [];
+    if (!silent) {
+      listError = e instanceof Error ? e.message : 'Failed to list deployments';
+      workloads = [];
+    }
+    // silent: keep the last-known list; a transient oc hiccup shouldn't blank the UI.
   } finally {
-    listBusy = false;
+    if (!silent) listBusy = false;
   }
 }
 
@@ -276,7 +298,7 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
         <input
           id="dep-ns"
           bind:value={namespace}
-          on:change={refreshWorkloads}
+          on:change={() => refreshWorkloads()}
           disabled={deploying}
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
       </div>
@@ -369,7 +391,7 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
     <div class="max-w-2xl flex flex-col gap-2">
       <div class="flex flex-row items-center gap-3">
         <h2 class="text-xl text-[var(--pd-content-header)]">Deployed simulations</h2>
-        <button on:click={refreshWorkloads} disabled={listBusy || !namespace} class="pai-btn text-sm">
+        <button on:click={() => refreshWorkloads()} disabled={listBusy || !namespace} class="pai-btn text-sm">
           {listBusy ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>

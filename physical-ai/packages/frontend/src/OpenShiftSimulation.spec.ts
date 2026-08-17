@@ -172,6 +172,26 @@ describe('OpenShiftSimulation', () => {
     expect(screen.queryByRole('button', { name: 'Spawn' })).toBeNull();
   });
 
+  it('auto-refreshes so a newly-ready deployment reveals its spawn controls without a manual refresh', async () => {
+    vi.useFakeTimers();
+    try {
+      const notReady = { ...READY_WORKLOAD, readyReplicas: 0, ready: false, routeUrl: undefined };
+      // First list (onMount) is not-ready; the 3 s auto-refresh sees it become ready.
+      mockListOpenShiftDeployments.mockResolvedValueOnce([notReady]).mockResolvedValue([READY_WORKLOAD]);
+
+      render(DeployOpenShift);
+      // Let onMount settle: not-ready, so no Spawn yet.
+      await vi.advanceTimersByTimeAsync(100);
+      expect(screen.queryByRole('button', { name: 'Spawn' })).toBeNull();
+
+      // Fire the auto-refresh tick — no manual Refresh click.
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(screen.getByRole('button', { name: 'Spawn' })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('deletes a workload', async () => {
     mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
 
