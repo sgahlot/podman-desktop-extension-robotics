@@ -264,17 +264,24 @@ else
 fi
 
 # --- 9. Launch Gazebo GUI ---
-# The GUI (gz sim -g) is the least latency-sensitive process here — it only draws
-# for the remote noVNC viewer. Under a tight CPU quota (small in-cluster nodes,
-# especially the no-DRI GPU path where the GUI canvas stays software-rendered) its
-# ~3-4 cores of llvmpipe render contend with the gz *server's* physics thread, so
-# the server gets scheduled late, the real-time factor swings (measured 0.4-1.4),
+# The GUI (gz sim -g) canvas is software-rendered (llvmpipe) whenever there's no
+# /dev/dri render node — i.e. the no-GPU path AND the NVIDIA-operator GPU path (the
+# GPU only offloads the *server's* sensor render, never the GUI viewport). Its cost
+# is llvmpipe *rasterizer* threads, and the GUI free-runs (renders as fast as it
+# can), so it consumes ~1 core PER llvmpipe thread. The global thread cap sizes that
+# pool to the whole CPU quota (e.g. 7), which is exactly backwards for the GUI: it
+# then burns ~3-4 cores rasterizing frames no one needs that fast and starves the
+# gz *server's* physics thread, so the real-time factor swings (measured 0.39-1.46)
 # and the robot's motion turns jumpy (with a transient stale-pose "double" render
-# during a stall). Renicing the GUI lets physics/Nav2 win the CPU — proven live to
-# steady RTF (min 0.39 -> ~0.83). It still renders full-rate when there's slack and
-# only yields under load (x11vnc downsamples it for noVNC regardless). We can't
-# raise the server's priority instead (that needs CAP_SYS_NICE, denied in-cluster).
-# Override/disable with PHYSICAL_AI_GUI_NICE (empty = don't renice).
+# during a stall). Two clamps, both proven live in-cluster:
+#   1. GUI llvmpipe threads -> 2 (PHYSICAL_AI_GUI_LP_THREADS): caps the GUI at ~2
+#      cores instead of ~3.5, freeing the rest for the server + Nav2. Measured: GUI
+#      350% -> 170%, RTF snapped to a rock-steady ~1.000 (was 0.39-1.46). x11vnc
+#      downsamples the GUI for noVNC anyway, so the lower frame rate is invisible.
+#   2. renice the GUI down (PHYSICAL_AI_GUI_NICE, default 19): belt-and-suspenders
+#      so physics/Nav2 still win any residual contention (we can't raise the
+#      server's priority instead — negative nice needs CAP_SYS_NICE, denied in-cluster).
+# Set PHYSICAL_AI_GUI_LP_THREADS= (empty) or PHYSICAL_AI_GUI_NICE= (empty) to disable.
 PHYSICAL_AI_GUI_NICE="${PHYSICAL_AI_GUI_NICE:-19}"
 GUI_NICE=()
 if [[ -n "${PHYSICAL_AI_GUI_NICE}" ]]; then
@@ -284,13 +291,25 @@ if [[ -n "${PHYSICAL_AI_GUI_NICE}" ]]; then
     echo "[gazebo] WARN: ignoring invalid PHYSICAL_AI_GUI_NICE '${PHYSICAL_AI_GUI_NICE}' (want an integer)"
   fi
 fi
-echo "[gazebo] Launching Gazebo GUI..."
+PHYSICAL_AI_GUI_LP_THREADS="${PHYSICAL_AI_GUI_LP_THREADS:-2}"
+GUI_THREADS=()
+if [[ -n "${PHYSICAL_AI_GUI_LP_THREADS}" ]]; then
+  if [[ "${PHYSICAL_AI_GUI_LP_THREADS}" =~ ^[0-9]+$ ]] && [[ "${PHYSICAL_AI_GUI_LP_THREADS}" -ge 1 ]]; then
+    GUI_THREADS=(env
+      "LP_NUM_THREADS=${PHYSICAL_AI_GUI_LP_THREADS}"
+      "GALLIUM_NUM_THREADS=${PHYSICAL_AI_GUI_LP_THREADS}"
+      "MESA_NUM_THREADS=${PHYSICAL_AI_GUI_LP_THREADS}")
+  else
+    echo "[gazebo] WARN: ignoring invalid PHYSICAL_AI_GUI_LP_THREADS '${PHYSICAL_AI_GUI_LP_THREADS}' (want a positive integer)"
+  fi
+fi
+echo "[gazebo] Launching Gazebo GUI (llvmpipe threads=${PHYSICAL_AI_GUI_LP_THREADS:-inherit}, nice=${PHYSICAL_AI_GUI_NICE:-none})..."
 for i in $(seq 1 30); do
   if gz topic -l 2>/dev/null | grep -q "/world/${WORLD_NAME}/"; then
-    # Same software-GL prefix as Xvfb: the GUI's GLX canvas must stay off the NVIDIA
-    # driver on the no-DRI path (no /dev/dri render node), else it can't connect to :99.
-    # ${GUI_NICE[@]} deprioritizes it so the server/Nav2 win a saturated CPU quota.
-    "${GUI_NICE[@]+"${GUI_NICE[@]}"}" "${XVFB_GUI_GL[@]+"${XVFB_GUI_GL[@]}"}" gz sim -g &
+    # Prefixes stack: nice (deprioritize) + XVFB_GUI_GL (software GL/Mesa EGL on the
+    # no-DRI path; empty elsewhere) + GUI_THREADS (clamp the llvmpipe pool). All use
+    # the [@]+ guard so an empty array expands to nothing under `set -u`.
+    "${GUI_NICE[@]+"${GUI_NICE[@]}"}" "${XVFB_GUI_GL[@]+"${XVFB_GUI_GL[@]}"}" "${GUI_THREADS[@]+"${GUI_THREADS[@]}"}" gz sim -g &
     GZ_GUI_PID=$!
     echo "[gazebo] Gazebo GUI launched."
     break
