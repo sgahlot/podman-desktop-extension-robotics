@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
-import SimulationPage from './SimulationPage.svelte';
+import SimulationPage from './LocalSimulation.svelte';
 
 const mockGetSimulationImageAllowlist = vi.fn();
 const mockListLocalImages = vi.fn();
@@ -33,7 +33,7 @@ vi.mock('tinro', () => ({
 
 const SIM_IMAGE = 'quay.io/ns/ros2-jazzy-sim:noble';
 
-describe('SimulationPage', () => {
+describe('LocalSimulation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mockGetSimulationImageAllowlist.mockResolvedValue('');
@@ -49,9 +49,9 @@ describe('SimulationPage', () => {
     vi.useRealTimers();
   });
 
-  it('renders heading', () => {
+  it('renders the launch section', () => {
     render(SimulationPage);
-    expect(screen.getByText('Simulation')).toBeTruthy();
+    expect(screen.getByText('Launch Simulation')).toBeTruthy();
   });
 
   it('shows empty-state guidance when no local sim images', async () => {

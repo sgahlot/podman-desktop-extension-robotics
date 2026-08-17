@@ -1,10 +1,10 @@
 <script lang="ts">
 import { physicalAiClient } from './api/client';
 import { onMount } from 'svelte';
-import { router } from 'tinro';
 import { simulationImageTag } from '/@shared/src/types/SimulationProfiles';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import type { OpenShiftContext, OpenShiftDeployResult, OpenShiftWorkload } from '/@shared/src/types/OpenShiftDeploy';
+import RobotControls, { type RobotEntry } from './RobotControls.svelte';
 
 let loading = true;
 let context: OpenShiftContext | undefined = undefined;
@@ -17,10 +17,13 @@ let useGpu = false;
 let previewYaml = '';
 let previewBusy = false;
 let previewError = '';
+let showPreview = true;
 
 let deploying = false;
 let deployError = '';
 let deployResult: OpenShiftDeployResult | null = null;
+/** Name the current deployResult refers to, so we can drop the panel when it's deleted. */
+let deployedName = '';
 
 let workloads: OpenShiftWorkload[] = [];
 let listBusy = false;
@@ -28,23 +31,7 @@ let listError = '';
 let deletingName = '';
 
 // --- In-cluster robot spawn + Nav2, keyed by deployment name ---
-type OcSpawnedRobot = {
-  name: string;
-  x: string;
-  y: string;
-  navStatus: 'idle' | 'navigating' | 'reached' | 'failed';
-  navTarget: { x: string; y: string };
-};
-type SpawnForm = { name: string; x: string; y: string; yaw: string; counter: number };
-let robotsByWorkload: Record<string, OcSpawnedRobot[]> = {};
-let spawnFormByWorkload: Record<string, SpawnForm> = {};
-let spawnBusy: Record<string, boolean> = {};
-let spawnError: Record<string, string> = {};
-let removingRobot: Record<string, boolean> = {};
-
-function newSpawnForm(): SpawnForm {
-  return { name: 'robot_1', x: '-2.0', y: '-0.5', yaw: '0.0', counter: 1 };
-}
+let robotsByWorkload: Record<string, RobotEntry[]> = {};
 
 $: config = { name, namespace, image, useGpu };
 $: canDeploy = !!context && !!name && !!namespace && !!image && !deploying;
@@ -84,6 +71,7 @@ async function preview() {
   try {
     const res = await physicalAiClient.generateOpenShiftManifests(config);
     previewYaml = res.yaml;
+    showPreview = true;
   } catch (e) {
     previewError = e instanceof Error ? e.message : 'Failed to render manifests';
     previewYaml = '';
@@ -98,6 +86,7 @@ async function deploy() {
   deployResult = null;
   try {
     deployResult = await physicalAiClient.deployToOpenShift(config);
+    deployedName = name;
     await refreshWorkloads();
   } catch (e) {
     deployError = e instanceof Error ? e.message : 'Deploy failed';
@@ -115,11 +104,14 @@ async function refreshWorkloads() {
   listError = '';
   try {
     workloads = await physicalAiClient.listOpenShiftDeployments(namespace);
+    // Drop robot state for deployments that no longer exist; seed the rest.
+    const names = new Set(workloads.map(w => w.name));
+    for (const key of Object.keys(robotsByWorkload)) {
+      if (!names.has(key)) delete robotsByWorkload[key];
+    }
     for (const w of workloads) {
-      spawnFormByWorkload[w.name] ??= newSpawnForm();
       robotsByWorkload[w.name] ??= [];
     }
-    spawnFormByWorkload = spawnFormByWorkload;
     robotsByWorkload = robotsByWorkload;
   } catch (e) {
     listError = e instanceof Error ? e.message : 'Failed to list deployments';
@@ -133,6 +125,13 @@ async function remove(w: OpenShiftWorkload) {
   deletingName = w.name;
   try {
     await physicalAiClient.deleteOpenShiftDeployment(w.namespace, w.name);
+    // Clear this deployment's robot list and the stale result panel.
+    delete robotsByWorkload[w.name];
+    robotsByWorkload = robotsByWorkload;
+    if (deployedName === w.name) {
+      deployResult = null;
+      deployedName = '';
+    }
     await refreshWorkloads();
   } catch (e) {
     listError = e instanceof Error ? e.message : 'Failed to delete';
@@ -141,64 +140,28 @@ async function remove(w: OpenShiftWorkload) {
   }
 }
 
-async function spawnRobot(w: OpenShiftWorkload) {
-  const form = spawnFormByWorkload[w.name];
-  if (!form) return;
-  spawnBusy[w.name] = true;
-  spawnError[w.name] = '';
-  spawnBusy = spawnBusy;
-  spawnError = spawnError;
-  try {
-    await physicalAiClient.spawnRobotInOpenShift(w.namespace, w.name, form.name, form.x, form.y, form.yaw);
-    const robots = robotsByWorkload[w.name] ?? [];
-    robots.push({
+async function spawnRobot(w: OpenShiftWorkload, form: { name: string; x: string; y: string; yaw: string }) {
+  await physicalAiClient.spawnRobotInOpenShift(w.namespace, w.name, form.name, form.x, form.y, form.yaw);
+  robotsByWorkload[w.name] = [
+    ...(robotsByWorkload[w.name] ?? []),
+    {
       name: form.name,
       x: form.x,
       y: form.y,
       navStatus: 'idle',
       navTarget: { x: '2.0', y: '0.5' },
-    });
-    robotsByWorkload[w.name] = robots;
-    robotsByWorkload = robotsByWorkload;
-    form.counter += 1;
-    form.name = `robot_${form.counter}`;
-    spawnFormByWorkload = spawnFormByWorkload;
-  } catch (e) {
-    spawnError[w.name] = e instanceof Error ? e.message : 'Spawn failed';
-    spawnError = spawnError;
-  } finally {
-    spawnBusy[w.name] = false;
-    spawnBusy = spawnBusy;
-  }
-}
-
-async function removeRobot(w: OpenShiftWorkload, index: number) {
-  const robots = robotsByWorkload[w.name];
-  const robot = robots?.[index];
-  if (!robot) return;
-  const key = `${w.name}:${robot.name}`;
-  removingRobot[key] = true;
-  removingRobot = removingRobot;
-  spawnError[w.name] = '';
-  spawnError = spawnError;
-  try {
-    await physicalAiClient.despawnRobotInOpenShift(w.namespace, w.name, robot.name);
-    robotsByWorkload[w.name] = robots.filter((_, i) => i !== index);
-    robotsByWorkload = robotsByWorkload;
-  } catch (e) {
-    spawnError[w.name] = e instanceof Error ? e.message : 'Remove failed';
-    spawnError = spawnError;
-  } finally {
-    removingRobot[key] = false;
-    removingRobot = removingRobot;
-  }
+      navReached: null,
+    },
+  ];
+  robotsByWorkload = robotsByWorkload;
 }
 
 async function navigateRobot(w: OpenShiftWorkload, index: number) {
   const robots = robotsByWorkload[w.name];
   const robot = robots?.[index];
   if (!robot) return;
-  robot.navStatus = 'navigating';
+  const snapshot = { x: robot.navTarget.x, y: robot.navTarget.y };
+  robots[index] = { ...robot, navStatus: 'navigating', navReached: null };
   robotsByWorkload = robotsByWorkload;
   try {
     const result = await physicalAiClient.sendOpenShiftNavigationGoal(
@@ -208,21 +171,31 @@ async function navigateRobot(w: OpenShiftWorkload, index: number) {
       Number(robot.navTarget.x),
       Number(robot.navTarget.y),
     );
-    robot.navStatus = result.status === 'reached' ? 'reached' : 'failed';
+    robots[index] = {
+      ...robots[index],
+      navStatus: result.status === 'reached' ? 'reached' : 'failed',
+      navReached: snapshot,
+    };
   } catch {
-    robot.navStatus = 'failed';
-  } finally {
-    robotsByWorkload = robotsByWorkload;
+    robots[index] = { ...robots[index], navStatus: 'failed', navReached: snapshot };
   }
+  robotsByWorkload = robotsByWorkload;
+}
+
+async function removeRobot(w: OpenShiftWorkload, index: number) {
+  const robots = robotsByWorkload[w.name];
+  const robot = robots?.[index];
+  if (!robot) return;
+  await physicalAiClient.despawnRobotInOpenShift(w.namespace, w.name, robot.name);
+  robotsByWorkload[w.name] = robots.filter((_, i) => i !== index);
+  robotsByWorkload = robotsByWorkload;
 }
 </script>
 
-<div class="flex flex-col p-4 gap-4 h-full overflow-auto">
-  <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
-  <h1 class="text-3xl text-[var(--pd-content-header)]">Deploy to OpenShift</h1>
+<div class="flex flex-col gap-4">
   <p class="text-sm text-[var(--pd-content-text)]">
-    Deploy a simulation image (Gazebo + noVNC) to your current OpenShift cluster and reach it via a Route. Build an <span
-      class="font-mono">amd64</span> image first from the Image Builder.
+    Deploy a simulation image (Gazebo + noVNC) to your current OpenShift cluster and reach it via a Route, then spawn
+    and navigate robots in it. Build an <span class="font-mono">amd64</span> image first from the Image Builder.
   </p>
 
   {#if loading}
@@ -318,9 +291,16 @@ async function navigateRobot(w: OpenShiftWorkload, index: number) {
 
     {#if previewYaml}
       <div class="max-w-2xl">
-        <h2 class="text-sm font-medium text-[var(--pd-content-header)] mb-2">Manifest preview</h2>
-        <pre
-          class="text-xs font-mono p-3 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] overflow-auto max-h-96 whitespace-pre">{previewYaml}</pre>
+        <div class="flex flex-row items-center gap-2 mb-2">
+          <h2 class="text-sm font-medium text-[var(--pd-content-header)]">Manifest preview</h2>
+          <button on:click={() => (showPreview = !showPreview)} class="pai-btn pai-btn-sm text-xs">
+            {showPreview ? 'Hide' : 'Show'}
+          </button>
+        </div>
+        {#if showPreview}
+          <pre
+            class="text-xs font-mono p-3 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] overflow-auto max-h-96 whitespace-pre">{previewYaml}</pre>
+        {/if}
       </div>
     {/if}
 
@@ -376,101 +356,15 @@ async function navigateRobot(w: OpenShiftWorkload, index: number) {
               {/if}
 
               <!-- In-cluster robot spawn + Nav2 -->
-              {#if w.ready && spawnFormByWorkload[w.name]}
+              {#if w.ready}
                 <div class="mt-2 pt-2 border-t border-[var(--pd-content-card-border)] flex flex-col gap-2">
                   <div class="text-xs font-medium text-[var(--pd-content-header)]">Robots</div>
-
-                  <div class="flex flex-row flex-wrap items-end gap-2">
-                    <div class="flex flex-col gap-1">
-                      <label for="rn-{w.name}" class="text-xs pai-text-muted">Name</label>
-                      <input
-                        id="rn-{w.name}"
-                        bind:value={spawnFormByWorkload[w.name].name}
-                        disabled={spawnBusy[w.name]}
-                        class="w-28 px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
-                    </div>
-                    <div class="flex flex-col gap-1">
-                      <label for="rx-{w.name}" class="text-xs pai-text-muted">X</label>
-                      <input
-                        id="rx-{w.name}"
-                        bind:value={spawnFormByWorkload[w.name].x}
-                        disabled={spawnBusy[w.name]}
-                        class="w-16 px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
-                    </div>
-                    <div class="flex flex-col gap-1">
-                      <label for="ry-{w.name}" class="text-xs pai-text-muted">Y</label>
-                      <input
-                        id="ry-{w.name}"
-                        bind:value={spawnFormByWorkload[w.name].y}
-                        disabled={spawnBusy[w.name]}
-                        class="w-16 px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
-                    </div>
-                    <div class="flex flex-col gap-1">
-                      <label for="ryaw-{w.name}" class="text-xs pai-text-muted">Yaw</label>
-                      <input
-                        id="ryaw-{w.name}"
-                        bind:value={spawnFormByWorkload[w.name].yaw}
-                        disabled={spawnBusy[w.name]}
-                        class="w-16 px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
-                    </div>
-                    <button
-                      on:click={() => spawnRobot(w)}
-                      disabled={spawnBusy[w.name] || !spawnFormByWorkload[w.name].name}
-                      class="pai-btn text-xs">
-                      {spawnBusy[w.name] ? 'Spawning…' : 'Spawn'}
-                    </button>
-                  </div>
-
-                  {#if spawnError[w.name]}
-                    <span class="text-xs pai-text-error">{spawnError[w.name]}</span>
-                  {/if}
-
-                  {#if (robotsByWorkload[w.name] ?? []).length > 0}
-                    <div class="flex flex-col gap-1">
-                      {#each robotsByWorkload[w.name] as robot, i (robot.name)}
-                        <div class="flex flex-row flex-wrap items-center gap-2 text-xs">
-                          <span class="font-mono text-[var(--pd-content-header)] w-24 truncate">{robot.name}</span>
-                          <span class="pai-text-muted">→</span>
-                          <input
-                            aria-label="target X for {robot.name}"
-                            bind:value={robot.navTarget.x}
-                            disabled={robot.navStatus === 'navigating'}
-                            class="w-14 px-2 py-1 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
-                          <input
-                            aria-label="target Y for {robot.name}"
-                            bind:value={robot.navTarget.y}
-                            disabled={robot.navStatus === 'navigating'}
-                            class="w-14 px-2 py-1 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
-                          <button
-                            on:click={() => navigateRobot(w, i)}
-                            disabled={robot.navStatus === 'navigating'}
-                            class="pai-btn text-xs">Navigate</button>
-                          <button
-                            on:click={() => removeRobot(w, i)}
-                            disabled={removingRobot[`${w.name}:${robot.name}`] || robot.navStatus === 'navigating'}
-                            class="pai-btn pai-btn-danger text-xs">
-                            {removingRobot[`${w.name}:${robot.name}`] ? 'Removing…' : 'Remove'}
-                          </button>
-                          <span
-                            class={robot.navStatus === 'reached'
-                              ? 'pai-text-success'
-                              : robot.navStatus === 'failed'
-                                ? 'pai-text-error'
-                                : robot.navStatus === 'navigating'
-                                  ? 'pai-text-accent'
-                                  : 'pai-text-muted'}>
-                            {robot.navStatus === 'navigating'
-                              ? 'Navigating…'
-                              : robot.navStatus === 'reached'
-                                ? 'Reached'
-                                : robot.navStatus === 'failed'
-                                  ? 'Failed'
-                                  : 'Idle'}
-                          </span>
-                        </div>
-                      {/each}
-                    </div>
-                  {/if}
+                  <RobotControls
+                    robots={robotsByWorkload[w.name] ?? []}
+                    onSpawn={form => spawnRobot(w, form)}
+                    onNavigate={i => navigateRobot(w, i)}
+                    onRemove={i => removeRobot(w, i)}
+                    idPrefix={`oc-${w.name}`} />
                 </div>
               {/if}
             </div>

@@ -89,4 +89,47 @@ cold-start.
 - Pre-warm never surfaces errors — if it fails, the first Navigate just pays the
   cold-start as before (no regression).
 
+## Item 3 — Unified tabbed Simulation page (Deploy-page UI/UX)
+
+The old "Simulation" and "Deploy to OpenShift" pages are now one **Simulation**
+page with **Local** and **OpenShift** tabs, plus three OpenShift-tab fixes.
+
+### Navigation / structure
+
+1. Dashboard shows a **single "Simulation" card** (no separate "Deploy to
+   OpenShift" card). Click it → lands on the **Local** tab.
+2. Top of the page shows **Local | OpenShift** tabs; the active tab is
+   underlined. Click **OpenShift** → deploy form + deployed-sims list appear.
+   Click **Local** → launch/robot UI appears. The URL tracks the tab
+   (`…#/simulation` vs `…#/simulation/openshift`).
+3. **Back-compat:** manually visit `…#/deploy` → it redirects to the OpenShift
+   tab (`…#/simulation/openshift`).
+
+### OpenShift-tab fixes
+
+4. **Manifest preview collapses.** On the OpenShift tab, click **Preview
+   manifests** → YAML shows with a **Hide** button. Click **Hide** → YAML
+   collapses (button reads **Show**); click **Show** → it returns.
+5. **Result panel clears on delete.** Deploy a sim → the green "Deployed…/Open
+   <url>" panel appears. **Delete** that deployment → the panel disappears (it
+   used to linger).
+6. **Robot list cleared on delete.** Deploy, spawn `robot_1`/`robot_2`, then
+   **Delete** the deployment. Re-deploy the same name → its robot list starts
+   **empty** (no stale robots carried over).
+
+## Item 4 — Spawn name auto-increment (no duplicate cards)
+
+Applies to **both** tabs (shared `RobotControls`).
+
+1. Spawn once with the default **robot_1** → after it lands, the Name field
+   auto-advances to **robot_2** (next free name).
+2. Spawn again (robot_2) → field advances to **robot_3**. No two cards share a
+   name.
+3. **Duplicate guard:** manually type an existing name (e.g. `robot_1`) and
+   Spawn → it's rejected inline ("A robot named … already exists.") and no API
+   call is made / no second card appears.
+4. **Skips gaps:** with robots `robot_1` and `robot_3` present, spawning fills
+   and then suggests the next free number rather than reusing a taken one.
+
 <!-- Append new items below as they are implemented. -->
+

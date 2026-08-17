@@ -63,7 +63,7 @@ onMount(async () => {
       <button
         on:click={() => router.goto('/simulation')}
         class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer">
-        <span class="tooltip-text">Launch and manage robot simulations</span>
+        <span class="tooltip-text">Run robot simulations locally or on OpenShift</span>
         <div class="text-lg text-[var(--pd-content-header)]">Simulation</div>
       </button>
       <button
@@ -71,12 +71,6 @@ onMount(async () => {
         class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer">
         <span class="tooltip-text">View active ROS2 topics and message details</span>
         <div class="text-lg text-[var(--pd-content-header)]">Topic Monitor</div>
-      </button>
-      <button
-        on:click={() => router.goto('/deploy')}
-        class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer">
-        <span class="tooltip-text">Deploy a simulation to OpenShift and reach it via a Route</span>
-        <div class="text-lg text-[var(--pd-content-header)]">Deploy to OpenShift</div>
       </button>
       <div
         class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)]">

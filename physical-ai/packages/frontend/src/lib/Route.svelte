@@ -5,7 +5,7 @@ import { saveRouterState } from '../api/client';
 
 export let path = '/*';
 export let fallback = false;
-export let redirect = false;
+export let redirect: boolean | string = false;
 export let firstmatch = false;
 export let breadcrumb: string | undefined = undefined;
 export let isAppMounted: boolean = false;

@@ -11,6 +11,8 @@ Grouped by area. Checkboxes track status; each item notes where the fix lives.
 
 - [x] **Navigate silently failed in-cluster** — `oc exec` ROS calls ran with `HOME=/` (not writable), so every rclcpp command aborted with `Failed to create log directory '//.ros/log'` (exit 250). Goals never reached Nav2 → "Navigating…" then Failed. **Fix:** `#execRosBash` sets `HOME`/`ROS_HOME`/`ROS_LOG_DIR` to `/tmp/ros-home` on the `oc` path only (`api-impl.ts`). Also unblocks Topic Monitor Peek on OpenShift pods.
 - [x] **Slow/jerky navigation at 4 CPUs** — during active nav the GUI (~2.3 cores) + Nav2 (~1) + server (~0.3) exceed 4 cores → RTF sags. **Fix:** software-render Deployment now requests **6 guaranteed CPUs** (`manifests.ts`). RTF measured ~1.0 at 6 cores (was ~0.3–0.6 at 4). **Validated via the extension** on `sgahlot-pd-extn`: warm navigate to (-1.0, -0.2) completed in ~33 s, smooth and fast.
+- [x] **Deploy-page UI/UX → unified tabbed Simulation page** — the standalone "Simulation" and "Deploy to OpenShift" pages are now one **Simulation** page with **Local** and **OpenShift** tabs (`Simulation.svelte` parent; `LocalSimulation.svelte` + `OpenShiftSimulation.svelte` bodies). Dashboard collapses to a single **Simulation** card; the old `/deploy` route redirects to `/simulation/openshift`. Robot spawn/navigate/remove is now one shared `RobotControls.svelte` used by both tabs. OpenShift-tab fixes folded in: (a) a deleted deployment's robot list is cleared (and stale entries pruned on refresh); (b) the "Deployed…/Open…" result panel disappears when its deployment is deleted; (c) the Manifest preview is collapsible (Hide/Show). Renamed page/card per team decision (unified under "Simulation"). Frontend tests updated + `RobotControls.spec.ts` added. **Not yet live-validated on the cluster.**
+- [x] **Spawn name field auto-increment** — `RobotControls` suggests the next **free** `robot_N` after each spawn (skips names already in the list) and blocks a duplicate name before calling the API, so spawning no longer yields two identically-named robot cards. Covered in `RobotControls.spec.ts`. **Not yet live-validated on the cluster.**
 - [x] **Robot teardown reaps ROS processes** — per-robot **Remove** now tears down the robot instead of leaving orphans. Backend `#teardownRobot(target, robot, distro)` (shared by podman + oc) `pkill -TERM`s then `-KILL`s a boundary-anchored pattern `(namespace:=|robot_name:=|__ns:=/|entrypoint-(spawn-robot|nav2)\.sh )<robot>([ /:]|$)` — catches the spawn launch, `robot_state_publisher`, the Nav2 bringup tree + component nodes, and both entrypoint wrappers; the right boundary keeps `robot_1` from matching `robot_10`, and omitting a bare `/<robot>/` branch keeps the pattern from matching the pkill shell's own argv (the initialpose publisher dies with its Nav2 wrapper via the trap). Then removes the Gazebo model via `gz service …/remove` (world name discovered from the live topic list). Public `despawnRobot` (local) + `despawnRobotInOpenShift` (cluster); per-robot **Remove** button on both the Simulation page and the Deploy page. Tests added for both paths (kill pattern, model remove, injection rejection). **Not yet live-validated on the cluster.**
 
 ## Open — working order
@@ -25,14 +27,14 @@ Tackled top-down.
 - [ ] **Bonus (image-level, still open):** replace the fixed `sleep 12` before `/initialpose` in `entrypoint-nav2.sh` with a poll for AMCL readiness so convergence starts a few seconds sooner. Deferred — needs an image rebuild by the user; kept out of this extension-only pass.
 - [ ] **UI (optional, still open):** per-robot "Nav2 warming… → Ready" status so an early click shows honest progress instead of a bare "Navigating…". Needs backend warm-status plumbing.
 
-### 3. Deploy-page UI/UX  *(frontend)*
-- [ ] **Robot list stale after deployment delete.** After Delete, the extension sometimes still shows the old robot(s), sometimes not (inconsistent). The per-deployment robot list should be cleared when its deployment is deleted.
-- [ ] **"Deployed to…" / "Open …" result panel persists after delete.** It should disappear when the deployment is deleted; currently it only clears momentarily when Deploy is clicked again.
-- [ ] **Collapsible "Manifest preview"** — no way to collapse it currently; it dominates the page.
-- [ ] **Rename "Deploy to OpenShift" card/page** (wording TBD).
+### ~~3. Deploy-page UI/UX~~  ✅ done (see above) — became the unified tabbed **Simulation** page
+- [x] Robot list stale after deployment delete → cleared on delete + pruned on refresh.
+- [x] "Deployed to…/Open …" result panel persists after delete → cleared when its deployment is deleted.
+- [x] Collapsible "Manifest preview" → Hide/Show toggle.
+- [x] Rename "Deploy to OpenShift" card/page → unified into the **Simulation** page's **OpenShift** tab.
 
-### 4. Spawn name field auto-increment  *(frontend)*
-- [ ] Spawning "robot_2" twice yields two "robot_2" cards. Field should suggest the next free name after each spawn.
+### ~~4. Spawn name field auto-increment~~  ✅ done (see above)
+- [x] Next **free** `robot_N` suggested after each spawn; duplicate names blocked.
 
 ### 5. Residual stutter from CFS throttling  *(perf — lowest priority; warm nav already smooth)*
 - [ ] Container sees `nproc=16` but is capped at 6 cores; Gazebo/Ogre size thread pools to 16 → bursts exceed quota → ~98% of 100ms periods throttled → micro-freezes even when average RTF ~1.0. Options: (a) bump to 8 CPUs; (b) **cap render/physics threads** to the quota (`OMP_NUM_THREADS`, Ogre/GZ thread envs) — image-level, the proper fix; (c) **GPU** — offloads the render, the real smoothness fix.

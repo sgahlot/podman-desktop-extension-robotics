@@ -8,9 +8,8 @@ import Dashboard from './Dashboard.svelte';
 import ImageCatalog from './ImageCatalog.svelte';
 import Help from './Help.svelte';
 import ImageBuilder from './SimulationSetup.svelte';
-import SimulationPage from './SimulationPage.svelte';
+import Simulation from './Simulation.svelte';
 import TopicMonitor from './TopicMonitor.svelte';
-import DeployOpenShift from './DeployOpenShift.svelte';
 
 router.mode.hash();
 
@@ -38,15 +37,14 @@ onMount(() => {
       <Route path="/build" breadcrumb="Image Builder">
         <ImageBuilder />
       </Route>
-      <Route path="/simulation" breadcrumb="Simulation">
-        <SimulationPage />
+      <Route path="/simulation/*" breadcrumb="Simulation">
+        <Simulation />
       </Route>
       <Route path="/topics" breadcrumb="Topic Monitor">
         <TopicMonitor />
       </Route>
-      <Route path="/deploy" breadcrumb="Deploy to OpenShift">
-        <DeployOpenShift />
-      </Route>
+      <!-- Back-compat: the old standalone Deploy page is now the Simulation → OpenShift tab. -->
+      <Route path="/deploy" redirect="/simulation/openshift" />
     </div>
   </main>
 </Route>

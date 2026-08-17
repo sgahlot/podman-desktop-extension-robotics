@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
-import DeployOpenShift from './DeployOpenShift.svelte';
+import DeployOpenShift from './OpenShiftSimulation.svelte';
 
 const mockGetOpenShiftContext = vi.fn();
 const mockGetDefaultNamespace = vi.fn();
@@ -42,7 +42,7 @@ const READY_WORKLOAD = {
   routeUrl: 'https://host.apps.example.com',
 };
 
-describe('DeployOpenShift', () => {
+describe('OpenShiftSimulation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mockGetOpenShiftContext.mockResolvedValue({ context: 'ctx', kubeconfigPath: '/k/config' });
@@ -55,9 +55,9 @@ describe('DeployOpenShift', () => {
     mockOpenUrlInBrowser.mockResolvedValue(undefined);
   });
 
-  it('renders heading', () => {
+  it('renders the deployed-simulations section', async () => {
     render(DeployOpenShift);
-    expect(screen.getByText('Deploy to OpenShift')).toBeTruthy();
+    expect(await screen.findByText('Deployed simulations')).toBeTruthy();
   });
 
   it('lists a ready workload with its ready count', async () => {
@@ -143,7 +143,7 @@ describe('DeployOpenShift', () => {
         0.5,
       );
     });
-    expect(await screen.findByText('Reached')).toBeTruthy();
+    expect(await screen.findByText(/Reached/)).toBeTruthy();
   });
 
   it('surfaces spawn errors', async () => {
