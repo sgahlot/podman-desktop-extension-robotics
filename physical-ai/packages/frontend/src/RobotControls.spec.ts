@@ -77,6 +77,34 @@ describe('RobotControls', () => {
     await waitFor(() => expect(onRemove).toHaveBeenCalledWith(0));
   });
 
+  it('shows the Nav2 warm-status badge while warming and when ready', () => {
+    const { rerender } = render(RobotControls, {
+      robots: [robot('robot_1', { warmStatus: 'warming' })],
+      onSpawn: vi.fn(),
+      onNavigate: vi.fn(),
+      onRemove: vi.fn(),
+    });
+    expect(screen.getByText('Nav2 warming…')).toBeTruthy();
+
+    rerender({
+      robots: [robot('robot_1', { warmStatus: 'ready' })],
+      onSpawn: vi.fn(),
+      onNavigate: vi.fn(),
+      onRemove: vi.fn(),
+    });
+    expect(screen.getByText('Nav2 ready')).toBeTruthy();
+  });
+
+  it('shows "Waiting for Nav2…" when navigating during warm-up', () => {
+    render(RobotControls, {
+      robots: [robot('robot_1', { navStatus: 'navigating', warmStatus: 'warming' })],
+      onSpawn: vi.fn(),
+      onNavigate: vi.fn(),
+      onRemove: vi.fn(),
+    });
+    expect(screen.getByText('Waiting for Nav2…')).toBeTruthy();
+  });
+
   it('uses the custom spawn label', () => {
     render(RobotControls, {
       robots: [],

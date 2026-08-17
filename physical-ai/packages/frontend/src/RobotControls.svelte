@@ -1,4 +1,6 @@
 <script lang="ts" context="module">
+import type { Nav2WarmStatus } from '/@shared/src/types/NavigationGoalResult';
+
 export type RobotEntry = {
   name: string;
   x: string;
@@ -6,6 +8,8 @@ export type RobotEntry = {
   navStatus: 'idle' | 'navigating' | 'reached' | 'failed';
   navTarget: { x: string; y: string };
   navReached: { x: string; y: string } | null;
+  /** Nav2 pre-warm state, polled by the parent; drives the "warming…/ready" badge. */
+  warmStatus?: Nav2WarmStatus;
 };
 </script>
 
@@ -151,6 +155,21 @@ async function remove(index: number) {
           class="flex flex-row flex-wrap items-center gap-2 text-xs rounded border border-[var(--pd-content-card-border)] p-2">
           <span class="font-mono font-medium text-[var(--pd-content-header)]">{robot.name}</span>
           <span class="pai-text-muted">spawned at ({robot.x}, {robot.y})</span>
+          {#if robot.warmStatus === 'warming'}
+            <span
+              class="inline-flex items-center gap-1 pai-text-accent"
+              title="Nav2 is starting in the background; Navigate will fire as soon as it's ready.">
+              <span class="inline-block w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>
+              Nav2 warming…
+            </span>
+          {:else if robot.warmStatus === 'ready'}
+            <span
+              class="inline-flex items-center gap-1 pai-text-success"
+              title="Nav2 is up; the first Navigate is instant.">
+              <span class="inline-block w-1.5 h-1.5 rounded-full bg-current"></span>
+              Nav2 ready
+            </span>
+          {/if}
           <span class="pai-text-muted">→</span>
           <input
             aria-label="target X for {robot.name}"
@@ -183,7 +202,9 @@ async function remove(index: number) {
                   ? 'pai-text-accent'
                   : 'pai-text-muted'}>
             {robot.navStatus === 'navigating'
-              ? 'Navigating…'
+              ? robot.warmStatus === 'warming'
+                ? 'Waiting for Nav2…'
+                : 'Navigating…'
               : robot.navStatus === 'reached'
                 ? robot.navReached
                   ? `Reached (${robot.navReached.x}, ${robot.navReached.y})`

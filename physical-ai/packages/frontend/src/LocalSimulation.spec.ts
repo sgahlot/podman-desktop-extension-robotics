@@ -11,6 +11,7 @@ const mockStopSimulation = vi.fn();
 const mockOpenSimulationInBrowser = vi.fn();
 const mockExecInSimulation = vi.fn();
 const mockSendNavigationGoal = vi.fn();
+const mockGetRobotWarmStatus = vi.fn();
 const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
@@ -24,6 +25,7 @@ vi.mock('./api/client', () => ({
     openSimulationInBrowser: (...args: unknown[]) => mockOpenSimulationInBrowser(...args),
     execInSimulation: (...args: unknown[]) => mockExecInSimulation(...args),
     sendNavigationGoal: (...args: unknown[]) => mockSendNavigationGoal(...args),
+    getRobotWarmStatus: (...args: unknown[]) => mockGetRobotWarmStatus(...args),
   },
 }));
 
@@ -43,6 +45,7 @@ describe('LocalSimulation', () => {
     mockDeleteSimulation.mockResolvedValue(undefined);
     mockStopSimulation.mockResolvedValue(undefined);
     mockOpenSimulationInBrowser.mockResolvedValue(undefined);
+    mockGetRobotWarmStatus.mockResolvedValue('idle');
   });
 
   afterEach(() => {

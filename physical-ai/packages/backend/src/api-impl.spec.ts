@@ -1705,6 +1705,38 @@ describe('PhysicalAiApiImpl', () => {
     });
   });
 
+  describe('getRobotWarmStatus (local)', () => {
+    const CONTAINER_ID = 'abc123def456';
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as unknown as extensionApi.ContainerInfo[]);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '',
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+    });
+
+    it("returns 'idle' for a robot that was never spawned", async () => {
+      expect(await api.getRobotWarmStatus(CONTAINER_ID, 'robot_9')).toBe('idle');
+    });
+
+    it("reports 'warming' after a jazzy spawn, then 'idle' once despawned", async () => {
+      await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '-0.5', '0.0']);
+      // Pre-warm sets 'warming' synchronously and parks on its first poll sleep.
+      expect(await api.getRobotWarmStatus(CONTAINER_ID, 'robot_1')).toBe('warming');
+
+      await api.despawnRobot(CONTAINER_ID, 'robot_1');
+      expect(await api.getRobotWarmStatus(CONTAINER_ID, 'robot_1')).toBe('idle');
+    });
+
+    it('rejects an injectable robot name', async () => {
+      await expect(api.getRobotWarmStatus(CONTAINER_ID, 'robot;id')).rejects.toThrow(/robot name/i);
+    });
+  });
+
   describe('execInSimulation security', () => {
     const CONTAINER_ID = 'abc123def456';
 
@@ -2220,11 +2252,17 @@ describe('PhysicalAiApiImpl', () => {
           'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
         vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
           const a = args as string[];
-          if (a[0] === 'get' && a[1] === 'pods') return { stdout: POD, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          if (a[0] === 'get' && a[1] === 'pods')
+            return { stdout: POD, stderr: '', command: 'oc' } as extensionApi.RunResult;
           if (a[0] === 'get' && a[1] === 'deployment')
-            return { stdout: 'quay.io/ns/ros2-jazzy-sim:noble-amd64', stderr: '', command: 'oc' } as extensionApi.RunResult;
+            return {
+              stdout: 'quay.io/ns/ros2-jazzy-sim:noble-amd64',
+              stderr: '',
+              command: 'oc',
+            } as extensionApi.RunResult;
           const script = a.find((s): s is string => typeof s === 'string' && s.includes('source'));
-          if (script?.includes('gz model')) return { stdout: GZ_POSE, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          if (script?.includes('gz model'))
+            return { stdout: GZ_POSE, stderr: '', command: 'oc' } as extensionApi.RunResult;
           // TF never ready + pgrep empty → forces a Nav2 launch.
           return { stdout: '', stderr: '', command: 'oc' } as extensionApi.RunResult;
         });
@@ -2288,6 +2326,25 @@ describe('PhysicalAiApiImpl', () => {
       it('rejects an injectable robot name before touching the cluster', async () => {
         await expect(api.despawnRobotInOpenShift(NS, NAME, 'robot;id')).rejects.toThrow(/robot name/i);
         expect(extensionApi.process.exec).not.toHaveBeenCalled();
+      });
+
+      it('clears the warm status for the robot', async () => {
+        mockOc();
+        await api.despawnRobotInOpenShift(NS, NAME, 'robot_1');
+        expect(await api.getRobotWarmStatusInOpenShift(NS, NAME, 'robot_1')).toBe('idle');
+      });
+    });
+
+    describe('getRobotWarmStatusInOpenShift', () => {
+      const NS = 'sgahlot-pd-extn';
+      const NAME = 'ros2-jazzy-sim';
+
+      it("returns 'idle' for a robot that was never spawned", async () => {
+        expect(await api.getRobotWarmStatusInOpenShift(NS, NAME, 'robot_9')).toBe('idle');
+      });
+
+      it('rejects an injectable robot name', async () => {
+        await expect(api.getRobotWarmStatusInOpenShift(NS, NAME, 'robot;id')).rejects.toThrow(/robot name/i);
       });
     });
 

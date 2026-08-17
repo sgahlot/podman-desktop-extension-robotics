@@ -11,6 +11,7 @@ const mockDeployToOpenShift = vi.fn();
 const mockDeleteOpenShiftDeployment = vi.fn();
 const mockSpawnRobotInOpenShift = vi.fn();
 const mockSendOpenShiftNavigationGoal = vi.fn();
+const mockGetRobotWarmStatusInOpenShift = vi.fn();
 const mockOpenUrlInBrowser = vi.fn();
 const mockGoto = vi.fn();
 
@@ -26,6 +27,7 @@ vi.mock('./api/client', () => ({
     deleteOpenShiftDeployment: (...args: unknown[]) => mockDeleteOpenShiftDeployment(...args),
     spawnRobotInOpenShift: (...args: unknown[]) => mockSpawnRobotInOpenShift(...args),
     sendOpenShiftNavigationGoal: (...args: unknown[]) => mockSendOpenShiftNavigationGoal(...args),
+    getRobotWarmStatusInOpenShift: (...args: unknown[]) => mockGetRobotWarmStatusInOpenShift(...args),
     openUrlInBrowser: (...args: unknown[]) => mockOpenUrlInBrowser(...args),
   },
 }));
@@ -55,6 +57,7 @@ describe('OpenShiftSimulation', () => {
     mockListOpenShiftDeployments.mockResolvedValue([]);
     mockSpawnRobotInOpenShift.mockResolvedValue(undefined);
     mockDeleteOpenShiftDeployment.mockResolvedValue(undefined);
+    mockGetRobotWarmStatusInOpenShift.mockResolvedValue('idle');
     mockOpenUrlInBrowser.mockResolvedValue(undefined);
   });
 

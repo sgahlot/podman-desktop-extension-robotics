@@ -48,7 +48,7 @@ import type {
   TopicPeekResult,
   TopicSchemaResult,
 } from '/@shared/src/types/TopicInfo';
-import type { NavigationGoalResult } from '/@shared/src/types/NavigationGoalResult';
+import type { NavigationGoalResult, Nav2WarmStatus } from '/@shared/src/types/NavigationGoalResult';
 import {
   assertRobotName,
   assertRosTopicName,
@@ -123,6 +123,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   private activePushes = new Map<string, PushProgress>();
   private pushAbortControllers = new Map<string, AbortController>();
   private progressCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /**
+   * Nav2 pre-warm state per robot, keyed by a logical scope (see #warmKey): set
+   * to 'warming' when #prewarmNav2 starts, 'ready' once the stack is up, 'failed'
+   * if pre-warm gives up, and cleared on teardown. Queried by the UI so an early
+   * Navigate click can show honest "warming…" progress. Absent key = 'idle'.
+   */
+  private nav2WarmStatus = new Map<string, Nav2WarmStatus>();
 
   /**
    * Podman Desktop hosts accept an optional AbortController as the 5th pushImage
@@ -751,7 +758,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       // Warm Nav2 in the background so the first Navigate click is instant (Jazzy only).
       if (image.includes('jazzy')) {
         const pose = { x: Number(safeX), y: Number(safeY), yaw: Number(safeYaw) };
-        void this.#prewarmNav2({ kind: 'podman', id }, safeRobot, pose, 'jazzy');
+        const warmKey = PhysicalAiApiImpl.#warmKey(id, safeRobot);
+        void this.#prewarmNav2(warmKey, { kind: 'podman', id }, safeRobot, pose, 'jazzy');
       }
       return {
         exitCode: 0,
@@ -993,6 +1001,18 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const { id, image } = await this.#resolveSimulationContainer(containerId);
     const distro = PhysicalAiApiImpl.#distroFromImage(image);
     await this.#teardownRobot({ kind: 'podman', id }, robotName, distro);
+    this.nav2WarmStatus.delete(PhysicalAiApiImpl.#warmKey(id, robotName));
+  }
+
+  async getRobotWarmStatus(containerId: string, robotName: string): Promise<Nav2WarmStatus> {
+    let id: string;
+    try {
+      ({ id } = await this.#resolveSimulationContainer(containerId));
+    } catch {
+      return 'idle';
+    }
+    const safeRobot = assertRobotName(robotName);
+    return this.nav2WarmStatus.get(PhysicalAiApiImpl.#warmKey(id, safeRobot)) ?? 'idle';
   }
 
   async #sendNav2NavigationGoal(
@@ -1083,13 +1103,17 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
    * for the robot to appear in the world (spawn is detached), then launches Nav2
    * via #ensureNav2Running. Fire-and-forget: never throws — a failure just means
    * the later Navigate click pays the cold-start as before. Jazzy (Nav2) only.
+   *
+   * `warmKey` scopes the status entry (see #warmKey) so the UI can poll it.
    */
   async #prewarmNav2(
+    warmKey: string,
     target: ExecTarget,
     robotName: string,
     pose: { x: number; y: number; yaw: number },
     distro: SupportedRosDistro,
   ): Promise<void> {
+    this.nav2WarmStatus.set(warmKey, 'warming');
     try {
       let appeared = false;
       for (let attempt = 0; attempt < 30 && !appeared; attempt++) {
@@ -1101,11 +1125,25 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
           // Robot not in the world yet — keep polling.
         }
       }
-      if (!appeared) return;
+      if (!appeared) {
+        this.nav2WarmStatus.set(warmKey, 'failed');
+        return;
+      }
       await this.#ensureNav2Running(target, robotName, pose, distro);
+      this.nav2WarmStatus.set(warmKey, 'ready');
     } catch (err) {
+      this.nav2WarmStatus.set(warmKey, 'failed');
       console.error(`[physical-ai] Nav2 pre-warm for "${robotName}" failed (non-fatal):`, err);
     }
+  }
+
+  /**
+   * Stable per-robot key for the Nav2 warm-status map. The scope must be derivable
+   * from what the UI holds so the query methods hit the same key the spawn set:
+   * the resolved container id (local) or `${namespace}/${name}` (OpenShift).
+   */
+  static #warmKey(scope: string, robotName: string): string {
+    return `${scope} ${robotName}`;
   }
 
   async #hasMapBaseLinkTf(target: ExecTarget, robotName: string, distro: SupportedRosDistro): Promise<boolean> {
@@ -1596,7 +1634,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       const image = await this.#openShiftDeploymentImage(ns, safeName);
       if (image.includes('jazzy')) {
         const pose = { x: Number(safeX), y: Number(safeY), yaw: Number(safeYaw) };
-        void this.#prewarmNav2(target, safeRobot, pose, 'jazzy');
+        const warmKey = PhysicalAiApiImpl.#warmKey(`${ns}/${safeName}`, safeRobot);
+        void this.#prewarmNav2(warmKey, target, safeRobot, pose, 'jazzy');
       }
     } catch (err) {
       console.error('[physical-ai] Nav2 pre-warm setup failed (non-fatal):', err);
@@ -1632,6 +1671,14 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const distro = PhysicalAiApiImpl.#distroFromImage(image);
     const pod = await this.#resolveOpenShiftPod(ns, safeName);
     await this.#teardownRobot({ kind: 'oc', pod, namespace: ns }, safeRobot, distro);
+    this.nav2WarmStatus.delete(PhysicalAiApiImpl.#warmKey(`${ns}/${safeName}`, safeRobot));
+  }
+
+  async getRobotWarmStatusInOpenShift(namespace: string, name: string, robotName: string): Promise<Nav2WarmStatus> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeRobot = assertRobotName(robotName);
+    return this.nav2WarmStatus.get(PhysicalAiApiImpl.#warmKey(`${ns}/${safeName}`, safeRobot)) ?? 'idle';
   }
 
   /** Name of a Running pod for the deployment (selected by the `app=<name>` label). */

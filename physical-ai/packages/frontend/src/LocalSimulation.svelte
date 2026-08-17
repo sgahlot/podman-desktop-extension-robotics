@@ -66,7 +66,10 @@ async function pollContainers() {
 onMount(() => {
   loadImages();
   pollContainers();
-  pollTimer = setInterval(pollContainers, 3000);
+  pollTimer = setInterval(() => {
+    pollContainers();
+    pollWarmStatus();
+  }, 3000);
 });
 
 onDestroy(() => {
@@ -138,8 +141,31 @@ async function spawnRobot(form: { name: string; x: string; y: string; yaw: strin
       navStatus: 'idle',
       navTarget: { x: '2.0', y: '2.0' },
       navReached: null,
+      // Backend pre-warms Nav2 for Jazzy only; show "warming…" optimistically there.
+      warmStatus: runningContainer?.imageTag?.includes('jazzy') ? 'warming' : undefined,
     },
   ];
+}
+
+/** Poll Nav2 pre-warm state for robots still warming, so the badge tracks reality. */
+async function pollWarmStatus() {
+  if (!runningContainer || spawnedRobots.length === 0) return;
+  let changed = false;
+  for (let i = 0; i < spawnedRobots.length; i++) {
+    const robot = spawnedRobots[i];
+    // 'ready'/'failed' are terminal until re-spawn — skip to save exec calls.
+    if (robot.warmStatus === 'ready' || robot.warmStatus === 'failed') continue;
+    try {
+      const status = await physicalAiClient.getRobotWarmStatus(runningContainer.id, robot.name);
+      if (status !== robot.warmStatus) {
+        spawnedRobots[i] = { ...spawnedRobots[i], warmStatus: status };
+        changed = true;
+      }
+    } catch {
+      // ignore — keep the last known warm status
+    }
+  }
+  if (changed) spawnedRobots = [...spawnedRobots];
 }
 
 async function navigateRobot(index: number) {

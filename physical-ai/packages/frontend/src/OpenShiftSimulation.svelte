@@ -1,6 +1,6 @@
 <script lang="ts">
 import { physicalAiClient } from './api/client';
-import { onMount } from 'svelte';
+import { onMount, onDestroy } from 'svelte';
 import { simulationImageTag } from '/@shared/src/types/SimulationProfiles';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import type { OpenShiftContext, OpenShiftDeployResult, OpenShiftWorkload } from '/@shared/src/types/OpenShiftDeploy';
@@ -38,6 +38,7 @@ let deletingName = '';
 
 // --- In-cluster robot spawn + Nav2, keyed by deployment name ---
 let robotsByWorkload: Record<string, RobotEntry[]> = {};
+let warmTimer: ReturnType<typeof setInterval> | null = null;
 
 $: config = { name, namespace, image, useGpu, cpu };
 $: canDeploy = !!context && !!name && !!namespace && !!image && !deploying;
@@ -66,7 +67,34 @@ onMount(async () => {
   }
   loading = false;
   refreshWorkloads();
+  warmTimer = setInterval(pollWarmStatus, 3000);
 });
+
+onDestroy(() => {
+  if (warmTimer) clearInterval(warmTimer);
+});
+
+/** Poll Nav2 pre-warm state for robots still warming across all deployments. */
+async function pollWarmStatus() {
+  let changed = false;
+  for (const [wname, robots] of Object.entries(robotsByWorkload)) {
+    for (let i = 0; i < robots.length; i++) {
+      const robot = robots[i];
+      // 'ready'/'failed' are terminal until re-spawn — skip to save exec calls.
+      if (robot.warmStatus === 'ready' || robot.warmStatus === 'failed') continue;
+      try {
+        const status = await physicalAiClient.getRobotWarmStatusInOpenShift(namespace, wname, robot.name);
+        if (status !== robot.warmStatus) {
+          robots[i] = { ...robot, warmStatus: status };
+          changed = true;
+        }
+      } catch {
+        // ignore — keep the last known warm status
+      }
+    }
+  }
+  if (changed) robotsByWorkload = robotsByWorkload;
+}
 
 async function openRoute(url: string | undefined) {
   if (!url) return;
@@ -163,6 +191,8 @@ async function spawnRobot(w: OpenShiftWorkload, form: { name: string; x: string;
       navStatus: 'idle',
       navTarget: { x: '2.0', y: '0.5' },
       navReached: null,
+      // Backend pre-warms Nav2 for Jazzy only; show "warming…" optimistically there.
+      warmStatus: w.image?.includes('jazzy') ? 'warming' : undefined,
     },
   ];
   robotsByWorkload = robotsByWorkload;

@@ -2,7 +2,7 @@ import type { QuayRepository, QuayTag, PullProgress, BuildProgress, PushProgress
 import type { SimulationConfig } from './types/SimulationConfig';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from './types/SimulationContainer';
 import type { TopicInfo, TopicDetailInfo, TopicPeekResult, TopicSchemaResult } from './types/TopicInfo';
-import type { NavigationGoalResult } from './types/NavigationGoalResult';
+import type { NavigationGoalResult, Nav2WarmStatus } from './types/NavigationGoalResult';
 import type {
   OpenShiftDeployConfig,
   OpenShiftDeployResult,
@@ -63,6 +63,8 @@ export abstract class PhysicalAiApi {
   ): Promise<NavigationGoalResult>;
   /** Tear down a spawned robot: kill its ROS processes and remove its Gazebo model. */
   abstract despawnRobot(containerId: string, robotName: string): Promise<void>;
+  /** Nav2 pre-warm state for a spawned robot (local sim), for an honest "warming…" indicator. */
+  abstract getRobotWarmStatus(containerId: string, robotName: string): Promise<Nav2WarmStatus>;
 
   // --- OpenShift deployment (APPENG-5777) ---
   /** Current Kubernetes/OpenShift context from the kubeconfig, or undefined if none. */
@@ -94,4 +96,6 @@ export abstract class PhysicalAiApi {
   ): Promise<NavigationGoalResult>;
   /** Tear down a robot in a deployed pod: kill its ROS processes and remove its Gazebo model. */
   abstract despawnRobotInOpenShift(namespace: string, name: string, robotName: string): Promise<void>;
+  /** Nav2 pre-warm state for a robot in a deployed pod, for an honest "warming…" indicator. */
+  abstract getRobotWarmStatusInOpenShift(namespace: string, name: string, robotName: string): Promise<Nav2WarmStatus>;
 }
