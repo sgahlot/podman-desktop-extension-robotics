@@ -154,8 +154,8 @@ describe('buildOpenShiftManifests', () => {
     // the GPU node size, not preference, so config.cpu is ignored here.
     const [deployment] = buildOpenShiftManifests({ ...config, useGpu: true, cpu: 16 });
     const container = (deployment as unknown as DeploymentManifest).spec.template.spec.containers[0];
-    expect(container.resources.requests.cpu).toBe('6');
-    expect(container.resources.limits.cpu).toBe('6');
+    expect(container.resources.requests.cpu).toBe('7');
+    expect(container.resources.limits.cpu).toBe('7');
   });
 
   it('requests a GPU and uses hardware rendering when useGpu is set', () => {
@@ -168,9 +168,10 @@ describe('buildOpenShiftManifests', () => {
     expect(env.PHYSICAL_AI_USE_GPU).toBe('1');
     expect(container.resources.limits['nvidia.com/gpu']).toBe('1');
     // The GPU offloads only sensor rendering; the GUI stays software on a no-DRI
-    // cluster, so the pod is guaranteed GPU_POD_CPU cores (requests == limits).
-    expect(container.resources.requests.cpu).toBe('6');
-    expect(container.resources.limits.cpu).toBe('6');
+    // cluster, so the pod is guaranteed GPU_POD_CPU cores (requests == limits) —
+    // the most an 8-vCPU g5.2xlarge GPU node fits.
+    expect(container.resources.requests.cpu).toBe('7');
+    expect(container.resources.limits.cpu).toBe('7');
   });
 
   it('tolerates the default GPU-node taint when useGpu is set', () => {
