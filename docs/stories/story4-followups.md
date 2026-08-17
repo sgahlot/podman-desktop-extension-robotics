@@ -46,6 +46,30 @@ Tackled top-down.
 > node. Escaping the single-node scheduling ceiling and scaling to many robots is
 > a multi-pod problem — see `docs/stories/story7-multipod-openshift-architecture.md`.
 
+### 6. Port Jazzy sim-image improvements to the Humble image  *(parity — backlog)*
+All the sim-image hardening under 5777 targeted **Jazzy only** (`assets/ros2-jazzy-sim/`).
+The Humble image (`assets/ros2-humble-turtlebot3/`) has Gazebo + Nav2 packages but a
+bare entrypoint (`source … ; exec "$@"`) — no noVNC stack, no headless-render/EGL
+logic, no thread caps. Bring it to parity:
+- [ ] **Containerfile:** Mesa software GL + off-screen EGL (`libgl1-mesa-dri`,
+  `libegl-mesa0`, `libgbm1`) for headless sensor rendering without a GPU; plus the
+  noVNC display stack Humble lacks (Xvfb, x11vnc, websockify, openbox).
+- [ ] **Entrypoint:** the three-path server render selection (GPU+/dev/dri GLX /
+  GPU-no-DRI NVIDIA headless EGL / no-GPU software surfaceless EGL +
+  `--headless-rendering`) driven by `PHYSICAL_AI_USE_GPU` and `/dev/dri`.
+- [ ] **Thread caps:** the `_pai_cpu_cap()` helper + `OMP_/OPENBLAS_/LP_/MESA_/
+  GALLIUM_NUM_THREADS` exports capped to the cgroup quota (`PHYSICAL_AI_CPU_CAP`
+  override), no-quota local path left uncapped.
+- **Caveats:** Humble is open-loop `cmd_vel` (no Nav2 navigate) and isn't the
+  OpenShift software-render target today — decide whether it needs the full noVNC +
+  in-cluster path or just the generic robustness (thread caps + headless EGL); the
+  port may be partial by design. Humble is Ubuntu 22.04 (Jammy) vs Jazzy 24.04
+  (Noble) — verify Mesa/EGL package names on Jammy and that its gz-sim accepts
+  `--headless-rendering`. Keep the shell security tests green.
+- **Tracking:** a Jira sub-task under APPENG-5767 is drafted (pending the Atlassian
+  MCP recovery — see `.internal/pending-jira-actions.md` Action 5), "relates to"
+  APPENG-5777 where the Jazzy work landed.
+
 ---
 
 _Update this file as items are triaged/fixed. Fixes referenced in commit messages by the checkbox text._
