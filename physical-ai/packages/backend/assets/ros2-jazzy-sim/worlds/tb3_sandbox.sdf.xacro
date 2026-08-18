@@ -20,7 +20,13 @@
     <plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact"/>
 
     <light type="directional" name="sun">
-      <cast_shadows>true</cast_shadows>
+      <!-- Shadows off: Ogre2 shadow-map passes are among the priciest part of the
+           software (llvmpipe) GUI render, which stays CPU-bound on a no-DRI GPU
+           cluster (the GPU only accelerates the server's sensor render). Dropping
+           them shrinks the GUI's CPU draw and eases the CFS throttling that made
+           in-cluster navigation slow-to-start and jumpy. The scene stays readable
+           for the noVNC demo view. -->
+      <cast_shadows>false</cast_shadows>
       <pose>0 0 10 0 0 0</pose>
       <diffuse>0.8 0.8 0.8 1</diffuse>
       <specular>0.2 0.2 0.2 1</specular>

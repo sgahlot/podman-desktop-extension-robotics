@@ -15,20 +15,20 @@ const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
   physicalAiClient: {
-    listCatalogImages: (...args: any[]) => mockListCatalogImages(...args),
-    getImageTags: (...args: any[]) => mockGetImageTags(...args),
-    listLocalImages: (...args: any[]) => mockListLocalImages(...args),
-    pullImage: (...args: any[]) => mockPullImage(...args),
-    getPullProgress: (...args: any[]) => mockGetPullProgress(...args),
-    getDefaultNamespace: (...args: any[]) => mockGetDefaultNamespace(...args),
-    getCatalogViewMode: (...args: any[]) => mockGetCatalogViewMode(...args),
-    setCatalogViewMode: (...args: any[]) => mockSetCatalogViewMode(...args),
-    getCatalogCuratedAllowlist: (...args: any[]) => mockGetCatalogCuratedAllowlist(...args),
+    listCatalogImages: (...args: unknown[]) => mockListCatalogImages(...args),
+    getImageTags: (...args: unknown[]) => mockGetImageTags(...args),
+    listLocalImages: (...args: unknown[]) => mockListLocalImages(...args),
+    pullImage: (...args: unknown[]) => mockPullImage(...args),
+    getPullProgress: (...args: unknown[]) => mockGetPullProgress(...args),
+    getDefaultNamespace: (...args: unknown[]) => mockGetDefaultNamespace(...args),
+    getCatalogViewMode: (...args: unknown[]) => mockGetCatalogViewMode(...args),
+    setCatalogViewMode: (...args: unknown[]) => mockSetCatalogViewMode(...args),
+    getCatalogCuratedAllowlist: (...args: unknown[]) => mockGetCatalogCuratedAllowlist(...args),
   },
 }));
 
 vi.mock('tinro', () => ({
-  router: { goto: (...args: any[]) => mockGoto(...args) },
+  router: { goto: (...args: unknown[]) => mockGoto(...args) },
 }));
 
 describe('ImageCatalog', () => {
@@ -57,9 +57,7 @@ describe('ImageCatalog', () => {
   });
 
   it('loads repos on mount', async () => {
-    mockListCatalogImages.mockResolvedValue([
-      { name: 'ros2-base', namespace: 'ecosystem-appeng' },
-    ]);
+    mockListCatalogImages.mockResolvedValue([{ name: 'ros2-base', namespace: 'ecosystem-appeng' }]);
     render(ImageCatalog);
     await waitFor(() => {
       expect(screen.getByText(/ros2-base/)).toBeTruthy();
@@ -117,9 +115,7 @@ describe('ImageCatalog', () => {
   });
 
   it('expands repo to show tags', async () => {
-    mockListCatalogImages.mockResolvedValue([
-      { name: 'ros2-base', namespace: 'ecosystem-appeng' },
-    ]);
+    mockListCatalogImages.mockResolvedValue([{ name: 'ros2-base', namespace: 'ecosystem-appeng' }]);
     mockGetImageTags.mockResolvedValue([
       { name: 'latest', size: 1024000, last_modified: '2026-01-15T10:00:00Z', manifest_digest: 'sha256:abc123def456' },
     ]);
@@ -135,9 +131,7 @@ describe('ImageCatalog', () => {
   });
 
   it('shows Pull button for non-local tags', async () => {
-    mockListCatalogImages.mockResolvedValue([
-      { name: 'ros2-base', namespace: 'ecosystem-appeng' },
-    ]);
+    mockListCatalogImages.mockResolvedValue([{ name: 'ros2-base', namespace: 'ecosystem-appeng' }]);
     mockGetImageTags.mockResolvedValue([
       { name: 'v1.0', size: 2048000, last_modified: '2026-01-15T10:00:00Z', manifest_digest: 'sha256:abc123def456' },
     ]);
@@ -171,9 +165,7 @@ describe('ImageCatalog', () => {
   });
 
   it('clears stale results when namespace is emptied', async () => {
-    mockListCatalogImages.mockResolvedValue([
-      { name: 'ros2-base', namespace: 'ecosystem-appeng' },
-    ]);
+    mockListCatalogImages.mockResolvedValue([{ name: 'ros2-base', namespace: 'ecosystem-appeng' }]);
     render(ImageCatalog);
     await waitFor(() => {
       expect(screen.getByText(/ros2-base/)).toBeTruthy();

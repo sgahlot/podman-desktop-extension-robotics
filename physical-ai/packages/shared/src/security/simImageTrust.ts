@@ -70,10 +70,7 @@ export function imageRefMatchesAllowlist(imageRef: string, patterns: string[]): 
 }
 
 /** True if a local tag should appear in the Simulation image picker. */
-export function isSimLaunchImageRef(
-  imageRef: string,
-  allowlistRaw?: string | undefined | null,
-): boolean {
+export function isSimLaunchImageRef(imageRef: string, allowlistRaw?: string | null): boolean {
   try {
     assertLaunchImageTag(imageRef, allowlistRaw);
     return true;
@@ -86,10 +83,7 @@ export function isSimLaunchImageRef(
  * Validates imageTag for launchSimulation.
  * @param allowlistRaw preference value; empty/undefined → default name patterns
  */
-export function assertLaunchImageTag(
-  imageTag: string,
-  allowlistRaw?: string | null,
-): string {
+export function assertLaunchImageTag(imageTag: string, allowlistRaw?: string | null): string {
   if (!imageTag || typeof imageTag !== 'string') {
     throw new Error('Simulation image tag is required.');
   }
@@ -103,9 +97,7 @@ export function assertLaunchImageTag(
   // If digest present, require well-formed sha256
   const at = trimmed.indexOf('@');
   if (at >= 0 && !DIGEST_SUFFIX_RE.test(trimmed.slice(at))) {
-    throw new Error(
-      `Invalid image digest in "${trimmed}". Use @sha256:<64 hex chars>.`,
-    );
+    throw new Error(`Invalid image digest in "${trimmed}". Use @sha256:<64 hex chars>.`);
   }
 
   const patterns = parseSimLaunchAllowlist(allowlistRaw);

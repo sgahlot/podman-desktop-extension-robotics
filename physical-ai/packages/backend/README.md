@@ -25,7 +25,8 @@ To check or change Podman Machine resources: open **Settings → Resources → P
 
 ### Platform notes
 
-- **Mac Apple Silicon (arm64)**: Use the Jazzy Quick Start — builds natively, no QEMU. VM backend is LibKrun (default). Simulation launch passes `/dev/dri` by default (virtio-gpu); see [GPU and rendering](#gpu-and-rendering).
+- **Mac Apple Silicon (arm64)**: Use the **Local** Jazzy Quick Start — builds natively, no QEMU. VM backend is LibKrun (default). Simulation launch passes `/dev/dri` by default (virtio-gpu); see [GPU and rendering](#gpu-and-rendering).
+- **OpenShift target (amd64)**: Use the **OpenShift** Quick Start (**TurtleBot3 Sim (Jazzy · amd64)**) — targets `amd64` (tagged `-amd64`) so the image is cluster-pullable. On an Apple Silicon host this cross-builds via QEMU emulation and is slower (expected).
 - **Linux amd64**: Use Humble (sloretz or osrf base) or Jazzy (Noble or amd64 preset). Native GPU rendering may work but is untested.
 - **Windows**: Untested.
 
@@ -33,7 +34,7 @@ To check or change Podman Machine resources: open **Settings → Resources → P
 
 1. Install / load the extension in Podman Desktop
 2. Open **Physical AI**, or press **F1** → **Physical AI: Open Dashboard**
-3. **Image Builder** → Quick Start **TurtleBot3 Sim (Jazzy)** → Phase 1 Build → Phase 2 Build
+3. **Image Builder** → Quick Start **Local** (**TurtleBot3 Sim (Jazzy)**) → Phase 1 Build → Phase 2 Build (use **OpenShift** for a cluster-pullable `amd64` image)
 4. **Simulation** → Launch → Open in Browser → Add TurtleBot3 → optional **Navigate** (X/Y) and Topic Monitor **Peek**
 5. **Stop & remove** when done — close the Gazebo (noVNC) browser tab manually if it is still open
 6. Adjust defaults under **Settings → Preferences → Physical AI** (including **Simulation GPU passthrough** on Mac)
@@ -90,6 +91,12 @@ On Mac, Podman Machine uses **LibKrun**. The host GPU is exposed to the Linux VM
 **Default on Apple Silicon (arm64):** Simulation launch passes `/dev/dri/card0` and `/dev/dri/renderD128` and sets `PHYSICAL_AI_USE_GPU=1`. The entrypoint uses hardware rendering when `/dev/dri` is present; otherwise it falls back to `llvmpipe`. Disable under **Settings → Preferences → Physical AI → Simulation GPU passthrough** to always use software rendering.
 
 On **amd64**, launch always forces `llvmpipe` (no GPU passthrough).
+
+**In-cluster (OpenShift, amd64, no GPU):** software rendering additionally uses **off-screen EGL** for the Gazebo server (`--headless-rendering` + `EGL_PLATFORM=surfaceless`, backed by the `libgl1-mesa-dri` / `libegl-mesa0` / `libgbm1` packages). Without it, the sensors plugin's Ogre2/GL3Plus tries to open an on-screen GLX window under llvmpipe and **segfaults** the pod on robot spawn. The noVNC GUI still renders on the Xvfb display; only the server's sensor rendering goes through EGL. Do not remove the headless flag or the mesa-EGL packages without re-testing on an amd64 cluster.
+
+**In-cluster CPU sizing (no GPU):** software rendering is CPU-bound — the `gz sim -g` GUI client alone needs ~2.3 cores to render the scene for noVNC, and during *active* Nav2 navigation the planner/controller/costmaps add ~1 more. On a 2-core pod the sim's real-time factor collapses to ~0.1 (goals never finish); at 4 cores goals complete but active-nav utilization hits ~90%, so RTF sags to ~0.3–0.6 and motion is slow and jerky. The software-rendering Deployment therefore requests **8 guaranteed CPUs by default** (`requests == limits`), which keeps utilization comfortable with headroom so navigation runs at ~real-time (RTF ~1.0, a warm ~2 m trip in ~33 s). The count is **configurable** via the **Software-render CPUs** field on the OpenShift tab (`OpenShiftDeployConfig.cpu`, validated 1–64) so you can dial it to your node sizes — note an N-CPU Guaranteed pod only schedules on a node with ≥ N *allocatable* CPU. The bottleneck is the GUI (not the depth camera), so dropping sensors doesn't lower the requirement — a GPU does. A residual micro-stutter used to remain because the container sees all host CPUs but is CFS-throttled to the quota (Gazebo/Ogre size thread pools to the visible count); `entrypoint-gazebo.sh` now caps the render/physics thread pools (`OMP_/OPENBLAS_/LP_/MESA_/GALLIUM_NUM_THREADS`) to the cgroup quota to remove it (takes effect after an image rebuild + push).
+
+**In-cluster with a GPU (OpenShift + NVIDIA GPU operator):** the **OpenShift** tab of the Simulation page has a **"Cluster has a GPU"** toggle. When on, the Deployment requests `nvidia.com/gpu: 1` and sets `PHYSICAL_AI_USE_GPU=1` (dropping the software-rendering env), and the CPU ask drops back to 2 (the GPU does the rendering). The entrypoint then sees a GPU request without `/dev/dri` (the GPU operator exposes `/dev/nvidia*`, not DRI) and renders the server off-screen via **hardware EGL** (`--headless-rendering`, no `surfaceless`/llvmpipe override). This path is **implemented but not yet verified** — no GPU cluster was available to test. The default (toggle off) is the tested software path above.
 
 **Ogre2 Sensors (2026-08 re-verification):** The `gz-sim-sensors-system` plugin no longer segfaults on current Gazebo Harmonic + Mesa (llvmpipe or virtio-gpu). It is re-enabled in `tb3_sandbox.sdf.xacro`. Lidar (`/scan`) and IMU topics are available after spawn.
 

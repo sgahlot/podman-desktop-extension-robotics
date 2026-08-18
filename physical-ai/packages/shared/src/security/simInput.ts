@@ -180,16 +180,12 @@ export function assertLaunchCmd(cmd: string[] | undefined): string[] {
 
 export function assertContainerName(name: string): string {
   if (!CONTAINER_NAME_RE.test(name)) {
-    throw new Error(
-      `Invalid container name "${name}". Use letters, digits, underscore, hyphen, period (max 64).`,
-    );
+    throw new Error(`Invalid container name "${name}". Use letters, digits, underscore, hyphen, period (max 64).`);
   }
   return name;
 }
 
-export function assertLaunchLabels(
-  labels: Record<string, string> | undefined,
-): Record<string, string> {
+export function assertLaunchLabels(labels: Record<string, string> | undefined): Record<string, string> {
   if (!labels || Object.keys(labels).length === 0) {
     return {};
   }
@@ -233,8 +229,7 @@ export function assertPortMappings(
 export const ALLOWED_BROWSER_PORTS = new Set([6080, 8080]);
 
 /** noVNC UI with autoconnect + reconnect (background tabs drop WebSockets). */
-export const NOVNC_BROWSER_PATH =
-  '/vnc.html?autoconnect=true&reconnect=true&reconnect_delay=2000&resize=scale';
+export const NOVNC_BROWSER_PATH = '/vnc.html?autoconnect=true&reconnect=true&reconnect_delay=2000&resize=scale';
 
 export function assertBrowserPort(port: number): number {
   const n = Number(port);

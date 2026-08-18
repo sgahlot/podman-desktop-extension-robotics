@@ -1,3 +1,17 @@
+<style>
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+.push-progress-bar {
+  animation: indeterminate 1.5s ease-in-out infinite;
+}
+</style>
+
 <script lang="ts">
 import { physicalAiClient } from '../api/client';
 import { onMount, onDestroy } from 'svelte';
@@ -282,16 +296,6 @@ $: progressPercent = totalSteps > 0 ? Math.round((currentStep / totalSteps) * 10
 $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !pushDone;
 </script>
 
-<style>
-  @keyframes indeterminate {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(400%); }
-  }
-  .push-progress-bar {
-    animation: indeterminate 1.5s ease-in-out infinite;
-  }
-</style>
-
 <div class="flex flex-col gap-4">
   <div class="flex flex-row gap-3 items-end">
     <div class="flex flex-col gap-1">
@@ -303,23 +307,14 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
         disabled={building || pushing || disabled}
         on:change={commitTag}
         class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] w-96"
-        placeholder={tagPlaceholder}
-      />
+        placeholder={tagPlaceholder} />
     </div>
     {#if !building && !pushing}
-      <button
-        on:click={startBuild}
-        disabled={!inputValue || disabled}
-        class="pai-btn pai-btn-primary"
-      >
+      <button on:click={startBuild} disabled={!inputValue || disabled} class="pai-btn pai-btn-primary">
         {imageExistsLocally ? 'Rebuild' : 'Build'}
       </button>
     {:else if building}
-      <button
-        on:click={cancelBuild}
-        disabled={cancelling}
-        class="pai-btn pai-btn-danger"
-      >
+      <button on:click={cancelBuild} disabled={cancelling} class="pai-btn pai-btn-danger">
         {cancelling ? 'Cancelling...' : 'Cancel'}
       </button>
     {/if}
@@ -337,13 +332,9 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
         &#10003; Image exists in registry: <span class="font-mono">{inputValue}</span>
       </div>
     {:else if imageExistsInRegistry === false}
-      <div class="text-xs pai-text-muted">
-        Not found in registry yet — push when ready
-      </div>
+      <div class="text-xs pai-text-muted">Not found in registry yet — push when ready</div>
     {:else if registryCheckError}
-      <div class="text-xs pai-text-muted">
-        Registry status unavailable (private repo or Quay unreachable)
-      </div>
+      <div class="text-xs pai-text-muted">Registry status unavailable (private repo or Quay unreachable)</div>
     {/if}
   {/if}
 
@@ -361,8 +352,8 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
           <div class="pai-progress-track">
             <div
               class="pai-progress-fill {buildError ? 'pai-progress-fill-error' : ''}"
-              style="width: {buildDone && !buildError ? 100 : progressPercent}%;"
-            ></div>
+              style="width: {buildDone && !buildError ? 100 : progressPercent}%;">
+            </div>
           </div>
         </div>
       {:else if building}
@@ -370,18 +361,14 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
       {/if}
 
       <div class="flex flex-col gap-1">
-        <button
-          on:click={() => buildLogsExpanded = !buildLogsExpanded}
-          class="pai-link pai-link-sm self-start"
-        >
+        <button on:click={() => (buildLogsExpanded = !buildLogsExpanded)} class="pai-link pai-link-sm self-start">
           {buildLogsExpanded ? '▼' : '▶'} Build logs ({logs.length} lines)
         </button>
         {#if buildLogsExpanded}
           <div
             bind:this={logContainer}
             class="rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] font-mono text-xs text-[var(--pd-content-text)]"
-            style="max-height: 400px; overflow-y: auto; padding: 8px; white-space: pre-wrap; word-break: break-all;"
-          >
+            style="max-height: 400px; overflow-y: auto; padding: 8px; white-space: pre-wrap; word-break: break-all;">
             {#each logs as line}
               <div>{line}</div>
             {/each}
@@ -395,9 +382,7 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
       {#if buildDone}
         <div class="flex flex-row items-center gap-3">
           {#if buildCancelled}
-            <div class="text-sm p-3 rounded pai-banner-warning">
-              Build cancelled
-            </div>
+            <div class="text-sm p-3 rounded pai-banner-warning">Build cancelled</div>
           {:else if buildError}
             <div class="text-sm p-3 rounded pai-banner-error">
               Build failed: {buildError}
@@ -407,9 +392,7 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
               Image built successfully: <span class="font-mono">{inputValue}</span>
             </div>
           {/if}
-          <button on:click={reset} class="pai-link pai-link-sm">
-            Build again
-          </button>
+          <button on:click={reset} class="pai-link pai-link-sm"> Build again </button>
         </div>
       {/if}
     </div>
@@ -417,10 +400,9 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
 
   {#if canPush}
     <div class="flex flex-row items-center gap-3 mt-2">
-      <button on:click={startPush} class="pai-btn pai-btn-primary">
-        Push to Registry
-      </button>
-      <span class="text-xs text-[var(--pd-content-text)]">Push <span class="font-mono">{inputValue}</span> to the registry</span>
+      <button on:click={startPush} class="pai-btn pai-btn-primary"> Push to Registry </button>
+      <span class="text-xs text-[var(--pd-content-text)]"
+        >Push <span class="font-mono">{inputValue}</span> to the registry</span>
     </div>
   {/if}
 
@@ -428,11 +410,7 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
     <div class="flex flex-col gap-3 mt-2">
       {#if pushing}
         <div class="flex flex-row items-center gap-3">
-          <button
-            on:click={cancelPush}
-            disabled={pushCancelling}
-            class="pai-btn pai-btn-danger"
-          >
+          <button on:click={cancelPush} disabled={pushCancelling} class="pai-btn pai-btn-danger">
             {pushCancelling ? 'Cancelling...' : 'Cancel push'}
           </button>
           <span class="text-xs pai-text-accent">{pushStatus}</span>
@@ -445,19 +423,13 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
       {#if pushDone}
         <div class="flex flex-row items-center gap-3">
           {#if pushCancelled}
-            <div class="text-sm p-3 rounded pai-banner-warning">
-              Push cancelled
-            </div>
-            <button on:click={startPush} class="pai-link pai-link-sm">
-              Retry push
-            </button>
+            <div class="text-sm p-3 rounded pai-banner-warning">Push cancelled</div>
+            <button on:click={startPush} class="pai-link pai-link-sm"> Retry push </button>
           {:else if pushError}
             <div class="text-sm p-3 rounded pai-banner-error">
               Push failed: {pushError}
             </div>
-            <button on:click={startPush} class="pai-link pai-link-sm">
-              Retry push
-            </button>
+            <button on:click={startPush} class="pai-link pai-link-sm"> Retry push </button>
           {:else}
             <div class="text-sm pai-text-success">
               Image pushed successfully to registry

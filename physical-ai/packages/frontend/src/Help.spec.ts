@@ -5,7 +5,7 @@ import Help from './Help.svelte';
 const mockGoto = vi.fn();
 
 vi.mock('tinro', () => ({
-  router: { goto: (...args: any[]) => mockGoto(...args) },
+  router: { goto: (...args: unknown[]) => mockGoto(...args) },
 }));
 
 describe('Help', () => {

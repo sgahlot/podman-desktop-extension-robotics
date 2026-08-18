@@ -112,7 +112,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 
 * Dashboard landing page with feature cards
 * Image catalog browser with All/Curated views and pull progress _(APPENG-5770, done)_
-* Image Builder for base and simulation images with Quick Start preset _(done)_
+* Image Builder for base and simulation images with Quick Start presets (Local host-native + OpenShift amd64) _(done)_
 * Simulation page — launch, status, open in browser, stop & remove, add TurtleBot3, per-robot X/Y + **Navigate** (Jazzy: Nav2 `navigate_to_pose`; Humble: `cmd_vel`). Lidar/IMU sensors active on Mac (2026-08).
 * In-extension Help page _(done)_
 * ROS2 topic monitor — active topics, message types, pub/sub counts _(APPENG-5773, done)_
@@ -127,7 +127,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 | `src/App.svelte` | Root component, hash-based routing via tinro
 | `src/Dashboard.svelte` | Landing page with quick-link cards
 | `src/ImageCatalog.svelte` | Browse Quay repos (All/Curated), pull images, show local images
-| `src/SimulationSetup.svelte` | Image Builder — configure + build/push base and simulation images (Quick Start card for Jazzy arm64)
+| `src/SimulationSetup.svelte` | Image Builder — configure + build/push base and simulation images (Quick Start panels: Local host-native + OpenShift amd64)
 | `src/SimulationPage.svelte` | Simulation — launch containers, view status, open noVNC, add TurtleBot3
 | `src/TopicMonitor.svelte` | Topic Monitor — ROS2 topic list with message types and pub/sub counts, auto-poll
 | `src/Help.svelte` | In-extension documentation
@@ -284,7 +284,8 @@ Registry presence ──► Frontend calls getImageTags for quay.io/ns/name:tag 
 ----
 User configures Image Builder ──► Frontend shows dropdowns for robot/distro/middleware/engine/base preset
                            Tag derived reactively from selections (:sloretz / :osrf / :latest / :noble)
-Quick Start (Jazzy arm64) ──► Sets dropdowns, saveSimulationConfig, scrolls to Phase 1 (no auto-build)
+Quick Start (Local / OpenShift) ──► Two presets: Local = host-native arch; OpenShift = amd64.
+                           Both set dropdowns, saveSimulationConfig, scroll to Phase 1 (no auto-build)
 User clicks "Save"     ──► Frontend calls saveSimulationConfig(config)
                            ──► Backend persists to Podman Desktop configuration API
 
@@ -368,6 +369,7 @@ Uses a single Podman container (not a pod) with all components baked in. This av
 │  │  gz sim (server) ──► gz sim (GUI, renders to :99)            │  │
 │  │                                                              │  │
 │  │  arm64: virtio-gpu via /dev/dri (default); llvmpipe fallback │  │
+│  │  in-cluster amd64: llvmpipe + headless EGL (or NVIDIA GPU)   │  │
 │  │  Ogre2 Sensors plugin enabled (re-verified 2026-08)          │  │
 │  └──────────────────────────────────────────────────────────────┘  │
 │                                                                    │
@@ -512,14 +514,28 @@ The extension contributes 11 settings under **Settings → Preferences → Physi
 
 | Ogre2 Sensors on arm64
 | Re-enabled in world SDF (2026-08)
-| 2026-07 segfault not reproduced on current Gazebo Harmonic + Mesa (llvmpipe or virtio-gpu), verified with `scripts/test-sensors-gpu.sh`.
+| 2026-07 segfault not reproduced on current Gazebo Harmonic + Mesa (llvmpipe or virtio-gpu), verified with `scripts/test-sensors-gpu.sh`. **Caveat:** this covers only the arm64/virtio-gpu render path — see the in-cluster row below for amd64/llvmpipe.
+
+| In-cluster sensor rendering (amd64, no GPU)
+| Off-screen EGL for the Gazebo server
+| On OpenShift (amd64, pure **llvmpipe**, no GPU) the sensors plugin's Ogre2/GL3Plus tries to create an on-screen **GLX** window and **SIGSEGVs (exit 139)** the moment a sensor-bearing robot spawns (`SensorsPrivate::RenderThread → Ogre2RenderEngine::CreateRenderWindow → GL3PlusRenderSystem::_createRenderWindow`); with no liveness probe the pod restarts and every spawned robot is wiped ("robots vanished + noVNC won't reconnect"). The arm64/virtio-gpu "no segfault" check did **not** cover this — different render path. **Fix:** render the server off-screen via **EGL** — `entrypoint-gazebo.sh` software path exports `EGL_PLATFORM=surfaceless` + `gz sim -s --headless-rendering`; `Containerfile` adds `libgl1-mesa-dri libegl-mesa0 libgbm1`. Keeps `/scan` for Nav2. Full detail: `.internal/tech-reference.md` (in-cluster rendering) and Story 4/6.
+
+| In-cluster GPU rendering (deploy-time toggle)
+| "Cluster has a GPU" checkbox on Deploy to OpenShift
+| One amd64 image serves both cluster types without a rebuild. **Off (default):** software env forces llvmpipe + headless EGL (row above). **On:** Deployment requests `nvidia.com/gpu: 1` and sets `PHYSICAL_AI_USE_GPU=1`; the entrypoint sees a GPU request without `/dev/dri` (the NVIDIA GPU operator exposes `/dev/nvidia*`, not DRI) and renders off-screen via **hardware EGL** (`--headless-rendering`, no surfaceless override). GPU-on path is **implemented but unverified** (no GPU cluster available).
+
+| In-cluster CPU sizing (no GPU)
+| Configurable, default 8 guaranteed CPUs for the software-rendering pod (validated from 6)
+| With software rendering the Gazebo GUI client (`gz sim -g`, rendering the scene for noVNC) alone needs **~2.3 cores**, and during *active* navigation Nav2's planner/controller/costmaps add **~1 more**. Sweep verified live on `sgahlot-pd-extn` (2026-08-14): **2 cores → RTF ~0.01–0.14 → `navigate_to_pose` never finishes (UI hangs on "Navigating…"); 4 cores → goals complete but active-nav utilization hits ~90%, so RTF sags to ~0.3–0.6 → slow, jerky motion; 6 cores → ~60% utilization with headroom → RTF ~1.0, smooth (a warm ~2 m trip in ~33 s)**. The Deployment default is now **8 CPUs (requests == limits, guaranteed)** — configurable 1–64 via the **Software-render CPUs** field, raised from the validated 6 for active-nav headroom and multi-robot. The bottleneck is the GUI, **not** the depth camera (server-side sensors ~0.4 core), so dropping sensors would not lower the floor — a GPU would. The residual micro-stutter from CFS throttling (the container sees 16 host CPUs but is capped at the pod quota, so Gazebo/Ogre thread bursts get throttled) is removed by the **Story 5 thread caps** (GUI llvmpipe pool clamped to 2). The GPU pod is a fixed **7 CPUs** (`GPU_POD_CPU`); on the no-`/dev/dri` cluster the GUI stays software-rendered, so it still needs the cores. Detail: `.internal/tech-reference.md` (in-cluster rendering).
 |===
 
 == Resolved Questions
 
 * **noVNC vs alternatives:** noVNC chosen and implemented. Xvfb + x11vnc + websockify stack baked into the simulation image, served on port 6080. Lightweight and works without GPU.
 * **Mac GPU and rendering:** On arm64 Mac, simulation launch passes `/dev/dri` and sets `PHYSICAL_AI_USE_GPU=1` (preference **Simulation GPU passthrough**, default on). The entrypoint uses virtio-gpu when `/dev/dri` is present; otherwise falls back to `llvmpipe`. amd64 always uses software rendering. Xvfb + noVNC stack is unchanged.
-* **Ogre2 Sensors plugin:** Re-enabled in world SDF (2026-08). A 2026-07 segfault under llvmpipe is **not reproduced** on current Gazebo Harmonic + Mesa (`scripts/test-sensors-gpu.sh`). Lidar (`/scan`) and IMU publish after spawn; on Jazzy, Nav2 is launched locally for the **Navigate** button (`navigate_to_pose`, APPENG-5981) — see Nav2 row in Key Technical Decisions.
+* **Ogre2 Sensors plugin:** Re-enabled in world SDF (2026-08). A 2026-07 segfault under llvmpipe is **not reproduced** on current Gazebo Harmonic + Mesa (`scripts/test-sensors-gpu.sh`) — **on arm64/virtio-gpu**. Lidar (`/scan`) and IMU publish after spawn; on Jazzy, Nav2 is launched locally for the **Navigate** button (`navigate_to_pose`, APPENG-5981) — see Nav2 row in Key Technical Decisions.
+* **In-cluster sensor rendering (amd64/llvmpipe):** The arm64 "no segfault" result does **not** carry over to OpenShift. On amd64 with pure llvmpipe (no GPU) the sensors plugin still **SIGSEGVs** on spawn (on-screen GLX under software GL). Fixed by rendering the Gazebo server off-screen via **EGL** (`--headless-rendering` + `EGL_PLATFORM=surfaceless` + mesa-EGL packages). A deploy-time **"Cluster has a GPU"** toggle switches to hardware EGL (`nvidia.com/gpu`) for GPU clusters (unverified). See the two in-cluster rows in Key Technical Decisions and `.internal/tech-reference.md`.
+* **In-cluster Navigate hang (no GPU):** After the EGL fix, Navigate initially hung on "Navigating…" in-cluster. Root cause was **two independent bugs**, neither in the Nav2/TF/bridge logic (that stack was healthy). (1) The extension's `oc exec` ROS calls ran with `HOME=/` (not writable), so every rclcpp command aborted (`Failed to create log directory`) and the goal never reached Nav2 — fixed by exporting `HOME`/`ROS_HOME`/`ROS_LOG_DIR` on the `oc` path. (2) **CPU sizing**: once goals flowed, 2 cores pinned RTF at ~0.1 (never finishes) and 4 cores sagged to ~0.3–0.6 during active nav (slow/jerky); raising the software-rendering pod to **6 guaranteed CPUs** gives RTF ~1.0 and smooth navigation (warm ~2 m trip ~33 s); the default was later raised to a configurable **8 CPUs** (GPU pod fixed at **7**). See the "In-cluster CPU sizing" row in Key Technical Decisions and `docs/stories/story4-followups.md`.
 
 == Open Questions
 

@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  appendProgressLog,
-  MAX_PROGRESS_LOG_LINES,
-  PROGRESS_LOG_TRUNCATION_MARKER,
-} from './progressLogs';
+import { appendProgressLog, MAX_PROGRESS_LOG_LINES, PROGRESS_LOG_TRUNCATION_MARKER } from './progressLogs';
 
 describe('appendProgressLog', () => {
   it('appends lines under the cap without a truncation marker', () => {

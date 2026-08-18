@@ -60,11 +60,27 @@ export function formatSimulationConfig(config: SimulationConfig): string {
   return `${config.distro}/${config.robot}/${config.middleware}/${config.engine}/${config.baseImage}`;
 }
 
+/**
+ * Tag suffix distinguishing a cross-arch build from the native one.
+ * `-amd64` when building amd64 (e.g. for an OpenShift/Linux cluster from a Mac);
+ * empty otherwise (host-native build keeps the preset's plain tag).
+ */
+export function archTagSuffix(targetArch?: string): string {
+  return targetArch === 'amd64' ? '-amd64' : '';
+}
+
+/** Container build platform string for a target arch, or undefined for host-native. */
+export function platformForArch(targetArch?: string): string | undefined {
+  if (targetArch === 'amd64') return 'linux/amd64';
+  if (targetArch === 'arm64') return 'linux/arm64';
+  return undefined;
+}
+
 export function baseImageTag(namespace: string, config: SimulationConfig): string | undefined {
   const profile = resolveSimulationProfile(config);
   if (!profile) return undefined;
   const base = resolveSimulationBaseImage(config.baseImage);
-  return `quay.io/${namespace}/${profile.baseImageName}:${base.imageTag}`;
+  return `quay.io/${namespace}/${profile.baseImageName}:${base.imageTag}${archTagSuffix(config.targetArch)}`;
 }
 
 export function hasSimulationSupport(profile: SimulationProfile): boolean {
@@ -73,7 +89,7 @@ export function hasSimulationSupport(profile: SimulationProfile): boolean {
 
 export function simulationImageTag(namespace: string, config: SimulationConfig): string | undefined {
   const profile = resolveSimulationProfile(config);
-  if (!profile || !profile.imageName) return undefined;
+  if (!profile?.imageName) return undefined;
   const base = resolveSimulationBaseImage(config.baseImage);
-  return `quay.io/${namespace}/${profile.imageName}:${base.imageTag}`;
+  return `quay.io/${namespace}/${profile.imageName}:${base.imageTag}${archTagSuffix(config.targetArch)}`;
 }

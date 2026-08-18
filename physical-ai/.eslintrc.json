@@ -37,7 +37,12 @@
   },
   "ignorePatterns": [
     "node_modules/**",
-    "**/dist/**"
+    "**/dist/**",
+    "**/coverage/**",
+    "**/media/**",
+    "**/*.config.js",
+    "**/svelte.config.js",
+    "__mocks__/**"
   ],
   "plugins": ["@typescript-eslint", "sonarjs", "etc", "redundant-undefined", "no-null"],
   "rules": {

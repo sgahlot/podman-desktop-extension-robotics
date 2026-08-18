@@ -19,24 +19,24 @@ const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
   physicalAiClient: {
-    getDefaultNamespace: (...args: any[]) => mockGetDefaultNamespace(...args),
-    getHostArch: (...args: any[]) => mockGetHostArch(...args),
-    getSimulationConfig: (...args: any[]) => mockGetSimulationConfig(...args),
-    saveSimulationConfig: (...args: any[]) => mockSaveSimulationConfig(...args),
-    listLocalImages: (...args: any[]) => mockListLocalImages(...args),
-    buildBaseImage: (...args: any[]) => mockBuildBaseImage(...args),
-    buildSimulationImage: (...args: any[]) => mockBuildSimulationImage(...args),
-    getBuildProgress: (...args: any[]) => mockGetBuildProgress(...args),
-    cancelBuild: (...args: any[]) => mockCancelBuild(...args),
-    pushImage: (...args: any[]) => mockPushImage(...args),
-    cancelPush: (...args: any[]) => mockCancelPush(...args),
-    getPushProgress: (...args: any[]) => mockGetPushProgress(...args),
-    getImageTags: (...args: any[]) => mockGetImageTags(...args),
+    getDefaultNamespace: (...args: unknown[]) => mockGetDefaultNamespace(...args),
+    getHostArch: (...args: unknown[]) => mockGetHostArch(...args),
+    getSimulationConfig: (...args: unknown[]) => mockGetSimulationConfig(...args),
+    saveSimulationConfig: (...args: unknown[]) => mockSaveSimulationConfig(...args),
+    listLocalImages: (...args: unknown[]) => mockListLocalImages(...args),
+    buildBaseImage: (...args: unknown[]) => mockBuildBaseImage(...args),
+    buildSimulationImage: (...args: unknown[]) => mockBuildSimulationImage(...args),
+    getBuildProgress: (...args: unknown[]) => mockGetBuildProgress(...args),
+    cancelBuild: (...args: unknown[]) => mockCancelBuild(...args),
+    pushImage: (...args: unknown[]) => mockPushImage(...args),
+    cancelPush: (...args: unknown[]) => mockCancelPush(...args),
+    getPushProgress: (...args: unknown[]) => mockGetPushProgress(...args),
+    getImageTags: (...args: unknown[]) => mockGetImageTags(...args),
   },
 }));
 
 vi.mock('tinro', () => ({
-  router: { goto: (...args: any[]) => mockGoto(...args) },
+  router: { goto: (...args: unknown[]) => mockGoto(...args) },
 }));
 
 describe('SimulationSetup (Image Builder)', () => {
@@ -54,8 +54,8 @@ describe('SimulationSetup (Image Builder)', () => {
     mockSaveSimulationConfig.mockResolvedValue(undefined);
     mockListLocalImages.mockResolvedValue([]);
     mockGetImageTags.mockResolvedValue([]);
-    mockGetBuildProgress.mockResolvedValue(null);
-    mockGetPushProgress.mockResolvedValue(null);
+    mockGetBuildProgress.mockResolvedValue(undefined);
+    mockGetPushProgress.mockResolvedValue(undefined);
   });
 
   it('renders heading after config loads', async () => {
@@ -64,7 +64,8 @@ describe('SimulationSetup (Image Builder)', () => {
     await waitFor(() => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
-    expect(screen.getByText('Quick Start')).toBeTruthy();
+    expect(screen.getByText('Quick Start — Local')).toBeTruthy();
+    expect(screen.getByText('Quick Start — OpenShift')).toBeTruthy();
     expect(screen.getByLabelText('ROS distro')).toBeTruthy();
   });
 
@@ -101,6 +102,29 @@ describe('SimulationSetup (Image Builder)', () => {
           middleware: 'dds',
           engine: 'gazebo',
           baseImage: 'jazzy-noble',
+        }),
+      );
+    });
+  });
+
+  it('OpenShift Quick Start saves jazzy config targeting amd64', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    render(SimulationSetup);
+    await waitFor(() => {
+      expect(screen.queryByText('Loading configuration...')).toBeNull();
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · amd64)' }));
+
+    await waitFor(() => {
+      expect(mockSaveSimulationConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          robot: 'turtlebot3',
+          distro: 'jazzy',
+          middleware: 'dds',
+          engine: 'gazebo',
+          baseImage: 'jazzy-noble',
+          targetArch: 'amd64',
         }),
       );
     });

@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
-import SimulationPage from './SimulationPage.svelte';
+import SimulationPage from './LocalSimulation.svelte';
 
 const mockGetSimulationImageAllowlist = vi.fn();
 const mockListLocalImages = vi.fn();
@@ -11,29 +11,31 @@ const mockStopSimulation = vi.fn();
 const mockOpenSimulationInBrowser = vi.fn();
 const mockExecInSimulation = vi.fn();
 const mockSendNavigationGoal = vi.fn();
+const mockGetRobotWarmStatus = vi.fn();
 const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
   physicalAiClient: {
-    getSimulationImageAllowlist: (...args: any[]) => mockGetSimulationImageAllowlist(...args),
-    listLocalImages: (...args: any[]) => mockListLocalImages(...args),
-    listSimulationContainers: (...args: any[]) => mockListSimulationContainers(...args),
-    launchSimulation: (...args: any[]) => mockLaunchSimulation(...args),
-    deleteSimulation: (...args: any[]) => mockDeleteSimulation(...args),
-    stopSimulation: (...args: any[]) => mockStopSimulation(...args),
-    openSimulationInBrowser: (...args: any[]) => mockOpenSimulationInBrowser(...args),
-    execInSimulation: (...args: any[]) => mockExecInSimulation(...args),
-    sendNavigationGoal: (...args: any[]) => mockSendNavigationGoal(...args),
+    getSimulationImageAllowlist: (...args: unknown[]) => mockGetSimulationImageAllowlist(...args),
+    listLocalImages: (...args: unknown[]) => mockListLocalImages(...args),
+    listSimulationContainers: (...args: unknown[]) => mockListSimulationContainers(...args),
+    launchSimulation: (...args: unknown[]) => mockLaunchSimulation(...args),
+    deleteSimulation: (...args: unknown[]) => mockDeleteSimulation(...args),
+    stopSimulation: (...args: unknown[]) => mockStopSimulation(...args),
+    openSimulationInBrowser: (...args: unknown[]) => mockOpenSimulationInBrowser(...args),
+    execInSimulation: (...args: unknown[]) => mockExecInSimulation(...args),
+    sendNavigationGoal: (...args: unknown[]) => mockSendNavigationGoal(...args),
+    getRobotWarmStatus: (...args: unknown[]) => mockGetRobotWarmStatus(...args),
   },
 }));
 
 vi.mock('tinro', () => ({
-  router: { goto: (...args: any[]) => mockGoto(...args) },
+  router: { goto: (...args: unknown[]) => mockGoto(...args) },
 }));
 
 const SIM_IMAGE = 'quay.io/ns/ros2-jazzy-sim:noble';
 
-describe('SimulationPage', () => {
+describe('LocalSimulation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mockGetSimulationImageAllowlist.mockResolvedValue('');
@@ -43,15 +45,16 @@ describe('SimulationPage', () => {
     mockDeleteSimulation.mockResolvedValue(undefined);
     mockStopSimulation.mockResolvedValue(undefined);
     mockOpenSimulationInBrowser.mockResolvedValue(undefined);
+    mockGetRobotWarmStatus.mockResolvedValue('idle');
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it('renders heading', () => {
+  it('renders the launch section', () => {
     render(SimulationPage);
-    expect(screen.getByText('Simulation')).toBeTruthy();
+    expect(screen.getByText('Launch Simulation')).toBeTruthy();
   });
 
   it('shows empty-state guidance when no local sim images', async () => {
@@ -183,7 +186,8 @@ describe('SimulationPage', () => {
     expect(screen.queryByText('Launch a simulation first to add robots.')).toBeNull();
   });
 
-  it('shows Navigate on spawned robots when a simulation is running', async () => {
+  it('shows Navigate on spawned robots once Nav2 has warmed up', async () => {
+    vi.useFakeTimers();
     mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
     mockListSimulationContainers.mockResolvedValue([
       {
@@ -196,10 +200,20 @@ describe('SimulationPage', () => {
       },
     ]);
     mockExecInSimulation.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
+    // Pre-warm reports ready so the nav controls are revealed after a poll tick.
+    mockGetRobotWarmStatus.mockResolvedValue('ready');
 
     render(SimulationPage);
-    await screen.findByRole('button', { name: 'Add TurtleBot3' });
+    await vi.advanceTimersByTimeAsync(100); // onMount + container list
+
     await fireEvent.click(screen.getByRole('button', { name: 'Add TurtleBot3' }));
-    expect(await screen.findByRole('button', { name: 'Navigate' })).toBeTruthy();
+    await vi.advanceTimersByTimeAsync(0); // let the spawn promise settle
+
+    // Jazzy spawn is optimistically 'warming' → Navigate hidden until warm.
+    expect(screen.queryByRole('button', { name: 'Navigate' })).toBeNull();
+
+    // Warm-status poll flips it to 'ready' → controls appear.
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(screen.getByRole('button', { name: 'Navigate' })).toBeTruthy();
   });
 });

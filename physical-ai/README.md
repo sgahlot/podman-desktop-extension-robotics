@@ -5,7 +5,7 @@ A Podman Desktop extension that gives robotics developers a GUI-driven path from
 ## Features
 
 - **Image Catalog** — Browse and pull ROS2 images from Quay.io (All or Curated view)
-- **Image Builder** — Two-phase build (base + simulation) with Quick Start presets. Phase 1 builds the ROS2 base, Phase 2 layers Gazebo + noVNC on top (Nav2 packages included; **Navigate** on Jazzy launches Nav2).
+- **Image Builder** — Two-phase build (base + simulation) with Quick Start presets (**Local** host-native and **OpenShift** amd64). Phase 1 builds the ROS2 base, Phase 2 layers Gazebo + noVNC on top (Nav2 packages included; **Navigate** on Jazzy launches Nav2).
 - **Simulation** — One-click launch of Gazebo in a Podman container, browser-based visualization via noVNC, interactive TurtleBot3 spawning
 - **Topic Monitor** — Live view of active ROS2 topics, message types, and publisher/subscriber counts inside running simulation containers
 - **Help** — In-extension documentation
@@ -36,9 +36,11 @@ npm run build
 
 1. Load the extension from `packages/backend` in Podman Desktop (Settings → Extensions → Local extension)
 2. Open **Physical AI** (or **F1** → **Physical AI: Open Dashboard**)
-3. **Image Builder** → Quick Start **TurtleBot3 Sim (Jazzy)** → Phase 1 Build → Phase 2 Build
+3. **Image Builder** → Quick Start **Local** (**TurtleBot3 Sim (Jazzy)**) → Phase 1 Build → Phase 2 Build
 4. **Simulation** → Launch → Open in Browser → Add TurtleBot3 → optional **Navigate** (X/Y) and Topic Monitor **Peek**
 5. **Stop & remove** when done — close the Gazebo (noVNC) browser tab manually if it is still open
+
+To run on an OpenShift cluster instead, use Quick Start **OpenShift** (**TurtleBot3 Sim (Jazzy · amd64)**) — it targets `amd64` (tagged `-amd64`) so the image is cluster-pullable. On an Apple Silicon host this cross-builds via emulation and is slower (expected). Then push the image and open the **Simulation** page's **OpenShift** tab (Deploy → Preview manifests → Deploy → Open URL; also lists deployed sims with delete/refresh and per-robot spawn/navigate/remove). In-cluster (no GPU) the sim renders via off-screen software EGL; the Deployment requests **8 guaranteed CPUs by default** so navigation runs smoothly at ~real-time (fewer cores sag the real-time factor — at 2 cores **Navigate** never completes, at 4 it completes but is slow and jerky). The count is adjustable via the **Software-render CPUs** field — dial it to your node sizes, since an N-CPU Guaranteed pod only schedules on a node with ≥ N allocatable CPU. A **"Cluster has a GPU"** toggle switches to hardware rendering and drops back to 2 CPUs (see [`packages/backend/README.md`](packages/backend/README.md) → GPU and rendering).
 
 Idle noVNC tabs may show Disconnected; reconnect or refresh — the simulation is still running. On arm64 with GPU passthrough, lidar/IMU topics are available after spawn; **Navigate** on Jazzy sim uses Nav2 (`navigate_to_pose`) with obstacle-aware planning (Humble images still use open-loop `cmd_vel`).
 
@@ -60,7 +62,7 @@ The root `Containerfile` builds an OCI image of the extension. The backend `READ
 
 ## Settings
 
-11 configuration properties under **Settings → Preferences → Physical AI**:
+12 configuration properties under **Settings → Preferences → Physical AI**:
 
 | Preference | Purpose |
 |------------|---------|
@@ -70,6 +72,7 @@ The root `Containerfile` builds an OCI image of the extension. The backend `READ
 | Simulation image allowlist | Optional tag/digest pins for Simulation launch |
 | Topic peek timeout | Seconds for Topic Monitor Peek (1–30, default 5) |
 | Simulation GPU passthrough | On arm64 Mac, pass `/dev/dri` and use virtio-gpu (default on). Disable to force llvmpipe |
+| Default software-render CPUs | Guaranteed CPU count (1–64, default 8) seeding the Software-render CPUs field on the OpenShift tab |
 | Image Builder defaults | Robot, distro, middleware, engine, base preset |
 
 ### Simulation image trust

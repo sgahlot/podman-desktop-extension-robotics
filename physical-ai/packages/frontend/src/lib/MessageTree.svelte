@@ -10,9 +10,7 @@ export let depth = 0;
     <li class="py-0.5">
       {#if node.children && node.children.length > 0}
         <details open={depth < 2}>
-          <summary
-            class="cursor-pointer text-xs font-mono text-[var(--pd-content-header)] select-none"
-          >
+          <summary class="cursor-pointer text-xs font-mono text-[var(--pd-content-header)] select-none">
             {node.key}
           </summary>
           <svelte:self nodes={node.children} depth={depth + 1} />

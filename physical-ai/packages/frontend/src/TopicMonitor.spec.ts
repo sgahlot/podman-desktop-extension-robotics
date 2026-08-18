@@ -13,18 +13,18 @@ const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
   physicalAiClient: {
-    listSimulationContainers: (...args: any[]) => mockListSimulationContainers(...args),
-    listRosTopics: (...args: any[]) => mockListRosTopics(...args),
-    getRosTopicDetail: (...args: any[]) => mockGetRosTopicDetail(...args),
-    peekRosTopic: (...args: any[]) => mockPeekRosTopic(...args),
-    getRosMessageSchema: (...args: any[]) => mockGetRosMessageSchema(...args),
-    getTopicPeekTimeoutSeconds: (...args: any[]) => mockGetTopicPeekTimeoutSeconds(...args),
-    copyToClipboard: (...args: any[]) => mockCopyToClipboard(...args),
+    listSimulationContainers: (...args: unknown[]) => mockListSimulationContainers(...args),
+    listRosTopics: (...args: unknown[]) => mockListRosTopics(...args),
+    getRosTopicDetail: (...args: unknown[]) => mockGetRosTopicDetail(...args),
+    peekRosTopic: (...args: unknown[]) => mockPeekRosTopic(...args),
+    getRosMessageSchema: (...args: unknown[]) => mockGetRosMessageSchema(...args),
+    getTopicPeekTimeoutSeconds: (...args: unknown[]) => mockGetTopicPeekTimeoutSeconds(...args),
+    copyToClipboard: (...args: unknown[]) => mockCopyToClipboard(...args),
   },
 }));
 
 vi.mock('tinro', () => ({
-  router: { goto: (...args: any[]) => mockGoto(...args) },
+  router: { goto: (...args: unknown[]) => mockGoto(...args) },
 }));
 
 describe('TopicMonitor', () => {

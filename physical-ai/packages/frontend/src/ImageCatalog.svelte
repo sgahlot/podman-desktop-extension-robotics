@@ -3,11 +3,8 @@ import { physicalAiClient } from './api/client';
 import { onMount, onDestroy } from 'svelte';
 import { router } from 'tinro';
 import type { QuayRepository, QuayTag, PullProgress } from '/@shared/src/types/ImageCatalog';
-import {
-  filterCuratedRepos,
-  type CatalogViewMode,
-  DEFAULT_CURATED_ALLOWLIST,
-} from '/@shared/src/types/CatalogCurated';
+import { filterCuratedRepos, type CatalogViewMode, DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
+import QuickLinks from './lib/QuickLinks.svelte';
 
 let namespace = '';
 let filter = '';
@@ -37,9 +34,7 @@ $: hasNamespace = namespace.trim().length > 0;
 $: namespaceMissing = catalogReady && !hasNamespace;
 
 $: scopedRepos = viewMode === 'curated' ? filterCuratedRepos(repos, curatedAllowlist) : repos;
-$: filteredRepos = scopedRepos.filter(r =>
-  r.name.toLowerCase().includes(filter.toLowerCase()),
-);
+$: filteredRepos = scopedRepos.filter(r => r.name.toLowerCase().includes(filter.toLowerCase()));
 
 $: localImagesForNamespace = hasNamespace
   ? Array.from(localImages).filter(img => img.startsWith(`quay.io/${namespace.trim()}/`))
@@ -190,12 +185,16 @@ function resetPullResult(pullKey: string) {
   pullResults = pullResults;
 }
 
-function getProgress(repoKey: string, tagName: string, _progressMap: Map<string, PullProgress>): { percent: number; text: string } | null {
+function getProgress(
+  repoKey: string,
+  tagName: string,
+  _progressMap: Map<string, PullProgress>,
+): { percent: number; text: string } | null {
   const imageKey = `quay.io/${repoKey}:${tagName}`;
   const progress = _progressMap.get(imageKey);
   if (!progress) return null;
   if (progress.currentMB !== undefined && progress.totalMB !== undefined && progress.totalMB > 0) {
-    const percent = Math.min(Math.round(progress.currentMB / progress.totalMB * 100), 100);
+    const percent = Math.min(Math.round((progress.currentMB / progress.totalMB) * 100), 100);
     return { percent, text: `Downloading... ${progress.currentMB} MB (${percent}%)` };
   }
   return { percent: 0, text: progress.status || 'Pulling...' };
@@ -242,13 +241,12 @@ onDestroy(() => {
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
-  <button on:click={() => router.goto('/')} class="pai-link self-start">
-    &larr; Back to Dashboard
-  </button>
+  <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
   <h1 class="text-3xl text-[var(--pd-content-header)]">Image Catalog</h1>
+  <QuickLinks links={[{ label: 'Image Builder', to: '/build' }]} />
   <p class="text-sm text-[var(--pd-content-text)]">
-    Browse and pull ROS2 container images from a Quay.io organization.
-    Bases are Ubuntu interim today (Fedora/RHEL migration is tracked separately).
+    Browse and pull ROS2 container images from a Quay.io organization. Bases are Ubuntu interim today (Fedora/RHEL
+    migration is tracked separately).
   </p>
 
   <div class="flex flex-row gap-3 items-end flex-wrap">
@@ -264,19 +262,12 @@ onDestroy(() => {
         placeholder="e.g. ecosystem-appeng"
         aria-invalid={namespaceMissing}
         aria-describedby={namespaceMissing ? 'namespace-error' : undefined}
-        required
-      />
+        required />
       {#if namespaceMissing}
-        <p id="namespace-error" class="text-xs pai-text-error" role="alert">
-          Namespace is required.
-        </p>
+        <p id="namespace-error" class="text-xs pai-text-error" role="alert">Namespace is required.</p>
       {/if}
     </div>
-    <button
-      on:click={loadRepos}
-      disabled={loading || !hasNamespace}
-      class="pai-btn pai-btn-primary"
-    >
+    <button on:click={loadRepos} disabled={loading || !hasNamespace} class="pai-btn pai-btn-primary">
       {loading ? 'Loading...' : 'Load'}
     </button>
     <div class="flex flex-col gap-1">
@@ -288,8 +279,7 @@ onDestroy(() => {
           style={viewMode === 'all'
             ? 'background-color: var(--pai-accent); color: var(--pai-accent-text);'
             : 'background-color: var(--pd-content-card-bg); color: var(--pd-content-text);'}
-          on:click={() => setViewMode('all')}
-        >
+          on:click={() => setViewMode('all')}>
           All
         </button>
         <button
@@ -299,8 +289,7 @@ onDestroy(() => {
             ? 'background-color: var(--pai-accent); color: var(--pai-accent-text);'
             : 'background-color: var(--pd-content-card-bg); color: var(--pd-content-text);'}
           on:click={() => setViewMode('curated')}
-          title="Patterns: {curatedAllowlist}"
-        >
+          title="Patterns: {curatedAllowlist}">
           Curated
         </button>
       </div>
@@ -315,9 +304,8 @@ onDestroy(() => {
   <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)]">
     <div class="flex flex-row items-center">
       <button
-        on:click={() => localSectionExpanded = !localSectionExpanded}
-        class="flex-1 text-left p-3 flex flex-row items-center gap-3 hover:bg-[var(--pd-content-bg)] rounded-l-lg cursor-pointer"
-      >
+        on:click={() => (localSectionExpanded = !localSectionExpanded)}
+        class="flex-1 text-left p-3 flex flex-row items-center gap-3 hover:bg-[var(--pd-content-bg)] rounded-l-lg cursor-pointer">
         <span class="text-xs text-[var(--pd-content-text)]">
           {localSectionExpanded ? '▼' : '▶'}
         </span>
@@ -330,13 +318,14 @@ onDestroy(() => {
         class="pai-link pai-link-sm hover:bg-[var(--pd-content-bg)] rounded-r-lg"
         style="padding: 12px 20px 12px 12px;"
         title="Refresh local images"
-        aria-label="Refresh local images"
-      >
+        aria-label="Refresh local images">
         ↻
       </button>
     </div>
     {#if localSectionExpanded && localImagesForNamespace.length > 0}
-      <div class="border-t border-[var(--pd-content-card-border)] px-3 py-2" style="max-height: 180px; overflow-y: auto;">
+      <div
+        class="border-t border-[var(--pd-content-card-border)] px-3 py-2"
+        style="max-height: 180px; overflow-y: auto;">
         <div class="flex flex-col gap-1">
           {#each localImagesForNamespace as img}
             <div class="flex flex-row items-center gap-2 text-xs text-[var(--pd-content-text)]">
@@ -365,8 +354,7 @@ onDestroy(() => {
         type="text"
         bind:value={filter}
         class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] w-64"
-        placeholder="e.g. ros2-"
-      />
+        placeholder="e.g. ros2-" />
     </div>
   {/if}
 
@@ -388,9 +376,9 @@ onDestroy(() => {
     {#if filteredRepos.length === 0}
       <div class="text-sm p-3 rounded pai-banner-warning">
         {#if viewMode === 'curated'}
-          No curated repositories matched <span class="font-mono">{curatedAllowlist}</span> in this namespace.
-          Switch to All, or push <strong>public</strong> golden images (see Help), or edit the allowlist in Preferences.
-          Private Quay repos are not listed (Catalog uses the public Quay API).
+          No curated repositories matched <span class="font-mono">{curatedAllowlist}</span> in this namespace. Switch to
+          All, or push <strong>public</strong> golden images (see Help), or edit the allowlist in Preferences. Private Quay
+          repos are not listed (Catalog uses the public Quay API).
         {:else}
           No repositories match the name filter.
         {/if}
@@ -403,8 +391,7 @@ onDestroy(() => {
         <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)]">
           <button
             on:click={() => toggleTags(repo)}
-            class="w-full text-left p-3 flex flex-row items-center gap-3 hover:bg-[var(--pd-content-bg)] rounded-lg cursor-pointer"
-          >
+            class="w-full text-left p-3 flex flex-row items-center gap-3 hover:bg-[var(--pd-content-bg)] rounded-lg cursor-pointer">
             <span class="text-xs text-[var(--pd-content-text)]">
               {expandedRepo === repoKey ? '▼' : '▶'}
             </span>
@@ -448,15 +435,13 @@ onDestroy(() => {
                         <td class="py-2 pr-4 font-medium text-[var(--pd-content-header)]">{tag.name}</td>
                         <td class="py-2 pr-4 text-[var(--pd-content-text)]">{formatSize(tag.size)}</td>
                         <td class="py-2 pr-4 text-[var(--pd-content-text)]">{formatDate(tag.last_modified)}</td>
-                        <td class="py-2 pr-4 text-[var(--pd-content-text)] font-mono">{tag.manifest_digest.substring(7, 19)}</td>
+                        <td class="py-2 pr-4 text-[var(--pd-content-text)] font-mono"
+                          >{tag.manifest_digest.substring(7, 19)}</td>
                         <td class="py-2 min-w-[260px]">
                           {#if pullingImages.has(pullKey)}
                             <div class="flex flex-col gap-1">
                               <div class="pai-progress-track" style="max-width: 180px; height: 6px;">
-                                <div
-                                  class="pai-progress-fill"
-                                  style="width: {progress?.percent ?? 0}%;"
-                                ></div>
+                                <div class="pai-progress-fill" style="width: {progress?.percent ?? 0}%;"></div>
                               </div>
                               <span class="text-xs pai-text-accent">
                                 {progress?.text ?? 'Pulling...'}
@@ -469,8 +454,7 @@ onDestroy(() => {
                                 <span class="text-xs pai-text-success">Pulled</span>
                                 <button
                                   on:click|stopPropagation={() => resetPullResult(pullKey)}
-                                  class="pai-link pai-link-sm"
-                                >
+                                  class="pai-link pai-link-sm">
                                   Pull again
                                 </button>
                               {:else}
@@ -479,8 +463,7 @@ onDestroy(() => {
                                 </span>
                                 <button
                                   on:click|stopPropagation={() => resetPullResult(pullKey)}
-                                  class="pai-link pai-link-sm"
-                                >
+                                  class="pai-link pai-link-sm">
                                   Retry
                                 </button>
                               {/if}
@@ -490,16 +473,14 @@ onDestroy(() => {
                               <span class="text-xs pai-text-success">&#10003; Local</span>
                               <button
                                 on:click|stopPropagation={() => pullImage(repo, tag)}
-                                class="pai-link pai-link-sm"
-                              >
+                                class="pai-link pai-link-sm">
                                 Pull again
                               </button>
                             </div>
                           {:else}
                             <button
                               on:click|stopPropagation={() => pullImage(repo, tag)}
-                              class="pai-btn pai-btn-sm pai-btn-primary"
-                            >
+                              class="pai-btn pai-btn-sm pai-btn-primary">
                               Pull
                             </button>
                           {/if}
@@ -515,8 +496,6 @@ onDestroy(() => {
       {/each}
     </div>
   {:else if !error && hasNamespace}
-    <div class="text-sm text-[var(--pd-content-text)]">
-      Click Load to browse images for this namespace.
-    </div>
+    <div class="text-sm text-[var(--pd-content-text)]">Click Load to browse images for this namespace.</div>
   {/if}
 </div>

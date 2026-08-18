@@ -30,8 +30,7 @@ export const SIMULATION_BASE_IMAGES: readonly SimulationBaseImagePreset[] = [
     id: 'sloretz',
     distro: 'humble',
     label: 'ghcr.io/sloretz (multi-arch, Apple Silicon)',
-    description:
-      'Third-party multi-arch Humble desktop rebuild. Best default for arm64 / Podman on Mac.',
+    description: 'Third-party multi-arch Humble desktop rebuild. Best default for arm64 / Podman on Mac.',
     imageRef:
       'ghcr.io/sloretz/ros:humble-desktop@sha256:970146e40f7aaa818c5783e28ed5302489bc72f61efe92438a1613fcf90b7d5c',
     architectures: ['amd64', 'arm64'],
@@ -41,8 +40,7 @@ export const SIMULATION_BASE_IMAGES: readonly SimulationBaseImagePreset[] = [
     id: 'osrf',
     distro: 'humble',
     label: 'docker.io/osrf (official, amd64)',
-    description:
-      'Official OSRF Humble desktop image. amd64 only — may not run on Apple Silicon without emulation.',
+    description: 'Official OSRF Humble desktop image. amd64 only — may not run on Apple Silicon without emulation.',
     imageRef:
       'docker.io/osrf/ros:humble-desktop@sha256:3d87cf339919a85cff7743ec9ba5e7ec81ccc26c9f722f1c7a6af5008dfdc128',
     architectures: ['amd64'],
@@ -52,8 +50,7 @@ export const SIMULATION_BASE_IMAGES: readonly SimulationBaseImagePreset[] = [
     id: 'jazzy-noble',
     distro: 'jazzy',
     label: 'Ubuntu 24.04 Noble (multi-arch)',
-    description:
-      'Official Ubuntu Noble with ROS2 Jazzy. Multi-arch — works on arm64 (Mac) and amd64 (Linux).',
+    description: 'Official Ubuntu Noble with ROS2 Jazzy. Multi-arch — works on arm64 (Mac) and amd64 (Linux).',
     imageRef: 'docker.io/library/ros:jazzy-ros-base',
     architectures: ['amd64', 'arm64'],
     imageTag: 'noble',
@@ -62,8 +59,7 @@ export const SIMULATION_BASE_IMAGES: readonly SimulationBaseImagePreset[] = [
     id: 'jazzy',
     distro: 'jazzy',
     label: 'docker.io/ros (official Jazzy, amd64)',
-    description:
-      'Official ROS Jazzy base image. amd64 only — may not run on Apple Silicon without emulation.',
+    description: 'Official ROS Jazzy base image. amd64 only — may not run on Apple Silicon without emulation.',
     imageRef:
       'docker.io/library/ros:jazzy-ros-base@sha256:31daab66eef9139933379fb67159449944f4e2dcf2e22c2d12cc715f29873e0f',
     architectures: ['amd64'],
@@ -80,9 +76,7 @@ const LEGACY_BASE_IMAGE_IDS: Record<string, SimulationBaseImageId> = {
   'jazzy-arm64': 'jazzy-noble',
 };
 
-export function resolveSimulationBaseImage(
-  id: string | undefined | null,
-): SimulationBaseImagePreset {
+export function resolveSimulationBaseImage(id: string | undefined | null): SimulationBaseImagePreset {
   const normalized = id ? (LEGACY_BASE_IMAGE_IDS[id] ?? id) : undefined;
   const preset = SIMULATION_BASE_IMAGES.find(p => p.id === normalized);
   return preset ?? SIMULATION_BASE_IMAGES.find(p => p.id === DEFAULT_SIMULATION_BASE_IMAGE)!;

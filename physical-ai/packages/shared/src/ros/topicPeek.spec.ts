@@ -9,7 +9,6 @@ import {
   PEEK_MAX_BYTES,
   PEEK_TIMEOUT_MIN_SEC,
   PEEK_TIMEOUT_MAX_SEC,
-  PEEK_TIMEOUT_DEFAULT_SEC,
 } from './topicPeek';
 
 describe('assertPeekTimeoutSeconds', () => {
@@ -20,15 +19,11 @@ describe('assertPeekTimeoutSeconds', () => {
   });
 
   it('rejects values below the minimum', () => {
-    expect(() => assertPeekTimeoutSeconds(0)).toThrow(
-      new RegExp(`at least ${PEEK_TIMEOUT_MIN_SEC}`),
-    );
+    expect(() => assertPeekTimeoutSeconds(0)).toThrow(new RegExp(`at least ${PEEK_TIMEOUT_MIN_SEC}`));
   });
 
   it('rejects values above the maximum', () => {
-    expect(() => assertPeekTimeoutSeconds(31)).toThrow(
-      new RegExp(`at most ${PEEK_TIMEOUT_MAX_SEC}`),
-    );
+    expect(() => assertPeekTimeoutSeconds(31)).toThrow(new RegExp(`at most ${PEEK_TIMEOUT_MAX_SEC}`));
   });
 
   it('rejects non-integers', () => {
@@ -52,13 +47,7 @@ describe('cleanEchoOutput', () => {
   });
 
   it('extracts header.stamp', () => {
-    const raw = [
-      'header:',
-      '  stamp:',
-      '    sec: 21039',
-      '    nanosec: 900000000',
-      '  frame_id: base',
-    ].join('\n');
+    const raw = ['header:', '  stamp:', '    sec: 21039', '    nanosec: 900000000', '  frame_id: base'].join('\n');
     const result = cleanEchoOutput(raw);
     expect(result.messageStamp).toBe('sec=21039 nanosec=900000000');
   });
@@ -74,9 +63,7 @@ describe('cleanEchoOutput', () => {
 
 describe('extractMessageStamp', () => {
   it('reads inline stamp maps', () => {
-    expect(extractMessageStamp('stamp: {sec: 1, nanosec: 2}\ndata: hi')).toBe(
-      'sec=1 nanosec=2',
-    );
+    expect(extractMessageStamp('stamp: {sec: 1, nanosec: 2}\ndata: hi')).toBe('sec=1 nanosec=2');
   });
 });
 
@@ -104,9 +91,7 @@ describe('shortMessageType', () => {
 
 describe('assertRosMessageType', () => {
   it('accepts ROS 2 message types', () => {
-    expect(assertRosMessageType('sensor_msgs/msg/JointState')).toBe(
-      'sensor_msgs/msg/JointState',
-    );
+    expect(assertRosMessageType('sensor_msgs/msg/JointState')).toBe('sensor_msgs/msg/JointState');
   });
 
   it('rejects injectable types', () => {

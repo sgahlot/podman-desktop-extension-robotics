@@ -7,12 +7,12 @@ const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
   physicalAiClient: {
-    getStatus: (...args: any[]) => mockGetStatus(...args),
+    getStatus: (...args: unknown[]) => mockGetStatus(...args),
   },
 }));
 
 vi.mock('tinro', () => ({
-  router: { goto: (...args: any[]) => mockGoto(...args) },
+  router: { goto: (...args: unknown[]) => mockGoto(...args) },
 }));
 
 describe('Dashboard', () => {

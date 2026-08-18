@@ -1,20 +1,60 @@
 import type { ExtensionContext } from '@podman-desktop/api';
 import * as extensionApi from '@podman-desktop/api';
 import type { PhysicalAiApi } from '/@shared/src/PhysicalAiApi';
-import type { QuayRepository, QuayTag, PullProgress, BuildProgress, PushProgress } from '/@shared/src/types/ImageCatalog';
+import type {
+  QuayRepository,
+  QuayTag,
+  PullProgress,
+  BuildProgress,
+  PushProgress,
+} from '/@shared/src/types/ImageCatalog';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from '/@shared/src/types/SimulationContainer';
-import { SIM_CONTAINER_LABEL, SIM_CONTAINER_LABEL_VALUE, SIM_CONTAINER_PREFIX, SIM_STOPPED_BROWSER_HINT } from '/@shared/src/types/SimulationContainer';
-import { formatSimulationConfig, resolveSimulationProfile } from '/@shared/src/types/SimulationProfiles';
+import {
+  SIM_CONTAINER_LABEL,
+  SIM_CONTAINER_LABEL_VALUE,
+  SIM_CONTAINER_PREFIX,
+  SIM_STOPPED_BROWSER_HINT,
+} from '/@shared/src/types/SimulationContainer';
+import {
+  formatSimulationConfig,
+  resolveSimulationProfile,
+  archTagSuffix,
+  platformForArch,
+} from '/@shared/src/types/SimulationProfiles';
 import { resolveSimulationBaseImage } from '/@shared/src/types/SimulationBaseImages';
+import type {
+  OpenShiftDeployConfig,
+  OpenShiftDeployResult,
+  OpenShiftContext,
+  OpenShiftWorkload,
+} from '/@shared/src/types/OpenShiftDeploy';
+import {
+  buildOpenShiftManifests,
+  manifestsToYaml,
+  assertNamespace,
+  assertK8sName,
+  assertCpuCount,
+  DEFAULT_SW_RENDER_CPU,
+  PART_OF_LABEL,
+  PART_OF_VALUE,
+} from '/@shared/src/openshift/manifests';
+import { readFile } from 'node:fs/promises';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
-import type { TopicInfo, TopicDetailInfo, TopicNodeInfo, TopicPeekResult, TopicSchemaResult } from '/@shared/src/types/TopicInfo';
-import type { NavigationGoalResult } from '/@shared/src/types/NavigationGoalResult';
+import type {
+  TopicInfo,
+  TopicDetailInfo,
+  TopicNodeInfo,
+  TopicPeekResult,
+  TopicSchemaResult,
+} from '/@shared/src/types/TopicInfo';
+import type { NavigationGoalResult, Nav2WarmStatus } from '/@shared/src/types/NavigationGoalResult';
 import {
   assertRobotName,
   assertRosTopicName,
   assertRosDistro,
   NAV2_ENTRYPOINT,
+  SPAWN_ENTRYPOINT,
   assertSpawnExecCommand,
   assertLaunchCmd,
   assertLaunchEnv,
@@ -27,14 +67,60 @@ import {
 } from '/@shared/src/security/simInput';
 import { assertLaunchImageTag } from '/@shared/src/security/simImageTrust';
 import { assertQuayName } from '/@shared/src/security/quayNames';
-import { assertRosMessageType, cleanEchoOutput, assertPeekTimeoutSeconds, PEEK_TIMEOUT_DEFAULT_SEC, PEEK_MAX_BYTES } from '/@shared/src/ros/topicPeek';
+import {
+  assertRosMessageType,
+  cleanEchoOutput,
+  assertPeekTimeoutSeconds,
+  PEEK_TIMEOUT_DEFAULT_SEC,
+  PEEK_MAX_BYTES,
+} from '/@shared/src/ros/topicPeek';
 import { appendProgressLog } from './progressLogs';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
 /** How long completed progress entries stay queryable for the UI. */
 const PROGRESS_RETENTION_MS = 30_000;
+/**
+ * Seconds to poll for the map→base_link TF after launching Nav2. Sized for the
+ * software-render cold-start (~40–90 s under llvmpipe); GPU/warm paths return
+ * well before this. Pre-warm runs in the background, so a long wait is invisible.
+ */
+const NAV2_TF_POLL_ATTEMPTS = 120;
+
+/**
+ * Settle after clearing the Nav2 costmaps on a cold start, so they refill from
+ * live (good-TF) scans before navigation plans on them. The local costmap updates
+ * at 5 Hz and the global at 1 Hz, so ~2 s covers at least one good global refill.
+ * Only paid once per fresh Nav2 bringup (the warm path skips the clear entirely).
+ */
+const NAV2_COSTMAP_REFILL_MS = 2000;
+
+/**
+ * First non-empty string among the arguments, or '' if none.
+ * Preserves the "skip blank" behavior of `a || b` for strings (which `??` does not).
+ */
+function firstNonEmpty(...values: (string | undefined)[]): string {
+  for (const value of values) {
+    if (value && value.length > 0) return value;
+  }
+  return '';
+}
 /** Cap concurrent in-flight pull/build/push ops. */
 const MAX_IN_FLIGHT_OPS = 5;
+
+/**
+ * Where an in-container command runs. The same spawn/Nav2/topic logic works
+ * against a local Podman container (`podman exec`) or a deployed OpenShift pod
+ * (`oc exec`) — only the transport differs.
+ */
+type ExecTarget =
+  | { readonly kind: 'podman'; readonly id: string }
+  | { readonly kind: 'oc'; readonly pod: string; readonly namespace: string };
+
+/** Single-quote a value for safe interpolation into a remote `bash -c` string. */
+function shSingleQuote(value: string): string {
+  const escaped = value.replace(/'/g, `'\\''`);
+  return `'${escaped}'`;
+}
 
 export class PhysicalAiApiImpl implements PhysicalAiApi {
   private extensionContext: ExtensionContext;
@@ -45,6 +131,23 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   private activePushes = new Map<string, PushProgress>();
   private pushAbortControllers = new Map<string, AbortController>();
   private progressCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /**
+   * Nav2 pre-warm state per robot, keyed by a logical scope (see #warmKey): set
+   * to 'warming' when #prewarmNav2 starts, 'ready' once the stack is up, 'failed'
+   * if pre-warm gives up, and cleared on teardown. Queried by the UI so an early
+   * Navigate click can show honest "warming…" progress. Absent key = 'idle'.
+   */
+  private nav2WarmStatus = new Map<string, Nav2WarmStatus>();
+
+  /**
+   * Robots with a pending one-time cold-start costmap clear (keyed by #navTargetKey).
+   * The mark is added when *we* launch a fresh Nav2 bringup (#ensureNav2Running cold
+   * path) and consumed by the first goal, which clears the costmaps just before
+   * planning (#sendNav2NavigationGoal). A genuinely warm sim we never brought up is
+   * never marked, so its first goal pays no clear. Not pre-warm — the clock hasn't
+   * settled that early, so the refill re-accumulates the phantoms.
+   */
+  private nav2ClearPending = new Set<string>();
 
   /**
    * Podman Desktop hosts accept an optional AbortController as the 5th pushImage
@@ -110,8 +213,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return data.tags;
   }
 
-  async getPullProgress(image: string): Promise<PullProgress | null> {
-    return this.activePulls.get(image) || null;
+  async getPullProgress(image: string): Promise<PullProgress | undefined> {
+    return this.activePulls.get(image);
   }
 
   async listLocalImages(): Promise<string[]> {
@@ -139,11 +242,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async #listLocalImagesFromPodmanCli(): Promise<string[]> {
     try {
-      const result = await extensionApi.process.exec('podman', [
-        'images',
-        '--format',
-        '{{.Repository}}:{{.Tag}}',
-      ]);
+      const result = await extensionApi.process.exec('podman', ['images', '--format', '{{.Repository}}:{{.Tag}}']);
       const lines = (result.stdout ?? '')
         .split('\n')
         .map(l => l.trim())
@@ -195,23 +294,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       return; // replacing same in-flight key is allowed
     }
     if (this.#countInFlight(map) >= MAX_IN_FLIGHT_OPS) {
-      throw new Error(
-        `Too many concurrent ${kind} operations (max ${MAX_IN_FLIGHT_OPS}). Wait for one to finish.`,
-      );
+      throw new Error(`Too many concurrent ${kind} operations (max ${MAX_IN_FLIGHT_OPS}). Wait for one to finish.`);
     }
   }
 
-  #startImageBuild(
-    tag: string,
-    assetDir: string,
-    buildargs?: { [key: string]: string },
-  ): void {
+  #startImageBuild(tag: string, assetDir: string, buildargs?: { [key: string]: string }, platform?: string): void {
     this.#assertCanStartOp(this.activeBuilds, tag, 'build');
     const podmanConnection = this.#getRunningPodmanConnection();
 
-    const contextDir = extensionApi.Uri.joinPath(
-      this.extensionContext.extensionUri, 'assets', assetDir,
-    ).fsPath;
+    const contextDir = extensionApi.Uri.joinPath(this.extensionContext.extensionUri, 'assets', assetDir).fsPath;
 
     // Replace any in-flight build for this tag
     const existing = this.buildAbortControllers.get(tag);
@@ -229,30 +320,62 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       logs: [],
     });
 
-    extensionApi.containerEngine.buildImage(
-      contextDir,
-      (eventName: string, data: string) => {
-        const progress = this.activeBuilds.get(tag);
-        if (!progress || progress.done) return;
+    extensionApi.containerEngine
+      .buildImage(
+        contextDir,
+        (eventName: string, data: string) => {
+          const progress = this.activeBuilds.get(tag);
+          if (!progress || progress.done) return;
 
-        if (eventName === 'stream') {
-          const line = data.trim();
-          if (line) {
-            appendProgressLog(progress.logs, line);
-            const stepMatch = line.match(/^STEP\s+(\d+)\/(\d+)/i);
-            if (stepMatch) {
-              progress.currentStep = parseInt(stepMatch[1], 10);
-              progress.totalSteps = parseInt(stepMatch[2], 10);
-              progress.status = `Building... Step ${progress.currentStep}/${progress.totalSteps}`;
+          if (eventName === 'stream') {
+            const line = data.trim();
+            if (line) {
+              appendProgressLog(progress.logs, line);
+              const stepMatch = line.match(/^STEP\s+(\d+)\/(\d+)/i);
+              if (stepMatch) {
+                progress.currentStep = parseInt(stepMatch[1], 10);
+                progress.totalSteps = parseInt(stepMatch[2], 10);
+                progress.status = `Building... Step ${progress.currentStep}/${progress.totalSteps}`;
+              }
             }
+          } else if (eventName === 'error') {
+            appendProgressLog(progress.logs, `ERROR: ${data}`);
+            progress.error = data;
+          } else if (eventName === 'finish') {
+            // Podman Desktop may emit finish before/without the Promise settling promptly.
+            // Mark complete here so the UI does not stay stuck on Cancel.
+            if (progress.cancelled || abortController.signal.aborted) {
+              progress.status = 'Cancelled';
+              progress.cancelled = true;
+              progress.done = true;
+              progress.error = 'Build cancelled';
+              appendProgressLog(progress.logs, 'Build cancelled by user');
+            } else {
+              progress.status = 'Complete';
+              progress.done = true;
+              if (progress.totalSteps) {
+                progress.currentStep = progress.totalSteps;
+              }
+              appendProgressLog(progress.logs, data?.trim() ? data.trim() : 'Build finished');
+            }
+            this.buildAbortControllers.delete(tag);
+            this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
           }
-        } else if (eventName === 'error') {
-          appendProgressLog(progress.logs, `ERROR: ${data}`);
-          progress.error = data;
-        } else if (eventName === 'finish') {
-          // Podman Desktop may emit finish before/without the Promise settling promptly.
-          // Mark complete here so the UI does not stay stuck on Cancel.
-          if (progress.cancelled || abortController.signal.aborted) {
+        },
+        {
+          containerFile: 'Containerfile',
+          tag,
+          provider: podmanConnection.connection,
+          abortController,
+          ...(buildargs ? { buildargs } : {}),
+          ...(platform ? { platform } : {}),
+        },
+      )
+      .then(() => {
+        this.buildAbortControllers.delete(tag);
+        const progress = this.activeBuilds.get(tag);
+        if (progress && !progress.done) {
+          if (abortController.signal.aborted || progress.cancelled) {
             progress.status = 'Cancelled';
             progress.cancelled = true;
             progress.done = true;
@@ -261,56 +384,28 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
           } else {
             progress.status = 'Complete';
             progress.done = true;
-            if (progress.totalSteps) {
-              progress.currentStep = progress.totalSteps;
-            }
-            appendProgressLog(progress.logs, data?.trim() ? data.trim() : 'Build finished');
           }
-          this.buildAbortControllers.delete(tag);
-          this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
         }
-      },
-      {
-        containerFile: 'Containerfile',
-        tag,
-        provider: podmanConnection.connection,
-        abortController,
-        ...(buildargs ? { buildargs } : {}),
-      },
-    ).then(() => {
-      this.buildAbortControllers.delete(tag);
-      const progress = this.activeBuilds.get(tag);
-      if (progress && !progress.done) {
-        if (abortController.signal.aborted || progress.cancelled) {
-          progress.status = 'Cancelled';
-          progress.cancelled = true;
-          progress.done = true;
-          progress.error = 'Build cancelled';
-          appendProgressLog(progress.logs, 'Build cancelled by user');
-        } else {
-          progress.status = 'Complete';
-          progress.done = true;
+        this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
+      })
+      .catch((err: unknown) => {
+        this.buildAbortControllers.delete(tag);
+        const progress = this.activeBuilds.get(tag);
+        if (progress && !progress.done) {
+          if (abortController.signal.aborted || progress.cancelled) {
+            progress.status = 'Cancelled';
+            progress.cancelled = true;
+            progress.done = true;
+            progress.error = 'Build cancelled';
+            appendProgressLog(progress.logs, 'Build cancelled by user');
+          } else {
+            progress.status = 'Failed';
+            progress.done = true;
+            progress.error = err instanceof Error ? err.message : String(err);
+          }
         }
-      }
-      this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
-    }).catch((err: unknown) => {
-      this.buildAbortControllers.delete(tag);
-      const progress = this.activeBuilds.get(tag);
-      if (progress && !progress.done) {
-        if (abortController.signal.aborted || progress.cancelled) {
-          progress.status = 'Cancelled';
-          progress.cancelled = true;
-          progress.done = true;
-          progress.error = 'Build cancelled';
-          appendProgressLog(progress.logs, 'Build cancelled by user');
-        } else {
-          progress.status = 'Failed';
-          progress.done = true;
-          progress.error = err instanceof Error ? err.message : String(err);
-        }
-      }
-      this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
-    });
+        this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
+      });
   }
 
   async cancelBuild(tag: string): Promise<void> {
@@ -345,10 +440,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     this.activePulls.set(imageToPull, { image: imageToPull, status: 'Starting...' });
     this.layerProgress.set(imageToPull, new Map());
 
-    extensionApi.containerEngine.pullImage(
-      podmanConnection.connection,
-      imageToPull,
-      event => {
+    extensionApi.containerEngine
+      .pullImage(podmanConnection.connection, imageToPull, event => {
         const layers = this.layerProgress.get(imageToPull)!;
 
         if (event.id && event.progressDetail?.current !== undefined && event.progressDetail?.total) {
@@ -367,33 +460,30 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
         this.activePulls.set(imageToPull, {
           image: imageToPull,
-          status: totalSize > 0 ? 'Downloading' : (event.status || ''),
-          currentMB: totalSize > 0
-            ? Math.round(totalCurrent / (1024 * 1024) * 10) / 10
-            : undefined,
-          totalMB: totalSize > 0
-            ? Math.round(totalSize / (1024 * 1024) * 10) / 10
-            : undefined,
+          status: totalSize > 0 ? 'Downloading' : (event.status ?? ''),
+          currentMB: totalSize > 0 ? Math.round((totalCurrent / (1024 * 1024)) * 10) / 10 : undefined,
+          totalMB: totalSize > 0 ? Math.round((totalSize / (1024 * 1024)) * 10) / 10 : undefined,
         });
-      },
-    ).then(() => {
-      this.layerProgress.delete(imageToPull);
-      this.activePulls.set(imageToPull, { image: imageToPull, status: 'Complete', done: true });
-      this.#scheduleProgressCleanup(this.activePulls, imageToPull, 'pull');
-    }).catch((err: unknown) => {
-      this.layerProgress.delete(imageToPull);
-      this.activePulls.set(imageToPull, {
-        image: imageToPull,
-        status: 'Failed',
-        done: true,
-        error: err instanceof Error ? err.message : String(err),
+      })
+      .then(() => {
+        this.layerProgress.delete(imageToPull);
+        this.activePulls.set(imageToPull, { image: imageToPull, status: 'Complete', done: true });
+        this.#scheduleProgressCleanup(this.activePulls, imageToPull, 'pull');
+      })
+      .catch((err: unknown) => {
+        this.layerProgress.delete(imageToPull);
+        this.activePulls.set(imageToPull, {
+          image: imageToPull,
+          status: 'Failed',
+          done: true,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        this.#scheduleProgressCleanup(this.activePulls, imageToPull, 'pull');
       });
-      this.#scheduleProgressCleanup(this.activePulls, imageToPull, 'pull');
-    });
   }
 
-  async getBuildProgress(tag: string): Promise<BuildProgress | null> {
-    return this.activeBuilds.get(tag) || null;
+  async getBuildProgress(tag: string): Promise<BuildProgress | undefined> {
+    return this.activeBuilds.get(tag);
   }
 
   async buildBaseImage(tag: string, config: SimulationConfig): Promise<void> {
@@ -405,9 +495,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       );
     }
     const baseImage = resolveSimulationBaseImage(config.baseImage);
-    this.#startImageBuild(tag, profile.baseAssetDir, {
-      ROS_BASE_IMAGE: baseImage.imageRef,
-    });
+    this.#startImageBuild(
+      tag,
+      profile.baseAssetDir,
+      { ROS_BASE_IMAGE: baseImage.imageRef },
+      platformForArch(config.targetArch),
+    );
   }
 
   async buildSimulationImage(tag: string, config: SimulationConfig): Promise<void> {
@@ -426,14 +519,18 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
     const ns = await this.getDefaultNamespace();
     const baseImage = resolveSimulationBaseImage(config.baseImage);
-    const localBaseTag = `quay.io/${ns}/${profile.baseImageName}:${baseImage.imageTag}`;
-    this.#startImageBuild(tag, profile.assetDir, {
-      LOCAL_BASE_IMAGE: localBaseTag,
-    });
+    // The Phase 1 base carries the same arch suffix, so point FROM at it.
+    const localBaseTag = `quay.io/${ns}/${profile.baseImageName}:${baseImage.imageTag}${archTagSuffix(config.targetArch)}`;
+    this.#startImageBuild(
+      tag,
+      profile.assetDir,
+      { LOCAL_BASE_IMAGE: localBaseTag },
+      platformForArch(config.targetArch),
+    );
   }
 
-  async getPushProgress(tag: string): Promise<PushProgress | null> {
-    return this.activePushes.get(tag) || null;
+  async getPushProgress(tag: string): Promise<PushProgress | undefined> {
+    return this.activePushes.get(tag);
   }
 
   async getHostArch(): Promise<string> {
@@ -510,7 +607,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   async getTopicPeekTimeoutSeconds(): Promise<number> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
     const raw = config.get<number>('topicPeekTimeoutSeconds');
-    if (raw === undefined || raw === null) {
+    if (raw === undefined) {
       return PEEK_TIMEOUT_DEFAULT_SEC;
     }
     return assertPeekTimeoutSeconds(raw);
@@ -522,13 +619,26 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     await config.update('topicPeekTimeoutSeconds', safe);
   }
 
+  async getDefaultSoftwareRenderCpus(): Promise<number> {
+    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const raw = config.get<number>('defaultSoftwareRenderCpus');
+    if (raw === undefined) {
+      return DEFAULT_SW_RENDER_CPU;
+    }
+    // Fall back to the built-in default if the setting is somehow out of range,
+    // rather than throwing — this only seeds the form (deploy still validates).
+    try {
+      return assertCpuCount(raw);
+    } catch {
+      return DEFAULT_SW_RENDER_CPU;
+    }
+  }
+
   async launchSimulation(imageTag: string, containerName: string, options?: SimLaunchOptions): Promise<string> {
     const allowlist = await this.getSimulationImageAllowlist();
-    const safeImageTag = assertLaunchImageTag(imageTag, allowlist || null);
+    const safeImageTag = assertLaunchImageTag(imageTag, allowlist);
     const engineId = await this.#getEngineId(safeImageTag);
-    const name = containerName
-      ? assertContainerName(containerName)
-      : `${SIM_CONTAINER_PREFIX}${Date.now()}`;
+    const name = containerName ? assertContainerName(containerName) : `${SIM_CONTAINER_PREFIX}${Date.now()}`;
 
     // Role label always wins — client cannot clear or redefine it.
     const labels: Record<string, string> = {
@@ -559,27 +669,21 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       Devices?: Array<{ PathOnHost: string; PathInContainer: string; CgroupPermissions: string }>;
     } = {
       PortBindings: Object.fromEntries(
-        portMappings.map(p => [
-          `${p.containerPort}/${p.protocol}`,
-          [{ HostPort: String(p.hostPort) }],
-        ]),
+        portMappings.map(p => [`${p.containerPort}/${p.protocol}`, [{ HostPort: String(p.hostPort) }]]),
       ),
     };
     if (useGpu) {
       hostConfig.Devices = this.#simulationGpuDeviceMappings();
     }
 
-    const createResult = await extensionApi.containerEngine.createContainer(
-      engineId,
-      {
-        name,
-        Image: safeImageTag,
-        Cmd: cmd,
-        Env: envArray,
-        Labels: labels,
-        HostConfig: hostConfig,
-      },
-    );
+    const createResult = await extensionApi.containerEngine.createContainer(engineId, {
+      name,
+      Image: safeImageTag,
+      Cmd: cmd,
+      Env: envArray,
+      Labels: labels,
+      HostConfig: hostConfig,
+    });
 
     await extensionApi.containerEngine.startContainer(engineId, createResult.id);
     return createResult.id;
@@ -613,7 +717,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       await extensionApi.process.exec('podman', ['rm', '-f', id]);
     } catch (err: unknown) {
       const runErr = err as { stderr?: string; message?: string };
-      const detail = runErr.stderr?.trim() || runErr.message || String(err);
+      const detail = firstNonEmpty(runErr.stderr?.trim(), runErr.message, String(err));
       // Already gone is success
       if (!/no such container|not found/i.test(detail)) {
         throw new Error(`Failed to remove simulation container: ${detail}`);
@@ -622,23 +726,17 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     await extensionApi.window.showInformationMessage(SIM_STOPPED_BROWSER_HINT);
   }
 
-  async #resolveSimulationContainer(
-    containerId: string,
-  ): Promise<{ id: string; engineId: string; image: string }> {
+  async #resolveSimulationContainer(containerId: string): Promise<{ id: string; engineId: string; image: string }> {
     if (!containerId || typeof containerId !== 'string' || containerId.length < 12) {
       throw new Error('Container id must be at least 12 characters.');
     }
     const containers = await extensionApi.containerEngine.listContainers();
-    const matches = containers.filter(
-      c => c.Id === containerId || c.Id.startsWith(containerId),
-    );
+    const matches = containers.filter(c => c.Id === containerId || c.Id.startsWith(containerId));
     if (matches.length === 0) {
       throw new Error('Not a Physical AI simulation container');
     }
     if (matches.length > 1) {
-      throw new Error(
-        `Ambiguous container id "${containerId}" matches ${matches.length} containers.`,
-      );
+      throw new Error(`Ambiguous container id "${containerId}" matches ${matches.length} containers.`);
     }
     const match = matches[0];
     if (match.Labels?.[SIM_CONTAINER_LABEL] !== SIM_CONTAINER_LABEL_VALUE) {
@@ -655,29 +753,32 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         id: c.Id,
         name: c.Names?.[0]?.replace(/^\//, '') ?? c.Id.slice(0, 12),
         imageTag: c.Image ?? '',
-        state: (c.State === 'running' ? 'running'
-          : c.State === 'exited' ? 'exited'
-          : c.State === 'stopped' ? 'stopped'
-          : 'unknown') as SimContainerInfo['state'],
-        ports: (c.Ports ?? []).map(
-          p => `${p.PublicPort ?? ''}:${p.PrivatePort ?? ''}/${p.Type ?? 'tcp'}`,
-        ),
+        state: (c.State === 'running'
+          ? 'running'
+          : c.State === 'exited'
+            ? 'exited'
+            : c.State === 'stopped'
+              ? 'stopped'
+              : 'unknown') as SimContainerInfo['state'],
+        ports: (c.Ports ?? []).map(p => `${p.PublicPort ?? ''}:${p.PrivatePort ?? ''}/${p.Type ?? 'tcp'}`),
         labels: c.Labels ?? {},
       }));
   }
 
   async execInSimulation(containerId: string, command: string[]): Promise<ExecResult> {
-    const { id } = await this.#resolveSimulationContainer(containerId);
-    const safeCommand = assertSpawnExecCommand(command);
+    const { id, image } = await this.#resolveSimulationContainer(containerId);
+    const [, safeRobot, safeX, safeY, safeYaw] = assertSpawnExecCommand(command);
+    const safeCommand = [SPAWN_ENTRYPOINT, safeRobot, safeX, safeY, safeYaw];
     try {
       // Detached: entrypoint backgrounds work; exitCode reflects only whether
       // podman accepted the exec, not whether spawn succeeded inside the container.
-      const result = await extensionApi.process.exec('podman', [
-        'exec',
-        '-d',
-        id,
-        ...safeCommand,
-      ]);
+      const result = await extensionApi.process.exec('podman', ['exec', '-d', id, ...safeCommand]);
+      // Warm Nav2 in the background so the first Navigate click is instant (Jazzy only).
+      if (image.includes('jazzy')) {
+        const pose = { x: Number(safeX), y: Number(safeY), yaw: Number(safeYaw) };
+        const warmKey = PhysicalAiApiImpl.#warmKey(id, safeRobot);
+        void this.#prewarmNav2(warmKey, { kind: 'podman', id }, safeRobot, pose, 'jazzy');
+      }
       return {
         exitCode: 0,
         stdout: result.stdout ?? '',
@@ -698,11 +799,25 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     await extensionApi.env.openExternal(extensionApi.Uri.parse(url));
   }
 
+  async openUrlInBrowser(url: string): Promise<void> {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error(`Invalid URL: ${url}`);
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      throw new Error(`Only http(s) URLs can be opened, got: ${parsed.protocol}`);
+    }
+    await extensionApi.env.openExternal(extensionApi.Uri.parse(url));
+  }
+
   async listRosTopics(containerId: string): Promise<TopicInfo[]> {
     const { id } = await this.#resolveSimulationContainer(containerId);
     const distro = await this.#detectRosDistro(id);
+    const target = { kind: 'podman', id } as const;
 
-    const listResult = await this.#execRosBash(id, distro, 'ros2 topic list');
+    const listResult = await this.#execRosBash(target, distro, 'ros2 topic list');
 
     if (listResult.exitCode !== 0 || !listResult.stdout.trim()) {
       return [];
@@ -721,12 +836,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       const batch = topicNames.slice(i, i + BATCH_SIZE);
       const results = await Promise.all(
         batch.map(async (name): Promise<TopicInfo> => {
-          const infoResult = await this.#execRosBash(
-            id,
-            distro,
-            'ros2 topic info "$1"',
-            [name],
-          );
+          const infoResult = await this.#execRosBash(target, distro, 'ros2 topic info "$1"', [name]);
 
           let type = 'unknown';
           let publishers = 0;
@@ -754,13 +864,9 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const { id } = await this.#resolveSimulationContainer(containerId);
     const safeTopic = assertRosTopicName(topicName);
     const distro = await this.#detectRosDistro(id);
+    const target = { kind: 'podman', id } as const;
 
-    const result = await this.#execRosBash(
-      id,
-      distro,
-      'ros2 topic info -v "$1"',
-      [safeTopic],
-    );
+    const result = await this.#execRosBash(target, distro, 'ros2 topic info -v "$1"', [safeTopic]);
 
     let type = 'unknown';
     const publishers: TopicNodeInfo[] = [];
@@ -775,7 +881,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       const pubSection = result.stdout.match(/Publisher count:[\s\S]*?(?=Subscription count:|$)/);
       if (pubSection) {
         let match;
-        while ((match = nodePattern.exec(pubSection[0])) !== null) {
+        while ((match = nodePattern.exec(pubSection[0]))) {
           publishers.push({ nodeName: match[1].trim(), nodeNamespace: match[2].trim() });
         }
       }
@@ -784,7 +890,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       if (subSection) {
         const subPattern = /Node name:\s*(.+)\s*\n\s*Node namespace:\s*(.+)/g;
         let match;
-        while ((match = subPattern.exec(subSection[0])) !== null) {
+        while ((match = subPattern.exec(subSection[0]))) {
           subscribers.push({ nodeName: match[1].trim(), nodeNamespace: match[2].trim() });
         }
       }
@@ -815,8 +921,9 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
     // Bound wait so idle topics do not hang the UI (timeout exits 124).
     // best_effort reduces "message was lost" spam on high-rate sensor topics.
+    const target = { kind: 'podman', id } as const;
     const result = await this.#execRosBash(
-      id,
+      target,
       distro,
       'timeout "$1" ros2 topic echo --once --qos-reliability best_effort --qos-durability volatile "$2"',
       [peekTimeoutArg, safeTopic],
@@ -824,10 +931,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
     const stdout = (result.stdout ?? '').trim();
     const stderr = (result.stderr ?? '').trim();
-    const timedOut =
-      result.exitCode === 124 ||
-      /timeout/i.test(stderr) ||
-      (result.exitCode !== 0 && !stdout);
+    const timedOut = result.exitCode === 124 || /timeout/i.test(stderr) || (result.exitCode !== 0 && !stdout);
 
     if (stdout) {
       const cleaned = cleanEchoOutput(stdout);
@@ -866,8 +970,9 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const { id } = await this.#resolveSimulationContainer(containerId);
     const safeType = assertRosMessageType(messageType);
     const distro = await this.#detectRosDistro(id);
+    const target = { kind: 'podman', id } as const;
 
-    const result = await this.#execRosBash(id, distro, 'ros2 interface show "$1"', [safeType]);
+    const result = await this.#execRosBash(target, distro, 'ros2 interface show "$1"', [safeType]);
     const stdout = (result.stdout ?? '').trim();
     const stderr = (result.stderr ?? '').trim();
 
@@ -902,46 +1007,75 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const { id } = await this.#resolveSimulationContainer(containerId);
     const safeRobot = assertRobotName(robotName);
     const distro = await this.#detectRosDistro(id);
+    const target = { kind: 'podman', id } as const;
 
     if (distro === 'jazzy') {
-      return this.#sendNav2NavigationGoal(id, safeRobot, x, y, distro);
+      return this.#sendNav2NavigationGoal(target, safeRobot, x, y, distro);
     }
-    return this.#sendCmdVelNavigationGoal(id, safeRobot, x, y, distro);
+    return this.#sendCmdVelNavigationGoal(target, safeRobot, x, y, distro);
+  }
+
+  async despawnRobot(containerId: string, robotName: string): Promise<void> {
+    const { id, image } = await this.#resolveSimulationContainer(containerId);
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    await this.#teardownRobot({ kind: 'podman', id }, robotName, distro);
+    this.nav2WarmStatus.delete(PhysicalAiApiImpl.#warmKey(id, robotName));
+    this.nav2ClearPending.delete(PhysicalAiApiImpl.#navTargetKey({ kind: 'podman', id }, robotName));
+  }
+
+  async getRobotWarmStatus(containerId: string, robotName: string): Promise<Nav2WarmStatus> {
+    let id: string;
+    try {
+      ({ id } = await this.#resolveSimulationContainer(containerId));
+    } catch {
+      return 'idle';
+    }
+    const safeRobot = assertRobotName(robotName);
+    return this.nav2WarmStatus.get(PhysicalAiApiImpl.#warmKey(id, safeRobot)) ?? 'idle';
   }
 
   async #sendNav2NavigationGoal(
-    containerId: string,
+    target: ExecTarget,
     robotName: string,
     x: number,
     y: number,
     distro: SupportedRosDistro,
   ): Promise<NavigationGoalResult> {
-    const pose = await this.#getRobotPose(containerId, robotName, distro);
+    const pose = await this.#getRobotPose(target, robotName, distro);
     const distance = Math.hypot(x - pose.x, y - pose.y);
     if (distance < 0.1) {
       return { status: 'reached', message: `Already at (${x}, ${y})` };
     }
 
-    await this.#ensureNav2Running(containerId, robotName, pose, distro);
+    await this.#ensureNav2Running(target, robotName, pose, distro);
+
+    // Cold-start artifact: on a fresh Nav2 bringup the global costmap transiently
+    // holds bad/phantom obstacle cells (laser scans mis-projected while the sim
+    // clock/TF lag during the CPU-heavy launch). The global planner then fails to
+    // find a path ("GridBased plugin failed to plan … Failed to create plan") for
+    // the first several cycles, and Nav2's recovery clears the global costmap and
+    // retries — the ~15 s "jumping in place" before the robot actually moves. When
+    // we launched this bringup, clear both costmaps here, on the FIRST goal and
+    // right before planning (by now the clock has usually settled, unlike at
+    // pre-warm), then let them refill clean so the first plan succeeds. Consumed
+    // once per bringup — subsequent goals and warm sims we never brought up skip it.
+    const clearKey = PhysicalAiApiImpl.#navTargetKey(target, robotName);
+    if (this.nav2ClearPending.has(clearKey)) {
+      this.nav2ClearPending.delete(clearKey);
+      await this.#clearNav2Costmaps(target, robotName, distro);
+    }
 
     const targetYaw = Math.atan2(y - pose.y, x - pose.x);
     const qw = Math.cos(targetYaw / 2);
     const qz = Math.sin(targetYaw / 2);
 
     const result = await this.#execRosBash(
-      containerId,
+      target,
       distro,
       'timeout "$1" ros2 action send_goal "/$2/navigate_to_pose" nav2_msgs/action/NavigateToPose ' +
         '"{pose: {header: {frame_id: map}, pose: {position: {x: $3, y: $4, z: 0.0}, ' +
         'orientation: {x: 0.0, y: 0.0, z: $5, w: $6}}}}" --feedback 2>&1',
-      [
-        '180',
-        robotName,
-        x.toFixed(4),
-        y.toFixed(4),
-        qz.toFixed(6),
-        qw.toFixed(6),
-      ],
+      ['180', robotName, x.toFixed(4), y.toFixed(4), qz.toFixed(6), qw.toFixed(6)],
     );
 
     const output = `${result.stdout}\n${result.stderr}`;
@@ -959,54 +1093,132 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async #ensureNav2Running(
-    containerId: string,
+    target: ExecTarget,
     robotName: string,
     pose: { x: number; y: number; yaw: number },
     distro: SupportedRosDistro,
   ): Promise<void> {
     // Do not trust action list alone — other sim containers on the default ROS domain
     // can expose /robot_N/navigate_to_pose before this container's Nav2 stack is up.
-    if (await this.#hasMapBaseLinkTf(containerId, robotName, distro)) {
+    // Warm path: TF already present → the stack is up. The cold-start costmap clear
+    // is done at goal-dispatch time (see #sendNav2NavigationGoal), not here.
+    if (await this.#hasMapBaseLinkTf(target, robotName, distro)) {
       return;
     }
 
-    if (await this.#isNav2BringupRunning(containerId, robotName, distro)) {
-      for (let attempt = 0; attempt < 60; attempt++) {
-        await PhysicalAiApiImpl.#sleep(1000);
-        if (await this.#hasMapBaseLinkTf(containerId, robotName, distro)) {
-          return;
-        }
-      }
-      throw new Error(
-        `Nav2 bringup for "${robotName}" is running but map→base_link TF never became available.`,
-      );
+    // Cold path: either a bringup is already in flight (e.g. pre-warm) or we launch
+    // one now. Both funnel through the same TF wait.
+    const bringupRunning = await this.#isNav2BringupRunning(target, robotName, distro);
+    if (!bringupRunning) {
+      // We're launching a fresh bringup → the first goal must clear the costmaps once.
+      this.nav2ClearPending.add(PhysicalAiApiImpl.#navTargetKey(target, robotName));
+      await this.#execDetached(target, NAV2_ENTRYPOINT, [robotName], {
+        PHYSICAL_AI_SPAWN_X: pose.x.toFixed(4),
+        PHYSICAL_AI_SPAWN_Y: pose.y.toFixed(4),
+      });
     }
 
-    await this.#execDetached(containerId, NAV2_ENTRYPOINT, [robotName], {
-      PHYSICAL_AI_SPAWN_X: pose.x.toFixed(4),
-      PHYSICAL_AI_SPAWN_Y: pose.y.toFixed(4),
-    });
-
-    for (let attempt = 0; attempt < 60; attempt++) {
+    for (let attempt = 0; attempt < NAV2_TF_POLL_ATTEMPTS; attempt++) {
       await PhysicalAiApiImpl.#sleep(1000);
-      if (await this.#hasMapBaseLinkTf(containerId, robotName, distro)) {
+      if (await this.#hasMapBaseLinkTf(target, robotName, distro)) {
         return;
       }
     }
 
     throw new Error(
-      `Nav2 stack for "${robotName}" did not become ready (map→base_link TF missing). ` +
-        'Stop other sim containers or use a fresh simulation before Go.',
+      bringupRunning
+        ? `Nav2 bringup for "${robotName}" is running but map→base_link TF never became available.`
+        : `Nav2 stack for "${robotName}" did not become ready (map→base_link TF missing). ` +
+            'Stop other sim containers or use a fresh simulation before Go.',
     );
   }
 
-  async #hasMapBaseLinkTf(
-    containerId: string,
+  /**
+   * Stable key for the per-bringup cold-start costmap-clear state (#nav2ClearPending):
+   * container id (local) or `${namespace}/${pod}` (OpenShift), plus the robot name.
+   */
+  static #navTargetKey(target: ExecTarget, robotName: string): string {
+    const scope = target.kind === 'podman' ? target.id : `${target.namespace}/${target.pod}`;
+    return `${scope} ${robotName}`;
+  }
+
+  /**
+   * Clear both Nav2 costmaps for a robot, then briefly settle so they refill from
+   * live (good-TF) scans before the planner plans on them. Called once per cold Nav2
+   * bringup, at goal-dispatch time, to drop the startup phantom obstacles that
+   * otherwise make the global planner fail ("Failed to create plan") and churn
+   * through recovery on the first goal (see #sendNav2NavigationGoal).
+   * Best-effort: logs and swallows errors — a clear hiccup must never block Navigate.
+   */
+  async #clearNav2Costmaps(target: ExecTarget, robotName: string, distro: SupportedRosDistro): Promise<void> {
+    const safeRobot = assertRobotName(robotName);
+    try {
+      await this.#execRosBash(
+        target,
+        distro,
+        'for cm in local_costmap/clear_entirely_local_costmap global_costmap/clear_entirely_global_costmap; do ' +
+          'timeout 15 ros2 service call "/$1/$cm" nav2_msgs/srv/ClearEntireCostmap "{}" >/dev/null 2>&1 || true; ' +
+          'done',
+        [safeRobot],
+      );
+      await PhysicalAiApiImpl.#sleep(NAV2_COSTMAP_REFILL_MS);
+    } catch (err) {
+      console.error(`[physical-ai] Nav2 costmap clear for "${robotName}" failed (non-fatal):`, err);
+    }
+  }
+
+  /**
+   * Warm the Nav2 stack right after a spawn so the first Navigate click fires
+   * instantly instead of paying the ~40–90 s software-render cold-start. Waits
+   * for the robot to appear in the world (spawn is detached), then launches Nav2
+   * via #ensureNav2Running. Fire-and-forget: never throws — a failure just means
+   * the later Navigate click pays the cold-start as before. Jazzy (Nav2) only.
+   *
+   * `warmKey` scopes the status entry (see #warmKey) so the UI can poll it.
+   */
+  async #prewarmNav2(
+    warmKey: string,
+    target: ExecTarget,
     robotName: string,
+    pose: { x: number; y: number; yaw: number },
     distro: SupportedRosDistro,
-  ): Promise<boolean> {
+  ): Promise<void> {
+    this.nav2WarmStatus.set(warmKey, 'warming');
+    try {
+      let appeared = false;
+      for (let attempt = 0; attempt < 30 && !appeared; attempt++) {
+        await PhysicalAiApiImpl.#sleep(1000);
+        try {
+          await this.#getRobotPose(target, robotName, distro);
+          appeared = true;
+        } catch {
+          // Robot not in the world yet — keep polling.
+        }
+      }
+      if (!appeared) {
+        this.nav2WarmStatus.set(warmKey, 'failed');
+        return;
+      }
+      await this.#ensureNav2Running(target, robotName, pose, distro);
+      this.nav2WarmStatus.set(warmKey, 'ready');
+    } catch (err) {
+      this.nav2WarmStatus.set(warmKey, 'failed');
+      console.error(`[physical-ai] Nav2 pre-warm for "${robotName}" failed (non-fatal):`, err);
+    }
+  }
+
+  /**
+   * Stable per-robot key for the Nav2 warm-status map. The scope must be derivable
+   * from what the UI holds so the query methods hit the same key the spawn set:
+   * the resolved container id (local) or `${namespace}/${name}` (OpenShift).
+   */
+  static #warmKey(scope: string, robotName: string): string {
+    return `${scope} ${robotName}`;
+  }
+
+  async #hasMapBaseLinkTf(target: ExecTarget, robotName: string, distro: SupportedRosDistro): Promise<boolean> {
     const tf = await this.#execRosBash(
-      containerId,
+      target,
       distro,
       'timeout 5 ros2 run tf2_ros tf2_echo map base_link --ros-args -p use_sim_time:=true ' +
         '-r /tf:=/$1/tf -r /tf_static:=/$1/tf_static 2>&1',
@@ -1015,13 +1227,9 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return /Translation:/i.test(tf.stdout);
   }
 
-  async #isNav2BringupRunning(
-    containerId: string,
-    robotName: string,
-    distro: SupportedRosDistro,
-  ): Promise<boolean> {
+  async #isNav2BringupRunning(target: ExecTarget, robotName: string, distro: SupportedRosDistro): Promise<boolean> {
     const result = await this.#execRosBash(
-      containerId,
+      target,
       distro,
       'pgrep -f "bringup_launch.py.*namespace:=$1" >/dev/null && echo running || true',
       [robotName],
@@ -1030,13 +1238,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async #sendCmdVelNavigationGoal(
-    containerId: string,
+    target: ExecTarget,
     robotName: string,
     x: number,
     y: number,
     distro: SupportedRosDistro,
   ): Promise<NavigationGoalResult> {
-    const pose = await this.#getRobotPose(containerId, robotName, distro);
+    const pose = await this.#getRobotPose(target, robotName, distro);
     const dx = x - pose.x;
     const dy = y - pose.y;
     const targetAngle = Math.atan2(dy, dx);
@@ -1054,40 +1262,34 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       const turnSpeed = 0.5 * Math.sign(turnDelta);
       const turnDuration = Math.min(Math.ceil(Math.abs(turnDelta) / 0.5), 8);
       await this.#execRosBash(
-        containerId,
+        target,
         distro,
         'timeout "$1" ros2 topic pub --rate 10 "/$2/cmd_vel" geometry_msgs/msg/Twist "{angular: {z: $3}}" || true',
         [String(turnDuration), robotName, turnSpeed.toFixed(2)],
       );
-      await this.#execRosBash(
-        containerId,
-        distro,
-        'ros2 topic pub --once "/$1/cmd_vel" geometry_msgs/msg/Twist "{}"',
-        [robotName],
-      );
+      await this.#execRosBash(target, distro, 'ros2 topic pub --once "/$1/cmd_vel" geometry_msgs/msg/Twist "{}"', [
+        robotName,
+      ]);
     }
 
     const speed = 0.2;
     const durationSec = Math.min(Math.ceil(distance / speed), 30);
     const result = await this.#execRosBash(
-      containerId,
+      target,
       distro,
       'timeout "$1" ros2 topic pub --rate 10 "/$2/cmd_vel" geometry_msgs/msg/Twist "{linear: {x: $3}}" || true',
       [String(durationSec), robotName, String(speed)],
     );
 
-    await this.#execRosBash(
-      containerId,
-      distro,
-      'ros2 topic pub --once "/$1/cmd_vel" geometry_msgs/msg/Twist "{}"',
-      [robotName],
-    );
+    await this.#execRosBash(target, distro, 'ros2 topic pub --once "/$1/cmd_vel" geometry_msgs/msg/Twist "{}"', [
+      robotName,
+    ]);
 
     if (result.exitCode !== 0 && !/timeout/i.test(result.stderr)) {
       return { status: 'failed', message: result.stderr || 'Drive command failed' };
     }
 
-    const finalPose = await this.#getRobotPose(containerId, robotName, distro);
+    const finalPose = await this.#getRobotPose(target, robotName, distro);
     const remaining = Math.hypot(x - finalPose.x, y - finalPose.y);
     if (remaining < 0.35) {
       return {
@@ -1102,22 +1304,56 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async #getRobotPose(
-    containerId: string,
+    target: ExecTarget,
     robotName: string,
     distro: SupportedRosDistro,
   ): Promise<{ x: number; y: number; yaw: number }> {
-    const result = await this.#execRosBash(
-      containerId,
-      distro,
-      'gz model -m "$1" -p 2>/dev/null',
-      [robotName],
-    );
+    const result = await this.#execRosBash(target, distro, 'gz model -m "$1" -p 2>/dev/null', [robotName]);
     const nums = result.stdout.match(/-?\d+\.\d+/g)?.map(Number);
     if (nums && nums.length >= 6 && nums.every(n => !isNaN(n))) {
       return { x: nums[0], y: nums[1], yaw: nums[5] };
     }
-    throw new Error(
-      `Could not read pose for robot "${robotName}". Is it spawned in Gazebo?`,
+    throw new Error(`Could not read pose for robot "${robotName}". Is it spawned in Gazebo?`);
+  }
+
+  /**
+   * Tear down a spawned robot: kill its namespaced ROS processes (the spawn
+   * launch, `robot_state_publisher`, the Nav2 bringup tree, and both entrypoint
+   * wrappers) and remove its model from the Gazebo world. Best-effort — a robot
+   * may be partially up (spawned, no Nav2) or already gone.
+   */
+  async #teardownRobot(target: ExecTarget, robotName: string, distro: SupportedRosDistro): Promise<void> {
+    const safeRobot = assertRobotName(robotName);
+    // Every ROS process for a robot carries its name in a bounded token: the
+    // spawn/Nav2 launches (`namespace:=<R>`, `robot_name:=<R>`), the namespaced
+    // nodes (`__ns:=/<R>`), or the entrypoint wrappers (positional arg). Match on
+    // a right boundary so tearing down `robot_1` never touches `robot_10`. Robot
+    // names are [A-Za-z0-9_-], so there are no ERE metacharacters to escape. The
+    // pattern intentionally omits a bare `/<R>/` branch so it can't match the
+    // pkill shell's own argv (which carries this pattern); the transient
+    // initialpose publisher is a child of the Nav2 wrapper and dies with it.
+    const pattern = `(namespace:=|robot_name:=|__ns:=/|entrypoint-(spawn-robot|nav2)\\.sh )${safeRobot}([ /:]|$)`;
+    // SIGTERM first (the entrypoint scripts trap it and reap their children),
+    // then SIGKILL any straggler. pkill exits non-zero when nothing matches —
+    // swallow it so a partially-up or already-gone robot isn't an error.
+    await this.#execAttached(target, [
+      'bash',
+      '-c',
+      'pkill -TERM -f "$1" || true; sleep 2; pkill -KILL -f "$1" || true',
+      '_',
+      pattern,
+    ]);
+
+    // Remove the model from the world so the GUI drops it too. Discover the world
+    // name from the live topic list so a custom WORLD_NAME still works.
+    await this.#execRosBash(
+      target,
+      distro,
+      'world=$(gz topic -l 2>/dev/null | sed -n "s#^/world/\\([^/]*\\)/.*#\\1#p" | head -n1); ' +
+        'if [ -n "$world" ]; then ' +
+        'gz service -s "/world/$world/remove" --reqtype gz.msgs.Entity --reptype gz.msgs.Boolean ' +
+        '--timeout 3000 --req "name: \\"$1\\", type: MODEL" >/dev/null 2>&1 || true; fi',
+      [safeRobot],
     );
   }
 
@@ -1126,20 +1362,22 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
    * as `args` and referenced as `$1`, `$2`, … inside `script` — never concatenated.
    */
   async #execRosBash(
-    containerId: string,
+    target: ExecTarget,
     distro: SupportedRosDistro,
     script: string,
     args: string[] = [],
   ): Promise<ExecResult> {
     const safeDistro = assertRosDistro(distro);
     const setup = `/opt/ros/${safeDistro}/setup.bash`;
-    return this.#execAttached(containerId, [
-      'bash',
-      '-c',
-      `source "${setup}" && ${script}`,
-      '_',
-      ...args,
-    ]);
+    // `oc exec` lands in HOME=/ (not writable), so ROS can't create its log dir
+    // ('//.ros/log') and every rclcpp-based command aborts with exit 250. Point
+    // HOME/ROS_HOME at a writable tmp dir for the cluster path. Local podman
+    // containers already have a writable HOME, so leave that path untouched.
+    const prefix =
+      target.kind === 'oc'
+        ? 'export HOME=/tmp/ros-home ROS_HOME=/tmp/ros-home ROS_LOG_DIR=/tmp/ros-home/log && mkdir -p "$ROS_LOG_DIR" && '
+        : '';
+    return this.#execAttached(target, ['bash', '-c', `${prefix}source "${setup}" && ${script}`, '_', ...args]);
   }
 
   async #assertSimulationContainer(containerId: string): Promise<string> {
@@ -1147,9 +1385,10 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return id;
   }
 
-  async #execAttached(containerId: string, command: string[]): Promise<ExecResult> {
+  async #execAttached(target: ExecTarget, command: string[]): Promise<ExecResult> {
+    const [bin, argv] = PhysicalAiApiImpl.#attachedArgv(target, command);
     try {
-      const result = await extensionApi.process.exec('podman', ['exec', containerId, ...command]);
+      const result = await extensionApi.process.exec(bin, argv);
       return {
         exitCode: 0,
         stdout: result.stdout ?? '',
@@ -1165,19 +1404,39 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
   }
 
+  /** [binary, argv] to run `command` attached in the target (podman/oc exec). */
+  static #attachedArgv(target: ExecTarget, command: string[]): [string, string[]] {
+    if (target.kind === 'podman') {
+      return ['podman', ['exec', target.id, ...command]];
+    }
+    return ['oc', ['exec', '-n', target.namespace, target.pod, '--', ...command]];
+  }
+
   async #execDetached(
-    containerId: string,
+    target: ExecTarget,
     entrypoint: string,
     args: string[],
     env: Record<string, string> = {},
   ): Promise<void> {
-    const id = await this.#assertSimulationContainer(containerId);
-    const argv: string[] = ['exec', '-d'];
-    for (const [key, value] of Object.entries(env)) {
-      argv.push('-e', `${key}=${value}`);
+    if (target.kind === 'podman') {
+      const id = await this.#assertSimulationContainer(target.id);
+      const argv: string[] = ['exec', '-d'];
+      for (const [key, value] of Object.entries(env)) {
+        argv.push('-e', `${key}=${value}`);
+      }
+      argv.push(id, entrypoint, ...args);
+      await extensionApi.process.exec('podman', argv);
+      return;
     }
-    argv.push(id, entrypoint, ...args);
-    await extensionApi.process.exec('podman', argv);
+    // `oc exec` has no detached flag; background the process inside the pod with
+    // nohup so it survives the exec session without touching the pod's PID 1.
+    const envPrefix = Object.entries(env)
+      .map(([key, value]) => `${key}=${shSingleQuote(value)} `)
+      .join('');
+    const remoteCmd = [entrypoint, ...args].map(shSingleQuote).join(' ');
+    const logName = entrypoint.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const remote = `${envPrefix}nohup ${remoteCmd} >"/tmp/pai-${logName}.log" 2>&1 &`;
+    await extensionApi.process.exec('oc', ['exec', '-n', target.namespace, target.pod, '--', 'bash', '-c', remote]);
   }
 
   static #sleep(ms: number): Promise<void> {
@@ -1186,11 +1445,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async #detectRosDistro(containerId: string): Promise<SupportedRosDistro> {
     const { image } = await this.#resolveSimulationContainer(containerId);
+    return PhysicalAiApiImpl.#distroFromImage(image);
+  }
+
+  static #distroFromImage(image: string): SupportedRosDistro {
     if (image.includes('humble')) return 'humble';
     if (image.includes('jazzy')) return 'jazzy';
-    throw new Error(
-      `Unsupported ROS distro for image "${image}". Tag must include "humble" or "jazzy".`,
-    );
+    throw new Error(`Unsupported ROS distro for image "${image}". Tag must include "humble" or "jazzy".`);
   }
 
   async pushImage(tag: string): Promise<void> {
@@ -1234,7 +1495,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
           if (!trimmed) continue;
           try {
             const parsed = JSON.parse(trimmed);
-            const msg = parsed.status || parsed.stream || parsed.error;
+            const msg = firstNonEmpty(parsed.status, parsed.stream, parsed.error);
             if (msg) {
               appendProgressLog(progress.logs, msg);
               progress.status = msg;
@@ -1247,40 +1508,42 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       },
       undefined,
       abortController,
-    ).then(() => {
-      this.pushAbortControllers.delete(tag);
-      const progress = this.activePushes.get(tag);
-      if (progress && !progress.done) {
-        if (abortController.signal.aborted || progress.cancelled) {
-          progress.status = 'Cancelled';
-          progress.cancelled = true;
-          progress.done = true;
-          progress.error = 'Push cancelled';
-          appendProgressLog(progress.logs, 'Push cancelled by user');
-        } else {
-          progress.status = 'Complete';
-          progress.done = true;
+    )
+      .then(() => {
+        this.pushAbortControllers.delete(tag);
+        const progress = this.activePushes.get(tag);
+        if (progress && !progress.done) {
+          if (abortController.signal.aborted || progress.cancelled) {
+            progress.status = 'Cancelled';
+            progress.cancelled = true;
+            progress.done = true;
+            progress.error = 'Push cancelled';
+            appendProgressLog(progress.logs, 'Push cancelled by user');
+          } else {
+            progress.status = 'Complete';
+            progress.done = true;
+          }
         }
-      }
-      this.#scheduleProgressCleanup(this.activePushes, tag, 'push');
-    }).catch((err: unknown) => {
-      this.pushAbortControllers.delete(tag);
-      const progress = this.activePushes.get(tag);
-      if (progress && !progress.done) {
-        if (abortController.signal.aborted || progress.cancelled) {
-          progress.status = 'Cancelled';
-          progress.cancelled = true;
-          progress.done = true;
-          progress.error = 'Push cancelled';
-          appendProgressLog(progress.logs, 'Push cancelled by user');
-        } else {
-          progress.status = 'Failed';
-          progress.done = true;
-          progress.error = err instanceof Error ? err.message : String(err);
+        this.#scheduleProgressCleanup(this.activePushes, tag, 'push');
+      })
+      .catch((err: unknown) => {
+        this.pushAbortControllers.delete(tag);
+        const progress = this.activePushes.get(tag);
+        if (progress && !progress.done) {
+          if (abortController.signal.aborted || progress.cancelled) {
+            progress.status = 'Cancelled';
+            progress.cancelled = true;
+            progress.done = true;
+            progress.error = 'Push cancelled';
+            appendProgressLog(progress.logs, 'Push cancelled by user');
+          } else {
+            progress.status = 'Failed';
+            progress.done = true;
+            progress.error = err instanceof Error ? err.message : String(err);
+          }
         }
-      }
-      this.#scheduleProgressCleanup(this.activePushes, tag, 'push');
-    });
+        this.#scheduleProgressCleanup(this.activePushes, tag, 'push');
+      });
   }
 
   async cancelPush(tag: string): Promise<void> {
@@ -1303,5 +1566,267 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
 
     this.#scheduleProgressCleanup(this.activePushes, tag, 'push');
+  }
+
+  // --- OpenShift deployment (APPENG-5777) ---
+
+  async getOpenShiftContext(): Promise<OpenShiftContext | undefined> {
+    try {
+      const uri = extensionApi.kubernetes.getKubeconfig();
+      const kubeconfigPath = uri.fsPath;
+      const content = await readFile(kubeconfigPath, 'utf-8');
+      // `current-context:` is a top-level scalar — read it without a YAML parser.
+      const match = content.match(/^current-context:\s*["']?([^"'\s]+)["']?\s*$/m);
+      if (!match) return undefined;
+      return { context: match[1], kubeconfigPath };
+    } catch {
+      return undefined;
+    }
+  }
+
+  async generateOpenShiftManifests(config: OpenShiftDeployConfig): Promise<{ yaml: string }> {
+    const manifests = buildOpenShiftManifests(config);
+    return { yaml: manifestsToYaml(manifests) };
+  }
+
+  async deployToOpenShift(config: OpenShiftDeployConfig): Promise<OpenShiftDeployResult> {
+    // Validates name/namespace/image and builds the objects.
+    const manifests = buildOpenShiftManifests(config);
+    const ctx = await this.getOpenShiftContext();
+    if (!ctx) {
+      throw new Error('No current Kubernetes/OpenShift context found. Log in first (e.g. `oc login`).');
+    }
+
+    await extensionApi.kubernetes.createResources(ctx.context, manifests);
+
+    const routeUrl = await this.#readRouteUrl(config.namespace, config.name);
+    const applied = manifests.map(m => String(m.kind));
+    return {
+      name: config.name,
+      namespace: config.namespace,
+      routeUrl,
+      applied,
+      message: routeUrl
+        ? `Deployed to ${config.namespace}. Route: ${routeUrl}`
+        : `Deployed to ${config.namespace}. Route not admitted yet — refresh in a moment or check the OpenShift console.`,
+    };
+  }
+
+  async listOpenShiftDeployments(namespace: string): Promise<OpenShiftWorkload[]> {
+    const ns = assertNamespace(namespace);
+    let stdout: string;
+    try {
+      const res = await extensionApi.process.exec('oc', [
+        'get',
+        'deployment',
+        '-n',
+        ns,
+        '-l',
+        `${PART_OF_LABEL}=${PART_OF_VALUE}`,
+        '-o',
+        'json',
+      ]);
+      stdout = res.stdout ?? '';
+    } catch (err: unknown) {
+      throw new Error(this.#ocErrorMessage(err, `list deployments in ${ns}`));
+    }
+
+    let parsed: { items?: unknown[] };
+    try {
+      parsed = JSON.parse(stdout || '{"items":[]}');
+    } catch {
+      return [];
+    }
+    const items = Array.isArray(parsed.items) ? parsed.items : [];
+
+    const workloads: OpenShiftWorkload[] = [];
+    for (const raw of items) {
+      const d = raw as {
+        metadata?: { name?: string };
+        spec?: { replicas?: number; template?: { spec?: { containers?: Array<{ image?: string }> } } };
+        status?: { readyReplicas?: number };
+      };
+      const name = d.metadata?.name;
+      if (!name) continue;
+      const replicas = d.spec?.replicas ?? 0;
+      const readyReplicas = d.status?.readyReplicas ?? 0;
+      const image = d.spec?.template?.spec?.containers?.[0]?.image;
+      const routeUrl = await this.#readRouteUrl(ns, name);
+      workloads.push({
+        name,
+        namespace: ns,
+        replicas,
+        readyReplicas,
+        ready: replicas > 0 && readyReplicas >= replicas,
+        image,
+        routeUrl,
+      });
+    }
+    return workloads;
+  }
+
+  async deleteOpenShiftDeployment(namespace: string, name: string): Promise<void> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    try {
+      await extensionApi.process.exec('oc', [
+        'delete',
+        'deployment,service,route',
+        safeName,
+        '-n',
+        ns,
+        '--ignore-not-found',
+      ]);
+    } catch (err: unknown) {
+      throw new Error(this.#ocErrorMessage(err, `delete ${safeName} in ${ns}`));
+    }
+  }
+
+  async spawnRobotInOpenShift(
+    namespace: string,
+    name: string,
+    robotName: string,
+    x: string,
+    y: string,
+    yaw: string,
+  ): Promise<void> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    // Reuse the same argv validation as the local spawn path.
+    const [, safeRobot, safeX, safeY, safeYaw] = assertSpawnExecCommand([SPAWN_ENTRYPOINT, robotName, x, y, yaw]);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName);
+    const target = { kind: 'oc', pod, namespace: ns } as const;
+    await this.#execDetached(target, SPAWN_ENTRYPOINT, [safeRobot, safeX, safeY, safeYaw]);
+
+    // Warm Nav2 in the background so the first Navigate click is instant (Jazzy only).
+    // The spawn already succeeded — never let pre-warm setup surface as an error.
+    try {
+      const image = await this.#openShiftDeploymentImage(ns, safeName);
+      if (image.includes('jazzy')) {
+        const pose = { x: Number(safeX), y: Number(safeY), yaw: Number(safeYaw) };
+        const warmKey = PhysicalAiApiImpl.#warmKey(`${ns}/${safeName}`, safeRobot);
+        void this.#prewarmNav2(warmKey, target, safeRobot, pose, 'jazzy');
+      }
+    } catch (err) {
+      console.error('[physical-ai] Nav2 pre-warm setup failed (non-fatal):', err);
+    }
+  }
+
+  async sendOpenShiftNavigationGoal(
+    namespace: string,
+    name: string,
+    robotName: string,
+    x: number,
+    y: number,
+  ): Promise<NavigationGoalResult> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeRobot = assertRobotName(robotName);
+    const image = await this.#openShiftDeploymentImage(ns, safeName);
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName);
+    const target = { kind: 'oc', pod, namespace: ns } as const;
+
+    if (distro === 'jazzy') {
+      return this.#sendNav2NavigationGoal(target, safeRobot, x, y, distro);
+    }
+    return this.#sendCmdVelNavigationGoal(target, safeRobot, x, y, distro);
+  }
+
+  async despawnRobotInOpenShift(namespace: string, name: string, robotName: string): Promise<void> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeRobot = assertRobotName(robotName);
+    const image = await this.#openShiftDeploymentImage(ns, safeName);
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName);
+    await this.#teardownRobot({ kind: 'oc', pod, namespace: ns }, safeRobot, distro);
+    this.nav2WarmStatus.delete(PhysicalAiApiImpl.#warmKey(`${ns}/${safeName}`, safeRobot));
+    this.nav2ClearPending.delete(PhysicalAiApiImpl.#navTargetKey({ kind: 'oc', pod, namespace: ns }, safeRobot));
+  }
+
+  async getRobotWarmStatusInOpenShift(namespace: string, name: string, robotName: string): Promise<Nav2WarmStatus> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeRobot = assertRobotName(robotName);
+    return this.nav2WarmStatus.get(PhysicalAiApiImpl.#warmKey(`${ns}/${safeName}`, safeRobot)) ?? 'idle';
+  }
+
+  /** Name of a Running pod for the deployment (selected by the `app=<name>` label). */
+  async #resolveOpenShiftPod(namespace: string, name: string): Promise<string> {
+    let stdout: string;
+    try {
+      const res = await extensionApi.process.exec('oc', [
+        'get',
+        'pods',
+        '-n',
+        namespace,
+        '-l',
+        `app=${name}`,
+        '--field-selector=status.phase=Running',
+        '-o',
+        'jsonpath={.items[0].metadata.name}',
+      ]);
+      stdout = res.stdout?.trim() ?? '';
+    } catch (err: unknown) {
+      throw new Error(this.#ocErrorMessage(err, `find a running pod for ${name} in ${namespace}`));
+    }
+    if (!stdout) {
+      throw new Error(
+        `No running pod found for "${name}" in ${namespace}. Deploy it first and wait until it is ready.`,
+      );
+    }
+    return stdout;
+  }
+
+  /** The deployment's first container image (used to detect the ROS distro). */
+  async #openShiftDeploymentImage(namespace: string, name: string): Promise<string> {
+    let stdout: string;
+    try {
+      const res = await extensionApi.process.exec('oc', [
+        'get',
+        'deployment',
+        name,
+        '-n',
+        namespace,
+        '-o',
+        'jsonpath={.spec.template.spec.containers[0].image}',
+      ]);
+      stdout = res.stdout?.trim() ?? '';
+    } catch (err: unknown) {
+      throw new Error(this.#ocErrorMessage(err, `read the image for ${name} in ${namespace}`));
+    }
+    if (!stdout) {
+      throw new Error(`Could not read the image for deployment "${name}" in ${namespace}.`);
+    }
+    return stdout;
+  }
+
+  /** Best-effort Route host lookup; returns undefined if not admitted or oc unavailable. */
+  async #readRouteUrl(namespace: string, name: string): Promise<string | undefined> {
+    try {
+      const res = await extensionApi.process.exec('oc', [
+        'get',
+        'route',
+        name,
+        '-n',
+        namespace,
+        '-o',
+        'jsonpath={.spec.host}',
+      ]);
+      const host = res.stdout?.trim();
+      return host ? `https://${host}` : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  #ocErrorMessage(err: unknown, action: string): string {
+    const e = err as { stderr?: string; message?: string; code?: string };
+    const detail = firstNonEmpty(e.stderr?.trim(), e.message, String(err));
+    if (/ENOENT|not found|command not found/i.test(detail) && /oc\b/.test(detail + (e.code ?? ''))) {
+      return `Could not run "oc" to ${action}. Ensure the OpenShift CLI is installed and on PATH.`;
+    }
+    return `Failed to ${action}: ${detail}`;
   }
 }

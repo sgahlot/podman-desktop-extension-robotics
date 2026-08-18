@@ -21,12 +21,8 @@ describe('simImageTrust', () => {
 
   it('defaults allowlist to sim / turtlebot3 patterns', () => {
     expect(parseSimLaunchAllowlist(undefined).join(',')).toBe(DEFAULT_SIM_LAUNCH_ALLOWLIST);
-    expect(assertLaunchImageTag('quay.io/ns/ros2-jazzy-sim:noble')).toBe(
-      'quay.io/ns/ros2-jazzy-sim:noble',
-    );
-    expect(assertLaunchImageTag('quay.io/ns/ros2-humble-turtlebot3:sloretz')).toContain(
-      'turtlebot3',
-    );
+    expect(assertLaunchImageTag('quay.io/ns/ros2-jazzy-sim:noble')).toBe('quay.io/ns/ros2-jazzy-sim:noble');
+    expect(assertLaunchImageTag('quay.io/ns/ros2-humble-turtlebot3:sloretz')).toContain('turtlebot3');
   });
 
   it('rejects non-sim images under default allowlist', () => {
@@ -41,16 +37,9 @@ describe('simImageTrust', () => {
   });
 
   it('honors optional golden allowlist (exact tag / digest)', () => {
-    const digest =
-      'quay.io/ns/ros2-jazzy-sim@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const digest = 'quay.io/ns/ros2-jazzy-sim@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
     expect(assertLaunchImageTag(digest, digest)).toBe(digest);
-    expect(() =>
-      assertLaunchImageTag('quay.io/ns/ros2-jazzy-sim:noble', digest),
-    ).toThrow(/not allowed/);
-    expect(
-      imageRefMatchesAllowlist('quay.io/ns/ros2-jazzy-sim:noble', [
-        'quay.io/ns/ros2-jazzy-sim:*',
-      ]),
-    ).toBe(true);
+    expect(() => assertLaunchImageTag('quay.io/ns/ros2-jazzy-sim:noble', digest)).toThrow(/not allowed/);
+    expect(imageRefMatchesAllowlist('quay.io/ns/ros2-jazzy-sim:noble', ['quay.io/ns/ros2-jazzy-sim:*'])).toBe(true);
   });
 });

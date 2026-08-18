@@ -1,7 +1,11 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { ExtensionContext } from '@podman-desktop/api';
 import { PhysicalAiApiImpl } from './api-impl';
-import { SIM_CONTAINER_LABEL, SIM_CONTAINER_LABEL_VALUE, SIM_STOPPED_BROWSER_HINT } from '/@shared/src/types/SimulationContainer';
+import {
+  SIM_CONTAINER_LABEL,
+  SIM_CONTAINER_LABEL_VALUE,
+  SIM_STOPPED_BROWSER_HINT,
+} from '/@shared/src/types/SimulationContainer';
 import { SPAWN_ENTRYPOINT, GAZEBO_ENTRYPOINT, NAV2_ENTRYPOINT } from '/@shared/src/security/simInput';
 
 vi.mock('@podman-desktop/api', () => ({
@@ -30,6 +34,10 @@ vi.mock('@podman-desktop/api', () => ({
   process: {
     exec: vi.fn(),
   },
+  kubernetes: {
+    getKubeconfig: vi.fn(),
+    createResources: vi.fn(),
+  },
   configuration: {
     getConfiguration: vi.fn(),
   },
@@ -49,7 +57,12 @@ vi.mock('@podman-desktop/api', () => ({
   },
 }));
 
+vi.mock('node:fs/promises', () => ({
+  readFile: vi.fn(),
+}));
+
 import * as extensionApi from '@podman-desktop/api';
+import { readFile } from 'node:fs/promises';
 
 const MOCK_CONTEXT = {
   extensionUri: { fsPath: '/fake/extension/path' },
@@ -116,7 +129,8 @@ describe('PhysicalAiApiImpl', () => {
     });
 
     it('paginates through multiple pages', async () => {
-      const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ repositories: [{ name: 'repo1' }], next_page: 'page2' }),
@@ -189,28 +203,28 @@ describe('PhysicalAiApiImpl', () => {
 
   describe('listLocalImages', () => {
     beforeEach(() => {
-      vi.mocked(extensionApi.process.exec).mockResolvedValue({ stdout: '', stderr: '', command: 'podman' } as any);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '',
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
     });
 
     it('returns flattened RepoTags from all images', async () => {
       vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
         { RepoTags: ['quay.io/ns/img1:latest', 'quay.io/ns/img1:v1'] },
         { RepoTags: ['quay.io/ns/img2:latest'] },
-      ] as any);
+      ] as unknown as extensionApi.ImageInfo[]);
 
       const result = await api.listLocalImages();
-      expect(result).toEqual([
-        'quay.io/ns/img1:latest',
-        'quay.io/ns/img1:v1',
-        'quay.io/ns/img2:latest',
-      ]);
+      expect(result).toEqual(['quay.io/ns/img1:latest', 'quay.io/ns/img1:v1', 'quay.io/ns/img2:latest']);
     });
 
     it('handles images with no RepoTags', async () => {
       vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
         { RepoTags: undefined },
         { RepoTags: ['quay.io/ns/img:latest'] },
-      ] as any);
+      ] as unknown as extensionApi.ImageInfo[]);
 
       const result = await api.listLocalImages();
       expect(result).toEqual(['quay.io/ns/img:latest']);
@@ -219,7 +233,7 @@ describe('PhysicalAiApiImpl', () => {
     it('falls back to Names when RepoTags is null (Podman 5)', async () => {
       vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
         {
-          RepoTags: null,
+          RepoTags: undefined,
           Names: ['quay.io/sgahlot/ros2-jazzy-base:latest'],
         },
         {
@@ -229,7 +243,7 @@ describe('PhysicalAiApiImpl', () => {
             'quay.io/ecosystem-appeng/ros2-humble-turtlebot3:latest',
           ],
         },
-      ] as any);
+      ] as unknown as extensionApi.ImageInfo[]);
 
       const result = await api.listLocalImages();
       expect(result).toEqual([
@@ -241,14 +255,14 @@ describe('PhysicalAiApiImpl', () => {
 
     it('merges podman CLI image list when engine tags are empty', async () => {
       vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
-        { RepoTags: null },
+        { RepoTags: undefined },
         { RepoTags: [] },
-      ] as any);
+      ] as unknown as extensionApi.ImageInfo[]);
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
         stdout: 'quay.io/sgahlot/ros2-jazzy-base:latest\nquay.io/sgahlot/ros2-humble-turtlebot3:latest\n',
         stderr: '',
         command: 'podman',
-      } as any);
+      } as extensionApi.RunResult);
 
       const result = await api.listLocalImages();
       expect(result).toEqual([
@@ -273,7 +287,7 @@ describe('PhysicalAiApiImpl', () => {
     it('throws when connection is not started', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection('podman', 'stopped'),
-      ] as any);
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
 
       await expect(api.pullImage('ns/img', 'latest')).rejects.toThrow('No running Podman connection found');
     });
@@ -281,7 +295,7 @@ describe('PhysicalAiApiImpl', () => {
     it('initiates pull and sets initial progress', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
-      ] as any);
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
       vi.mocked(extensionApi.containerEngine.pullImage).mockReturnValue(new Promise(() => {}));
 
       await api.pullImage('ns/img', 'latest');
@@ -293,15 +307,13 @@ describe('PhysicalAiApiImpl', () => {
     it('updates progress with layer data from callback', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
-      ] as any);
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
 
-      let pullCallback: Function;
-      vi.mocked(extensionApi.containerEngine.pullImage).mockImplementation(
-        (_conn: any, _img: any, cb: any) => {
-          pullCallback = cb;
-          return new Promise(() => {});
-        },
-      );
+      let pullCallback: Parameters<typeof extensionApi.containerEngine.pullImage>[2];
+      vi.mocked(extensionApi.containerEngine.pullImage).mockImplementation((_conn, _img, cb) => {
+        pullCallback = cb;
+        return new Promise(() => {});
+      });
 
       await api.pullImage('ns/img', 'latest');
 
@@ -320,8 +332,8 @@ describe('PhysicalAiApiImpl', () => {
     it('sets done on successful pull', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
-      ] as any);
-      vi.mocked(extensionApi.containerEngine.pullImage).mockResolvedValue(undefined as any);
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.pullImage).mockResolvedValue(undefined);
 
       await api.pullImage('ns/img', 'latest');
       await vi.advanceTimersByTimeAsync(0);
@@ -334,7 +346,7 @@ describe('PhysicalAiApiImpl', () => {
     it('sets error on failed pull', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
-      ] as any);
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
       vi.mocked(extensionApi.containerEngine.pullImage).mockRejectedValue(new Error('network error'));
 
       await api.pullImage('ns/img', 'latest');
@@ -348,21 +360,21 @@ describe('PhysicalAiApiImpl', () => {
     it('cleans up progress after 30s', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
-      ] as any);
-      vi.mocked(extensionApi.containerEngine.pullImage).mockResolvedValue(undefined as any);
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.pullImage).mockResolvedValue(undefined);
 
       await api.pullImage('ns/img', 'latest');
       await vi.advanceTimersByTimeAsync(0);
 
-      expect(await api.getPullProgress('quay.io/ns/img:latest')).not.toBeNull();
+      expect(await api.getPullProgress('quay.io/ns/img:latest')).not.toBeUndefined();
       await vi.advanceTimersByTimeAsync(30000);
-      expect(await api.getPullProgress('quay.io/ns/img:latest')).toBeNull();
+      expect(await api.getPullProgress('quay.io/ns/img:latest')).toBeUndefined();
     });
   });
 
   describe('getPullProgress', () => {
-    it('returns null for unknown image', async () => {
-      expect(await api.getPullProgress('nonexistent')).toBeNull();
+    it('returns undefined for unknown image', async () => {
+      expect(await api.getPullProgress('nonexistent')).toBeUndefined();
     });
   });
 
@@ -378,29 +390,31 @@ describe('PhysicalAiApiImpl', () => {
     it('throws when no Podman connection found', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([]);
 
-      await expect(api.buildBaseImage('my-tag:latest', baseConfig)).rejects.toThrow('No running Podman connection found');
+      await expect(api.buildBaseImage('my-tag:latest', baseConfig)).rejects.toThrow(
+        'No running Podman connection found',
+      );
     });
 
     it('rejects unsupported wizard combinations', async () => {
-      await expect(
-        api.buildBaseImage('my-tag:latest', { ...baseConfig, distro: 'rolling' }),
-      ).rejects.toThrow(/No base image profile for rolling\/turtlebot3\/dds\/gazebo/);
+      await expect(api.buildBaseImage('my-tag:latest', { ...baseConfig, distro: 'rolling' })).rejects.toThrow(
+        /No base image profile for rolling\/turtlebot3\/dds\/gazebo/,
+      );
       expect(extensionApi.containerEngine.buildImage).not.toHaveBeenCalled();
     });
 
     it('builds jazzy base image with correct asset dir and build-arg', async () => {
       const mockConnection = createMockConnection();
-      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([mockConnection] as any);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets/ros2-jazzy-base' } as any);
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        mockConnection,
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({
+        fsPath: '/fake/assets/ros2-jazzy-base',
+      } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
 
-      await api.buildBaseImage('my-tag:latest', { ...baseConfig, distro: 'jazzy', baseImage: 'jazzy' as any });
+      await api.buildBaseImage('my-tag:latest', { ...baseConfig, distro: 'jazzy', baseImage: 'jazzy' });
 
-      expect(extensionApi.Uri.joinPath).toHaveBeenCalledWith(
-        MOCK_CONTEXT.extensionUri,
-        'assets',
-        'ros2-jazzy-base',
-      );
+      expect(extensionApi.Uri.joinPath).toHaveBeenCalledWith(MOCK_CONTEXT.extensionUri, 'assets', 'ros2-jazzy-base');
       expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
         '/fake/assets/ros2-jazzy-base',
         expect.any(Function),
@@ -413,11 +427,40 @@ describe('PhysicalAiApiImpl', () => {
       );
     });
 
+    it('passes linux/amd64 platform when targetArch is amd64 (cross-build)', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
+
+      await api.buildBaseImage('my-tag:noble-amd64', { ...baseConfig, targetArch: 'amd64' });
+
+      expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
+        '/fake/assets',
+        expect.any(Function),
+        expect.objectContaining({ platform: 'linux/amd64' }),
+      );
+    });
+
+    it('omits platform for a host-native build (no targetArch)', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
+
+      await api.buildBaseImage('my-tag:latest', baseConfig);
+
+      const opts = vi.mocked(extensionApi.containerEngine.buildImage).mock.calls[0][2] as Record<string, unknown>;
+      expect(opts.platform).toBeUndefined();
+    });
+
     it('initiates build and sets initial progress', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
-      ] as any);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as any);
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
 
       await api.buildBaseImage('my-tag:latest', baseConfig);
@@ -433,16 +476,14 @@ describe('PhysicalAiApiImpl', () => {
     it('parses STEP N/M from stream events', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
-      ] as any);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as any);
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
 
-      let buildCallback: Function;
-      vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation(
-        (_ctx: any, cb: any, _opts: any) => {
-          buildCallback = cb;
-          return new Promise(() => {});
-        },
-      );
+      let buildCallback: Parameters<typeof extensionApi.containerEngine.buildImage>[1];
+      vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation((_ctx, cb, _opts) => {
+        buildCallback = cb;
+        return new Promise(() => {});
+      });
 
       await api.buildBaseImage('my-tag:latest', baseConfig);
 
@@ -458,16 +499,14 @@ describe('PhysicalAiApiImpl', () => {
     it('records error events', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
-      ] as any);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as any);
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
 
-      let buildCallback: Function;
-      vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation(
-        (_ctx: any, cb: any, _opts: any) => {
-          buildCallback = cb;
-          return new Promise(() => {});
-        },
-      );
+      let buildCallback: Parameters<typeof extensionApi.containerEngine.buildImage>[1];
+      vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation((_ctx, cb, _opts) => {
+        buildCallback = cb;
+        return new Promise(() => {});
+      });
 
       await api.buildBaseImage('my-tag:latest', baseConfig);
       buildCallback!('error', 'something broke');
@@ -480,9 +519,9 @@ describe('PhysicalAiApiImpl', () => {
     it('sets done on successful build', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
-      ] as any);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as any);
-      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined as any);
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
 
       await api.buildBaseImage('my-tag:latest', baseConfig);
       await vi.advanceTimersByTimeAsync(0);
@@ -495,8 +534,8 @@ describe('PhysicalAiApiImpl', () => {
     it('sets error on failed build', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
-      ] as any);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as any);
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockRejectedValue(new Error('build failed'));
 
       await api.buildBaseImage('my-tag:latest', baseConfig);
@@ -509,17 +548,17 @@ describe('PhysicalAiApiImpl', () => {
 
     it('passes correct build options with ROS_BASE_IMAGE build-arg', async () => {
       const mockConnection = createMockConnection();
-      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([mockConnection] as any);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets/ros2-humble-base' } as any);
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        mockConnection,
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({
+        fsPath: '/fake/assets/ros2-humble-base',
+      } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
 
       await api.buildBaseImage('my-tag:latest', baseConfig);
 
-      expect(extensionApi.Uri.joinPath).toHaveBeenCalledWith(
-        MOCK_CONTEXT.extensionUri,
-        'assets',
-        'ros2-humble-base',
-      );
+      expect(extensionApi.Uri.joinPath).toHaveBeenCalledWith(MOCK_CONTEXT.extensionUri, 'assets', 'ros2-humble-base');
       expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
         '/fake/assets/ros2-humble-base',
         expect.any(Function),
@@ -538,14 +577,16 @@ describe('PhysicalAiApiImpl', () => {
 
     it('cancelBuild marks the build cancelled immediately without waiting for Podman', async () => {
       const mockConnection = createMockConnection();
-      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([mockConnection] as any);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as any);
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        mockConnection,
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
 
       let aborted = false;
       vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation(
-        (_ctx: any, _cb: any, opts: any) =>
+        (_ctx, _cb, opts) =>
           new Promise(() => {
-            opts.abortController.signal.addEventListener('abort', () => {
+            opts?.abortController?.signal.addEventListener('abort', () => {
               aborted = true;
             });
           }),
@@ -565,16 +606,14 @@ describe('PhysicalAiApiImpl', () => {
     it('marks build complete on finish event even if the Promise has not settled', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
-      ] as any);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as any);
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
 
-      let buildCallback: Function;
-      vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation(
-        (_ctx: any, cb: any, _opts: any) => {
-          buildCallback = cb;
-          return new Promise(() => {});
-        },
-      );
+      let buildCallback: Parameters<typeof extensionApi.containerEngine.buildImage>[1];
+      vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation((_ctx, cb, _opts) => {
+        buildCallback = cb;
+        return new Promise(() => {});
+      });
 
       await api.buildBaseImage('my-tag:latest', baseConfig);
       buildCallback!('stream', 'STEP 7/17: RUN apt-get update');
@@ -599,12 +638,16 @@ describe('PhysicalAiApiImpl', () => {
 
     it('builds from the turtlebot3 simulation asset directory with LOCAL_BASE_IMAGE build-arg', async () => {
       const mockConnection = createMockConnection();
-      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([mockConnection] as any);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets/ros2-humble-turtlebot3' } as any);
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        mockConnection,
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({
+        fsPath: '/fake/assets/ros2-humble-turtlebot3',
+      } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockReturnValue('ecosystem-appeng'),
-      } as any);
+      } as unknown as extensionApi.Configuration);
 
       await api.buildSimulationImage('sim-tag:latest', supportedConfig);
 
@@ -630,12 +673,16 @@ describe('PhysicalAiApiImpl', () => {
 
     it('computes LOCAL_BASE_IMAGE tag from osrf preset', async () => {
       const mockConnection = createMockConnection();
-      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([mockConnection] as any);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets/ros2-humble-turtlebot3' } as any);
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        mockConnection,
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({
+        fsPath: '/fake/assets/ros2-humble-turtlebot3',
+      } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockReturnValue('ecosystem-appeng'),
-      } as any);
+      } as unknown as extensionApi.Configuration);
 
       await api.buildSimulationImage('sim-tag:osrf', {
         ...supportedConfig,
@@ -662,19 +709,21 @@ describe('PhysicalAiApiImpl', () => {
 
     it('builds jazzy simulation image with LOCAL_BASE_IMAGE :noble', async () => {
       const mockConnection = createMockConnection();
-      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([mockConnection] as any);
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        mockConnection,
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockReturnValue('ecosystem-appeng'),
-      } as any);
+      } as unknown as extensionApi.Configuration);
       vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({
         fsPath: '/fake/assets/ros2-jazzy-sim',
-      } as any);
+      } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
 
       await api.buildSimulationImage('sim-tag:noble', {
         ...supportedConfig,
         distro: 'jazzy',
-        baseImage: 'jazzy-noble' as any,
+        baseImage: 'jazzy-noble',
       });
 
       expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
@@ -690,8 +739,8 @@ describe('PhysicalAiApiImpl', () => {
   });
 
   describe('getBuildProgress', () => {
-    it('returns null for unknown tag', async () => {
-      expect(await api.getBuildProgress('nonexistent')).toBeNull();
+    it('returns undefined for unknown tag', async () => {
+      expect(await api.getBuildProgress('nonexistent')).toBeUndefined();
     });
   });
 
@@ -705,7 +754,7 @@ describe('PhysicalAiApiImpl', () => {
     it('initiates push and sets initial progress', async () => {
       vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
         { engineId: 'eng1', RepoTags: ['my-img:latest'] },
-      ] as any);
+      ] as unknown as extensionApi.ImageInfo[]);
       vi.mocked(extensionApi.containerEngine.pushImage).mockReturnValue(new Promise(() => {}));
 
       await api.pushImage('my-img:latest');
@@ -721,7 +770,7 @@ describe('PhysicalAiApiImpl', () => {
     it('passes engineId, tag, and AbortController to pushImage', async () => {
       vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
         { engineId: 'eng1', RepoTags: ['my-img:latest'] },
-      ] as any);
+      ] as unknown as extensionApi.ImageInfo[]);
       vi.mocked(extensionApi.containerEngine.pushImage).mockReturnValue(new Promise(() => {}));
 
       await api.pushImage('my-img:latest');
@@ -738,11 +787,17 @@ describe('PhysicalAiApiImpl', () => {
     it('cancelPush marks the push cancelled immediately and aborts', async () => {
       vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
         { engineId: 'eng1', RepoTags: ['my-img:latest'] },
-      ] as any);
+      ] as unknown as extensionApi.ImageInfo[]);
 
       let aborted = false;
       vi.mocked(extensionApi.containerEngine.pushImage).mockImplementation(
-        (_eng: any, _tag: any, _cb: any, _auth: any, abortController?: AbortController) =>
+        (
+          _eng: string,
+          _tag: string,
+          _cb: Parameters<typeof extensionApi.containerEngine.pushImage>[2],
+          _auth: unknown,
+          abortController?: AbortController,
+        ) =>
           new Promise(() => {
             abortController?.signal.addEventListener('abort', () => {
               aborted = true;
@@ -764,15 +819,13 @@ describe('PhysicalAiApiImpl', () => {
     it('parses JSON status from callback data', async () => {
       vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
         { engineId: 'eng1', RepoTags: ['my-img:latest'] },
-      ] as any);
+      ] as unknown as extensionApi.ImageInfo[]);
 
-      let pushCallback: Function;
-      vi.mocked(extensionApi.containerEngine.pushImage).mockImplementation(
-        (_eng: any, _tag: any, cb: any) => {
-          pushCallback = cb;
-          return new Promise(() => {});
-        },
-      );
+      let pushCallback: Parameters<typeof extensionApi.containerEngine.pushImage>[2];
+      vi.mocked(extensionApi.containerEngine.pushImage).mockImplementation((_eng, _tag, cb) => {
+        pushCallback = cb;
+        return new Promise(() => {});
+      });
 
       await api.pushImage('my-img:latest');
       pushCallback!('data', '{"status":"Pushing layer abc123"}');
@@ -785,15 +838,13 @@ describe('PhysicalAiApiImpl', () => {
     it('handles multi-line callback data', async () => {
       vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
         { engineId: 'eng1', RepoTags: ['my-img:latest'] },
-      ] as any);
+      ] as unknown as extensionApi.ImageInfo[]);
 
-      let pushCallback: Function;
-      vi.mocked(extensionApi.containerEngine.pushImage).mockImplementation(
-        (_eng: any, _tag: any, cb: any) => {
-          pushCallback = cb;
-          return new Promise(() => {});
-        },
-      );
+      let pushCallback: Parameters<typeof extensionApi.containerEngine.pushImage>[2];
+      vi.mocked(extensionApi.containerEngine.pushImage).mockImplementation((_eng, _tag, cb) => {
+        pushCallback = cb;
+        return new Promise(() => {});
+      });
 
       await api.pushImage('my-img:latest');
       pushCallback!('data', '{"status":"line1"}\n{"status":"line2"}');
@@ -806,15 +857,13 @@ describe('PhysicalAiApiImpl', () => {
     it('ignores end and first-message events', async () => {
       vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
         { engineId: 'eng1', RepoTags: ['my-img:latest'] },
-      ] as any);
+      ] as unknown as extensionApi.ImageInfo[]);
 
-      let pushCallback: Function;
-      vi.mocked(extensionApi.containerEngine.pushImage).mockImplementation(
-        (_eng: any, _tag: any, cb: any) => {
-          pushCallback = cb;
-          return new Promise(() => {});
-        },
-      );
+      let pushCallback: Parameters<typeof extensionApi.containerEngine.pushImage>[2];
+      vi.mocked(extensionApi.containerEngine.pushImage).mockImplementation((_eng, _tag, cb) => {
+        pushCallback = cb;
+        return new Promise(() => {});
+      });
 
       await api.pushImage('my-img:latest');
       pushCallback!('end', '');
@@ -827,8 +876,8 @@ describe('PhysicalAiApiImpl', () => {
     it('sets done on successful push', async () => {
       vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
         { engineId: 'eng1', RepoTags: ['my-img:latest'] },
-      ] as any);
-      vi.mocked(extensionApi.containerEngine.pushImage).mockResolvedValue(undefined as any);
+      ] as unknown as extensionApi.ImageInfo[]);
+      vi.mocked(extensionApi.containerEngine.pushImage).mockResolvedValue(undefined);
 
       await api.pushImage('my-img:latest');
       await vi.advanceTimersByTimeAsync(0);
@@ -841,7 +890,7 @@ describe('PhysicalAiApiImpl', () => {
     it('sets error on failed push', async () => {
       vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
         { engineId: 'eng1', RepoTags: ['my-img:latest'] },
-      ] as any);
+      ] as unknown as extensionApi.ImageInfo[]);
       vi.mocked(extensionApi.containerEngine.pushImage).mockRejectedValue(new Error('auth failed'));
 
       await api.pushImage('my-img:latest');
@@ -854,8 +903,8 @@ describe('PhysicalAiApiImpl', () => {
   });
 
   describe('getPushProgress', () => {
-    it('returns null for unknown tag', async () => {
-      expect(await api.getPushProgress('nonexistent')).toBeNull();
+    it('returns undefined for unknown tag', async () => {
+      expect(await api.getPushProgress('nonexistent')).toBeUndefined();
     });
   });
 
@@ -863,7 +912,7 @@ describe('PhysicalAiApiImpl', () => {
     it('returns configured namespace', async () => {
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockReturnValue('sgahlot'),
-      } as any);
+      } as unknown as extensionApi.Configuration);
 
       const ns = await api.getDefaultNamespace();
       expect(ns).toBe('sgahlot');
@@ -873,7 +922,7 @@ describe('PhysicalAiApiImpl', () => {
     it('falls back to ecosystem-appeng when not configured', async () => {
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockReturnValue(undefined),
-      } as any);
+      } as unknown as extensionApi.Configuration);
 
       const ns = await api.getDefaultNamespace();
       expect(ns).toBe('ecosystem-appeng');
@@ -886,7 +935,7 @@ describe('PhysicalAiApiImpl', () => {
     beforeEach(() => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
         simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
-      ] as any);
+      ] as unknown as extensionApi.ContainerInfo[]);
     });
 
     it('returns empty array when ros2 topic list fails', async () => {
@@ -905,7 +954,7 @@ describe('PhysicalAiApiImpl', () => {
         stdout: '',
         stderr: '',
         command: 'podman',
-      } as any);
+      } as extensionApi.RunResult);
 
       const result = await api.listRosTopics(CONTAINER_ID);
       expect(result).toEqual([]);
@@ -917,17 +966,17 @@ describe('PhysicalAiApiImpl', () => {
           stdout: '/rosout\n/robot_1/cmd_vel\n',
           stderr: '',
           command: 'podman',
-        } as any)
+        } as extensionApi.RunResult)
         .mockResolvedValueOnce({
           stdout: 'Type: rcl_interfaces/msg/Log\nPublisher count: 2\nSubscription count: 0\n',
           stderr: '',
           command: 'podman',
-        } as any)
+        } as extensionApi.RunResult)
         .mockResolvedValueOnce({
           stdout: 'Type: geometry_msgs/msg/Twist\nPublisher count: 0\nSubscription count: 1\n',
           stderr: '',
           command: 'podman',
-        } as any);
+        } as extensionApi.RunResult);
 
       const result = await api.listRosTopics(CONTAINER_ID);
       expect(result).toHaveLength(2);
@@ -951,7 +1000,7 @@ describe('PhysicalAiApiImpl', () => {
           stdout: '/rosout\n',
           stderr: '',
           command: 'podman',
-        } as any)
+        } as extensionApi.RunResult)
         .mockRejectedValueOnce({
           exitCode: 1,
           stdout: '',
@@ -971,12 +1020,12 @@ describe('PhysicalAiApiImpl', () => {
     it('detects humble distro from image tag', async () => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
         simContainer(CONTAINER_ID, 'quay.io/ns/ros2-humble-turtlebot3:sloretz'),
-      ] as any);
+      ] as unknown as extensionApi.ContainerInfo[]);
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
         stdout: '/rosout\n',
         stderr: '',
         command: 'podman',
-      } as any);
+      } as extensionApi.RunResult);
 
       await api.listRosTopics(CONTAINER_ID);
       const args = execArgs(0);
@@ -990,7 +1039,7 @@ describe('PhysicalAiApiImpl', () => {
         stdout: '/rosout\n/cmd_vel; id\n',
         stderr: '',
         command: 'podman',
-      } as any);
+      } as extensionApi.RunResult);
 
       const result = await api.listRosTopics(CONTAINER_ID);
       expect(result.map(t => t.name)).toEqual(['/rosout']);
@@ -999,11 +1048,9 @@ describe('PhysicalAiApiImpl', () => {
     it('rejects non-simulation containers', async () => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
         { Id: CONTAINER_ID, Image: 'quay.io/ns/other:latest', Labels: {} },
-      ] as any);
+      ] as unknown as extensionApi.ContainerInfo[]);
 
-      await expect(api.listRosTopics(CONTAINER_ID)).rejects.toThrow(
-        'Not a Physical AI simulation container',
-      );
+      await expect(api.listRosTopics(CONTAINER_ID)).rejects.toThrow('Not a Physical AI simulation container');
     });
 
     it('passes topic names as bash positional args (not interpolated)', async () => {
@@ -1012,12 +1059,12 @@ describe('PhysicalAiApiImpl', () => {
           stdout: '/robot_1/cmd_vel\n',
           stderr: '',
           command: 'podman',
-        } as any)
+        } as extensionApi.RunResult)
         .mockResolvedValueOnce({
           stdout: 'Type: geometry_msgs/msg/Twist\nPublisher count: 0\nSubscription count: 1\n',
           stderr: '',
           command: 'podman',
-        } as any);
+        } as extensionApi.RunResult);
 
       await api.listRosTopics(CONTAINER_ID);
       const args = execArgs(1);
@@ -1032,7 +1079,7 @@ describe('PhysicalAiApiImpl', () => {
         stdout: '/rosout\n',
         stderr: '',
         command: 'podman',
-      } as any);
+      } as extensionApi.RunResult);
 
       await api.listRosTopics(CONTAINER_ID);
       const args = execArgs(0);
@@ -1048,7 +1095,7 @@ describe('PhysicalAiApiImpl', () => {
     beforeEach(() => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
         simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
-      ] as any);
+      ] as unknown as extensionApi.ContainerInfo[]);
     });
 
     it('parses verbose output with publishers and subscribers', async () => {
@@ -1086,14 +1133,12 @@ describe('PhysicalAiApiImpl', () => {
         ].join('\n'),
         stderr: '',
         command: 'podman',
-      } as any);
+      } as extensionApi.RunResult);
 
       const result = await api.getRosTopicDetail(CONTAINER_ID, '/robot_1/cmd_vel');
       expect(result.topicName).toBe('/robot_1/cmd_vel');
       expect(result.type).toBe('geometry_msgs/msg/Twist');
-      expect(result.publishers).toEqual([
-        { nodeName: 'teleop_keyboard', nodeNamespace: '/' },
-      ]);
+      expect(result.publishers).toEqual([{ nodeName: 'teleop_keyboard', nodeNamespace: '/' }]);
       expect(result.subscribers).toEqual([
         { nodeName: 'turtlebot3_diff_drive', nodeNamespace: '/robot_1' },
         { nodeName: 'nav2_velocity_smoother', nodeNamespace: '/robot_1' },
@@ -1121,7 +1166,7 @@ describe('PhysicalAiApiImpl', () => {
         stdout: 'Type: std_msgs/msg/String\n\nPublisher count: 0\n\nSubscription count: 0\n',
         stderr: '',
         command: 'podman',
-      } as any);
+      } as extensionApi.RunResult);
 
       const result = await api.getRosTopicDetail(CONTAINER_ID, '/empty_topic');
       expect(result.topicName).toBe('/empty_topic');
@@ -1133,12 +1178,12 @@ describe('PhysicalAiApiImpl', () => {
     it('detects humble distro for sourcing', async () => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
         simContainer(CONTAINER_ID, 'quay.io/ns/ros2-humble-turtlebot3:sloretz'),
-      ] as any);
+      ] as unknown as extensionApi.ContainerInfo[]);
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
         stdout: 'Type: std_msgs/msg/String\n\nPublisher count: 0\n\nSubscription count: 0\n',
         stderr: '',
         command: 'podman',
-      } as any);
+      } as extensionApi.RunResult);
 
       await api.getRosTopicDetail(CONTAINER_ID, '/rosout');
       const args = execArgs(0);
@@ -1151,7 +1196,7 @@ describe('PhysicalAiApiImpl', () => {
         stdout: 'Type: std_msgs/msg/String\n\nPublisher count: 0\n\nSubscription count: 0\n',
         stderr: '',
         command: 'podman',
-      } as any);
+      } as extensionApi.RunResult);
 
       await api.getRosTopicDetail(CONTAINER_ID, '/rosout');
       const args = execArgs(0);
@@ -1162,9 +1207,7 @@ describe('PhysicalAiApiImpl', () => {
     });
 
     it('rejects injectable topic names', async () => {
-      await expect(api.getRosTopicDetail(CONTAINER_ID, '/rosout; id')).rejects.toThrow(
-        /Invalid ROS topic/,
-      );
+      await expect(api.getRosTopicDetail(CONTAINER_ID, '/rosout; id')).rejects.toThrow(/Invalid ROS topic/);
     });
   });
 
@@ -1174,20 +1217,19 @@ describe('PhysicalAiApiImpl', () => {
     beforeEach(() => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
         simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
-      ] as any);
+      ] as unknown as extensionApi.ContainerInfo[]);
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockReturnValue(5),
         update: vi.fn(),
-      } as any);
+      } as unknown as extensionApi.Configuration);
     });
 
     it('returns cleaned message text from ros2 topic echo --once', async () => {
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
-        stdout:
-          'A message was lost!!!\nlinear:\n  x: 0.2\n  y: 0.0\n  z: 0.0\n---\n',
+        stdout: 'A message was lost!!!\nlinear:\n  x: 0.2\n  y: 0.0\n  z: 0.0\n---\n',
         stderr: '',
         command: 'podman',
-      } as any);
+      } as extensionApi.RunResult);
 
       const result = await api.peekRosTopic(CONTAINER_ID, '/robot_1/cmd_vel');
       expect(result.timedOut).toBe(false);
@@ -1208,12 +1250,12 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockReturnValue(12),
         update: vi.fn(),
-      } as any);
+      } as unknown as extensionApi.Configuration);
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
         stdout: 'data: hi\n',
         stderr: '',
         command: 'podman',
-      } as any);
+      } as extensionApi.RunResult);
 
       await api.peekRosTopic(CONTAINER_ID, '/rosout');
       const args = execArgs(0);
@@ -1224,7 +1266,7 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockReturnValue(99),
         update: vi.fn(),
-      } as any);
+      } as unknown as extensionApi.Configuration);
 
       const result = await api.peekRosTopic(CONTAINER_ID, '/rosout');
       expect(result.message).toBe('');
@@ -1237,7 +1279,7 @@ describe('PhysicalAiApiImpl', () => {
         stdout: 'header:\n  stamp:\n    sec: 21039\n    nanosec: 900000000\n  frame_id: base\n',
         stderr: '',
         command: 'podman',
-      } as any);
+      } as extensionApi.RunResult);
 
       const result = await api.peekRosTopic(CONTAINER_ID, '/robot_1/joint_states');
       expect(result.messageStamp).toBe('sec=21039 nanosec=900000000');
@@ -1266,11 +1308,9 @@ describe('PhysicalAiApiImpl', () => {
     it('rejects non-simulation containers', async () => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
         { Id: CONTAINER_ID, Image: 'docker.io/library/nginx:latest', Labels: {} },
-      ] as any);
+      ] as unknown as extensionApi.ContainerInfo[]);
 
-      await expect(api.peekRosTopic(CONTAINER_ID, '/rosout')).rejects.toThrow(
-        'Not a Physical AI simulation container',
-      );
+      await expect(api.peekRosTopic(CONTAINER_ID, '/rosout')).rejects.toThrow('Not a Physical AI simulation container');
     });
   });
 
@@ -1279,7 +1319,7 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockReturnValue(undefined),
         update: vi.fn(),
-      } as any);
+      } as unknown as extensionApi.Configuration);
       expect(await api.getTopicPeekTimeoutSeconds()).toBe(5);
     });
 
@@ -1288,7 +1328,7 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn(),
         update,
-      } as any);
+      } as unknown as extensionApi.Configuration);
       await expect(api.setTopicPeekTimeoutSeconds(0)).rejects.toThrow(/at least 1/);
       expect(update).not.toHaveBeenCalled();
     });
@@ -1298,7 +1338,7 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn(),
         update,
-      } as any);
+      } as unknown as extensionApi.Configuration);
       await expect(api.setTopicPeekTimeoutSeconds(31)).rejects.toThrow(/at most 30/);
       expect(update).not.toHaveBeenCalled();
     });
@@ -1308,9 +1348,32 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn(),
         update,
-      } as any);
+      } as unknown as extensionApi.Configuration);
       await api.setTopicPeekTimeoutSeconds(15);
       expect(update).toHaveBeenCalledWith('topicPeekTimeoutSeconds', 15);
+    });
+  });
+
+  describe('getDefaultSoftwareRenderCpus', () => {
+    it('returns the built-in default when unset', async () => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue(undefined),
+      } as unknown as extensionApi.Configuration);
+      expect(await api.getDefaultSoftwareRenderCpus()).toBe(8);
+    });
+
+    it('returns a valid configured value', async () => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue(5),
+      } as unknown as extensionApi.Configuration);
+      expect(await api.getDefaultSoftwareRenderCpus()).toBe(5);
+    });
+
+    it('falls back to the default when the setting is out of range', async () => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue(0),
+      } as unknown as extensionApi.Configuration);
+      expect(await api.getDefaultSoftwareRenderCpus()).toBe(8);
     });
   });
 
@@ -1320,7 +1383,7 @@ describe('PhysicalAiApiImpl', () => {
     beforeEach(() => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
         simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
-      ] as any);
+      ] as unknown as extensionApi.ContainerInfo[]);
     });
 
     it('returns interface definition text', async () => {
@@ -1328,7 +1391,7 @@ describe('PhysicalAiApiImpl', () => {
         stdout: 'float64 x\nfloat64 y\nfloat64 z\n',
         stderr: '',
         command: 'podman',
-      } as any);
+      } as extensionApi.RunResult);
 
       const result = await api.getRosMessageSchema(CONTAINER_ID, 'geometry_msgs/msg/Vector3');
       expect(result.type).toBe('geometry_msgs/msg/Vector3');
@@ -1342,9 +1405,9 @@ describe('PhysicalAiApiImpl', () => {
     });
 
     it('rejects injectable message types', async () => {
-      await expect(
-        api.getRosMessageSchema(CONTAINER_ID, 'std_msgs/msg/String; id'),
-      ).rejects.toThrow(/Invalid ROS message/);
+      await expect(api.getRosMessageSchema(CONTAINER_ID, 'std_msgs/msg/String; id')).rejects.toThrow(
+        /Invalid ROS message/,
+      );
     });
   });
 
@@ -1363,8 +1426,10 @@ describe('PhysicalAiApiImpl', () => {
 
   describe('sendNavigationGoal (humble cmd_vel)', () => {
     const CONTAINER_ID = 'abc123def456';
-    const GZ_POSE_ORIGIN = 'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
-    const GZ_POSE_AT_TARGET = 'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [2.000000 2.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
+    const GZ_POSE_ORIGIN =
+      'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
+    const GZ_POSE_AT_TARGET =
+      'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [2.000000 2.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
 
     function mockNavExec(finalPose: string = GZ_POSE_AT_TARGET) {
       let poseCalls = 0;
@@ -1376,16 +1441,16 @@ describe('PhysicalAiApiImpl', () => {
             stdout: poseCalls === 1 ? GZ_POSE_ORIGIN : finalPose,
             stderr: '',
             command: 'podman',
-          } as any;
+          } as extensionApi.RunResult;
         }
-        return { stdout: '', stderr: '', command: 'podman' } as any;
+        return { stdout: '', stderr: '', command: 'podman' } as extensionApi.RunResult;
       });
     }
 
     beforeEach(() => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
         simContainer(CONTAINER_ID, 'quay.io/ns/ros2-humble-turtlebot3:sloretz'),
-      ] as any);
+      ] as unknown as extensionApi.ContainerInfo[]);
     });
 
     it('returns reached after driving toward target', async () => {
@@ -1413,9 +1478,13 @@ describe('PhysicalAiApiImpl', () => {
       expect(poseCmd).toContain('gz model -m "$1"');
       expect(poseArgs).toContain('robot_1');
       const calls = vi.mocked(extensionApi.process.exec).mock.calls;
-      const turnCmds = calls.filter(c => (c[1] as string[] | undefined)?.some((a: string) => typeof a === 'string' && a.includes('angular')));
+      const turnCmds = calls.filter(c =>
+        (c[1] as string[] | undefined)?.some((a: string) => typeof a === 'string' && a.includes('angular')),
+      );
       expect(turnCmds.length).toBeGreaterThan(0);
-      const driveCmds = calls.filter(c => (c[1] as string[] | undefined)?.some((a: string) => typeof a === 'string' && a.includes('linear')));
+      const driveCmds = calls.filter(c =>
+        (c[1] as string[] | undefined)?.some((a: string) => typeof a === 'string' && a.includes('linear')),
+      );
       expect(driveCmds.length).toBe(1);
     });
 
@@ -1424,7 +1493,7 @@ describe('PhysicalAiApiImpl', () => {
         stdout: GZ_POSE_AT_TARGET,
         stderr: '',
         command: 'podman',
-      } as any);
+      } as extensionApi.RunResult);
 
       const result = await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
       expect(result.status).toBe('reached');
@@ -1436,7 +1505,9 @@ describe('PhysicalAiApiImpl', () => {
 
       await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 3.5, -1.0);
       const calls = vi.mocked(extensionApi.process.exec).mock.calls;
-      const driveCallIndex = calls.findIndex(c => (c[1] as string[] | undefined)?.some((a: string) => typeof a === 'string' && a.includes('linear')));
+      const driveCallIndex = calls.findIndex(c =>
+        (c[1] as string[] | undefined)?.some((a: string) => typeof a === 'string' && a.includes('linear')),
+      );
       expect(driveCallIndex).toBeGreaterThanOrEqual(0);
       const driveArgs = execArgs(driveCallIndex);
       const driveCmd = driveArgs.find((arg: string) => arg.includes('linear'));
@@ -1446,9 +1517,7 @@ describe('PhysicalAiApiImpl', () => {
     });
 
     it('rejects injectable robot names', async () => {
-      await expect(api.sendNavigationGoal(CONTAINER_ID, 'robot;id', 2.0, 2.0)).rejects.toThrow(
-        /Invalid robot name/,
-      );
+      await expect(api.sendNavigationGoal(CONTAINER_ID, 'robot;id', 2.0, 2.0)).rejects.toThrow(/Invalid robot name/);
     });
 
     it('fails loudly when pose cannot be parsed', async () => {
@@ -1456,11 +1525,9 @@ describe('PhysicalAiApiImpl', () => {
         stdout: 'no pose here',
         stderr: '',
         command: 'podman',
-      } as any);
+      } as extensionApi.RunResult);
 
-      await expect(api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0)).rejects.toThrow(
-        /Could not read pose/,
-      );
+      await expect(api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0)).rejects.toThrow(/Could not read pose/);
     });
 
     it('calls podman exec without -d flag (attached mode)', async () => {
@@ -1475,26 +1542,24 @@ describe('PhysicalAiApiImpl', () => {
 
   describe('sendNavigationGoal (jazzy Nav2)', () => {
     const CONTAINER_ID = 'abc123def456';
-    const GZ_POSE_ORIGIN = 'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
+    const GZ_POSE_ORIGIN =
+      'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
 
-    function mockNav2Exec(options?: {
-      tfReadyInitially?: boolean;
-      goalOutput?: string;
-    }) {
+    function mockNav2Exec(options?: { tfReadyInitially?: boolean; goalOutput?: string }) {
       const tfReadyInitially = options?.tfReadyInitially ?? true;
       const goalOutput = options?.goalOutput ?? 'Goal finished with status: SUCCEEDED\n';
       let tfChecks = 0;
       vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
         const argv = args as string[];
         if (argv.some(a => typeof a === 'string' && a.includes('gz model'))) {
-          return { stdout: GZ_POSE_ORIGIN, stderr: '', command: 'podman' } as any;
+          return { stdout: GZ_POSE_ORIGIN, stderr: '', command: 'podman' } as extensionApi.RunResult;
         }
         if (argv.includes('-d')) {
-          return { stdout: '', stderr: '', command: 'podman' } as any;
+          return { stdout: '', stderr: '', command: 'podman' } as extensionApi.RunResult;
         }
         const bashScript = argv.find((a): a is string => typeof a === 'string' && a.includes('source'));
         if (bashScript?.includes('send_goal')) {
-          return { stdout: goalOutput, stderr: '', command: 'podman' } as any;
+          return { stdout: goalOutput, stderr: '', command: 'podman' } as extensionApi.RunResult;
         }
         if (bashScript?.includes('tf2_echo map base_link')) {
           tfChecks++;
@@ -1503,18 +1568,22 @@ describe('PhysicalAiApiImpl', () => {
               stdout: 'At time 1.0\n- Translation: [-1.972, -0.517, 0.010]\n',
               stderr: '',
               command: 'podman',
-            } as any;
+            } as extensionApi.RunResult;
           }
-          return { stdout: 'Waiting for transform map -> base_link\n', stderr: '', command: 'podman' } as any;
+          return {
+            stdout: 'Waiting for transform map -> base_link\n',
+            stderr: '',
+            command: 'podman',
+          } as extensionApi.RunResult;
         }
-        return { stdout: '', stderr: '', command: 'podman' } as any;
+        return { stdout: '', stderr: '', command: 'podman' } as extensionApi.RunResult;
       });
     }
 
     beforeEach(() => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
         simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
-      ] as any);
+      ] as unknown as extensionApi.ContainerInfo[]);
     });
 
     it('returns reached when Nav2 goal succeeds', async () => {
@@ -1537,29 +1606,33 @@ describe('PhysicalAiApiImpl', () => {
       mockNav2Exec();
 
       await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 3.5, -1.0);
-      const goalCall = vi.mocked(extensionApi.process.exec).mock.calls.find(c =>
-        (c[1] as string[] | undefined)?.some(a => typeof a === 'string' && a.includes('send_goal')),
-      );
+      const goalCall = vi
+        .mocked(extensionApi.process.exec)
+        .mock.calls.find(c =>
+          (c[1] as string[] | undefined)?.some(a => typeof a === 'string' && a.includes('send_goal')),
+        );
       expect(goalCall).toBeDefined();
       const goalArgs = goalCall![1] as string[];
       const goalCmd = goalArgs.find(arg => arg.includes('send_goal'));
       expect(goalCmd).toContain('/$2/navigate_to_pose');
       expect(goalArgs).toContain('robot_1');
       expect(goalCmd).not.toContain('/robot_1/navigate_to_pose');
+      // Local podman containers have a writable HOME; the oc-only workaround must not leak here.
+      expect(goalCmd).not.toContain('HOME=/tmp/ros-home');
     });
 
     it('launches Nav2 detached with spawn pose env when map TF is missing', async () => {
       mockNav2Exec({ tfReadyInitially: false });
 
       const promise = api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
-      await vi.advanceTimersByTimeAsync(1000);
-      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(1000); // TF poll → becomes ready
+      await vi.advanceTimersByTimeAsync(2000); // cold-start costmap-clear refill settle
       const result = await promise;
 
       expect(result.status).toBe('reached');
-      const detachedCall = vi.mocked(extensionApi.process.exec).mock.calls.find(c =>
-        (c[1] as string[] | undefined)?.includes('-d'),
-      );
+      const detachedCall = vi
+        .mocked(extensionApi.process.exec)
+        .mock.calls.find(c => (c[1] as string[] | undefined)?.includes('-d'));
       expect(detachedCall).toBeDefined();
       const detachedArgs = detachedCall![1] as string[];
       expect(detachedArgs).toContain(NAV2_ENTRYPOINT);
@@ -1567,20 +1640,167 @@ describe('PhysicalAiApiImpl', () => {
       const dIdx = detachedArgs.indexOf('-d');
       expect(detachedArgs.indexOf(CONTAINER_ID)).toBeGreaterThan(dIdx);
       expect(detachedArgs.indexOf(NAV2_ENTRYPOINT)).toBeGreaterThan(detachedArgs.indexOf(CONTAINER_ID));
-      expect(detachedArgs.some(a => a === 'PHYSICAL_AI_SPAWN_X=0.0000' || a.startsWith('PHYSICAL_AI_SPAWN_X='))).toBe(true);
+      expect(detachedArgs.some(a => a === 'PHYSICAL_AI_SPAWN_X=0.0000' || a.startsWith('PHYSICAL_AI_SPAWN_X='))).toBe(
+        true,
+      );
       expect(detachedArgs.some(a => a.startsWith('PHYSICAL_AI_SPAWN_Y='))).toBe(true);
+    });
+
+    it('clears both costmaps once on a cold start, before sending the goal', async () => {
+      mockNav2Exec({ tfReadyInitially: false });
+
+      const promise = api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
+      await vi.advanceTimersByTimeAsync(1000); // TF poll → becomes ready
+      await vi.advanceTimersByTimeAsync(2000); // costmap-clear refill settle
+      const result = await promise;
+      expect(result.status).toBe('reached');
+
+      const calls = vi.mocked(extensionApi.process.exec).mock.calls;
+      const clearCall = calls.find(c =>
+        (c[1] as string[] | undefined)?.some(
+          a => typeof a === 'string' && a.includes('clear_entirely_local_costmap'),
+        ),
+      );
+      expect(clearCall).toBeDefined();
+      const clearCmd = (clearCall![1] as string[]).find(a => a.includes('clear_entirely_local_costmap'))!;
+      expect(clearCmd).toContain('clear_entirely_global_costmap');
+      expect(clearCmd).toContain('/$1/'); // robot name passed positionally, not interpolated
+      expect(clearCall![1]).toContain('robot_1');
+
+      // The clear must precede the navigation goal.
+      const clearIdx = calls.indexOf(clearCall!);
+      const goalIdx = calls.findIndex(c =>
+        (c[1] as string[] | undefined)?.some(a => typeof a === 'string' && a.includes('send_goal')),
+      );
+      expect(goalIdx).toBeGreaterThan(clearIdx);
+    });
+
+    it('does not clear costmaps on the warm path (TF already present)', async () => {
+      mockNav2Exec({ tfReadyInitially: true });
+
+      const result = await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
+      expect(result.status).toBe('reached');
+
+      const clearCall = vi
+        .mocked(extensionApi.process.exec)
+        .mock.calls.find(c =>
+          (c[1] as string[] | undefined)?.some(a => typeof a === 'string' && a.includes('clear_entirely')),
+        );
+      expect(clearCall).toBeUndefined();
+    });
+
+    it('clears only once per bringup — a second goal does not clear again', async () => {
+      mockNav2Exec({ tfReadyInitially: false });
+      const countClears = () =>
+        vi
+          .mocked(extensionApi.process.exec)
+          .mock.calls.filter(c =>
+            (c[1] as string[] | undefined)?.some(
+              a => typeof a === 'string' && a.includes('clear_entirely_local_costmap'),
+            ),
+          ).length;
+
+      // First goal on the fresh (cold) bringup → clears once.
+      const first = api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
+      await vi.advanceTimersByTimeAsync(1000); // TF poll → ready
+      await vi.advanceTimersByTimeAsync(2000); // costmap-clear refill settle
+      expect((await first).status).toBe('reached');
+      expect(countClears()).toBe(1);
+
+      // Second goal → TF already present (warm), pending already consumed → no re-clear.
+      const second = await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 3.0, 3.0);
+      expect(second.status).toBe('reached');
+      expect(countClears()).toBe(1);
     });
 
     it('returns already-at-target when distance is tiny', async () => {
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
-        stdout: 'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [2.000000 2.000000 0.010000]\n    [0.000000 0.000000 0.000000]',
+        stdout:
+          'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [2.000000 2.000000 0.010000]\n    [0.000000 0.000000 0.000000]',
         stderr: '',
         command: 'podman',
-      } as any);
+      } as extensionApi.RunResult);
 
       const result = await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
       expect(result.status).toBe('reached');
       expect(result.message).toContain('Already');
+    });
+  });
+
+  describe('despawnRobot (local)', () => {
+    const CONTAINER_ID = 'abc123def456';
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as unknown as extensionApi.ContainerInfo[]);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '',
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+    });
+
+    it('kills the robot processes (TERM then KILL) with a boundary-anchored pattern and removes the model', async () => {
+      await api.despawnRobot(CONTAINER_ID, 'robot_1');
+
+      const calls = vi.mocked(extensionApi.process.exec).mock.calls;
+      const pkillCall = calls.find(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes('pkill')));
+      expect(pkillCall).toBeDefined();
+      const pkillA = pkillCall![1] as string[];
+      expect(pkillA[0]).toBe('exec');
+      const script = pkillA.find(a => typeof a === 'string' && a.includes('pkill'))!;
+      expect(script).toContain('pkill -TERM -f "$1"');
+      expect(script).toContain('pkill -KILL -f "$1"');
+      const pattern = pkillA[pkillA.length - 1];
+      // Right boundary so robot_1 never matches robot_10, and no bare `/robot/`
+      // branch so the pattern can't match the pkill shell's own argv.
+      expect(pattern).toContain('robot_1([ /:]|$)');
+      expect(pattern).toContain('__ns:=/');
+      expect(pattern).toContain('entrypoint-(spawn-robot|nav2)');
+      expect(pattern).not.toContain('/robot_1/');
+
+      const gzCall = calls.find(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes('gz service')));
+      expect(gzCall).toBeDefined();
+      const gzScript = (gzCall![1] as string[]).find(a => typeof a === 'string' && a.includes('gz service'))!;
+      expect(gzScript).toContain('/world/$world/remove');
+      expect(gzScript).toContain('type: MODEL');
+    });
+
+    it('rejects an injectable robot name', async () => {
+      await expect(api.despawnRobot(CONTAINER_ID, 'robot;id')).rejects.toThrow(/robot name/i);
+    });
+  });
+
+  describe('getRobotWarmStatus (local)', () => {
+    const CONTAINER_ID = 'abc123def456';
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as unknown as extensionApi.ContainerInfo[]);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '',
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+    });
+
+    it("returns 'idle' for a robot that was never spawned", async () => {
+      expect(await api.getRobotWarmStatus(CONTAINER_ID, 'robot_9')).toBe('idle');
+    });
+
+    it("reports 'warming' after a jazzy spawn, then 'idle' once despawned", async () => {
+      await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '-0.5', '0.0']);
+      // Pre-warm sets 'warming' synchronously and parks on its first poll sleep.
+      expect(await api.getRobotWarmStatus(CONTAINER_ID, 'robot_1')).toBe('warming');
+
+      await api.despawnRobot(CONTAINER_ID, 'robot_1');
+      expect(await api.getRobotWarmStatus(CONTAINER_ID, 'robot_1')).toBe('idle');
+    });
+
+    it('rejects an injectable robot name', async () => {
+      await expect(api.getRobotWarmStatus(CONTAINER_ID, 'robot;id')).rejects.toThrow(/robot name/i);
     });
   });
 
@@ -1590,22 +1810,16 @@ describe('PhysicalAiApiImpl', () => {
     beforeEach(() => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
         simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
-      ] as any);
+      ] as unknown as extensionApi.ContainerInfo[]);
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
         stdout: '',
         stderr: '',
         command: 'podman',
-      } as any);
+      } as extensionApi.RunResult);
     });
 
     it('allows spawn entrypoint with validated args', async () => {
-      await api.execInSimulation(CONTAINER_ID, [
-        SPAWN_ENTRYPOINT,
-        'robot_1',
-        '-2.0',
-        '0.5',
-        '0.0',
-      ]);
+      await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '0.5', '0.0']);
       expect(extensionApi.process.exec).toHaveBeenCalledWith('podman', [
         'exec',
         '-d',
@@ -1618,20 +1832,40 @@ describe('PhysicalAiApiImpl', () => {
       ]);
     });
 
+    it('warms Nav2 in the background after a jazzy spawn', async () => {
+      const GZ_POSE =
+        'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
+      vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+        const argv = args as string[];
+        if (argv.some(a => typeof a === 'string' && a.includes('gz model'))) {
+          return { stdout: GZ_POSE, stderr: '', command: 'podman' } as extensionApi.RunResult;
+        }
+        // TF never ready + pgrep empty → forces a Nav2 launch.
+        return { stdout: '', stderr: '', command: 'podman' } as extensionApi.RunResult;
+      });
+
+      await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '-0.5', '0.0']);
+      // Pre-warm is fire-and-forget, parked on its first poll sleep; drive it.
+      await vi.advanceTimersByTimeAsync(1500);
+
+      const launched = vi
+        .mocked(extensionApi.process.exec)
+        .mock.calls.some(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes(NAV2_ENTRYPOINT)));
+      expect(launched).toBe(true);
+    });
+
     it('rejects arbitrary commands', async () => {
-      await expect(api.execInSimulation(CONTAINER_ID, ['bash', '-c', 'id'])).rejects.toThrow(
-        /Only /,
-      );
+      await expect(api.execInSimulation(CONTAINER_ID, ['bash', '-c', 'id'])).rejects.toThrow(/Only /);
     });
 
     it('rejects non-simulation containers', async () => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
         { Id: CONTAINER_ID, Image: 'docker.io/library/nginx:latest', Labels: {} },
-      ] as any);
+      ] as unknown as extensionApi.ContainerInfo[]);
 
-      await expect(
-        api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '0', '0', '0']),
-      ).rejects.toThrow('Not a Physical AI simulation container');
+      await expect(api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '0', '0', '0'])).rejects.toThrow(
+        'Not a Physical AI simulation container',
+      );
     });
   });
 
@@ -1643,14 +1877,14 @@ describe('PhysicalAiApiImpl', () => {
           return '';
         }),
         update: vi.fn(),
-      } as any);
+      } as unknown as extensionApi.Configuration);
       vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
         { engineId: 'engine-1', RepoTags: ['quay.io/sgahlot/ros2-jazzy-sim:noble'] },
-      ] as any);
+      ] as unknown as extensionApi.ImageInfo[]);
       vi.mocked(extensionApi.containerEngine.createContainer).mockResolvedValue({
         id: 'created-1',
-      } as any);
-      vi.mocked(extensionApi.containerEngine.startContainer).mockResolvedValue(undefined as any);
+      } as unknown as extensionApi.ContainerCreateResult);
+      vi.mocked(extensionApi.containerEngine.startContainer).mockResolvedValue(undefined);
     });
 
     it('forces gazebo entrypoint and rejects custom Cmd', async () => {
@@ -1704,9 +1938,9 @@ describe('PhysicalAiApiImpl', () => {
     });
 
     it('rejects non-sim image tags', async () => {
-      await expect(
-        api.launchSimulation('docker.io/library/nginx:latest', 'pai-sim-bad', undefined),
-      ).rejects.toThrow(/not allowed/);
+      await expect(api.launchSimulation('docker.io/library/nginx:latest', 'pai-sim-bad', undefined)).rejects.toThrow(
+        /not allowed/,
+      );
       expect(extensionApi.containerEngine.createContainer).not.toHaveBeenCalled();
     });
 
@@ -1716,10 +1950,10 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockReturnValue(digest),
         update: vi.fn(),
-      } as any);
+      } as unknown as extensionApi.Configuration);
       vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
         { engineId: 'engine-1', RepoTags: [digest] },
-      ] as any);
+      ] as unknown as extensionApi.ImageInfo[]);
 
       await expect(
         api.launchSimulation('quay.io/sgahlot/ros2-jazzy-sim:noble', 'pai-sim-pin', undefined),
@@ -1740,7 +1974,7 @@ describe('PhysicalAiApiImpl', () => {
           return '';
         }),
         update: vi.fn(),
-      } as any);
+      } as unknown as extensionApi.Configuration);
 
       await api.launchSimulation('quay.io/sgahlot/ros2-jazzy-sim:noble', 'pai-sim-gpu', undefined);
 
@@ -1750,18 +1984,17 @@ describe('PhysicalAiApiImpl', () => {
       };
       expect(createArg.Env).toContain('PHYSICAL_AI_USE_GPU=1');
       expect(createArg.Env.some(e => e.startsWith('LIBGL_ALWAYS_SOFTWARE='))).toBe(false);
-      expect(createArg.HostConfig.Devices?.map(d => d.PathOnHost)).toEqual([
-        '/dev/dri/card0',
-        '/dev/dri/renderD128',
-      ]);
+      expect(createArg.HostConfig.Devices?.map(d => d.PathOnHost)).toEqual(['/dev/dri/card0', '/dev/dri/renderD128']);
       archSpy.mockRestore();
     });
   });
 
   describe('openSimulationInBrowser security', () => {
     beforeEach(() => {
-      vi.mocked(extensionApi.env.openExternal).mockResolvedValue(true as any);
-      vi.mocked(extensionApi.Uri.parse).mockImplementation((s: string) => ({ toString: () => s }) as any);
+      vi.mocked(extensionApi.env.openExternal).mockResolvedValue(true);
+      vi.mocked(extensionApi.Uri.parse).mockImplementation(
+        (s: string) => ({ toString: () => s }) as unknown as extensionApi.Uri,
+      );
     });
 
     it('opens allowlisted ports only', async () => {
@@ -1789,6 +2022,27 @@ describe('PhysicalAiApiImpl', () => {
     });
   });
 
+  describe('openUrlInBrowser', () => {
+    beforeEach(() => {
+      vi.mocked(extensionApi.env.openExternal).mockResolvedValue(true);
+      vi.mocked(extensionApi.Uri.parse).mockImplementation(
+        (s: string) => ({ toString: () => s }) as unknown as extensionApi.Uri,
+      );
+    });
+
+    it('opens an https Route URL in the host browser', async () => {
+      await api.openUrlInBrowser('https://host.apps.example.com');
+      expect(extensionApi.Uri.parse).toHaveBeenCalledWith('https://host.apps.example.com');
+      expect(extensionApi.env.openExternal).toHaveBeenCalled();
+    });
+
+    it('rejects non-http(s) URLs', async () => {
+      await expect(api.openUrlInBrowser('file:///etc/passwd')).rejects.toThrow(/http/);
+      await expect(api.openUrlInBrowser('not a url')).rejects.toThrow(/Invalid URL/);
+      expect(extensionApi.env.openExternal).not.toHaveBeenCalled();
+    });
+  });
+
   describe('deleteSimulation', () => {
     const CONTAINER_ID = 'abc123def456';
 
@@ -1800,13 +2054,475 @@ describe('PhysicalAiApiImpl', () => {
         stdout: '',
         stderr: '',
         command: 'podman',
-      } as any);
+      } as extensionApi.RunResult);
       vi.mocked(extensionApi.window.showInformationMessage).mockResolvedValue(undefined);
 
       await api.deleteSimulation(CONTAINER_ID);
 
       expect(extensionApi.process.exec).toHaveBeenCalledWith('podman', ['rm', '-f', CONTAINER_ID]);
       expect(extensionApi.window.showInformationMessage).toHaveBeenCalledWith(SIM_STOPPED_BROWSER_HINT);
+    });
+  });
+
+  describe('OpenShift deployment', () => {
+    const KUBECONFIG_PATH = '/home/user/.kube/config';
+    const CONTEXT = 'sgahlot-pd-extn/api-ai-dev01:6443/sgahlot';
+    const CONFIG = {
+      name: 'ros2-jazzy-sim',
+      namespace: 'sgahlot-pd-extn',
+      image: 'quay.io/ecosystem-appeng/ros2-jazzy-sim:noble-amd64',
+    };
+
+    function mockKubeconfig(context?: string): void {
+      vi.mocked(extensionApi.kubernetes.getKubeconfig).mockReturnValue({
+        fsPath: KUBECONFIG_PATH,
+      } as unknown as extensionApi.Uri);
+      const content = context
+        ? `apiVersion: v1\ncurrent-context: ${context}\nkind: Config\n`
+        : 'apiVersion: v1\nkind: Config\n';
+      vi.mocked(readFile).mockResolvedValue(content as unknown as Awaited<ReturnType<typeof readFile>>);
+    }
+
+    describe('getOpenShiftContext', () => {
+      it('parses current-context from the kubeconfig', async () => {
+        mockKubeconfig(CONTEXT);
+        const ctx = await api.getOpenShiftContext();
+        expect(ctx).toEqual({ context: CONTEXT, kubeconfigPath: KUBECONFIG_PATH });
+      });
+
+      it('returns undefined when no current-context is set', async () => {
+        mockKubeconfig();
+        expect(await api.getOpenShiftContext()).toBeUndefined();
+      });
+
+      it('returns undefined when the kubeconfig cannot be read', async () => {
+        vi.mocked(extensionApi.kubernetes.getKubeconfig).mockReturnValue({
+          fsPath: KUBECONFIG_PATH,
+        } as unknown as extensionApi.Uri);
+        vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
+        expect(await api.getOpenShiftContext()).toBeUndefined();
+      });
+    });
+
+    describe('generateOpenShiftManifests', () => {
+      it('renders a three-document YAML preview', async () => {
+        const { yaml } = await api.generateOpenShiftManifests(CONFIG);
+        expect(yaml).toContain('kind: "Deployment"');
+        expect(yaml).toContain('kind: "Service"');
+        expect(yaml).toContain('kind: "Route"');
+        expect(yaml).toContain(CONFIG.image);
+      });
+
+      it('rejects an invalid image reference', async () => {
+        await expect(api.generateOpenShiftManifests({ ...CONFIG, image: 'evil; rm -rf /' })).rejects.toThrow(
+          /Invalid image/,
+        );
+      });
+    });
+
+    describe('deployToOpenShift', () => {
+      it('applies the manifests to the current context and returns the route URL', async () => {
+        mockKubeconfig(CONTEXT);
+        vi.mocked(extensionApi.kubernetes.createResources).mockResolvedValue(undefined);
+        vi.mocked(extensionApi.process.exec).mockResolvedValue({
+          stdout: 'ros2-jazzy-sim-sgahlot-pd-extn.apps.ai-dev01.example.com',
+          stderr: '',
+          command: 'oc',
+        } as extensionApi.RunResult);
+
+        const result = await api.deployToOpenShift(CONFIG);
+
+        const createCall = vi.mocked(extensionApi.kubernetes.createResources).mock.calls[0];
+        expect(createCall[0]).toBe(CONTEXT);
+        expect((createCall[1] as Array<{ kind: string }>).map(m => m.kind)).toEqual(['Deployment', 'Service', 'Route']);
+        expect(result.applied).toEqual(['Deployment', 'Service', 'Route']);
+        expect(result.routeUrl).toBe('https://ros2-jazzy-sim-sgahlot-pd-extn.apps.ai-dev01.example.com');
+      });
+
+      it('still succeeds (no route URL) when the route host is not readable yet', async () => {
+        mockKubeconfig(CONTEXT);
+        vi.mocked(extensionApi.kubernetes.createResources).mockResolvedValue(undefined);
+        vi.mocked(extensionApi.process.exec).mockRejectedValue(new Error('not admitted'));
+
+        const result = await api.deployToOpenShift(CONFIG);
+        expect(result.routeUrl).toBeUndefined();
+        expect(result.message).toMatch(/not admitted/i);
+      });
+
+      it('throws when there is no current context', async () => {
+        mockKubeconfig();
+        await expect(api.deployToOpenShift(CONFIG)).rejects.toThrow(/context/i);
+        expect(extensionApi.kubernetes.createResources).not.toHaveBeenCalled();
+      });
+
+      it('validates the config before touching the cluster', async () => {
+        mockKubeconfig(CONTEXT);
+        await expect(api.deployToOpenShift({ ...CONFIG, name: 'BAD_NAME' })).rejects.toThrow();
+        expect(extensionApi.kubernetes.createResources).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('listOpenShiftDeployments', () => {
+      it('maps oc output to workloads with readiness and route URL', async () => {
+        vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+          const a = args as string[];
+          if (a[0] === 'get' && a[1] === 'deployment') {
+            return {
+              stdout: JSON.stringify({
+                items: [
+                  {
+                    metadata: { name: 'ros2-jazzy-sim' },
+                    spec: {
+                      replicas: 1,
+                      template: { spec: { containers: [{ image: CONFIG.image }] } },
+                    },
+                    status: { readyReplicas: 1 },
+                  },
+                ],
+              }),
+              stderr: '',
+              command: 'oc',
+            } as extensionApi.RunResult;
+          }
+          // oc get route
+          return { stdout: 'host.apps.example.com', stderr: '', command: 'oc' } as extensionApi.RunResult;
+        });
+
+        const workloads = await api.listOpenShiftDeployments('sgahlot-pd-extn');
+        expect(workloads).toHaveLength(1);
+        expect(workloads[0]).toMatchObject({
+          name: 'ros2-jazzy-sim',
+          namespace: 'sgahlot-pd-extn',
+          replicas: 1,
+          readyReplicas: 1,
+          ready: true,
+          image: CONFIG.image,
+          routeUrl: 'https://host.apps.example.com',
+        });
+        const listArgs = vi.mocked(extensionApi.process.exec).mock.calls[0][1] as string[];
+        expect(listArgs).toContain('app.kubernetes.io/part-of=physical-ai');
+      });
+
+      it('reports not-ready when readyReplicas is below replicas', async () => {
+        vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+          const a = args as string[];
+          if (a[0] === 'get' && a[1] === 'deployment') {
+            return {
+              stdout: JSON.stringify({
+                items: [{ metadata: { name: 'sim' }, spec: { replicas: 1 }, status: {} }],
+              }),
+              stderr: '',
+              command: 'oc',
+            } as extensionApi.RunResult;
+          }
+          return { stdout: '', stderr: '', command: 'oc' } as extensionApi.RunResult;
+        });
+
+        const [w] = await api.listOpenShiftDeployments('sgahlot-pd-extn');
+        expect(w.ready).toBe(false);
+        expect(w.routeUrl).toBeUndefined();
+      });
+
+      it('surfaces a helpful error when oc is missing', async () => {
+        vi.mocked(extensionApi.process.exec).mockRejectedValue({ stderr: 'oc: command not found' });
+        await expect(api.listOpenShiftDeployments('sgahlot-pd-extn')).rejects.toThrow(/oc/i);
+      });
+
+      it('rejects an invalid namespace', async () => {
+        await expect(api.listOpenShiftDeployments('BAD NS')).rejects.toThrow(/namespace/i);
+      });
+    });
+
+    describe('deleteOpenShiftDeployment', () => {
+      it('deletes the deployment, service and route', async () => {
+        vi.mocked(extensionApi.process.exec).mockResolvedValue({
+          stdout: '',
+          stderr: '',
+          command: 'oc',
+        } as extensionApi.RunResult);
+        await api.deleteOpenShiftDeployment('sgahlot-pd-extn', 'ros2-jazzy-sim');
+        expect(extensionApi.process.exec).toHaveBeenCalledWith('oc', [
+          'delete',
+          'deployment,service,route',
+          'ros2-jazzy-sim',
+          '-n',
+          'sgahlot-pd-extn',
+          '--ignore-not-found',
+        ]);
+      });
+
+      it('rejects an invalid name before running oc', async () => {
+        await expect(api.deleteOpenShiftDeployment('sgahlot-pd-extn', 'BAD NAME')).rejects.toThrow();
+        expect(extensionApi.process.exec).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('spawnRobotInOpenShift', () => {
+      const NS = 'sgahlot-pd-extn';
+      const NAME = 'ros2-jazzy-sim';
+      const POD = 'ros2-jazzy-sim-abc-123';
+
+      function mockPodLookup(pod: string = POD, image = 'quay.io/ns/ros2-jazzy-sim:noble-amd64') {
+        vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+          const a = args as string[];
+          if (a[0] === 'get' && a[1] === 'pods') {
+            return { stdout: pod, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          if (a[0] === 'get' && a[1] === 'deployment') {
+            return { stdout: image, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          return { stdout: '', stderr: '', command: 'oc' } as extensionApi.RunResult;
+        });
+      }
+
+      it('resolves a running pod then backgrounds the spawn entrypoint with nohup', async () => {
+        mockPodLookup();
+
+        await api.spawnRobotInOpenShift(NS, NAME, 'robot_1', '-2.0', '-0.5', '0.0');
+
+        const podCall = vi
+          .mocked(extensionApi.process.exec)
+          .mock.calls.find(c => (c[1] as string[])[0] === 'get' && (c[1] as string[])[1] === 'pods');
+        expect(podCall![1]).toContain(`app=${NAME}`);
+        expect(podCall![1]).toContain('--field-selector=status.phase=Running');
+
+        const execCall = vi.mocked(extensionApi.process.exec).mock.calls.find(c => (c[1] as string[])[0] === 'exec');
+        expect(execCall).toBeDefined();
+        const execA = execCall![1] as string[];
+        expect(execA.slice(0, 5)).toEqual(['exec', '-n', NS, POD, '--']);
+        expect(execA).not.toContain('-d');
+        const remote = execA[execA.length - 1];
+        expect(remote).toContain('nohup');
+        expect(remote).toContain(SPAWN_ENTRYPOINT);
+        expect(remote).toContain(`'robot_1'`);
+        expect(remote).toContain(`'-2.0'`);
+        expect(remote).toMatch(/>"\/tmp\/pai-.*\.log" 2>&1 &$/);
+      });
+
+      it('rejects an injectable robot name before touching the cluster', async () => {
+        await expect(api.spawnRobotInOpenShift(NS, NAME, 'robot;id', '0', '0', '0')).rejects.toThrow();
+        expect(extensionApi.process.exec).not.toHaveBeenCalled();
+      });
+
+      it('rejects an invalid namespace before touching the cluster', async () => {
+        await expect(api.spawnRobotInOpenShift('BAD NS', NAME, 'robot_1', '0', '0', '0')).rejects.toThrow(/namespace/i);
+        expect(extensionApi.process.exec).not.toHaveBeenCalled();
+      });
+
+      it('throws when no running pod is found', async () => {
+        mockPodLookup('');
+        await expect(api.spawnRobotInOpenShift(NS, NAME, 'robot_1', '0', '0', '0')).rejects.toThrow(/No running pod/);
+      });
+
+      it('warms Nav2 in the background after a jazzy spawn', async () => {
+        const GZ_POSE =
+          'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
+        vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+          const a = args as string[];
+          if (a[0] === 'get' && a[1] === 'pods')
+            return { stdout: POD, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          if (a[0] === 'get' && a[1] === 'deployment')
+            return {
+              stdout: 'quay.io/ns/ros2-jazzy-sim:noble-amd64',
+              stderr: '',
+              command: 'oc',
+            } as extensionApi.RunResult;
+          const script = a.find((s): s is string => typeof s === 'string' && s.includes('source'));
+          if (script?.includes('gz model'))
+            return { stdout: GZ_POSE, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          // TF never ready + pgrep empty → forces a Nav2 launch.
+          return { stdout: '', stderr: '', command: 'oc' } as extensionApi.RunResult;
+        });
+
+        await api.spawnRobotInOpenShift(NS, NAME, 'robot_1', '-2.0', '-0.5', '0.0');
+        // Pre-warm is fire-and-forget, parked on its first poll sleep; drive it.
+        await vi.advanceTimersByTimeAsync(1500);
+
+        const launched = vi
+          .mocked(extensionApi.process.exec)
+          .mock.calls.some(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes(NAV2_ENTRYPOINT)));
+        expect(launched).toBe(true);
+      });
+
+      it('does not warm Nav2 for a humble spawn', async () => {
+        mockPodLookup(POD, 'quay.io/ns/ros2-humble-turtlebot3:sloretz-amd64');
+        await api.spawnRobotInOpenShift(NS, NAME, 'robot_1', '-2.0', '-0.5', '0.0');
+        await vi.advanceTimersByTimeAsync(5000);
+
+        const launched = vi
+          .mocked(extensionApi.process.exec)
+          .mock.calls.some(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes(NAV2_ENTRYPOINT)));
+        expect(launched).toBe(false);
+      });
+    });
+
+    describe('despawnRobotInOpenShift', () => {
+      const NS = 'sgahlot-pd-extn';
+      const NAME = 'ros2-jazzy-sim';
+      const POD = 'ros2-jazzy-sim-abc-123';
+
+      function mockOc(image = 'quay.io/ns/ros2-jazzy-sim:noble-amd64') {
+        vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+          const a = args as string[];
+          if (a[0] === 'get' && a[1] === 'deployment') {
+            return { stdout: image, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          if (a[0] === 'get' && a[1] === 'pods') {
+            return { stdout: POD, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          return { stdout: '', stderr: '', command: 'oc' } as extensionApi.RunResult;
+        });
+      }
+
+      it('resolves the pod then kills processes and removes the model over oc exec', async () => {
+        mockOc();
+        await api.despawnRobotInOpenShift(NS, NAME, 'robot_1');
+
+        const calls = vi.mocked(extensionApi.process.exec).mock.calls;
+        const pkillCall = calls.find(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes('pkill')));
+        expect(pkillCall).toBeDefined();
+        expect((pkillCall![1] as string[]).slice(0, 5)).toEqual(['exec', '-n', NS, POD, '--']);
+
+        const gzCall = calls.find(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes('gz service')));
+        expect(gzCall).toBeDefined();
+        const gzScript = (gzCall![1] as string[]).find(a => typeof a === 'string' && a.includes('gz service'))!;
+        // oc path gets the writable HOME prefix so `gz` can source ROS under HOME=/.
+        expect(gzScript).toContain('export HOME=/tmp/ros-home');
+      });
+
+      it('rejects an injectable robot name before touching the cluster', async () => {
+        await expect(api.despawnRobotInOpenShift(NS, NAME, 'robot;id')).rejects.toThrow(/robot name/i);
+        expect(extensionApi.process.exec).not.toHaveBeenCalled();
+      });
+
+      it('clears the warm status for the robot', async () => {
+        mockOc();
+        await api.despawnRobotInOpenShift(NS, NAME, 'robot_1');
+        expect(await api.getRobotWarmStatusInOpenShift(NS, NAME, 'robot_1')).toBe('idle');
+      });
+    });
+
+    describe('getRobotWarmStatusInOpenShift', () => {
+      const NS = 'sgahlot-pd-extn';
+      const NAME = 'ros2-jazzy-sim';
+
+      it("returns 'idle' for a robot that was never spawned", async () => {
+        expect(await api.getRobotWarmStatusInOpenShift(NS, NAME, 'robot_9')).toBe('idle');
+      });
+
+      it('rejects an injectable robot name', async () => {
+        await expect(api.getRobotWarmStatusInOpenShift(NS, NAME, 'robot;id')).rejects.toThrow(/robot name/i);
+      });
+    });
+
+    describe('sendOpenShiftNavigationGoal', () => {
+      const NS = 'sgahlot-pd-extn';
+      const NAME = 'ros2-jazzy-sim';
+      const POD = 'ros2-jazzy-sim-abc-123';
+      const GZ_POSE_ORIGIN =
+        'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
+      const GZ_POSE_AT_TARGET =
+        'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [2.000000 2.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
+
+      function mockOc(image: string, options?: { goalOutput?: string }) {
+        const goalOutput = options?.goalOutput ?? 'Goal finished with status: SUCCEEDED\n';
+        // Origin first, then at-target so the humble cmd_vel path drives and reaches.
+        let poseCalls = 0;
+        vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+          const a = args as string[];
+          if (a[0] === 'get' && a[1] === 'deployment') {
+            return { stdout: image, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          if (a[0] === 'get' && a[1] === 'pods') {
+            return { stdout: POD, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          // oc exec -- bash -c <script>
+          const script = a.find((s): s is string => typeof s === 'string' && s.includes('source'));
+          if (script?.includes('gz model')) {
+            poseCalls++;
+            return {
+              stdout: poseCalls === 1 ? GZ_POSE_ORIGIN : GZ_POSE_AT_TARGET,
+              stderr: '',
+              command: 'oc',
+            } as extensionApi.RunResult;
+          }
+          if (script?.includes('send_goal')) {
+            return { stdout: goalOutput, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          if (script?.includes('tf2_echo map base_link')) {
+            return {
+              stdout: 'At time 1.0\n- Translation: [2.0, 2.0, 0.010]\n',
+              stderr: '',
+              command: 'oc',
+            } as extensionApi.RunResult;
+          }
+          return { stdout: '', stderr: '', command: 'oc' } as extensionApi.RunResult;
+        });
+      }
+
+      it('routes a jazzy image through Nav2 over oc exec', async () => {
+        mockOc('quay.io/ns/ros2-jazzy-sim:noble-amd64');
+
+        const result = await api.sendOpenShiftNavigationGoal(NS, NAME, 'robot_1', 2.0, 2.0);
+        expect(result.status).toBe('reached');
+
+        const goalCall = vi
+          .mocked(extensionApi.process.exec)
+          .mock.calls.find(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes('send_goal')));
+        expect(goalCall).toBeDefined();
+        const goalA = goalCall![1] as string[];
+        expect(goalA.slice(0, 5)).toEqual(['exec', '-n', NS, POD, '--']);
+        expect(goalA).not.toContain('-d');
+      });
+
+      it('sets a writable HOME/ROS_HOME on the oc exec path so rclcpp can create its log dir', async () => {
+        mockOc('quay.io/ns/ros2-jazzy-sim:noble-amd64');
+
+        await api.sendOpenShiftNavigationGoal(NS, NAME, 'robot_1', 2.0, 2.0);
+
+        const rosCall = vi
+          .mocked(extensionApi.process.exec)
+          .mock.calls.find(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes('send_goal')));
+        const script = (rosCall![1] as string[]).find(a => typeof a === 'string' && a.includes('send_goal'))!;
+        expect(script).toContain('export HOME=/tmp/ros-home');
+        expect(script).toContain('ROS_LOG_DIR=/tmp/ros-home/log');
+        expect(script).toMatch(/mkdir -p "\$ROS_LOG_DIR"/);
+        // prefix must come before the ROS setup source
+        expect(script.indexOf('HOME=/tmp/ros-home')).toBeLessThan(script.indexOf('source'));
+      });
+
+      it('routes a humble image through the cmd_vel path over oc exec', async () => {
+        mockOc('quay.io/ns/ros2-humble-turtlebot3:sloretz');
+
+        const result = await api.sendOpenShiftNavigationGoal(NS, NAME, 'robot_1', 2.0, 2.0);
+        expect(result.status).toBe('reached');
+
+        const driveCall = vi
+          .mocked(extensionApi.process.exec)
+          .mock.calls.find(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes('linear')));
+        expect(driveCall).toBeDefined();
+        expect((driveCall![1] as string[]).slice(0, 5)).toEqual(['exec', '-n', NS, POD, '--']);
+      });
+
+      it('rejects an injectable robot name before touching the cluster', async () => {
+        await expect(api.sendOpenShiftNavigationGoal(NS, NAME, 'robot;id', 2.0, 2.0)).rejects.toThrow(
+          /Invalid robot name/,
+        );
+        expect(extensionApi.process.exec).not.toHaveBeenCalled();
+      });
+
+      it('throws for an unsupported distro image', async () => {
+        vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+          const a = args as string[];
+          if (a[0] === 'get' && a[1] === 'deployment') {
+            return { stdout: 'quay.io/ns/ros2-foxy-sim:latest', stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          return { stdout: POD, stderr: '', command: 'oc' } as extensionApi.RunResult;
+        });
+        await expect(api.sendOpenShiftNavigationGoal(NS, NAME, 'robot_1', 2.0, 2.0)).rejects.toThrow(
+          /Unsupported ROS distro/,
+        );
+      });
     });
   });
 });

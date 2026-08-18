@@ -64,9 +64,28 @@ NAV2_PID=$!
 # AMCL needs an initial pose before it publishes map->odom. Defaults match spawn entrypoint.
 SPAWN_X="${PHYSICAL_AI_SPAWN_X:--2.0}"
 SPAWN_Y="${PHYSICAL_AI_SPAWN_Y:--0.5}"
+# Max seconds to wait for AMCL to come up before seeding the pose anyway.
+AMCL_READY_ATTEMPTS="${PHYSICAL_AI_AMCL_READY_ATTEMPTS:-60}"
 (
-  sleep 12
-  ros2 topic pub --once "/${ROBOT_NAME}/initialpose" geometry_msgs/msg/PoseWithCovarianceStamped \
+  # Seed the initial pose as soon as AMCL is subscribed to /initialpose, instead of a
+  # blind `sleep 12` — this starts localization/convergence several seconds sooner and
+  # cuts the first-navigate delay. AMCL creates the /initialpose subscription during
+  # activation, so a non-zero subscription count means the one-shot publish will land.
+  # Fall back to publishing anyway if it never appears, so behaviour never regresses.
+  POSE_TOPIC="/${ROBOT_NAME}/initialpose"
+  amcl_ready=""
+  for ((i = 1; i <= AMCL_READY_ATTEMPTS; i++)); do
+    if ros2 topic info "${POSE_TOPIC}" 2>/dev/null | grep -qE "Subscription count: [1-9]"; then
+      amcl_ready="yes"
+      echo "[nav2] AMCL subscribed to ${POSE_TOPIC} after ~${i}s; seeding initial pose"
+      break
+    fi
+    sleep 1
+  done
+  [[ -n "${amcl_ready}" ]] || echo "[nav2] AMCL not detected after ${AMCL_READY_ATTEMPTS}s; seeding initial pose anyway"
+  # Brief settle so AMCL finishes activation before the one-shot publish.
+  sleep 1
+  ros2 topic pub --once "${POSE_TOPIC}" geometry_msgs/msg/PoseWithCovarianceStamped \
     "{header: {frame_id: map}, pose: {pose: {position: {x: ${SPAWN_X}, y: ${SPAWN_Y}, z: 0.0}, orientation: {w: 1.0}}, covariance: [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.06853891909122467]}}" \
     --use-sim-time
 ) &

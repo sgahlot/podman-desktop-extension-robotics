@@ -26,12 +26,8 @@ describe('SimulationProfiles', () => {
   });
 
   it('returns undefined for unsupported combinations', () => {
-    expect(
-      resolveSimulationProfile({ ...supported, middleware: 'zenoh' }),
-    ).toBeUndefined();
-    expect(
-      resolveSimulationProfile({ ...supported, distro: 'rolling' }),
-    ).toBeUndefined();
+    expect(resolveSimulationProfile({ ...supported, middleware: 'zenoh' })).toBeUndefined();
+    expect(resolveSimulationProfile({ ...supported, distro: 'rolling' })).toBeUndefined();
   });
 
   it('resolves the jazzy simulation profile', () => {
@@ -63,9 +59,9 @@ describe('SimulationProfiles', () => {
     expect(simulationImageTag('ecosystem-appeng', supported)).toBe(
       'quay.io/ecosystem-appeng/ros2-humble-turtlebot3:sloretz',
     );
-    expect(
-      simulationImageTag('ecosystem-appeng', { ...supported, baseImage: 'osrf' }),
-    ).toBe('quay.io/ecosystem-appeng/ros2-humble-turtlebot3:osrf');
+    expect(simulationImageTag('ecosystem-appeng', { ...supported, baseImage: 'osrf' })).toBe(
+      'quay.io/ecosystem-appeng/ros2-humble-turtlebot3:osrf',
+    );
     expect(
       simulationImageTag('ecosystem-appeng', {
         ...supported,
