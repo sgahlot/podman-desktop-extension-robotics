@@ -1689,6 +1689,30 @@ describe('PhysicalAiApiImpl', () => {
       expect(clearCall).toBeUndefined();
     });
 
+    it('clears only once per bringup — a second goal does not clear again', async () => {
+      mockNav2Exec({ tfReadyInitially: false });
+      const countClears = () =>
+        vi
+          .mocked(extensionApi.process.exec)
+          .mock.calls.filter(c =>
+            (c[1] as string[] | undefined)?.some(
+              a => typeof a === 'string' && a.includes('clear_entirely_local_costmap'),
+            ),
+          ).length;
+
+      // First goal on the fresh (cold) bringup → clears once.
+      const first = api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
+      await vi.advanceTimersByTimeAsync(1000); // TF poll → ready
+      await vi.advanceTimersByTimeAsync(2000); // costmap-clear refill settle
+      expect((await first).status).toBe('reached');
+      expect(countClears()).toBe(1);
+
+      // Second goal → TF already present (warm), pending already consumed → no re-clear.
+      const second = await api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 3.0, 3.0);
+      expect(second.status).toBe('reached');
+      expect(countClears()).toBe(1);
+    });
+
     it('returns already-at-target when distance is tiny', async () => {
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
         stdout:

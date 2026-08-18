@@ -140,6 +140,16 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   private nav2WarmStatus = new Map<string, Nav2WarmStatus>();
 
   /**
+   * Robots with a pending one-time cold-start costmap clear (keyed by #navTargetKey).
+   * The mark is added when *we* launch a fresh Nav2 bringup (#ensureNav2Running cold
+   * path) and consumed by the first goal, which clears the costmaps just before
+   * planning (#sendNav2NavigationGoal). A genuinely warm sim we never brought up is
+   * never marked, so its first goal pays no clear. Not pre-warm — the clock hasn't
+   * settled that early, so the refill re-accumulates the phantoms.
+   */
+  private nav2ClearPending = new Set<string>();
+
+  /**
    * Podman Desktop hosts accept an optional AbortController as the 5th pushImage
    * argument (abortSignal on the registry stream). The published API types omit it.
    */
@@ -1010,6 +1020,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const distro = PhysicalAiApiImpl.#distroFromImage(image);
     await this.#teardownRobot({ kind: 'podman', id }, robotName, distro);
     this.nav2WarmStatus.delete(PhysicalAiApiImpl.#warmKey(id, robotName));
+    this.nav2ClearPending.delete(PhysicalAiApiImpl.#navTargetKey({ kind: 'podman', id }, robotName));
   }
 
   async getRobotWarmStatus(containerId: string, robotName: string): Promise<Nav2WarmStatus> {
@@ -1037,6 +1048,22 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
 
     await this.#ensureNav2Running(target, robotName, pose, distro);
+
+    // Cold-start artifact: on a fresh Nav2 bringup the global costmap transiently
+    // holds bad/phantom obstacle cells (laser scans mis-projected while the sim
+    // clock/TF lag during the CPU-heavy launch). The global planner then fails to
+    // find a path ("GridBased plugin failed to plan … Failed to create plan") for
+    // the first several cycles, and Nav2's recovery clears the global costmap and
+    // retries — the ~15 s "jumping in place" before the robot actually moves. When
+    // we launched this bringup, clear both costmaps here, on the FIRST goal and
+    // right before planning (by now the clock has usually settled, unlike at
+    // pre-warm), then let them refill clean so the first plan succeeds. Consumed
+    // once per bringup — subsequent goals and warm sims we never brought up skip it.
+    const clearKey = PhysicalAiApiImpl.#navTargetKey(target, robotName);
+    if (this.nav2ClearPending.has(clearKey)) {
+      this.nav2ClearPending.delete(clearKey);
+      await this.#clearNav2Costmaps(target, robotName, distro);
+    }
 
     const targetYaw = Math.atan2(y - pose.y, x - pose.x);
     const qw = Math.cos(targetYaw / 2);
@@ -1073,16 +1100,18 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   ): Promise<void> {
     // Do not trust action list alone — other sim containers on the default ROS domain
     // can expose /robot_N/navigate_to_pose before this container's Nav2 stack is up.
-    // Warm path: TF already present → costmaps are already stable (a warm sim threads
-    // the world with zero progress failures), so return without clearing.
+    // Warm path: TF already present → the stack is up. The cold-start costmap clear
+    // is done at goal-dispatch time (see #sendNav2NavigationGoal), not here.
     if (await this.#hasMapBaseLinkTf(target, robotName, distro)) {
       return;
     }
 
     // Cold path: either a bringup is already in flight (e.g. pre-warm) or we launch
-    // one now. Both funnel through the same TF wait + a one-time costmap clear.
+    // one now. Both funnel through the same TF wait.
     const bringupRunning = await this.#isNav2BringupRunning(target, robotName, distro);
     if (!bringupRunning) {
+      // We're launching a fresh bringup → the first goal must clear the costmaps once.
+      this.nav2ClearPending.add(PhysicalAiApiImpl.#navTargetKey(target, robotName));
       await this.#execDetached(target, NAV2_ENTRYPOINT, [robotName], {
         PHYSICAL_AI_SPAWN_X: pose.x.toFixed(4),
         PHYSICAL_AI_SPAWN_Y: pose.y.toFixed(4),
@@ -1092,16 +1121,6 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     for (let attempt = 0; attempt < NAV2_TF_POLL_ATTEMPTS; attempt++) {
       await PhysicalAiApiImpl.#sleep(1000);
       if (await this.#hasMapBaseLinkTf(target, robotName, distro)) {
-        // Cold-start artifact: the first laser scans get marked into the costmaps
-        // while TF is still settling, leaving phantom obstacles that box the robot
-        // in. MPPI then can't make progress, so its SimpleProgressChecker aborts
-        // (0.5 m in 10 s) and Nav2's recovery clears the costmaps — burning ~20 s of
-        // "jumping in place" over a couple of abort/clear cycles before the first
-        // goal moves. Do that clear proactively now that TF is up (then let the maps
-        // refill from good-TF scans), so the first Navigate starts from the same
-        // clean state a warm one has. Verified live: the clear services unblock MPPI
-        // and warm costmaps navigate with zero progress failures.
-        await this.#clearNav2Costmaps(target, robotName, distro);
         return;
       }
     }
@@ -1115,10 +1134,20 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   /**
+   * Stable key for the per-bringup cold-start costmap-clear state (#nav2ClearPending):
+   * container id (local) or `${namespace}/${pod}` (OpenShift), plus the robot name.
+   */
+  static #navTargetKey(target: ExecTarget, robotName: string): string {
+    const scope = target.kind === 'podman' ? target.id : `${target.namespace}/${target.pod}`;
+    return `${scope} ${robotName}`;
+  }
+
+  /**
    * Clear both Nav2 costmaps for a robot, then briefly settle so they refill from
-   * live (good-TF) scans before navigation plans on them. Called once per cold Nav2
-   * bringup to drop the startup phantom obstacles that otherwise trap MPPI in
-   * progress-checker/recovery churn on the first goal (see #ensureNav2Running).
+   * live (good-TF) scans before the planner plans on them. Called once per cold Nav2
+   * bringup, at goal-dispatch time, to drop the startup phantom obstacles that
+   * otherwise make the global planner fail ("Failed to create plan") and churn
+   * through recovery on the first goal (see #sendNav2NavigationGoal).
    * Best-effort: logs and swallows errors — a clear hiccup must never block Navigate.
    */
   async #clearNav2Costmaps(target: ExecTarget, robotName: string, distro: SupportedRosDistro): Promise<void> {
@@ -1713,6 +1742,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const pod = await this.#resolveOpenShiftPod(ns, safeName);
     await this.#teardownRobot({ kind: 'oc', pod, namespace: ns }, safeRobot, distro);
     this.nav2WarmStatus.delete(PhysicalAiApiImpl.#warmKey(`${ns}/${safeName}`, safeRobot));
+    this.nav2ClearPending.delete(PhysicalAiApiImpl.#navTargetKey({ kind: 'oc', pod, namespace: ns }, safeRobot));
   }
 
   async getRobotWarmStatusInOpenShift(namespace: string, name: string, robotName: string): Promise<Nav2WarmStatus> {
