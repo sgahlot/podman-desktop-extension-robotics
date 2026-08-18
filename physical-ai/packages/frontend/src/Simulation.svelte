@@ -21,18 +21,14 @@ $: tab = $router.path.startsWith('/simulation/openshift') ? 'openshift' : 'local
       role="tab"
       aria-selected={tab === 'local'}
       on:click={() => router.goto('/simulation')}
-      class="px-5 py-2 text-sm rounded-t-md border -mb-px transition-colors {tab === 'local'
-        ? 'border-[var(--pd-content-card-border)] border-b-transparent bg-[var(--pd-content-card-bg)] text-[var(--pd-content-header)] font-medium'
-        : 'border-transparent pai-text-muted hover:bg-[var(--pd-content-card-bg)] hover:text-[var(--pd-content-text)]'}">
+      class="px-5 py-2 text-sm pai-tab {tab === 'local' ? 'pai-tab-active' : ''}">
       Local
     </button>
     <button
       role="tab"
       aria-selected={tab === 'openshift'}
       on:click={() => router.goto('/simulation/openshift')}
-      class="px-5 py-2 text-sm rounded-t-md border -mb-px transition-colors {tab === 'openshift'
-        ? 'border-[var(--pd-content-card-border)] border-b-transparent bg-[var(--pd-content-card-bg)] text-[var(--pd-content-header)] font-medium'
-        : 'border-transparent pai-text-muted hover:bg-[var(--pd-content-card-bg)] hover:text-[var(--pd-content-text)]'}">
+      class="px-5 py-2 text-sm pai-tab {tab === 'openshift' ? 'pai-tab-active' : ''}">
       OpenShift
     </button>
   </div>
