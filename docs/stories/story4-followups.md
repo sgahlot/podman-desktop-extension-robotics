@@ -100,9 +100,8 @@ logic, no thread caps. Bring it to parity:
   port may be partial by design. Humble is Ubuntu 22.04 (Jammy) vs Jazzy 24.04
   (Noble) — verify Mesa/EGL package names on Jammy and that its gz-sim accepts
   `--headless-rendering`. Keep the shell security tests green.
-- **Tracking:** a Jira sub-task under APPENG-5767 is drafted (pending the Atlassian
-  MCP recovery — see `.internal/pending-jira-actions.md` Action 5), "relates to"
-  APPENG-5777 where the Jazzy work landed.
+- **Tracking:** **APPENG-6071** (Sub-task under APPENG-5767), *Related* to
+  APPENG-5777 where the Jazzy work landed. Status **New** (backlog).
 
 ---
 

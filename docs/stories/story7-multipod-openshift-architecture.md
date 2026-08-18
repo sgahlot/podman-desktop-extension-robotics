@@ -1,6 +1,6 @@
 # Story 7 — Multi-Pod OpenShift Architecture (design)
 
-**Jira:** APPENG-5777 (parent) | **Branch:** `feature/APPENG-5777-openshift-deploy`
+**Jira:** APPENG-6070 (multi-pod scaling, sub-task of APPENG-5767) | **Branch:** `feature/APPENG-5777-openshift-deploy`
 **Status:** design / not started. Forward-looking — captures the strategy so the
 CPU/thread work (Story 5) and future robot scaling land in a coherent shape.
 

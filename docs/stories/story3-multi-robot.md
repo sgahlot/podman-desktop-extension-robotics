@@ -11,7 +11,7 @@
 | Status | Key | Summary |
 |--------|-----|---------|
 | ⚪ | APPENG-5774 | Podman Compose multi-container orchestration for 2+ robots |
-| ⚪ | APPENG-5775 | Zenoh router and DDS bridge sidecar auto-configuration |
+| 🟡 | APPENG-5775 | Zenoh router and DDS bridge sidecar auto-configuration |
 | ⚪ | APPENG-5776 | Fleet status panel in the extension UI |
 
 ---
@@ -44,13 +44,13 @@ Story 6’s single-container **Add TurtleBot3 × N** remains a useful **lightwei
 
 ---
 
-## APPENG-5775: Zenoh/DDS Auto-Configuration — ⚪ Not Started
+## APPENG-5775: Zenoh/DDS Auto-Configuration — 🟡 In Progress
 
 **Description:** Automatically configure Zenoh router and DDS bridge sidecars when scaling to multiple robots, enabling inter-robot communication across containers.
 
 **Note:** Required once robots run in **separate Compose services**. Same-container Story 6 spawns share DDS without Zenoh.
 
-*No work done yet.*
+**Decision (recorded on the Jira, In Progress):** use **native `rmw_zenoh`** (the ROS 2 Zenoh RMW) rather than a DDS-bridge sidecar. Same decision is reused on the cluster by the OpenShift-first multi-pod work ([story7](story7-multipod-openshift-architecture.md) / APPENG-6070), which is sequenced ahead of this local Compose work. No implementation code yet.
 
 ---
 

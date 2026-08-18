@@ -41,9 +41,9 @@ Drivers:
 | Story | Summary | Status | Sub-tasks |
 |-------|---------|--------|-----------|
 | [APPENG-5764](#story-1) | Extension scaffolding and base image catalog | ✅ Done | 4/4 done, 2 follow-ups parked |
-| [APPENG-5765](#story-2) | Single robot simulation workflow | 🟡 In Progress | Original + Topic Monitor done; APPENG-5920/5922/5923 **In Review**; APPENG-5980/5981 **New** |
-| [APPENG-5766](#story-3) | Multi-robot local scaling | ⚪ Not Started | 0/3 done |
-| [APPENG-5767](#story-4) | OpenShift deployment bridge | 🟡 In Progress | APPENG-5777 M1 (single-sim deploy) + M2 (in-cluster spawn + Nav2) done; 5778/5779 not started |
+| [APPENG-5765](#story-2) | Single robot simulation workflow | 🟡 In Progress | Original + Topic Monitor done; APPENG-5920/5922/5923/5980/5981 **In Review** |
+| [APPENG-5766](#story-3) | Multi-robot local scaling | ⚪ Not Started | 5775 **In Progress** (native rmw_zenoh decision); 5774/5776 New |
+| [APPENG-5767](#story-4) | OpenShift deployment bridge | 🟡 In Progress | APPENG-5777 M1+M2 + follow-up hardening **done, live-validated**; APPENG-6070 (multi-pod scaling) **In Progress**; APPENG-6071 (Humble parity) New; 5778/5779 not started |
 | [Spike](#story-5) | Local-first deployment of reference demos | 🅿️ Parked (Kind OOM) | 0/6 proposed |
 | [Story 6](#story-6) | Podman-only simulation workflow (ROSCon demo) | 🟡 In Progress | 5/6 done — **demo path complete; S6-6 deferred** |
 | [FIX](#fix-arch-aware-sim) | Make simulation image build arch-aware | ✅ Done | Naming + labels fixed; GPU passthrough + Sensors re-enabled (2026-08) |
@@ -51,7 +51,7 @@ Drivers:
 
 > **Legend:** ✅ Done · 🟠 In Review · 🟡 In Progress / Almost Done · ⚪ Not Started · 🅿️ Parked · 🔴 Must fix
 
-**Last updated:** 2026-08-11
+**Last updated:** 2026-08-17
 
 ---
 
