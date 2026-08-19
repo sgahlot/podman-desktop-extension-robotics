@@ -122,6 +122,34 @@ function shSingleQuote(value: string): string {
   return `'${escaped}'`;
 }
 
+/**
+ * Best-effort read of the namespace bound to a named context in a kubeconfig, without a
+ * YAML parser (matching getOpenShiftContext's `current-context` grep — the project has no
+ * YAML dependency). Scans the top-level `contexts:` list for the entry whose `name:`
+ * matches and returns its `context.namespace`. Tolerates field order within an entry and
+ * both flush and indented list markers; returns undefined when the context or its
+ * namespace isn't present.
+ */
+function kubeconfigContextNamespace(kubeconfig: string, contextName: string): string | undefined {
+  const start = kubeconfig.search(/^contexts:[ \t]*$/m);
+  if (start < 0) return undefined;
+  const body = kubeconfig.slice(start).replace(/^contexts:[ \t]*\n?/, '');
+  // The block runs until the next top-level key (a line starting flush-left with a
+  // letter, e.g. `current-context:` / `users:`); list items are `-`-prefixed or indented.
+  const nextKey = body.match(/^[A-Za-z]/m);
+  const block = nextKey && nextKey.index ? body.slice(0, nextKey.index) : body;
+  // Each list entry begins with a `- ` marker (possibly indented under `contexts:`).
+  const entries = block.split(/^[ \t]*-[ \t]+/m).filter(entry => entry.trim());
+  for (const entry of entries) {
+    const nameMatch = entry.match(/(?:^|\n)[ \t]*name:[ \t]*["']?([^"'\s]+)["']?[ \t]*$/m);
+    if (nameMatch && nameMatch[1] === contextName) {
+      const nsMatch = entry.match(/(?:^|\n)[ \t]*namespace:[ \t]*["']?([^"'\s]+)["']?[ \t]*$/m);
+      return nsMatch ? nsMatch[1] : undefined;
+    }
+  }
+  return undefined;
+}
+
 export class PhysicalAiApiImpl implements PhysicalAiApi {
   private extensionContext: ExtensionContext;
   private activePulls = new Map<string, PullProgress>();
@@ -1578,7 +1606,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       // `current-context:` is a top-level scalar — read it without a YAML parser.
       const match = content.match(/^current-context:\s*["']?([^"'\s]+)["']?\s*$/m);
       if (!match) return undefined;
-      return { context: match[1], kubeconfigPath };
+      const contextName = match[1];
+      return {
+        context: contextName,
+        kubeconfigPath,
+        namespace: kubeconfigContextNamespace(content, contextName),
+      };
     } catch {
       return undefined;
     }

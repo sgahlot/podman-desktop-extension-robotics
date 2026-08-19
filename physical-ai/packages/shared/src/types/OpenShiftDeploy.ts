@@ -53,6 +53,12 @@ export interface OpenShiftDeployResult {
 export interface OpenShiftContext {
   context: string;
   kubeconfigPath: string;
+  /**
+   * Namespace/project bound to the current context in the kubeconfig, if any. Used to
+   * seed the deploy form's namespace so a user targets the project they're already in,
+   * rather than a baked-in default. Undefined when the context sets no namespace.
+   */
+  namespace?: string;
 }
 
 /** A physical-ai-managed workload observed in a namespace. */

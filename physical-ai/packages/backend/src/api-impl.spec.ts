@@ -2073,13 +2073,32 @@ describe('PhysicalAiApiImpl', () => {
       image: 'quay.io/ecosystem-appeng/ros2-jazzy-sim:noble-amd64',
     };
 
-    function mockKubeconfig(context?: string): void {
+    function mockKubeconfig(context?: string, namespace?: string): void {
       vi.mocked(extensionApi.kubernetes.getKubeconfig).mockReturnValue({
         fsPath: KUBECONFIG_PATH,
       } as unknown as extensionApi.Uri);
-      const content = context
-        ? `apiVersion: v1\ncurrent-context: ${context}\nkind: Config\n`
-        : 'apiVersion: v1\nkind: Config\n';
+      let content: string;
+      if (!context) {
+        content = 'apiVersion: v1\nkind: Config\n';
+      } else {
+        // A realistic two-entry contexts list: the current context (optionally with a
+        // namespace) plus a decoy whose namespace must NOT be picked up.
+        const nsLine = namespace ? `\n    namespace: ${namespace}` : '';
+        content =
+          'apiVersion: v1\n' +
+          `current-context: ${context}\n` +
+          'contexts:\n' +
+          '- context:\n' +
+          '    cluster: some-cluster\n' +
+          `    user: some-user${nsLine}\n` +
+          `  name: ${context}\n` +
+          '- context:\n' +
+          '    cluster: other-cluster\n' +
+          '    namespace: decoy-ns\n' +
+          '    user: other-user\n' +
+          '  name: other-context\n' +
+          'kind: Config\n';
+      }
       vi.mocked(readFile).mockResolvedValue(content as unknown as Awaited<ReturnType<typeof readFile>>);
     }
 
@@ -2088,6 +2107,20 @@ describe('PhysicalAiApiImpl', () => {
         mockKubeconfig(CONTEXT);
         const ctx = await api.getOpenShiftContext();
         expect(ctx).toEqual({ context: CONTEXT, kubeconfigPath: KUBECONFIG_PATH });
+      });
+
+      it('seeds the namespace from the current context', async () => {
+        mockKubeconfig(CONTEXT, 'my-project');
+        const ctx = await api.getOpenShiftContext();
+        expect(ctx).toEqual({ context: CONTEXT, kubeconfigPath: KUBECONFIG_PATH, namespace: 'my-project' });
+      });
+
+      it('leaves the namespace undefined when the current context sets none', async () => {
+        // Must not pick up the decoy context's namespace.
+        mockKubeconfig(CONTEXT);
+        const ctx = await api.getOpenShiftContext();
+        expect(ctx?.context).toBe(CONTEXT);
+        expect(ctx?.namespace).toBeUndefined();
       });
 
       it('returns undefined when no current-context is set', async () => {

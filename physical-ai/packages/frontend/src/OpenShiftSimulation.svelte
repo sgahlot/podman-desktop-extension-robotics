@@ -11,7 +11,8 @@ let loading = true;
 let context: OpenShiftContext | undefined = undefined;
 
 let name = 'ros2-jazzy-sim';
-let namespace = 'sgahlot-pd-extn';
+/** Seeded from the current kube context's namespace on mount (see onMount); editable. */
+let namespace = '';
 let image = 'quay.io/ecosystem-appeng/ros2-jazzy-sim:noble-amd64';
 let useGpu = false;
 /**
@@ -53,6 +54,9 @@ $: canDeploy = !!context && !!name && !!namespace && !!image && !deploying;
 onMount(async () => {
   try {
     context = await physicalAiClient.getOpenShiftContext();
+    // Seed the namespace from the current context so the user targets the project
+    // they're already logged into, rather than a baked-in default. Still editable.
+    if (context?.namespace) namespace = context.namespace;
   } catch {
     context = undefined;
   }
@@ -307,6 +311,7 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
           bind:value={namespace}
           on:change={() => refreshWorkloads()}
           disabled={deploying}
+          placeholder="e.g. my-project"
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
       </div>
 
