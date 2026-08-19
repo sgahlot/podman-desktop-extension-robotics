@@ -386,15 +386,30 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
         <span class="text-sm pai-text-error">{deployError}</span>
       {/if}
 
-      {#if deployResult}
+      {#if deploying}
+        <!-- In-progress feedback (S8-1): the Deploy button also flips to "Deploying…",
+             but a banner makes the pending state obvious while manifests are applied. -->
+        <div class="text-sm p-3 rounded pai-banner-info flex flex-row items-center gap-2">
+          <span class="inline-block w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>
+          Deploying <span class="font-mono">{name}</span> to <span class="font-mono">{namespace}</span>…
+        </div>
+      {/if}
+
+      {#if deployResult && !deploying}
+        <!-- Three-line summary from structured fields (S8-4). The route link lives in the
+             Deployed simulations list below once the pod is ready, so it isn't repeated
+             here (S8-3). -->
         <div class="text-sm p-3 rounded pai-banner-success flex flex-col gap-1">
-          <div>{deployResult.message}</div>
+          <div>Deployed <span class="font-mono">{deployResult.name}</span> to <span class="font-mono">{deployResult.namespace}</span></div>
+          <div class="text-xs opacity-80">
+            Route:
+            {#if deployResult.routeUrl}
+              <span class="font-mono break-all">{deployResult.routeUrl}</span>
+            {:else}
+              pending admission…
+            {/if}
+          </div>
           <div class="text-xs opacity-80">Applied: {deployResult.applied.join(', ')}</div>
-          {#if deployResult.routeUrl}
-            <button on:click={() => openRoute(deployResult?.routeUrl)} class="pai-link self-start">
-              Open {deployResult.routeUrl}
-            </button>
-          {/if}
         </div>
       {/if}
     </div>
@@ -455,12 +470,17 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
               {#if w.image}
                 <div class="text-xs font-mono opacity-70 break-all">{w.image}</div>
               {/if}
-              {#if w.routeUrl}
+              <!-- Only offer the route link once the pod is ready AND the route is admitted
+                   (S8-5): a route can be admitted before the pod serves, so opening it early
+                   just yields a 503. -->
+              {#if w.ready && w.routeUrl}
                 <button
                   on:click={() => openRoute(w.routeUrl)}
                   class="pai-link pai-link-sm self-start break-all text-left">
                   Open {w.routeUrl}
                 </button>
+              {:else if w.routeUrl}
+                <span class="text-xs pai-text-muted">Route admitted; waiting for the pod to be ready…</span>
               {:else}
                 <span class="text-xs pai-text-muted">Route not admitted yet.</span>
               {/if}

@@ -49,7 +49,14 @@ const READY_WORKLOAD = {
 describe('OpenShiftSimulation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mockGetOpenShiftContext.mockResolvedValue({ context: 'ctx', kubeconfigPath: '/k/config' });
+    // The real OpenShiftContext carries the context's namespace (via the
+    // kubeconfigContextNamespace helper); the component seeds its namespace from it,
+    // and refreshWorkloads() no-ops without one — so the mock must provide it.
+    mockGetOpenShiftContext.mockResolvedValue({
+      context: 'ctx',
+      kubeconfigPath: '/k/config',
+      namespace: 'sgahlot-pd-extn',
+    });
     mockGetDefaultNamespace.mockResolvedValue('sgahlot-pd-extn');
     mockGetDefaultSoftwareRenderCpus.mockResolvedValue(8);
     // Keep the default image (avoids exercising simulationImageTag here).
@@ -83,6 +90,16 @@ describe('OpenShiftSimulation', () => {
     await waitFor(() => {
       expect(mockOpenUrlInBrowser).toHaveBeenCalledWith('https://host.apps.example.com');
     });
+  });
+
+  it('does not offer the Route link until the pod is ready, even if the route is admitted', async () => {
+    // Route admitted (routeUrl present) but pod not ready → opening it early 503s (S8-5).
+    mockListOpenShiftDeployments.mockResolvedValue([{ ...READY_WORKLOAD, readyReplicas: 0, ready: false }]);
+    render(DeployOpenShift);
+
+    await screen.findByText('ros2-jazzy-sim');
+    expect(screen.queryByRole('button', { name: /Open https:\/\/host\.apps\.example\.com/ })).toBeNull();
+    expect(screen.getByText(/waiting for the pod to be ready/i)).toBeTruthy();
   });
 
   it('deploys with software rendering by default (useGpu false)', async () => {
