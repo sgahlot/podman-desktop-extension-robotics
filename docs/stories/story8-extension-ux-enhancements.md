@@ -8,8 +8,9 @@
 > `feature/APPENG-6083-vgl-gpu-gui`, so it builds on the namespace-from-context change
 > without conflicting on `OpenShiftSimulation.svelte`).
 >
-> **Status:** planning. First pick-up = **Quick UI wins** (S8-1…S8-5) — they need no GPU
-> and are locally testable while the OpenShift GPU validation for APPENG-6083 is blocked.
+> **Status:** in progress. **Batch A (S8-1…S8-5) done** — committed `519364f` on this branch,
+> frontend suite 88/88 green. (APPENG-6083 GPU validation since completed + merged to `main`.)
+> Next up per the suggested order: **Batch C** (S8-10 cluster URL, S8-11 `oc whoami`).
 
 ---
 
@@ -46,11 +47,11 @@ Small, localized, GPU-free. Mostly `OpenShiftSimulation.svelte` + `RobotControls
 
 | Status | ID | Summary | Description | Files |
 |--------|-----|---------|-------------|-------|
-| ⚪ | S8-1 | Deploy in-progress status | Deploy gives no clear in-progress feedback — the button flips to "Deploying…" (`OpenShiftSimulation.svelte:378`) but there's no banner/spinner, and success only appears as green text. Add a visible in-progress indicator (banner or spinner near the result area). | `OpenShiftSimulation.svelte` (deploy flow 139-152, result banner 389-399) |
-| ⚪ | S8-2 | Remove button during "Nav2 warming…" | Robots can get stuck in `warmStatus === 'warming'`; today the **Remove** button is nested in the `{:else}` of the warming check (`RobotControls.svelte:158/167`) so it's absent during warm-up. Lift Remove (and the name/warm badge) out of that conditional; keep only the nav inputs/Navigate gated on warming. | `RobotControls.svelte` (153-217) |
-| ⚪ | S8-3 | Drop duplicate route link in deploy banner | The success banner shows an "Open \<route\>" link (`OpenShiftSimulation.svelte:393-396`) that's redundant with the same link in the Deployed simulations list. Remove it from the banner. | `OpenShiftSimulation.svelte:389-399` |
-| ⚪ | S8-4 | Format the deploy result banner | Restructure the banner into three clear lines: **Deployed to …** / **Route …** / **Applied …** (currently one message blob + applied kinds). | `OpenShiftSimulation.svelte:389-399` |
-| ⚪ | S8-5 | Show route link only when actually reachable | The "Open \<route\>" link in the Deployed simulations list appears even when the pod is `0/1 ready` (`{#if w.routeUrl}` at `OpenShiftSimulation.svelte:458`). Gate it on the route being truly usable (pod ready **and** route admitted), otherwise keep the "Route not admitted yet." hint. | `OpenShiftSimulation.svelte:458-466` (uses `w.ready`, `w.routeUrl`) |
+| ✅ | S8-1 | Deploy in-progress status | Deploy gives no clear in-progress feedback — the button flips to "Deploying…" (`OpenShiftSimulation.svelte:378`) but there's no banner/spinner, and success only appears as green text. Add a visible in-progress indicator (banner or spinner near the result area). | `OpenShiftSimulation.svelte` (deploy flow 139-152, result banner 389-399) |
+| ✅ | S8-2 | Remove button during "Nav2 warming…" | Robots can get stuck in `warmStatus === 'warming'`; today the **Remove** button is nested in the `{:else}` of the warming check (`RobotControls.svelte:158/167`) so it's absent during warm-up. Lift Remove (and the name/warm badge) out of that conditional; keep only the nav inputs/Navigate gated on warming. | `RobotControls.svelte` (153-217) |
+| ✅ | S8-3 | Drop duplicate route link in deploy banner | The success banner shows an "Open \<route\>" link (`OpenShiftSimulation.svelte:393-396`) that's redundant with the same link in the Deployed simulations list. Remove it from the banner. | `OpenShiftSimulation.svelte:389-399` |
+| ✅ | S8-4 | Format the deploy result banner | Restructure the banner into three clear lines: **Deployed to …** / **Route …** / **Applied …** (currently one message blob + applied kinds). | `OpenShiftSimulation.svelte:389-399` |
+| ✅ | S8-5 | Show route link only when actually reachable | The "Open \<route\>" link in the Deployed simulations list appears even when the pod is `0/1 ready` (`{#if w.routeUrl}` at `OpenShiftSimulation.svelte:458`). Gate it on the route being truly usable (pod ready **and** route admitted), otherwise keep the "Route not admitted yet." hint. | `OpenShiftSimulation.svelte:458-466` (uses `w.ready`, `w.routeUrl`) |
 
 <a id="s8-build-ux"></a>
 
@@ -117,8 +118,8 @@ Needs backend type additions (`BuildProgress`/`PushProgress` in
 
 ## Suggested order
 
-1. **Batch A** (S8-1…S8-5) — quick wins, no GPU. ← start here
-2. **Batch C** (S8-10 cluster URL, S8-11 `oc whoami`) — builds on the namespace work.
+1. **Batch A** (S8-1…S8-5) — quick wins, no GPU. ✅ done (`519364f`)
+2. **Batch C** (S8-10 cluster URL, S8-11 `oc whoami`) — builds on the namespace work. ← next
 3. **Batch B** (S8-6…S8-9) — build/push observability (backend type changes).
 4. **Batch D** (S8-12) — SIM-only build path.
 5. **Batch E** (S8-13) — layout config (prototype variants first).
