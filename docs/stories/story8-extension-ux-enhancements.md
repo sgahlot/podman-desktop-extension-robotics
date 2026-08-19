@@ -1,8 +1,9 @@
 # Story 8 — Extension UX Enhancements & Configurability
 
-> **No Jira keys yet.** These items were noticed during dogfooding of the extension
-> (Image Builder, Simulation → OpenShift, robot spawn/Nav2) and are **not** tied to any
-> Jira issue. Create tasks under epic **APPENG-5763** as/when each is picked up.
+> **Jira:** Story **APPENG-6102** (under epic **APPENG-5763**), with one sub-task per batch:
+> A **APPENG-6103** · B **APPENG-6104** · C **APPENG-6105** · D **APPENG-6106** ·
+> E **APPENG-6107** · F **APPENG-6108**. These items were noticed during dogfooding of the
+> extension (Image Builder, Simulation → OpenShift, robot spawn/Nav2).
 >
 > **Branch:** `feature/extension-ux-enhancements` (based on
 > `feature/APPENG-6083-vgl-gpu-gui`, so it builds on the namespace-from-context change
@@ -41,7 +42,7 @@ can land the low-risk wins first and design the bigger features deliberately.
 
 <a id="s8-quick-wins"></a>
 
-### Batch A — Quick UI wins (first pick-up)
+### Batch A — Quick UI wins (first pick-up) — APPENG-6103 ✅ Done
 
 Small, localized, GPU-free. Mostly `OpenShiftSimulation.svelte` + `RobotControls.svelte`.
 
@@ -55,7 +56,7 @@ Small, localized, GPU-free. Mostly `OpenShiftSimulation.svelte` + `RobotControls
 
 <a id="s8-build-ux"></a>
 
-### Batch B — Build/push observability
+### Batch B — Build/push observability — APPENG-6104
 
 Needs backend type additions (`BuildProgress`/`PushProgress` in
 `shared/src/types/ImageCatalog.ts` have no timestamp/duration fields today).
@@ -69,7 +70,7 @@ Needs backend type additions (`BuildProgress`/`PushProgress` in
 
 <a id="s8-ocp-config"></a>
 
-### Batch C — OpenShift configurability & safety
+### Batch C — OpenShift configurability & safety — APPENG-6105
 
 | Status | ID | Summary | Description | Files |
 |--------|-----|---------|-------------|-------|
@@ -79,7 +80,7 @@ Needs backend type additions (`BuildProgress`/`PushProgress` in
 
 <a id="s8-quickstart"></a>
 
-### Batch D — Image Builder flow
+### Batch D — Image Builder flow — APPENG-6106
 
 | Status | ID | Summary | Description | Files |
 |--------|-----|---------|-------------|-------|
@@ -87,7 +88,7 @@ Needs backend type additions (`BuildProgress`/`PushProgress` in
 
 <a id="s8-layout"></a>
 
-### Batch E — Layout config (larger)
+### Batch E — Layout config (larger) — APPENG-6107
 
 | Status | ID | Summary | Description | Files |
 |--------|-----|---------|-------------|-------|
@@ -98,7 +99,7 @@ Needs backend type additions (`BuildProgress`/`PushProgress` in
 
 <a id="s8-wizard"></a>
 
-### Batch F — Secure base images → project wizard (design/vision)
+### Batch F — Secure base images → project wizard (design/vision) — APPENG-6108
 
 | Status | ID | Summary | Description |
 |--------|-----|---------|-------------|
