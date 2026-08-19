@@ -48,6 +48,7 @@ Drivers:
 | [Story 6](#story-6) | Podman-only simulation workflow (ROSCon demo) | 🟡 In Progress | 5/6 done — **demo path complete; S6-6 deferred** |
 | [FIX](#fix-arch-aware-sim) | Make simulation image build arch-aware | ✅ Done | Naming + labels fixed; GPU passthrough + Sensors re-enabled (2026-08) |
 | [Security](#security-hardening) | Security hardening | ✅ Done | Shell injection, exec/launch lockdown, image trust, defense-in-depth + follow-up fixes |
+| [Story 8](stories/story8-extension-ux-enhancements.md) | Extension UX enhancements & configurability | ⚪ Not Started | Dogfooding backlog (no Jira yet): quick UI wins, build/push observability, OCP cluster/`oc whoami`, layout config, secure-base-image spike → project wizard |
 
 > **Legend:** ✅ Done · 🟠 In Review · 🟡 In Progress / Almost Done · ⚪ Not Started · 🅿️ Parked · 🔴 Must fix
 
@@ -701,3 +702,4 @@ Comprehensive security audit and hardening of the extension's backend API, entry
 - **Story 3 = Podman Compose (2026-08-10):** Clarified APPENG-5774/Story 3 deliverable is **Podman Compose** multi-container fleet (not scale-in-one-container alone). Story 6 multi-spawn remains a lightweight demo path.
 - **GPU + Sensors (2026-08-11):** arm64 simulation launch passes `/dev/dri` by default (**Simulation GPU passthrough** preference). Ogre2 Sensors re-enabled after re-verification (`scripts/test-sensors-gpu.sh`); `/scan` and `/imu` publish after spawn.
 - **New Story 2 follow-ups (2026-08-11):** Added APPENG-5980 (local Nav2 feasibility spike on Mac) and APPENG-5981 (wire Go to Nav2). Initial 5980 run found namespaced param wiring and split TF publishing blockers; **5980 update (2026-08-12):** fixed and validated go (`navigate_to_pose` active on Mac). **5981** scopes UI/backend wiring from cmd_vel to Nav2.
+- **Story 8 added (2026-08-19):** Dogfooding backlog of UX enhancements & configurability — no Jira yet; tracked in [story8-extension-ux-enhancements.md](stories/story8-extension-ux-enhancements.md). Batches: (A) quick UI wins on the OpenShift/robot pages, (B) build/push timestamps + durations + collapsible sections, (C) OCP cluster-URL override + `oc whoami` pre-check (namespace override already done), (D) SIM-only build path, (E) full layout config (sidebar/tabs/cards), (F) secure-base-image (hummingbird/bootc) feasibility spike → project wizard (layers + worlds + robots). Starting with Batch A (GPU-free) while APPENG-6083 GPU validation is blocked.
