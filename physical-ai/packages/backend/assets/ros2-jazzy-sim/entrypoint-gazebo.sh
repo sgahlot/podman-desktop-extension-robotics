@@ -129,6 +129,11 @@ GZ_SERVER_RENDER_FLAG=""
 # server is pinned to the NVIDIA EGL vendor and Xvfb/GUI to the Mesa (software) vendor.
 XVFB_GUI_GL=()
 GZ_SERVER_GL=()
+# GPU-GUI (VirtualGL) launch prefix + flag. Populated only on the NVIDIA no-DRI path
+# when VirtualGL and an NVIDIA EGL vendor ICD are both present; then the GUI renders on
+# the GPU via `vglrun -d egl` instead of the llvmpipe CPU rasterizer (APPENG-6083).
+VGL_GUI=()
+GUI_GPU=0
 if [[ "${PHYSICAL_AI_USE_GPU:-0}" == "1" ]] && [[ -e /dev/dri/renderD128 ]]; then
   echo "[gazebo] GPU passthrough enabled (/dev/dri present), using hardware GLX rendering"
   unset LIBGL_ALWAYS_SOFTWARE
@@ -166,6 +171,35 @@ elif [[ "${PHYSICAL_AI_USE_GPU:-0}" == "1" ]]; then
     XVFB_GUI_GL+=("__EGL_VENDOR_LIBRARY_FILENAMES=${_mesa_egl}")
   else
     echo "[gazebo]   WARN: no Mesa EGL vendor ICD found; Xvfb may crash binding the NVIDIA EGL driver"
+  fi
+
+  # GPU-render the GUI viewport on the NVIDIA headless EGL device via VirtualGL, instead
+  # of the llvmpipe CPU rasterizer, to end the CFS CPU throttling that made navigation
+  # jumpy (APPENG-6083). vglrun -d egl uses the SAME headless EGL device the server
+  # already uses for sensors (no /dev/dri needed); Xvfb :99 stays the 2D/window-system
+  # side that VGL reads frames back into for x11vnc. Requires VirtualGL in the image and
+  # an NVIDIA EGL vendor ICD. Falls back to the software (llvmpipe) GUI path when either
+  # is missing, or when disabled via PHYSICAL_AI_GUI_GPU=0.
+  PHYSICAL_AI_GUI_GPU="${PHYSICAL_AI_GUI_GPU:-1}"
+  if [[ "${PHYSICAL_AI_GUI_GPU}" == "1" ]] && command -v vglrun >/dev/null 2>&1 && [[ -n "${_nvidia_egl}" ]]; then
+    GUI_GPU=1
+    # Pin the GUI's EGL vendor to NVIDIA so VGL's EGL back end binds the GPU. No Mesa/
+    # llvmpipe steering and no llvmpipe thread clamp are applied to the GUI on this path
+    # (those only affect the software rasterizer, which VGL bypasses).
+    VGL_GUI=(env "__EGL_VENDOR_LIBRARY_FILENAMES=${_nvidia_egl}" VGL_LOGO=0)
+    # Optional frame-rate cap for VGL readback (empty disables). Bounds the GPU->X
+    # readback/event loop cost; the browser can't perceive more via x11vnc downsampling.
+    PHYSICAL_AI_GUI_VGL_FPS="${PHYSICAL_AI_GUI_VGL_FPS:-30}"
+    if [[ -n "${PHYSICAL_AI_GUI_VGL_FPS}" ]]; then
+      if [[ "${PHYSICAL_AI_GUI_VGL_FPS}" =~ ^[0-9]+$ ]] && [[ "${PHYSICAL_AI_GUI_VGL_FPS}" -ge 1 ]]; then
+        VGL_GUI+=("VGL_FPS=${PHYSICAL_AI_GUI_VGL_FPS}")
+      else
+        echo "[gazebo]   WARN: ignoring invalid PHYSICAL_AI_GUI_VGL_FPS '${PHYSICAL_AI_GUI_VGL_FPS}' (want a positive integer)"
+      fi
+    fi
+    echo "[gazebo]   GUI: GPU-rendered via VirtualGL EGL back end (NVIDIA, VGL_FPS=${PHYSICAL_AI_GUI_VGL_FPS:-uncapped})"
+  else
+    echo "[gazebo]   GUI: software-rendered (llvmpipe); VirtualGL GPU-GUI unavailable or disabled"
   fi
 else
   echo "[gazebo] Using software rendering (llvmpipe) with headless EGL for sensors..."
@@ -303,13 +337,25 @@ if [[ -n "${PHYSICAL_AI_GUI_LP_THREADS}" ]]; then
     echo "[gazebo] WARN: ignoring invalid PHYSICAL_AI_GUI_LP_THREADS '${PHYSICAL_AI_GUI_LP_THREADS}' (want a positive integer)"
   fi
 fi
-echo "[gazebo] Launching Gazebo GUI (llvmpipe threads=${PHYSICAL_AI_GUI_LP_THREADS:-inherit}, nice=${PHYSICAL_AI_GUI_NICE:-none})..."
+if [[ "${GUI_GPU}" == "1" ]]; then
+  echo "[gazebo] Launching Gazebo GUI (GPU via VirtualGL, nice=${PHYSICAL_AI_GUI_NICE:-none})..."
+else
+  echo "[gazebo] Launching Gazebo GUI (llvmpipe threads=${PHYSICAL_AI_GUI_LP_THREADS:-inherit}, nice=${PHYSICAL_AI_GUI_NICE:-none})..."
+fi
 for i in $(seq 1 30); do
   if gz topic -l 2>/dev/null | grep -q "/world/${WORLD_NAME}/"; then
-    # Prefixes stack: nice (deprioritize) + XVFB_GUI_GL (software GL/Mesa EGL on the
-    # no-DRI path; empty elsewhere) + GUI_THREADS (clamp the llvmpipe pool). All use
-    # the [@]+ guard so an empty array expands to nothing under `set -u`.
-    "${GUI_NICE[@]+"${GUI_NICE[@]}"}" "${XVFB_GUI_GL[@]+"${XVFB_GUI_GL[@]}"}" "${GUI_THREADS[@]+"${GUI_THREADS[@]}"}" gz sim -g &
+    if [[ "${GUI_GPU}" == "1" ]]; then
+      # GPU path: render on the NVIDIA EGL device via VirtualGL. VGL_GUI pins the NVIDIA
+      # EGL vendor (+ optional VGL_FPS cap); no Mesa/llvmpipe steering or thread clamp is
+      # applied (VGL bypasses the software rasterizer). nice still deprioritizes the GUI's
+      # readback/event loop so physics/Nav2 win any residual contention.
+      "${GUI_NICE[@]+"${GUI_NICE[@]}"}" "${VGL_GUI[@]}" vglrun -d egl gz sim -g &
+    else
+      # Software path: prefixes stack — nice (deprioritize) + XVFB_GUI_GL (software GL/
+      # Mesa EGL on the no-DRI path; empty elsewhere) + GUI_THREADS (clamp the llvmpipe
+      # pool). All use the [@]+ guard so an empty array expands to nothing under `set -u`.
+      "${GUI_NICE[@]+"${GUI_NICE[@]}"}" "${XVFB_GUI_GL[@]+"${XVFB_GUI_GL[@]}"}" "${GUI_THREADS[@]+"${GUI_THREADS[@]}"}" gz sim -g &
+    fi
     GZ_GUI_PID=$!
     echo "[gazebo] Gazebo GUI launched."
     break

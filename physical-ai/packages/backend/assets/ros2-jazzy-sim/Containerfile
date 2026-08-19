@@ -51,6 +51,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     && rm -rf /var/lib/apt/lists/*
 
+# VirtualGL: GPU-render the Gazebo GUI viewport on the NVIDIA headless EGL device via
+# `vglrun -d egl` — no /dev/dri render node required (the gz server already GPU-renders
+# sensors through that same EGL device in-cluster). This moves the GUI off the llvmpipe
+# CPU rasterizer (~1.5-3.5 cores), ending the CFS CPU throttling that made in-cluster
+# navigation jumpy/stalling. See APPENG-6083. vglrun lives in /opt/VirtualGL/bin (added
+# to PATH below); apt resolves its runtime deps from the .deb.
+# The .deb is arch-specific — resolve it from the image's native arch (`dpkg
+# --print-architecture` → amd64/arm64, matching VirtualGL's release asset names) so the
+# arm64 and amd64 builds each pull the matching package (VirtualGL ships both).
+ARG VIRTUALGL_VERSION=3.1.5
+RUN apt-get update \
+    && VGL_ARCH="$(dpkg --print-architecture)" \
+    && wget -q "https://github.com/VirtualGL/virtualgl/releases/download/${VIRTUALGL_VERSION}/virtualgl_${VIRTUALGL_VERSION}_${VGL_ARCH}.deb" \
+         -O /tmp/virtualgl.deb \
+    && apt-get install -y --no-install-recommends /tmp/virtualgl.deb \
+    && rm -f /tmp/virtualgl.deb \
+    && rm -rf /var/lib/apt/lists/*
+ENV PATH="/opt/VirtualGL/bin:${PATH}"
+
 RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 
 # noVNC landing: full UI + autoconnect + auto-reconnect (background tabs often drop WebSockets)
