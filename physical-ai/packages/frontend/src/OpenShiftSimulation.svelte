@@ -400,7 +400,10 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
              Deployed simulations list below once the pod is ready, so it isn't repeated
              here (S8-3). -->
         <div class="text-sm p-3 rounded pai-banner-success flex flex-col gap-1">
-          <div>Deployed <span class="font-mono">{deployResult.name}</span> to <span class="font-mono">{deployResult.namespace}</span></div>
+          <div>
+            Deployed <span class="font-mono">{deployResult.name}</span> to
+            <span class="font-mono">{deployResult.namespace}</span>
+          </div>
           <div class="text-xs opacity-80">
             Route:
             {#if deployResult.routeUrl}
