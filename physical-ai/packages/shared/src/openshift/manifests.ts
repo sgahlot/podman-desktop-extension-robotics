@@ -177,9 +177,7 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
   // cores (requests==limits) or the GUI throttles and the noVNC view never paints.
   const cpu = useGpu ? String(GPU_POD_CPU) : String(assertCpuCount(config.cpu ?? DEFAULT_SW_RENDER_CPU));
   const requests: Record<string, string> = { cpu, memory: '2Gi' };
-  const limits: Record<string, string> = useGpu
-    ? { cpu, memory: '4Gi', [GPU_RESOURCE]: '1' }
-    : { cpu, memory: '4Gi' };
+  const limits: Record<string, string> = useGpu ? { cpu, memory: '4Gi', [GPU_RESOURCE]: '1' } : { cpu, memory: '4Gi' };
 
   // GPU nodes are usually tainted so only GPU workloads land there; tolerate the
   // taint or the pod sits Pending on the only nodes that have a GPU. Software pods

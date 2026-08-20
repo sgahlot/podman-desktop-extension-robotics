@@ -49,7 +49,14 @@ const READY_WORKLOAD = {
 describe('OpenShiftSimulation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mockGetOpenShiftContext.mockResolvedValue({ context: 'ctx', kubeconfigPath: '/k/config' });
+    // The real OpenShiftContext carries the context's namespace (via the
+    // kubeconfigContextNamespace helper); the component seeds its namespace from it,
+    // and refreshWorkloads() no-ops without one — so the mock must provide it.
+    mockGetOpenShiftContext.mockResolvedValue({
+      context: 'ctx',
+      kubeconfigPath: '/k/config',
+      namespace: 'sgahlot-pd-extn',
+    });
     mockGetDefaultNamespace.mockResolvedValue('sgahlot-pd-extn');
     mockGetDefaultSoftwareRenderCpus.mockResolvedValue(8);
     // Keep the default image (avoids exercising simulationImageTag here).
