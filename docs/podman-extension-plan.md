@@ -48,11 +48,11 @@ Drivers:
 | [Story 6](#story-6) | Podman-only simulation workflow (ROSCon demo) | 🟡 In Progress | 5/6 done — **demo path complete; S6-6 deferred** |
 | [FIX](#fix-arch-aware-sim) | Make simulation image build arch-aware | ✅ Done | Naming + labels fixed; GPU passthrough + Sensors re-enabled (2026-08) |
 | [Security](#security-hardening) | Security hardening | ✅ Done | Shell injection, exec/launch lockdown, image trust, defense-in-depth + follow-up fixes |
-| [APPENG-6102](stories/story8-extension-ux-enhancements.md) | Extension UX enhancements & configurability | 🟡 In Progress | Dogfooding backlog; sub-task per batch (APPENG-6103…6108). **Batch A done** (APPENG-6103). Remaining: build/push observability, OCP cluster/`oc whoami`, SIM-only build, layout config, secure-base-image spike → project wizard |
+| [APPENG-6102](#story-8) | Extension UX enhancements & configurability | 🟡 In Progress | Batch A + B done; Batch C (namespace/cluster config, robot-state reconciliation) next |
 
 > **Legend:** ✅ Done · 🟠 In Review · 🟡 In Progress / Almost Done · ⚪ Not Started · 🅿️ Parked · 🔴 Must fix
 
-**Last updated:** 2026-08-17
+**Last updated:** 2026-08-20
 
 ---
 
@@ -363,13 +363,6 @@ A Miro board would be useful for a team kickoff/planning session where people ne
 | 🟡 | APPENG-5777 | Sub-task | APPENG-5767 | Generate K8s manifests from running Podman pod configuration + deploy to OpenShift |
 | ⚪ | APPENG-5778 | Sub-task | APPENG-5767 | Kind cluster integration for local validation |
 | ⚪ | APPENG-5779 | Sub-task | APPENG-5767 | Getting-started guide for the full workflow |
-| 🟡 | APPENG-6102 | Story | APPENG-5763 | Extension UX enhancements & configurability |
-| ✅ | APPENG-6103 | Sub-task | APPENG-6102 | Batch A: Quick UI wins (deploy status + robot controls) |
-| ⚪ | APPENG-6104 | Sub-task | APPENG-6102 | Batch B: Build/push observability |
-| ⚪ | APPENG-6105 | Sub-task | APPENG-6102 | Batch C: OpenShift cluster config (cluster URL + `oc whoami`) |
-| ⚪ | APPENG-6106 | Sub-task | APPENG-6102 | Batch D: SIM-only build path (no full Quick Start) |
-| ⚪ | APPENG-6107 | Sub-task | APPENG-6102 | Batch E: Selectable navigation layout (sidebar/tabs/cards) |
-| 💡 | APPENG-6108 | Sub-task | APPENG-6102 | Batch F: Secure base images spike → project wizard |
 | 🅿️ | S5-1 | Sub-task | Story 5 | Spike: run Repo B (multi-robot TurtleBot3) locally on Mac |
 | 🅿️ | S5-2 | Sub-task | Story 5 | Spike: run Repo A (OpenRMF demos) locally on Mac |
 | 🅿️ | S5-3 | Sub-task | Story 5 | Internalize: own Containerfiles, Helm charts, entrypoints, Zenoh configs |
@@ -688,6 +681,27 @@ Comprehensive security audit and hardening of the extension's backend API, entry
 
 ---
 
+<a id="story-8"></a>
+
+### Story 8: Extension UX enhancements & configurability — 🟡 In Progress
+
+> **Detail doc:** [stories/story8-extension-ux-enhancements.md](stories/story8-extension-ux-enhancements.md)
+>
+> Jira: Story **APPENG-6102** (epic APPENG-5763), one sub-task per batch (A–F, APPENG-6103–6108).
+> A grab-bag of UX polish, feedback/observability, and configurability improvements noticed
+> during dogfooding, plus two larger forward-looking features (layout config, project wizard).
+
+| Batch | Summary | Status |
+|-------|---------|--------|
+| A — Quick UI wins | Deploy in-progress status, Remove-during-warmup, deploy-banner cleanup, route-readiness gating | ✅ Done |
+| B — Build/push observability | Stale-log labeling, log timestamps, build/push duration, collapsible Image Builder sections | ✅ Done |
+| C — OpenShift configurability & safety | Cluster URL override, `oc whoami` pre-check, default-namespace setting, reflect already-spawned robots | ⚪ Not Started (next) |
+| D — Image Builder flow | SIM-only build path without full Quick Start | ⚪ Not Started |
+| E — Layout config | Selectable Sidebar / Horizontal tabs / Cards navigation | ⚪ Not Started |
+| F — Secure base images → wizard | Hummingbird/bootc feasibility spike, then a project wizard for layers/worlds/robots | ⚪ Not Started (design/vision) |
+
+---
+
 ## Notes on this version
 
 - **Summaries** match Jira exactly (sentence case); section labels add *(stretch)* only as plan metadata, not as part of the Summary field.
@@ -709,5 +723,3 @@ Comprehensive security audit and hardening of the extension's backend API, entry
 - **Story 3 = Podman Compose (2026-08-10):** Clarified APPENG-5774/Story 3 deliverable is **Podman Compose** multi-container fleet (not scale-in-one-container alone). Story 6 multi-spawn remains a lightweight demo path.
 - **GPU + Sensors (2026-08-11):** arm64 simulation launch passes `/dev/dri` by default (**Simulation GPU passthrough** preference). Ogre2 Sensors re-enabled after re-verification (`scripts/test-sensors-gpu.sh`); `/scan` and `/imu` publish after spawn.
 - **New Story 2 follow-ups (2026-08-11):** Added APPENG-5980 (local Nav2 feasibility spike on Mac) and APPENG-5981 (wire Go to Nav2). Initial 5980 run found namespaced param wiring and split TF publishing blockers; **5980 update (2026-08-12):** fixed and validated go (`navigate_to_pose` active on Mac). **5981** scopes UI/backend wiring from cmd_vel to Nav2.
-- **Story 8 added (2026-08-19):** Dogfooding backlog of UX enhancements & configurability — no Jira yet; tracked in [story8-extension-ux-enhancements.md](stories/story8-extension-ux-enhancements.md). Batches: (A) quick UI wins on the OpenShift/robot pages, (B) build/push timestamps + durations + collapsible sections, (C) OCP cluster-URL override + `oc whoami` pre-check (namespace override already done), (D) SIM-only build path, (E) full layout config (sidebar/tabs/cards), (F) secure-base-image (hummingbird/bootc) feasibility spike → project wizard (layers + worlds + robots). Starting with Batch A (GPU-free) while APPENG-6083 GPU validation is blocked.
-- **Story 8 ticketed + Batch A done (2026-08-19):** Filed Story **APPENG-6102** under the epic with a sub-task per batch (A **APPENG-6103**, B **APPENG-6104**, C **APPENG-6105**, D **APPENG-6106**, E **APPENG-6107**, F **APPENG-6108**). **Batch A (APPENG-6103) done** — deploy in-progress banner, Remove during Nav2 warm-up, deduped + 3-line deploy banner, Route link gated on pod readiness; also fixed 7 pre-existing frontend tests from a stale namespace mock (commit `519364f`, frontend suite 88/88). Separately, **APPENG-6083** (VirtualGL GPU-GUI) was live-validated on an A10G (GUI on GPU, CFS throttle eliminated, smooth nav) and merged to `main` via PR #1.

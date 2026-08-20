@@ -6,14 +6,15 @@
 > extension (Image Builder, Simulation → OpenShift, robot spawn/Nav2).
 >
 > **Branches:** one per sub-task/batch, named after its Jira key — Batch A on
-> `feature/APPENG-6103-quick-ui-wins` (holds `519364f`), later batches on
-> `feature/APPENG-6105-…`, `feature/APPENG-6104-…`, etc. Each is based on the merged
-> state of `main` (which already carries the namespace-from-context change from
-> `APPENG-6083`); where batches touch the same files (e.g. `OpenShiftSimulation.svelte`)
-> a later batch stacks on the prior one until it merges.
+> `feature/APPENG-6103-quick-ui-wins`, Batch B on `feature/APPENG-6104-build-push-observability`,
+> later batches on `feature/APPENG-6105-…`, etc. Each is based independently off `main`
+> (no stacking on a sibling batch branch, even when batches touch the same file) —
+> this doc itself lives on `main` (not any one batch branch) so every batch can read
+> and update it without depending on another batch's branch.
 >
-> **Status:** in progress. **Batch A (S8-1…S8-5) done** — committed `519364f` on this branch,
-> frontend suite 88/88 green. (APPENG-6083 GPU validation since completed + merged to `main`.)
+> **Status:** in progress. **Batch A (S8-1…S8-5) done** — `feature/APPENG-6103-quick-ui-wins`,
+> frontend suite 88/88 green, user-verified. **Batch B (S8-6…S8-9) done** —
+> `feature/APPENG-6104-build-push-observability`, user-verified in the running extension.
 > Next up per the suggested order: **Batch C** (S8-10 cluster URL, S8-11 `oc whoami`,
 > S8-16 default-namespace setting, S8-17 reflect already-spawned robots).
 
@@ -60,17 +61,17 @@ Small, localized, GPU-free. Mostly `OpenShiftSimulation.svelte` + `RobotControls
 
 <a id="s8-build-ux"></a>
 
-### Batch B — Build/push observability — APPENG-6104
+### Batch B — Build/push observability — APPENG-6104 ✅ Done
 
-Needs backend type additions (`BuildProgress`/`PushProgress` in
-`shared/src/types/ImageCatalog.ts` have no timestamp/duration fields today).
+Needed backend type additions (`BuildProgress`/`PushProgress` in
+`shared/src/types/ImageCatalog.ts` had no timestamp/duration fields).
 
 | Status | ID | Summary | Description | Files |
 |--------|-----|---------|-------------|-------|
-| ⚪ | S8-6 | Label stale/previous build logs | When the panel shows logs from a prior build, label them "Last build" / "Previous build" so it's clear they're not live. Logs currently live only in `BuildPushPanel` state and clear on mount. | `BuildPushPanel.svelte` (logs 47/367-379, reset 261-281) |
-| ⚪ | S8-7 | Timestamp build output | Capture a timestamp per log line (or per step) at ingestion (`api-impl.ts:#startImageBuild` stream handler ~358-368) and render it. | `api-impl.ts`, `progressLogs.ts`, `ImageCatalog.ts`, `BuildPushPanel.svelte` |
-| ⚪ | S8-8 | Show build/push duration | Add `startedAt`/`finishedAt` to `BuildProgress`/`PushProgress`, set them in the backend, and show "Built in Xs / Pushed in Ys" on completion. | `ImageCatalog.ts`, `api-impl.ts` (329-435 build, push), `BuildPushPanel.svelte` |
-| ⚪ | S8-9 | Collapsible Image Builder sections | Make the options block, Phase 1, and Phase 2 collapsible on the Image Builder page to reduce scroll. | `SimulationSetup.svelte` (options 189-303, Phase 1 337-362, Phase 2 366-397) |
+| ✅ | S8-6 | Label stale/previous build logs | When the panel shows logs from a prior build, label them "Last build" / "Previous build" so it's clear they're not live. Logs currently live only in `BuildPushPanel` state and clear on mount. | `BuildPushPanel.svelte` (logs 47/367-379, reset 261-281) |
+| ✅ | S8-7 | Timestamp build output | Capture a timestamp per log line (or per step) at ingestion (`api-impl.ts:#startImageBuild` stream handler ~358-368) and render it. | `api-impl.ts`, `progressLogs.ts`, `ImageCatalog.ts`, `BuildPushPanel.svelte` |
+| ✅ | S8-8 | Show build/push duration | Add `startedAt`/`finishedAt` to `BuildProgress`/`PushProgress`, set them in the backend, and show "Built in Xs / Pushed in Ys" on completion. | `ImageCatalog.ts`, `api-impl.ts` (329-435 build, push), `BuildPushPanel.svelte` |
+| ✅ | S8-9 | Collapsible Image Builder sections | Make the options block, Phase 1, and Phase 2 collapsible on the Image Builder page to reduce scroll. | `SimulationSetup.svelte` (options 189-303, Phase 1 337-362, Phase 2 366-397) |
 
 <a id="s8-ocp-config"></a>
 
@@ -125,9 +126,9 @@ Needs backend type additions (`BuildProgress`/`PushProgress` in
 
 ## Suggested order
 
-1. **Batch A** (S8-1…S8-5) — quick wins, no GPU. ✅ done (`519364f`)
-2. **Batch C** (S8-10 cluster URL, S8-11 `oc whoami`, S8-16 default-namespace setting, S8-17 reflect already-spawned robots) — builds on the namespace work. ← next
-3. **Batch B** (S8-6…S8-9) — build/push observability (backend type changes).
+1. **Batch A** (S8-1…S8-5) — quick wins, no GPU. ✅ done (`feature/APPENG-6103-quick-ui-wins`)
+2. **Batch B** (S8-6…S8-9) — build/push observability. ✅ done (`feature/APPENG-6104-build-push-observability`)
+3. **Batch C** (S8-10 cluster URL, S8-11 `oc whoami`, S8-16 default-namespace setting, S8-17 reflect already-spawned robots) — builds on the namespace work. ← next
 4. **Batch D** (S8-12) — SIM-only build path.
 5. **Batch E** (S8-13) — layout config (prototype variants first).
 6. **Batch F** (S8-14 spike → S8-15 wizard) — secure layers, then the full wizard.
