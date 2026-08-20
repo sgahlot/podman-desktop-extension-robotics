@@ -1,19 +1,10 @@
 <script lang="ts" context="module">
-import type { Nav2WarmStatus } from '/@shared/src/types/NavigationGoalResult';
-
-export type RobotEntry = {
-  name: string;
-  x: string;
-  y: string;
-  navStatus: 'idle' | 'navigating' | 'reached' | 'failed';
-  navTarget: { x: string; y: string };
-  navReached: { x: string; y: string } | null;
-  /** Nav2 pre-warm state, polled by the parent; drives the "warming…/ready" badge. */
-  warmStatus?: Nav2WarmStatus;
-};
+export type { RobotEntry } from './RobotControls.types';
 </script>
 
 <script lang="ts">
+import type { RobotEntry } from './RobotControls.types';
+
 /**
  * Shared robot spawn + navigate + remove controls, used by both the Local and
  * OpenShift simulation tabs. The parent owns the `robots` list (so it can reset

@@ -1,6 +1,7 @@
 import { vi, describe, it, expect } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
-import RobotControls, { type RobotEntry } from './RobotControls.svelte';
+import RobotControls from './RobotControls.svelte';
+import type { RobotEntry } from './RobotControls.types';
 
 function robot(name: string, over: Partial<RobotEntry> = {}): RobotEntry {
   return {
@@ -9,6 +10,7 @@ function robot(name: string, over: Partial<RobotEntry> = {}): RobotEntry {
     y: '0',
     navStatus: 'idle',
     navTarget: { x: '2.0', y: '0.5' },
+    // eslint-disable-next-line no-null/no-null -- matches RobotEntry's declared `| null` contract
     navReached: null,
     ...over,
   };
@@ -77,7 +79,7 @@ describe('RobotControls', () => {
     await waitFor(() => expect(onRemove).toHaveBeenCalledWith(0));
   });
 
-  it('hides the nav controls while warming, then reveals them when ready', () => {
+  it('hides the nav controls while warming, then reveals them when ready', async () => {
     const { rerender } = render(RobotControls, {
       robots: [robot('robot_1', { warmStatus: 'warming' })],
       onSpawn: vi.fn(),
@@ -91,7 +93,7 @@ describe('RobotControls', () => {
     expect(screen.queryByLabelText('target X for robot_1')).toBeNull();
 
     // Ready: controls appear, and there's no leftover "ready" badge text.
-    rerender({
+    await rerender({
       robots: [robot('robot_1', { warmStatus: 'ready' })],
       onSpawn: vi.fn(),
       onNavigate: vi.fn(),
