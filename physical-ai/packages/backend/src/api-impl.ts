@@ -346,6 +346,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       tag,
       status: 'Starting...',
       logs: [],
+      startedAt: Date.now(),
     });
 
     extensionApi.containerEngine
@@ -376,11 +377,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
               progress.status = 'Cancelled';
               progress.cancelled = true;
               progress.done = true;
+              progress.finishedAt = Date.now();
               progress.error = 'Build cancelled';
               appendProgressLog(progress.logs, 'Build cancelled by user');
             } else {
               progress.status = 'Complete';
               progress.done = true;
+              progress.finishedAt = Date.now();
               if (progress.totalSteps) {
                 progress.currentStep = progress.totalSteps;
               }
@@ -407,11 +410,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
             progress.status = 'Cancelled';
             progress.cancelled = true;
             progress.done = true;
+            progress.finishedAt = Date.now();
             progress.error = 'Build cancelled';
             appendProgressLog(progress.logs, 'Build cancelled by user');
           } else {
             progress.status = 'Complete';
             progress.done = true;
+            progress.finishedAt = Date.now();
           }
         }
         this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
@@ -424,11 +429,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
             progress.status = 'Cancelled';
             progress.cancelled = true;
             progress.done = true;
+            progress.finishedAt = Date.now();
             progress.error = 'Build cancelled';
             appendProgressLog(progress.logs, 'Build cancelled by user');
           } else {
             progress.status = 'Failed';
             progress.done = true;
+            progress.finishedAt = Date.now();
             progress.error = err instanceof Error ? err.message : String(err);
           }
         }
@@ -448,6 +455,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     // takes a while (or forever) to settle the buildImage promise mid-RUN.
     progress.cancelled = true;
     progress.done = true;
+    progress.finishedAt = Date.now();
     progress.status = 'Cancelled';
     progress.error = 'Build cancelled';
     appendProgressLog(progress.logs, 'Cancel requested — build aborted');
@@ -1504,6 +1512,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       tag,
       status: 'Pushing...',
       logs: [],
+      startedAt: Date.now(),
     });
 
     PhysicalAiApiImpl.#pushImageWithAbort(
@@ -1545,11 +1554,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
             progress.status = 'Cancelled';
             progress.cancelled = true;
             progress.done = true;
+            progress.finishedAt = Date.now();
             progress.error = 'Push cancelled';
             appendProgressLog(progress.logs, 'Push cancelled by user');
           } else {
             progress.status = 'Complete';
             progress.done = true;
+            progress.finishedAt = Date.now();
           }
         }
         this.#scheduleProgressCleanup(this.activePushes, tag, 'push');
@@ -1562,11 +1573,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
             progress.status = 'Cancelled';
             progress.cancelled = true;
             progress.done = true;
+            progress.finishedAt = Date.now();
             progress.error = 'Push cancelled';
             appendProgressLog(progress.logs, 'Push cancelled by user');
           } else {
             progress.status = 'Failed';
             progress.done = true;
+            progress.finishedAt = Date.now();
             progress.error = err instanceof Error ? err.message : String(err);
           }
         }
@@ -1584,6 +1597,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
     progress.cancelled = true;
     progress.done = true;
+    progress.finishedAt = Date.now();
     progress.status = 'Cancelled';
     progress.error = 'Push cancelled';
     appendProgressLog(progress.logs, 'Cancel requested — push aborted');

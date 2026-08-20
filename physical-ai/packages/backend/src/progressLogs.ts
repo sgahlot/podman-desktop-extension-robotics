@@ -6,9 +6,11 @@ export const PROGRESS_LOG_TRUNCATION_MARKER = 'â€¦ earlier log lines truncated â
 /**
  * Append a log line, keeping only the most recent {@link MAX_PROGRESS_LOG_LINES}.
  * Mutates `logs` in place so callers sharing the array (progress Maps) stay in sync.
+ * Prefixes the line with an HH:MM:SS timestamp captured at ingestion.
  */
 export function appendProgressLog(logs: string[], line: string): void {
-  logs.push(line);
+  const timestamp = new Date().toISOString().substring(11, 19);
+  logs.push(`[${timestamp}] ${line}`);
   if (logs.length <= MAX_PROGRESS_LOG_LINES) {
     return;
   }

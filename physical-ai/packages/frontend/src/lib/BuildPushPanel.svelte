@@ -45,6 +45,8 @@ let cancelling = false;
 let currentStep = 0;
 let totalSteps = 0;
 let logs: string[] = [];
+let buildStartedAt: number | undefined;
+let buildFinishedAt: number | undefined;
 
 let pushing = false;
 let pushDone = false;
@@ -53,6 +55,8 @@ let pushCancelled = false;
 let pushCancelling = false;
 let pushStatus = 'Pushing...';
 let pushDigest = '';
+let pushStartedAt: number | undefined;
+let pushFinishedAt: number | undefined;
 
 let buildLogsExpanded = true;
 
@@ -127,6 +131,8 @@ async function startBuild() {
   currentStep = 0;
   totalSteps = 0;
   logs = [];
+  buildStartedAt = Date.now();
+  buildFinishedAt = undefined;
   pushDone = false;
   pushError = '';
 
@@ -137,6 +143,7 @@ async function startBuild() {
     building = false;
     buildDone = true;
     buildError = e instanceof Error ? e.message : typeof e === 'string' ? e : 'Build failed to start';
+    buildFinishedAt = Date.now();
   }
 }
 
@@ -151,6 +158,7 @@ async function cancelBuild() {
     buildDone = true;
     buildCancelled = true;
     buildError = 'Build cancelled';
+    buildFinishedAt = Date.now();
     cancelling = false;
     logs = [...logs, 'Cancel requested — build aborted'];
   } catch (e) {
@@ -167,6 +175,8 @@ async function startPush() {
   pushCancelling = false;
   pushDigest = '';
   pushStatus = 'Pushing...';
+  pushStartedAt = Date.now();
+  pushFinishedAt = undefined;
 
   try {
     await physicalAiClient.pushImage(inputValue);
@@ -174,6 +184,7 @@ async function startPush() {
   } catch (e) {
     pushing = false;
     pushError = e instanceof Error ? e.message : typeof e === 'string' ? e : 'Push failed to start';
+    pushFinishedAt = Date.now();
   }
 }
 
@@ -187,6 +198,7 @@ async function cancelPush() {
     pushDone = true;
     pushCancelled = true;
     pushError = 'Push cancelled';
+    pushFinishedAt = Date.now();
     pushCancelling = false;
   } catch (e) {
     pushCancelling = false;
@@ -204,6 +216,8 @@ function startPolling(mode: 'build' | 'push') {
           logs = progress.logs;
           currentStep = progress.currentStep ?? 0;
           totalSteps = progress.totalSteps ?? 0;
+          buildStartedAt = progress.startedAt ?? buildStartedAt;
+          buildFinishedAt = progress.finishedAt ?? buildFinishedAt;
           if (logContainer) logContainer.scrollTop = logContainer.scrollHeight;
 
           if (progress.done) {
@@ -224,6 +238,8 @@ function startPolling(mode: 'build' | 'push') {
         const progress = await physicalAiClient.getPushProgress(inputValue);
         if (progress) {
           pushStatus = progress.status;
+          pushStartedAt = progress.startedAt ?? pushStartedAt;
+          pushFinishedAt = progress.finishedAt ?? pushFinishedAt;
 
           if (progress.done) {
             stopPolling();
@@ -266,11 +282,15 @@ function reset() {
   logs = [];
   currentStep = 0;
   totalSteps = 0;
+  buildStartedAt = undefined;
+  buildFinishedAt = undefined;
   pushDone = false;
   pushError = '';
   pushCancelled = false;
   pushCancelling = false;
   pushDigest = '';
+  pushStartedAt = undefined;
+  pushFinishedAt = undefined;
   checkLocalImage();
 }
 
@@ -294,6 +314,14 @@ $: if (tag !== lastSyncedTag && !building && !pushing) {
 $: busy = building || pushing;
 $: progressPercent = totalSteps > 0 ? Math.round((currentStep / totalSteps) * 100) : 0;
 $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !pushDone;
+$: buildDurationSec =
+  buildStartedAt !== undefined && buildFinishedAt !== undefined
+    ? Math.max(0, Math.round((buildFinishedAt - buildStartedAt) / 1000))
+    : undefined;
+$: pushDurationSec =
+  pushStartedAt !== undefined && pushFinishedAt !== undefined
+    ? Math.max(0, Math.round((pushFinishedAt - pushStartedAt) / 1000))
+    : undefined;
 </script>
 
 <div class="flex flex-col gap-4">
@@ -362,7 +390,8 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
 
       <div class="flex flex-col gap-1">
         <button on:click={() => (buildLogsExpanded = !buildLogsExpanded)} class="pai-link pai-link-sm self-start">
-          {buildLogsExpanded ? '▼' : '▶'} Build logs ({logs.length} lines)
+          {buildLogsExpanded ? '▼' : '▶'} Build logs ({logs.length} lines){#if buildDone && !building}
+            &nbsp;· Last build{/if}
         </button>
         {#if buildLogsExpanded}
           <div
@@ -382,7 +411,10 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
       {#if buildDone}
         <div class="flex flex-row items-center gap-3">
           {#if buildCancelled}
-            <div class="text-sm p-3 rounded pai-banner-warning">Build cancelled</div>
+            <div class="text-sm p-3 rounded pai-banner-warning">
+              Build cancelled{#if buildDurationSec !== undefined}
+                after {buildDurationSec}s{/if}
+            </div>
           {:else if buildError}
             <div class="text-sm p-3 rounded pai-banner-error">
               Build failed: {buildError}
@@ -390,6 +422,9 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
           {:else}
             <div class="text-sm pai-text-success">
               Image built successfully: <span class="font-mono">{inputValue}</span>
+              {#if buildDurationSec !== undefined}
+                <span class="text-xs pai-text-muted">(built in {buildDurationSec}s)</span>
+              {/if}
             </div>
           {/if}
           <button on:click={reset} class="pai-link pai-link-sm"> Build again </button>
@@ -423,7 +458,10 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
       {#if pushDone}
         <div class="flex flex-row items-center gap-3">
           {#if pushCancelled}
-            <div class="text-sm p-3 rounded pai-banner-warning">Push cancelled</div>
+            <div class="text-sm p-3 rounded pai-banner-warning">
+              Push cancelled{#if pushDurationSec !== undefined}
+                after {pushDurationSec}s{/if}
+            </div>
             <button on:click={startPush} class="pai-link pai-link-sm"> Retry push </button>
           {:else if pushError}
             <div class="text-sm p-3 rounded pai-banner-error">
@@ -433,6 +471,9 @@ $: canPush = (imageExistsLocally || (buildDone && !buildError)) && !pushing && !
           {:else}
             <div class="text-sm pai-text-success">
               Image pushed successfully to registry
+              {#if pushDurationSec !== undefined}
+                <span class="text-xs pai-text-muted">(pushed in {pushDurationSec}s)</span>
+              {/if}
               {#if pushDigest}
                 <div class="text-xs mt-1 pai-text-muted">
                   <span class="font-mono">{inputValue}</span>
