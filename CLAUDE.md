@@ -23,3 +23,8 @@
 - Check the plan doc for context on what each story/sub-task requires
 - Ask questions before starting a new task if the scope or approach is unclear
 - Keep this rules doc updated as decisions are made
+- **Zero-errors-on-merge:** before pushing/merging any branch back to `main`, it must be
+  clean on `npm run typecheck`, `npm run lint:check`, `npm run svelte:check`,
+  `npm run format:check`, and `npm test` (all packages) — fix pre-existing errors
+  encountered along the way too, even if unrelated to the branch's own feature scope,
+  rather than letting them keep sitting on `main`
