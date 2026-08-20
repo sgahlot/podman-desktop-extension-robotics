@@ -96,14 +96,20 @@ fi
 # Server-side sensor rendering (camera/lidar) is separate from the GUI canvas:
 #   1. GPU + /dev/dri (Mac virtio-gpu passthrough) → GLX on the Xvfb display (hardware).
 #   2. GPU but no /dev/dri (NVIDIA GPU operator in-cluster exposes /dev/nvidia*, not DRI)
-#      → the *server* renders sensors off-screen via EGL pinned to the NVIDIA vendor
-#      (--headless-rendering), while Xvfb + the GUI are pinned to the Mesa vendor
-#      (software). With no DRI render node, letting Xvfb's GLX init bind the NVIDIA EGL
-#      driver segfaults it and takes the whole display down. glvnd picks the EGL vendor by
-#      priority number, which varies by cluster, so we resolve each vendor's ICD by name
-#      and select it explicitly per process (see _pai_find_egl_vendor). The GUI canvas is
-#      CPU-rendered here — hardware GLX for the GUI would need /dev/dri, which the operator
-#      doesn't expose.
+#      → the *server's* sensors (camera/gpu_lidar) render off-screen via SOFTWARE EGL
+#      (Mesa/llvmpipe, surfaceless + --headless-rendering), same as path 3. Sustained
+#      sensor rendering on the NVIDIA headless EGL device was found to leak GPU resources
+#      over time and eventually crash the NVIDIA GSP firmware (Xid 120 →
+#      "GPU requires reset"), corrupting the whole physical GPU (APPENG-6110) — a fault
+#      that needs a host-level reset/instance restart to clear and can't be recovered
+#      from inside the pod, so sensors never touch the GPU on this path. Only the GUI
+#      *viewport* is GPU-rendered, via VirtualGL (`vglrun -d egl`, APPENG-6083) — its
+#      readback is a much simpler, bounded glReadPixels-style operation and hasn't shown
+#      the same leak. Xvfb is pinned to the Mesa vendor same as the server; with no DRI
+#      render node, letting Xvfb's GLX init bind the NVIDIA EGL driver segfaults it and
+#      takes the whole display down. glvnd picks the EGL vendor by priority number, which
+#      varies by cluster, so we resolve each vendor's ICD by name and select it explicitly
+#      per process (see _pai_find_egl_vendor).
 #   3. No GPU (in-cluster llvmpipe) → the sensors plugin's Ogre2/GL3Plus GLX
 #      createRenderWindow SIGSEGVs, taking the whole server down. Render off-screen via
 #      software EGL (surfaceless + --headless-rendering); the GUI still uses the X display.
@@ -126,7 +132,9 @@ _pai_find_egl_vendor() {  # $1: vendor substring (nvidia|mesa)
 GZ_SERVER_RENDER_FLAG=""
 # Env prefixes used to launch the parts with distinct GL/EGL needs. Empty by default
 # (they inherit the process env); populated only on the NVIDIA no-DRI path, where the
-# server is pinned to the NVIDIA EGL vendor and Xvfb/GUI to the Mesa (software) vendor.
+# server AND Xvfb/GUI are all pinned to the Mesa (software) EGL vendor (APPENG-6110 —
+# sensors never touch the GPU, avoiding the exhaustion/corruption below). Only the GUI
+# viewport renders on the GPU, via the separate VGL_GUI prefix.
 XVFB_GUI_GL=()
 GZ_SERVER_GL=()
 # GPU-GUI (VirtualGL) launch prefix + flag. Populated only on the NVIDIA no-DRI path
@@ -139,10 +147,7 @@ if [[ "${PHYSICAL_AI_USE_GPU:-0}" == "1" ]] && [[ -e /dev/dri/renderD128 ]]; the
   unset LIBGL_ALWAYS_SOFTWARE
   unset GALLIUM_DRIVER
 elif [[ "${PHYSICAL_AI_USE_GPU:-0}" == "1" ]]; then
-  echo "[gazebo] GPU requested without /dev/dri (assuming NVIDIA): NVIDIA EGL for the server, Mesa (software) GL for Xvfb/GUI"
-  # The gz *server* renders sensors off-screen on the NVIDIA device via EGL. Leave
-  # LIBGL_ALWAYS_SOFTWARE/GALLIUM unset and DON'T set EGL_PLATFORM so EGL binds the
-  # NVIDIA device (not Mesa surfaceless).
+  echo "[gazebo] GPU requested without /dev/dri (assuming NVIDIA): software EGL for server sensors + Xvfb/GUI (APPENG-6110), GPU reserved for the GUI viewport (VirtualGL)"
   unset LIBGL_ALWAYS_SOFTWARE
   unset GALLIUM_DRIVER
   GZ_SERVER_RENDER_FLAG="--headless-rendering"
@@ -150,21 +155,26 @@ elif [[ "${PHYSICAL_AI_USE_GPU:-0}" == "1" ]]; then
   _mesa_egl="$(_pai_find_egl_vendor mesa || true)"
   _nvidia_egl="$(_pai_find_egl_vendor nvidia || true)"
 
-  # Server → NVIDIA vendor, pinned by name so its headless EGL binds the GPU even on a
-  # cluster where Mesa has the lower glvnd priority number.
-  if [[ -n "${_nvidia_egl}" ]]; then
-    echo "[gazebo]   server EGL vendor: ${_nvidia_egl}"
-    GZ_SERVER_GL=(env "__EGL_VENDOR_LIBRARY_FILENAMES=${_nvidia_egl}")
+  # Server (sensors: camera/gpu_lidar) → Mesa vendor, software/off-screen surfaceless
+  # EGL, pinned by name (not glvnd priority order). Sustained sensor rendering on the
+  # NVIDIA headless EGL device leaked GPU resources and eventually crashed the NVIDIA
+  # GSP firmware (Xid 120 → GPU requires reset), corrupting the whole physical GPU
+  # (APPENG-6110). A pod restart can't recover from that — it needs a host-level GPU
+  # reset — so sensors are kept off the GPU entirely here, same as the no-GPU path.
+  GZ_SERVER_GL=(env LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe EGL_PLATFORM=surfaceless)
+  if [[ -n "${_mesa_egl}" ]]; then
+    echo "[gazebo]   server (sensors) EGL vendor: ${_mesa_egl} (software)"
+    GZ_SERVER_GL+=("__EGL_VENDOR_LIBRARY_FILENAMES=${_mesa_egl}")
   else
-    echo "[gazebo]   WARN: no NVIDIA EGL vendor ICD found; server EGL falls back to glvnd's default order"
+    echo "[gazebo]   WARN: no Mesa EGL vendor ICD found; server EGL falls back to glvnd's default order"
   fi
 
-  # Xvfb + GUI → Mesa vendor (software). There is no /dev/dri render node in an NVIDIA
-  # operator pod, so if Xvfb's GLX init (`+extension GLX`) lets glvnd pick the NVIDIA
-  # EGL vendor it binds libEGL_nvidia/libnvidia-egl-gbm and SEGFAULTs, taking the whole
-  # display down (openbox/x11vnc/GUI then can't open the display). LIBGL_ALWAYS_SOFTWARE/
-  # GALLIUM steer only Mesa's GL/GLX, NOT glvnd's EGL vendor choice, so we must also pin
-  # __EGL_VENDOR_LIBRARY_FILENAMES at the Mesa ICD. The GUI canvas is CPU-rendered here.
+  # Xvfb + GUI canvas → Mesa vendor (software) too. There is no /dev/dri render node in
+  # an NVIDIA operator pod, so if Xvfb's GLX init (`+extension GLX`) lets glvnd pick the
+  # NVIDIA EGL vendor it binds libEGL_nvidia/libnvidia-egl-gbm and SEGFAULTs, taking the
+  # whole display down (openbox/x11vnc/GUI then can't open the display). LIBGL_ALWAYS_
+  # SOFTWARE/GALLIUM steer only Mesa's GL/GLX, NOT glvnd's EGL vendor choice, so we must
+  # also pin __EGL_VENDOR_LIBRARY_FILENAMES at the Mesa ICD.
   XVFB_GUI_GL=(env LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe __GLX_VENDOR_LIBRARY_NAME=mesa)
   if [[ -n "${_mesa_egl}" ]]; then
     echo "[gazebo]   Xvfb/GUI EGL vendor: ${_mesa_egl}"
@@ -175,11 +185,12 @@ elif [[ "${PHYSICAL_AI_USE_GPU:-0}" == "1" ]]; then
 
   # GPU-render the GUI viewport on the NVIDIA headless EGL device via VirtualGL, instead
   # of the llvmpipe CPU rasterizer, to end the CFS CPU throttling that made navigation
-  # jumpy (APPENG-6083). vglrun -d egl uses the SAME headless EGL device the server
-  # already uses for sensors (no /dev/dri needed); Xvfb :99 stays the 2D/window-system
-  # side that VGL reads frames back into for x11vnc. Requires VirtualGL in the image and
-  # an NVIDIA EGL vendor ICD. Falls back to the software (llvmpipe) GUI path when either
-  # is missing, or when disabled via PHYSICAL_AI_GUI_GPU=0.
+  # jumpy (APPENG-6083). vglrun -d egl binds the NVIDIA headless EGL device directly (no
+  # /dev/dri needed) — the server no longer touches this device (APPENG-6110, sensors
+  # moved to software EGL above), so the GUI is now the GPU's only consumer. Xvfb :99
+  # stays the 2D/window-system side that VGL reads frames back into for x11vnc. Requires
+  # VirtualGL in the image and an NVIDIA EGL vendor ICD. Falls back to the software
+  # (llvmpipe) GUI path when either is missing, or when disabled via PHYSICAL_AI_GUI_GPU=0.
   PHYSICAL_AI_GUI_GPU="${PHYSICAL_AI_GUI_GPU:-1}"
   if [[ "${PHYSICAL_AI_GUI_GPU}" == "1" ]] && command -v vglrun >/dev/null 2>&1 && [[ -n "${_nvidia_egl}" ]]; then
     GUI_GPU=1
@@ -337,6 +348,29 @@ if [[ -n "${PHYSICAL_AI_GUI_LP_THREADS}" ]]; then
     echo "[gazebo] WARN: ignoring invalid PHYSICAL_AI_GUI_LP_THREADS '${PHYSICAL_AI_GUI_LP_THREADS}' (want a positive integer)"
   fi
 fi
+# _pai_launch_gui: (re)launches `gz sim -g` and sets GZ_GUI_PID. Used both for the
+# initial launch and by the supervisor loop below to relaunch after a crash or a
+# proactive recycle. On the GPU path it re-checks EGL device availability every time
+# (not just at startup) so a relaunch after the GPU wedges also falls back to software
+# instead of failing silently (APPENG-6110).
+_pai_launch_gui() {
+  if [[ "${GUI_GPU}" == "1" ]]; then
+    if eglinfo -e 2>/dev/null | grep -q "egl[0-9]"; then
+      echo "[gazebo]   EGL devices available; launching GPU-rendered GUI via VirtualGL..."
+      "${GUI_NICE[@]+"${GUI_NICE[@]}"}" "${VGL_GUI[@]}" vglrun -d egl gz sim -g &
+    else
+      echo "[gazebo]   WARN: no EGL devices found (GPU may be corrupted); falling back to software-rendered GUI"
+      "${GUI_NICE[@]+"${GUI_NICE[@]}"}" "${XVFB_GUI_GL[@]+"${XVFB_GUI_GL[@]}"}" "${GUI_THREADS[@]+"${GUI_THREADS[@]}"}" gz sim -g &
+    fi
+  else
+    # Software path: prefixes stack — nice (deprioritize) + XVFB_GUI_GL (software GL/
+    # Mesa EGL on the no-DRI path; empty elsewhere) + GUI_THREADS (clamp the llvmpipe
+    # pool). All use the [@]+ guard so an empty array expands to nothing under `set -u`.
+    "${GUI_NICE[@]+"${GUI_NICE[@]}"}" "${XVFB_GUI_GL[@]+"${XVFB_GUI_GL[@]}"}" "${GUI_THREADS[@]+"${GUI_THREADS[@]}"}" gz sim -g &
+  fi
+  GZ_GUI_PID=$!
+}
+
 if [[ "${GUI_GPU}" == "1" ]]; then
   echo "[gazebo] Launching Gazebo GUI (GPU via VirtualGL, nice=${PHYSICAL_AI_GUI_NICE:-none})..."
 else
@@ -344,29 +378,58 @@ else
 fi
 for i in $(seq 1 30); do
   if gz topic -l 2>/dev/null | grep -q "/world/${WORLD_NAME}/"; then
-    if [[ "${GUI_GPU}" == "1" ]]; then
-      # GPU path: render on the NVIDIA EGL device via VirtualGL. VGL_GUI pins the NVIDIA
-      # EGL vendor (+ optional VGL_FPS cap); no Mesa/llvmpipe steering or thread clamp is
-      # applied (VGL bypasses the software rasterizer). nice still deprioritizes the GUI's
-      # readback/event loop so physics/Nav2 win any residual contention.
-      "${GUI_NICE[@]+"${GUI_NICE[@]}"}" "${VGL_GUI[@]}" vglrun -d egl gz sim -g &
-    else
-      # Software path: prefixes stack — nice (deprioritize) + XVFB_GUI_GL (software GL/
-      # Mesa EGL on the no-DRI path; empty elsewhere) + GUI_THREADS (clamp the llvmpipe
-      # pool). All use the [@]+ guard so an empty array expands to nothing under `set -u`.
-      "${GUI_NICE[@]+"${GUI_NICE[@]}"}" "${XVFB_GUI_GL[@]+"${XVFB_GUI_GL[@]}"}" "${GUI_THREADS[@]+"${GUI_THREADS[@]}"}" gz sim -g &
-    fi
-    GZ_GUI_PID=$!
+    _pai_launch_gui
     echo "[gazebo] Gazebo GUI launched."
     break
   fi
   sleep 2
 done
 
+# GUI supervisor: even with sensors off the GPU, VirtualGL's own sustained NVIDIA EGL
+# rendering can hit the same class of GPU-resource exhaustion the sensors used to
+# (APPENG-6110 — observed a GUI segfault in libnvidia-eglcore.so ~1h36m into a run,
+# same NV_ERR_NO_MEMORY signature as the original sensor leak, though the GPU itself
+# stayed healthy that time). There was no supervision at all before, so a GUI crash
+# left noVNC silently frozen/black indefinitely. This loop (a) relaunches the GUI if it
+# dies for any reason, and (b) on the GPU path only, proactively recycles it on a timer
+# safely under the observed fault window, since we can't fix the underlying NVIDIA leak
+# from here. Empty PHYSICAL_AI_GUI_RESTART_SEC disables the proactive recycle (crash
+# relaunch still applies). Capped at 20 relaunches to avoid a runaway crash-loop.
+PHYSICAL_AI_GUI_RESTART_SEC="${PHYSICAL_AI_GUI_RESTART_SEC:-2700}"
+_pai_gui_supervisor() {
+  local gui_started restart_count=0
+  gui_started=$(date +%s)
+  while kill -0 "${GZ_SERVER_PID}" 2>/dev/null; do
+    sleep 15
+    if [[ -n "${GZ_GUI_PID:-}" ]] && ! kill -0 "${GZ_GUI_PID}" 2>/dev/null; then
+      restart_count=$((restart_count + 1))
+      if (( restart_count > 20 )); then
+        echo "[gazebo] GUI has crashed ${restart_count} times; giving up on auto-restart (noVNC will stay unavailable)"
+        break
+      fi
+      echo "[gazebo] GUI process died; relaunching (attempt ${restart_count})..."
+      _pai_launch_gui
+      gui_started=$(date +%s)
+      continue
+    fi
+    if [[ "${GUI_GPU}" == "1" ]] && [[ -n "${PHYSICAL_AI_GUI_RESTART_SEC}" ]] \
+       && (( $(date +%s) - gui_started >= PHYSICAL_AI_GUI_RESTART_SEC )); then
+      echo "[gazebo] Proactively recycling GPU GUI after ${PHYSICAL_AI_GUI_RESTART_SEC}s (APPENG-6110 mitigation for the NVIDIA sustained-EGL leak)..."
+      kill "${GZ_GUI_PID}" 2>/dev/null
+      wait "${GZ_GUI_PID}" 2>/dev/null
+      _pai_launch_gui
+      gui_started=$(date +%s)
+    fi
+  done
+}
+_pai_gui_supervisor &
+GUI_SUPERVISOR_PID=$!
+
 echo "[gazebo] Simulation ready. noVNC at http://localhost:${NOVNC_PORT}"
 
 term_handler() {
   echo "[gazebo] Shutting down..."
+  kill "${GUI_SUPERVISOR_PID:-}" 2>/dev/null || true
   kill "${GZ_GUI_PID:-}" "${SPAWN_PIDS[@]:-}" "${GZ_SERVER_PID}" "${XVFB_PID}" 2>/dev/null || true
   pkill -P $$ 2>/dev/null || true
   wait "${GZ_SERVER_PID}" 2>/dev/null || true
