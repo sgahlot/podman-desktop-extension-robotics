@@ -1661,9 +1661,7 @@ describe('PhysicalAiApiImpl', () => {
 
       const calls = vi.mocked(extensionApi.process.exec).mock.calls;
       const clearCall = calls.find(c =>
-        (c[1] as string[] | undefined)?.some(
-          a => typeof a === 'string' && a.includes('clear_entirely_local_costmap'),
-        ),
+        (c[1] as string[] | undefined)?.some(a => typeof a === 'string' && a.includes('clear_entirely_local_costmap')),
       );
       expect(clearCall).toBeDefined();
       const clearCmd = (clearCall![1] as string[]).find(a => a.includes('clear_entirely_local_costmap'))!;
@@ -2053,7 +2051,7 @@ describe('PhysicalAiApiImpl', () => {
     it('force-removes the container with podman rm -f and shows a noVNC tab hint', async () => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
         { ...simContainer(CONTAINER_ID, 'quay.io/ns/ros2-jazzy-sim:noble'), engineId: 'podman' },
-      ]);
+      ] as unknown as extensionApi.ContainerInfo[]);
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
         stdout: '',
         stderr: '',

@@ -137,12 +137,12 @@ function kubeconfigContextNamespace(kubeconfig: string, contextName: string): st
   // The block runs until the next top-level key (a line starting flush-left with a
   // letter, e.g. `current-context:` / `users:`); list items are `-`-prefixed or indented.
   const nextKey = body.match(/^[A-Za-z]/m);
-  const block = nextKey && nextKey.index ? body.slice(0, nextKey.index) : body;
+  const block = nextKey?.index ? body.slice(0, nextKey.index) : body;
   // Each list entry begins with a `- ` marker (possibly indented under `contexts:`).
   const entries = block.split(/^[ \t]*-[ \t]+/m).filter(entry => entry.trim());
   for (const entry of entries) {
     const nameMatch = entry.match(/(?:^|\n)[ \t]*name:[ \t]*["']?([^"'\s]+)["']?[ \t]*$/m);
-    if (nameMatch && nameMatch[1] === contextName) {
+    if (nameMatch?.[1] === contextName) {
       const nsMatch = entry.match(/(?:^|\n)[ \t]*namespace:[ \t]*["']?([^"'\s]+)["']?[ \t]*$/m);
       return nsMatch ? nsMatch[1] : undefined;
     }
