@@ -1,6 +1,7 @@
 import { vi, describe, it, expect } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
-import RobotControls, { type RobotEntry } from './RobotControls.svelte';
+import RobotControls from './RobotControls.svelte';
+import type { RobotEntry } from './RobotControls.types';
 
 function robot(name: string, over: Partial<RobotEntry> = {}): RobotEntry {
   return {
