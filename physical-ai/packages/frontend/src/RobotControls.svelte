@@ -152,9 +152,9 @@ async function remove(index: number) {
                  up (which stutters/queues). Remove stays available so a robot stuck in
                  warm-up can still be reaped. -->
             <span
-              class="inline-flex items-center gap-1 pai-text-accent"
+              class="inline-flex items-center gap-1.5 text-sm font-medium px-2.5 py-0.5 rounded-full border border-[var(--pd-content-card-border)] pai-text-accent"
               title="Nav2 is starting in the background; navigation controls appear once it's ready.">
-              <span class="inline-block w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>
+              <span class="inline-block w-2 h-2 rounded-full bg-current animate-pulse"></span>
               Nav2 warming…
             </span>
           {:else}
