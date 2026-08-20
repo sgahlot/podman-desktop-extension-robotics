@@ -7,16 +7,18 @@
 >
 > **Branches:** one per sub-task/batch, named after its Jira key — Batch A on
 > `feature/APPENG-6103-quick-ui-wins`, Batch B on `feature/APPENG-6104-build-push-observability`,
-> later batches on `feature/APPENG-6105-…`, etc. Each is based independently off `main`
-> (no stacking on a sibling batch branch, even when batches touch the same file) —
-> this doc itself lives on `main` (not any one batch branch) so every batch can read
-> and update it without depending on another batch's branch.
+> Batch C on `feature/APPENG-6105-openshift-config-safety`, later batches on
+> `feature/APPENG-6106-…`, etc. Each is based independently off `main` (no stacking on a
+> sibling batch branch, even when batches touch the same file) — this doc itself lives
+> on `main` (not any one batch branch) so every batch can read and update it without
+> depending on another batch's branch.
 >
 > **Status:** in progress. **Batch A (S8-1…S8-5) done** — `feature/APPENG-6103-quick-ui-wins`,
 > frontend suite 88/88 green, user-verified. **Batch B (S8-6…S8-9) done** —
 > `feature/APPENG-6104-build-push-observability`, user-verified in the running extension.
-> Next up per the suggested order: **Batch C** (S8-10 cluster URL, S8-11 `oc whoami`,
-> S8-16 default-namespace setting, S8-17 reflect already-spawned robots).
+> **Batch C (S8-10, S8-11, S8-16, S8-17) done** — `feature/APPENG-6105-openshift-config-safety`,
+> full test suite green, pending user verification in the running extension. Next up per
+> the suggested order: **Batch D** (S8-12 SIM-only build path).
 
 ---
 
@@ -75,15 +77,15 @@ Needed backend type additions (`BuildProgress`/`PushProgress` in
 
 <a id="s8-ocp-config"></a>
 
-### Batch C — OpenShift configurability & safety — APPENG-6105
+### Batch C — OpenShift configurability & safety — APPENG-6105 ✅ Done
 
 | Status | ID | Summary | Description | Files |
 |--------|-----|---------|-------------|-------|
 | ✅ | S8-C0 | Namespace configurable | **Done** on `feature/APPENG-6083-vgl-gpu-gui`: the deploy namespace seeds from the current kube context and is editable. (Baseline for S8-10.) | `OpenShiftDeploy.ts`, `api-impl.ts`, `OpenShiftSimulation.svelte` |
-| ⚪ | S8-10 | Cluster URL override | Show the current cluster server URL (from kubeconfig / `oc whoami --show-server`) as the default and let the user override it with a full cluster URL — same editable pattern as the namespace. Add a `server` field to `OpenShiftContext`, parse it in `getOpenShiftContext`, surface it in the Cluster card + as an editable field, and target it on deploy. | `OpenShiftDeploy.ts` (53-62), `api-impl.ts` (`getOpenShiftContext` 1601-1618), `OpenShiftSimulation.svelte` (context card 280-293) |
-| ⚪ | S8-11 | `oc whoami` pre-check | Before enabling deploy/spawn on the OpenShift tab, run and verify `oc whoami` (greenfield — no `oc whoami` plumbing exists) so we fail early with a clear "not logged in" message instead of a failed deploy. | `api-impl.ts` (follow `process.exec('oc', …)` pattern ~1652), `OpenShiftSimulation.svelte` |
-| ⚪ | S8-16 | Default namespace via extension setting | The deploy namespace still falls back to `default` when the kube context carries no namespace, so the workloads list shows "no deployments in this namespace" until the user types the right one. Add an extension **setting** for the default namespace: keep reading the kubeconfig context, but use the configured setting as the default value when the context has none (setting overrides the `default` fallback, not an explicit context namespace). | Preferences/settings, `api-impl.ts` (`getOpenShiftContext` / `getDefaultNamespace`), `OpenShiftSimulation.svelte` |
-| ⚪ | S8-17 | Reflect already-spawned robots | After a pod restart or an extension reload, the UI forgets robots spawned earlier (e.g. `robot_1`) — spawn/warm state lives only in frontend memory. Reconcile on load/refresh by detecting robots actually present in the running sim (ROS graph / `gz model --list` or topic probe) and render them with their real warm state, instead of assuming none. | `OpenShiftSimulation.svelte`, `RobotControls.svelte`, `api-impl.ts` (new "list spawned robots" probe) |
+| ✅ | S8-10 | Cluster URL override | Show the current cluster server URL (parsed from the kubeconfig's `clusters:`/`contexts:` blocks, no YAML dependency) as the default and let the user override it with a full cluster URL — same editable pattern as the namespace. Added `clusterUrl?` to `OpenShiftContext`, a `kubeconfigClusterServer` helper, and an editable field in the Cluster card. **Scope decision:** display/reference only — the override does **not** retarget deploy/`oc` calls, which still use the kubeconfig's current context; actually retargeting would need credential/kubeconfig-switching plumbing that doesn't exist and was out of scope for this batch. | `OpenShiftDeploy.ts`, `api-impl.ts` (`getOpenShiftContext`, `kubeconfigClusterServer`), `OpenShiftSimulation.svelte` (Cluster card) |
+| ✅ | S8-11 | `oc whoami` pre-check | New `checkOpenShiftLogin()` backend method (`oc whoami`, reuses the existing `#ocErrorMessage` CLI-missing detection) called on mount alongside `getOpenShiftContext`; gates the existing `canDeploy` check and the Robots panel, with a clear "not logged in" banner instead of a failed deploy. | `api-impl.ts` (`checkOpenShiftLogin`), `PhysicalAiApi.ts`, `OpenShiftSimulation.svelte` |
+| ✅ | S8-16 | Default namespace via extension setting | Added a **new**, dedicated setting `physical-ai.defaultOpenShiftNamespace` (separate from the Quay-purposed `physical-ai.defaultNamespace`) and a `getDefaultOpenShiftNamespace()` backend method. `OpenShiftSimulation.svelte`'s `onMount` now falls back to it only when the kube context sets no namespace — the context's own namespace, when present, always still wins; unconfigured means `''`, never a silent `'default'`. | `package.json` (contributes.configuration), `api-impl.ts` (`getDefaultOpenShiftNamespace`), `PhysicalAiApi.ts`, `OpenShiftSimulation.svelte` |
+| ✅ | S8-17 | Reflect already-spawned robots | New `listSpawnedRobotsInOpenShift()` backend method runs `ros2 node list` in the pod and extracts robot names from namespaced nodes (`/robot_1/...`). `refreshWorkloads()` reconciles each ready workload's robot list against it **once** (guarded by a `reconciledWorkloads` set, cleared on delete/vanish so a redeploy reconciles fresh) — only ever appending missing entries, never overwriting live `navStatus`/`navTarget`. Reconciled robots get a placeholder `x`/`y` (`'?'`, not recoverable from `ros2 node list` alone) and pick up `warmStatus` via the existing 3s `pollWarmStatus` loop with no extra wiring. | `api-impl.ts` (`listSpawnedRobotsInOpenShift`), `PhysicalAiApi.ts`, `OpenShiftSimulation.svelte` (`refreshWorkloads`, `reconcileRobots`) |
 
 <a id="s8-quickstart"></a>
 
@@ -128,8 +130,8 @@ Needed backend type additions (`BuildProgress`/`PushProgress` in
 
 1. **Batch A** (S8-1…S8-5) — quick wins, no GPU. ✅ done (`feature/APPENG-6103-quick-ui-wins`)
 2. **Batch B** (S8-6…S8-9) — build/push observability. ✅ done (`feature/APPENG-6104-build-push-observability`)
-3. **Batch C** (S8-10 cluster URL, S8-11 `oc whoami`, S8-16 default-namespace setting, S8-17 reflect already-spawned robots) — builds on the namespace work. ← next
-4. **Batch D** (S8-12) — SIM-only build path.
+3. **Batch C** (S8-10 cluster URL, S8-11 `oc whoami`, S8-16 default-namespace setting, S8-17 reflect already-spawned robots). ✅ done (`feature/APPENG-6105-openshift-config-safety`)
+4. **Batch D** (S8-12) — SIM-only build path. ← next
 5. **Batch E** (S8-13) — layout config (prototype variants first).
 6. **Batch F** (S8-14 spike → S8-15 wizard) — secure layers, then the full wizard.
 

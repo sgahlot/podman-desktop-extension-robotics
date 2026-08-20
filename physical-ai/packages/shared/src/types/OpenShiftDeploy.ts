@@ -59,6 +59,12 @@ export interface OpenShiftContext {
    * rather than a baked-in default. Undefined when the context sets no namespace.
    */
   namespace?: string;
+  /**
+   * Cluster API server URL bound to the current context's cluster, if resolvable from
+   * the kubeconfig. Display/informational only (S8-10) — overriding this field does not
+   * retarget deploy/oc calls, which still use the kubeconfig's current context.
+   */
+  clusterUrl?: string;
 }
 
 /** A physical-ai-managed workload observed in a namespace. */

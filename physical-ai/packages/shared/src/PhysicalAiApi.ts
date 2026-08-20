@@ -69,6 +69,11 @@ export abstract class PhysicalAiApi {
   // --- OpenShift deployment (APPENG-5777) ---
   /** Current Kubernetes/OpenShift context from the kubeconfig, or undefined if none. */
   abstract getOpenShiftContext(): Promise<OpenShiftContext | undefined>;
+  /** Configured fallback namespace (physical-ai.defaultOpenShiftNamespace) for when the
+   * kubeconfig context sets none; '' when unconfigured (S8-16). */
+  abstract getDefaultOpenShiftNamespace(): Promise<string>;
+  /** Whether `oc` is currently logged in to a cluster (S8-11), via `oc whoami`. */
+  abstract checkOpenShiftLogin(): Promise<{ loggedIn: boolean; message?: string }>;
   /** Render the Deployment/Service/Route manifests as a YAML preview (no side effects). */
   abstract generateOpenShiftManifests(config: OpenShiftDeployConfig): Promise<{ yaml: string }>;
   /** Apply the manifests to the current context and return the Route URL when available. */
@@ -98,4 +103,7 @@ export abstract class PhysicalAiApi {
   abstract despawnRobotInOpenShift(namespace: string, name: string, robotName: string): Promise<void>;
   /** Nav2 pre-warm state for a robot in a deployed pod, for an honest "warming…" indicator. */
   abstract getRobotWarmStatusInOpenShift(namespace: string, name: string, robotName: string): Promise<Nav2WarmStatus>;
+  /** Robots actually running in the deployment's pod, via `ros2 node list` (S8-17) — used
+   * to reconcile the UI's robot list after a reload/restart forgets in-memory spawn state. */
+  abstract listSpawnedRobotsInOpenShift(namespace: string, name: string): Promise<string[]>;
 }

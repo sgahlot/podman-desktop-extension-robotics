@@ -11,8 +11,18 @@ let loading = true;
 let context: OpenShiftContext | undefined = undefined;
 
 let name = 'ros2-jazzy-sim';
-/** Seeded from the current kube context's namespace on mount (see onMount); editable. */
+/** Seeded from the current kube context's namespace on mount (see onMount); editable.
+ * Falls back to the physical-ai.defaultOpenShiftNamespace setting when the context sets
+ * none (S8-16), instead of silently defaulting to 'default'. */
 let namespace = '';
+/**
+ * Seeded from the current kube context's cluster server URL on mount (see onMount);
+ * editable for display/reference only (S8-10) — does not retarget deploy/oc calls, which
+ * still use the kubeconfig's current context (see OpenShiftContext.clusterUrl doc).
+ */
+let clusterUrl = '';
+let loggedIn = true;
+let loginMessage = '';
 let image = 'quay.io/ecosystem-appeng/ros2-jazzy-sim:noble-amd64';
 let useGpu = false;
 /**
@@ -46,19 +56,49 @@ let deletingName = '';
 
 // --- In-cluster robot spawn + Nav2, keyed by deployment name ---
 let robotsByWorkload: Record<string, RobotEntry[]> = {};
+/** Workload names already reconciled against actually-running robots (S8-17) — a
+ * ready workload is probed at most once; cleared when its robot state is dropped
+ * (deleted or vanished from the list) so a later redeploy of the same name reconciles
+ * fresh instead of being skipped forever. */
+let reconciledWorkloads = new Set<string>();
 let warmTimer: ReturnType<typeof setInterval> | null = null;
 
 $: config = { name, namespace, image, useGpu, cpu, gpuToleration: useGpu ? gpuToleration : undefined };
-$: canDeploy = !!context && !!name && !!namespace && !!image && !deploying;
+$: canDeploy = !!context && !!name && !!namespace && !!image && !deploying && loggedIn;
 
 onMount(async () => {
   try {
     context = await physicalAiClient.getOpenShiftContext();
+    if (context?.clusterUrl) clusterUrl = context.clusterUrl;
     // Seed the namespace from the current context so the user targets the project
     // they're already logged into, rather than a baked-in default. Still editable.
-    if (context?.namespace) namespace = context.namespace;
+    if (context?.namespace) {
+      namespace = context.namespace;
+    } else {
+      // Context has no namespace bound — fall back to the configured default (S8-16)
+      // rather than silently defaulting to 'default', which showed a confusing
+      // "no deployments in this namespace" until the user typed the right one.
+      try {
+        const fallback = await physicalAiClient.getDefaultOpenShiftNamespace();
+        if (fallback) namespace = fallback;
+      } catch {
+        // keep the built-in default
+      }
+    }
   } catch {
     context = undefined;
+  }
+  // Pre-check oc login (S8-11) so Deploy/Spawn fail early with a clear message
+  // instead of a confusing mid-deploy oc error.
+  try {
+    const login = await physicalAiClient.checkOpenShiftLogin();
+    loggedIn = login.loggedIn;
+    loginMessage = login.message ?? '';
+  } catch {
+    // Fail open — don't block the UI if the check itself errors unexpectedly; the
+    // deploy/oc calls themselves will still surface a clear error if not logged in.
+    loggedIn = true;
+    loginMessage = '';
   }
   // Seed the CPU field from the configurable default (still editable per deploy).
   try {
@@ -172,10 +212,20 @@ async function refreshWorkloads(opts?: { silent?: boolean }) {
     // Drop robot state for deployments that no longer exist; seed the rest.
     const names = new Set(workloads.map(w => w.name));
     for (const key of Object.keys(robotsByWorkload)) {
-      if (!names.has(key)) delete robotsByWorkload[key];
+      if (!names.has(key)) {
+        delete robotsByWorkload[key];
+        reconciledWorkloads.delete(key);
+      }
     }
     for (const w of workloads) {
       robotsByWorkload[w.name] ??= [];
+      // Reconcile a ready workload's actually-running robots (S8-17) at most once —
+      // pollWarmStatus's existing 3s loop already picks up warmStatus for whatever
+      // ends up in robotsByWorkload, so no extra polling wire-up is needed here.
+      if (w.ready && !reconciledWorkloads.has(w.name)) {
+        reconciledWorkloads.add(w.name);
+        void reconcileRobots(w);
+      }
     }
     robotsByWorkload = robotsByWorkload;
     // Drop a stale result panel if its deployment is gone.
@@ -194,12 +244,45 @@ async function refreshWorkloads(opts?: { silent?: boolean }) {
   }
 }
 
+/**
+ * Reconciles a ready workload's robot list against what's actually running in the pod
+ * (S8-17) — spawn/warm state otherwise lives only in frontend memory, so a page reload
+ * or extension restart forgets robots spawned earlier even though they're still
+ * running. Only ever appends missing entries — never removes/overwrites ones already
+ * tracked, so it can't clobber live navStatus/navTarget state.
+ */
+async function reconcileRobots(w: OpenShiftWorkload) {
+  let names: string[];
+  try {
+    names = await physicalAiClient.listSpawnedRobotsInOpenShift(w.namespace, w.name);
+  } catch {
+    return;
+  }
+  const existing = new Set((robotsByWorkload[w.name] ?? []).map(r => r.name));
+  const missing = names.filter(n => !existing.has(n));
+  if (missing.length === 0) return;
+  robotsByWorkload[w.name] = [
+    ...(robotsByWorkload[w.name] ?? []),
+    // x/y aren't recoverable from `ros2 node list` alone — '?' is a placeholder.
+    ...missing.map(n => ({
+      name: n,
+      x: '?',
+      y: '?',
+      navStatus: 'idle' as const,
+      navTarget: { x: '0', y: '0' },
+      navReached: null,
+    })),
+  ];
+  robotsByWorkload = robotsByWorkload;
+}
+
 async function remove(w: OpenShiftWorkload) {
   deletingName = w.name;
   try {
     await physicalAiClient.deleteOpenShiftDeployment(w.namespace, w.name);
     // Clear this deployment's robot list and the stale result panel.
     delete robotsByWorkload[w.name];
+    reconciledWorkloads.delete(w.name);
     robotsByWorkload = robotsByWorkload;
     if (deployedName === w.name) {
       deployResult = null;
@@ -280,9 +363,21 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-2xl">
       <h2 class="text-sm font-medium text-[var(--pd-content-header)] mb-2">Cluster</h2>
       {#if context}
-        <div class="text-xs text-[var(--pd-content-text)] flex flex-col gap-1">
+        <div class="text-xs text-[var(--pd-content-text)] flex flex-col gap-2">
           <div><strong>Context:</strong> <span class="font-mono break-all">{context.context}</span></div>
           <div class="opacity-70 font-mono break-all">{context.kubeconfigPath}</div>
+          <div class="flex flex-col gap-1">
+            <label for="dep-cluster-url" class="text-xs text-[var(--pd-content-text)]">Cluster URL</label>
+            <input
+              id="dep-cluster-url"
+              bind:value={clusterUrl}
+              disabled={deploying}
+              placeholder="e.g. https://api.cluster.example.com:6443"
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
+            <span class="text-xs pai-text-muted">
+              Informational only — deploy still targets the kubeconfig's current context, not this value.
+            </span>
+          </div>
         </div>
       {:else}
         <p class="text-sm p-3 rounded pai-banner-error">
@@ -291,6 +386,10 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
         </p>
       {/if}
     </div>
+
+    {#if context && !loggedIn}
+      <p class="text-sm p-3 rounded pai-banner-error max-w-2xl">{loginMessage}</p>
+    {/if}
 
     <!-- Deploy form -->
     <div class="flex flex-col gap-4 max-w-2xl">
@@ -474,6 +573,7 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
                     onSpawn={form => spawnRobot(w, form)}
                     onNavigate={i => navigateRobot(w, i)}
                     onRemove={i => removeRobot(w, i)}
+                    disabled={!loggedIn}
                     idPrefix={`oc-${w.name}`} />
                 </div>
               {/if}

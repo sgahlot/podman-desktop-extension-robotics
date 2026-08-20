@@ -4,6 +4,8 @@ import DeployOpenShift from './OpenShiftSimulation.svelte';
 
 const mockGetOpenShiftContext = vi.fn();
 const mockGetDefaultNamespace = vi.fn();
+const mockGetDefaultOpenShiftNamespace = vi.fn();
+const mockCheckOpenShiftLogin = vi.fn();
 const mockGetSimulationConfig = vi.fn();
 const mockGetDefaultSoftwareRenderCpus = vi.fn();
 const mockListOpenShiftDeployments = vi.fn();
@@ -12,6 +14,7 @@ const mockDeleteOpenShiftDeployment = vi.fn();
 const mockSpawnRobotInOpenShift = vi.fn();
 const mockSendOpenShiftNavigationGoal = vi.fn();
 const mockGetRobotWarmStatusInOpenShift = vi.fn();
+const mockListSpawnedRobotsInOpenShift = vi.fn();
 const mockOpenUrlInBrowser = vi.fn();
 const mockGoto = vi.fn();
 
@@ -19,6 +22,8 @@ vi.mock('./api/client', () => ({
   physicalAiClient: {
     getOpenShiftContext: (...args: unknown[]) => mockGetOpenShiftContext(...args),
     getDefaultNamespace: (...args: unknown[]) => mockGetDefaultNamespace(...args),
+    getDefaultOpenShiftNamespace: (...args: unknown[]) => mockGetDefaultOpenShiftNamespace(...args),
+    checkOpenShiftLogin: (...args: unknown[]) => mockCheckOpenShiftLogin(...args),
     getSimulationConfig: (...args: unknown[]) => mockGetSimulationConfig(...args),
     getDefaultSoftwareRenderCpus: (...args: unknown[]) => mockGetDefaultSoftwareRenderCpus(...args),
     generateOpenShiftManifests: vi.fn(),
@@ -28,6 +33,7 @@ vi.mock('./api/client', () => ({
     spawnRobotInOpenShift: (...args: unknown[]) => mockSpawnRobotInOpenShift(...args),
     sendOpenShiftNavigationGoal: (...args: unknown[]) => mockSendOpenShiftNavigationGoal(...args),
     getRobotWarmStatusInOpenShift: (...args: unknown[]) => mockGetRobotWarmStatusInOpenShift(...args),
+    listSpawnedRobotsInOpenShift: (...args: unknown[]) => mockListSpawnedRobotsInOpenShift(...args),
     openUrlInBrowser: (...args: unknown[]) => mockOpenUrlInBrowser(...args),
   },
 }));
@@ -58,6 +64,8 @@ describe('OpenShiftSimulation', () => {
       namespace: 'sgahlot-pd-extn',
     });
     mockGetDefaultNamespace.mockResolvedValue('sgahlot-pd-extn');
+    mockGetDefaultOpenShiftNamespace.mockResolvedValue('');
+    mockCheckOpenShiftLogin.mockResolvedValue({ loggedIn: true });
     mockGetDefaultSoftwareRenderCpus.mockResolvedValue(8);
     // Keep the default image (avoids exercising simulationImageTag here).
     mockGetSimulationConfig.mockRejectedValue(new Error('no config'));
@@ -65,6 +73,7 @@ describe('OpenShiftSimulation', () => {
     mockSpawnRobotInOpenShift.mockResolvedValue(undefined);
     mockDeleteOpenShiftDeployment.mockResolvedValue(undefined);
     mockGetRobotWarmStatusInOpenShift.mockResolvedValue('idle');
+    mockListSpawnedRobotsInOpenShift.mockResolvedValue([]);
     mockOpenUrlInBrowser.mockResolvedValue(undefined);
   });
 
@@ -239,5 +248,82 @@ describe('OpenShiftSimulation', () => {
     await waitFor(() => {
       expect(mockDeleteOpenShiftDeployment).toHaveBeenCalledWith('sgahlot-pd-extn', 'ros2-jazzy-sim');
     });
+  });
+
+  it('seeds the Cluster URL field from the context (S8-10)', async () => {
+    mockGetOpenShiftContext.mockResolvedValue({
+      context: 'ctx',
+      kubeconfigPath: '/k/config',
+      namespace: 'sgahlot-pd-extn',
+      clusterUrl: 'https://api.cluster.example.com:6443',
+    });
+
+    render(DeployOpenShift);
+    const input = (await screen.findByLabelText('Cluster URL')) as HTMLInputElement;
+    expect(input.value).toBe('https://api.cluster.example.com:6443');
+  });
+
+  it('falls back to the configured default namespace when the context sets none (S8-16)', async () => {
+    mockGetOpenShiftContext.mockResolvedValue({ context: 'ctx', kubeconfigPath: '/k/config' });
+    mockGetDefaultOpenShiftNamespace.mockResolvedValue('my-team-dev');
+
+    render(DeployOpenShift);
+    const input = (await screen.findByLabelText('Project / namespace')) as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe('my-team-dev'));
+  });
+
+  it("never overrides the context's own namespace with the configured default (S8-16)", async () => {
+    mockGetOpenShiftContext.mockResolvedValue({
+      context: 'ctx',
+      kubeconfigPath: '/k/config',
+      namespace: 'sgahlot-pd-extn',
+    });
+    mockGetDefaultOpenShiftNamespace.mockResolvedValue('should-not-be-used');
+
+    render(DeployOpenShift);
+    const input = (await screen.findByLabelText('Project / namespace')) as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe('sgahlot-pd-extn'));
+  });
+
+  it('disables Deploy and shows a banner when not logged in to OpenShift (S8-11)', async () => {
+    mockCheckOpenShiftLogin.mockResolvedValue({
+      loggedIn: false,
+      message: 'Not logged in to OpenShift — run `oc login` first.',
+    });
+
+    render(DeployOpenShift);
+    expect(await screen.findByText(/Not logged in to OpenShift/)).toBeTruthy();
+    const deployBtn = screen.getByRole('button', { name: 'Deploy' }) as HTMLButtonElement;
+    expect(deployBtn.disabled).toBe(true);
+  });
+
+  it('reflects a robot already running in a ready workload without a manual spawn (S8-17)', async () => {
+    mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
+    mockListSpawnedRobotsInOpenShift.mockResolvedValue(['robot_1']);
+
+    render(DeployOpenShift);
+    await screen.findByText('ros2-jazzy-sim');
+
+    await waitFor(() => {
+      expect(mockListSpawnedRobotsInOpenShift).toHaveBeenCalledWith('sgahlot-pd-extn', 'ros2-jazzy-sim');
+    });
+    expect(await screen.findByText('robot_1')).toBeTruthy();
+  });
+
+  it('does not duplicate or reset a reconciled robot on a second refresh (S8-17)', async () => {
+    mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
+    mockListSpawnedRobotsInOpenShift.mockResolvedValue(['robot_1']);
+
+    render(DeployOpenShift);
+    await screen.findByText('robot_1');
+    expect(mockListSpawnedRobotsInOpenShift).toHaveBeenCalledTimes(1);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(mockListOpenShiftDeployments).toHaveBeenCalledTimes(2));
+
+    // Reconciliation runs at most once per workload — a second refresh must not
+    // re-probe or duplicate the entry.
+    expect(mockListSpawnedRobotsInOpenShift).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByText('robot_1')).toHaveLength(1);
   });
 });
