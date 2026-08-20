@@ -415,8 +415,13 @@ _pai_gui_supervisor() {
     if [[ "${GUI_GPU}" == "1" ]] && [[ -n "${PHYSICAL_AI_GUI_RESTART_SEC}" ]] \
        && (( $(date +%s) - gui_started >= PHYSICAL_AI_GUI_RESTART_SEC )); then
       echo "[gazebo] Proactively recycling GPU GUI after ${PHYSICAL_AI_GUI_RESTART_SEC}s (APPENG-6110 mitigation for the NVIDIA sustained-EGL leak)..."
-      kill "${GZ_GUI_PID}" 2>/dev/null
-      wait "${GZ_GUI_PID}" 2>/dev/null
+      # `wait` on a SIGTERM'd process returns its exit status (143, non-zero); under
+      # this script's `set -eo pipefail` (inherited by this backgrounded subshell), a
+      # bare non-zero return here would silently kill the whole supervisor loop before
+      # it ever relaunches the GUI — exactly what happened in the first validation run
+      # (one recycle log line, then the GUI stayed dead with nothing left to catch it).
+      kill "${GZ_GUI_PID}" 2>/dev/null || true
+      wait "${GZ_GUI_PID}" 2>/dev/null || true
       _pai_launch_gui
       gui_started=$(date +%s)
     fi
