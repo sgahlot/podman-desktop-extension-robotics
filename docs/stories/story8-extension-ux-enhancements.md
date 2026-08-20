@@ -121,6 +121,10 @@ Needed backend type additions (`BuildProgress`/`PushProgress` in
   `grep`/`cat` treat the file as binary and silently return nothing (use `rg --text`
   or the editor's read). Worth stripping in a small cleanup commit — it has bitten
   tooling more than once.
+- **"Nav2 warming…" indicator is easy to miss** (found during Batch A live testing,
+  2026-08-20) — small, same-weight text next to the Remove button in the robot row
+  (`RobotControls.svelte`). Make it a bit more prominent (size/weight/badge styling)
+  so it's not overlooked while a robot is mid-warm-up.
 
 ---
 
