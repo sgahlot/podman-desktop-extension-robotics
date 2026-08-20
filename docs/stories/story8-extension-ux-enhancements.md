@@ -5,13 +5,17 @@
 > E **APPENG-6107** · F **APPENG-6108**. These items were noticed during dogfooding of the
 > extension (Image Builder, Simulation → OpenShift, robot spawn/Nav2).
 >
-> **Branch:** `feature/extension-ux-enhancements` (based on
-> `feature/APPENG-6083-vgl-gpu-gui`, so it builds on the namespace-from-context change
-> without conflicting on `OpenShiftSimulation.svelte`).
+> **Branches:** one per sub-task/batch, named after its Jira key — Batch A on
+> `feature/APPENG-6103-quick-ui-wins` (holds `519364f`), later batches on
+> `feature/APPENG-6105-…`, `feature/APPENG-6104-…`, etc. Each is based on the merged
+> state of `main` (which already carries the namespace-from-context change from
+> `APPENG-6083`); where batches touch the same files (e.g. `OpenShiftSimulation.svelte`)
+> a later batch stacks on the prior one until it merges.
 >
 > **Status:** in progress. **Batch A (S8-1…S8-5) done** — committed `519364f` on this branch,
 > frontend suite 88/88 green. (APPENG-6083 GPU validation since completed + merged to `main`.)
-> Next up per the suggested order: **Batch C** (S8-10 cluster URL, S8-11 `oc whoami`).
+> Next up per the suggested order: **Batch C** (S8-10 cluster URL, S8-11 `oc whoami`,
+> S8-16 default-namespace setting, S8-17 reflect already-spawned robots).
 
 ---
 
@@ -77,6 +81,8 @@ Needs backend type additions (`BuildProgress`/`PushProgress` in
 | ✅ | S8-C0 | Namespace configurable | **Done** on `feature/APPENG-6083-vgl-gpu-gui`: the deploy namespace seeds from the current kube context and is editable. (Baseline for S8-10.) | `OpenShiftDeploy.ts`, `api-impl.ts`, `OpenShiftSimulation.svelte` |
 | ⚪ | S8-10 | Cluster URL override | Show the current cluster server URL (from kubeconfig / `oc whoami --show-server`) as the default and let the user override it with a full cluster URL — same editable pattern as the namespace. Add a `server` field to `OpenShiftContext`, parse it in `getOpenShiftContext`, surface it in the Cluster card + as an editable field, and target it on deploy. | `OpenShiftDeploy.ts` (53-62), `api-impl.ts` (`getOpenShiftContext` 1601-1618), `OpenShiftSimulation.svelte` (context card 280-293) |
 | ⚪ | S8-11 | `oc whoami` pre-check | Before enabling deploy/spawn on the OpenShift tab, run and verify `oc whoami` (greenfield — no `oc whoami` plumbing exists) so we fail early with a clear "not logged in" message instead of a failed deploy. | `api-impl.ts` (follow `process.exec('oc', …)` pattern ~1652), `OpenShiftSimulation.svelte` |
+| ⚪ | S8-16 | Default namespace via extension setting | The deploy namespace still falls back to `default` when the kube context carries no namespace, so the workloads list shows "no deployments in this namespace" until the user types the right one. Add an extension **setting** for the default namespace: keep reading the kubeconfig context, but use the configured setting as the default value when the context has none (setting overrides the `default` fallback, not an explicit context namespace). | Preferences/settings, `api-impl.ts` (`getOpenShiftContext` / `getDefaultNamespace`), `OpenShiftSimulation.svelte` |
+| ⚪ | S8-17 | Reflect already-spawned robots | After a pod restart or an extension reload, the UI forgets robots spawned earlier (e.g. `robot_1`) — spawn/warm state lives only in frontend memory. Reconcile on load/refresh by detecting robots actually present in the running sim (ROS graph / `gz model --list` or topic probe) and render them with their real warm state, instead of assuming none. | `OpenShiftSimulation.svelte`, `RobotControls.svelte`, `api-impl.ts` (new "list spawned robots" probe) |
 
 <a id="s8-quickstart"></a>
 
@@ -120,7 +126,7 @@ Needs backend type additions (`BuildProgress`/`PushProgress` in
 ## Suggested order
 
 1. **Batch A** (S8-1…S8-5) — quick wins, no GPU. ✅ done (`519364f`)
-2. **Batch C** (S8-10 cluster URL, S8-11 `oc whoami`) — builds on the namespace work. ← next
+2. **Batch C** (S8-10 cluster URL, S8-11 `oc whoami`, S8-16 default-namespace setting, S8-17 reflect already-spawned robots) — builds on the namespace work. ← next
 3. **Batch B** (S8-6…S8-9) — build/push observability (backend type changes).
 4. **Batch D** (S8-12) — SIM-only build path.
 5. **Batch E** (S8-13) — layout config (prototype variants first).
