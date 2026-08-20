@@ -285,6 +285,34 @@ describe('OpenShiftSimulation', () => {
     await waitFor(() => expect(input.value).toBe('sgahlot-pd-extn'));
   });
 
+  it("falls back to the configured default when the context's namespace is the generic 'default' project (S8-16)", async () => {
+    // `oc login` commonly sets namespace: default explicitly rather than leaving it
+    // unset — this must be treated the same as "no namespace bound", not as a real signal.
+    mockGetOpenShiftContext.mockResolvedValue({
+      context: 'ctx',
+      kubeconfigPath: '/k/config',
+      namespace: 'default',
+    });
+    mockGetDefaultOpenShiftNamespace.mockResolvedValue('sgahlot-pd-extn');
+
+    render(DeployOpenShift);
+    const input = (await screen.findByLabelText('Project / namespace')) as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe('sgahlot-pd-extn'));
+  });
+
+  it("keeps the context's 'default' namespace when no override is configured (S8-16)", async () => {
+    mockGetOpenShiftContext.mockResolvedValue({
+      context: 'ctx',
+      kubeconfigPath: '/k/config',
+      namespace: 'default',
+    });
+    mockGetDefaultOpenShiftNamespace.mockResolvedValue('');
+
+    render(DeployOpenShift);
+    const input = (await screen.findByLabelText('Project / namespace')) as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe('default'));
+  });
+
   it('disables Deploy and shows a banner when not logged in to OpenShift (S8-11)', async () => {
     mockCheckOpenShiftLogin.mockResolvedValue({
       loggedIn: false,

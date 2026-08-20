@@ -13,7 +13,8 @@ let context: OpenShiftContext | undefined = undefined;
 let name = 'ros2-jazzy-sim';
 /** Seeded from the current kube context's namespace on mount (see onMount); editable.
  * Falls back to the physical-ai.defaultOpenShiftNamespace setting when the context sets
- * none (S8-16), instead of silently defaulting to 'default'. */
+ * none, or sets it to the generic 'default' project (S8-16), instead of silently landing
+ * on 'default'. */
 let namespace = '';
 /**
  * Seeded from the current kube context's cluster server URL on mount (see onMount);
@@ -72,17 +73,23 @@ onMount(async () => {
     if (context?.clusterUrl) clusterUrl = context.clusterUrl;
     // Seed the namespace from the current context so the user targets the project
     // they're already logged into, rather than a baked-in default. Still editable.
-    if (context?.namespace) {
+    // A context namespace of literally 'default' is treated the same as "not bound" —
+    // `oc login` commonly sets it explicitly even when the user hasn't picked a real
+    // project (`oc project <ns>`), so treating it as a real signal defeats S8-16's
+    // fallback entirely for the exact case it was meant to fix.
+    if (context?.namespace && context.namespace !== 'default') {
       namespace = context.namespace;
     } else {
-      // Context has no namespace bound — fall back to the configured default (S8-16)
-      // rather than silently defaulting to 'default', which showed a confusing
-      // "no deployments in this namespace" until the user typed the right one.
+      // No real namespace bound — fall back to the configured default (S8-16) rather
+      // than silently landing on 'default', which showed a confusing "no deployments
+      // in this namespace" until the user typed the right one. If no override is
+      // configured either, fall back to whatever the context did specify (even
+      // 'default') rather than leaving the field blank.
       try {
         const fallback = await physicalAiClient.getDefaultOpenShiftNamespace();
-        if (fallback) namespace = fallback;
+        namespace = fallback || context?.namespace || namespace;
       } catch {
-        // keep the built-in default
+        namespace = context?.namespace || namespace;
       }
     }
   } catch {
