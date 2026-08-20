@@ -48,10 +48,11 @@ Drivers:
 | [Story 6](#story-6) | Podman-only simulation workflow (ROSCon demo) | 🟡 In Progress | 5/6 done — **demo path complete; S6-6 deferred** |
 | [FIX](#fix-arch-aware-sim) | Make simulation image build arch-aware | ✅ Done | Naming + labels fixed; GPU passthrough + Sensors re-enabled (2026-08) |
 | [Security](#security-hardening) | Security hardening | ✅ Done | Shell injection, exec/launch lockdown, image trust, defense-in-depth + follow-up fixes |
+| [APPENG-6102](#story-8) | Extension UX enhancements & configurability | 🟡 In Progress | Batch A + B done; Batch C (namespace/cluster config, robot-state reconciliation) next |
 
 > **Legend:** ✅ Done · 🟠 In Review · 🟡 In Progress / Almost Done · ⚪ Not Started · 🅿️ Parked · 🔴 Must fix
 
-**Last updated:** 2026-08-17
+**Last updated:** 2026-08-20
 
 ---
 
@@ -677,6 +678,27 @@ Comprehensive security audit and hardening of the extension's backend API, entry
 | **New test coverage (R8)** | `SimulationPage.spec.ts`, `SimulationSetup.spec.ts`, `BuildPushPanel.spec.ts` |
 
 **Deferred:** L1 (host asset substitution — local/supply-chain, not UI injection); I1 (ROBOTS env — validated by `assertRobotsEnv`).
+
+---
+
+<a id="story-8"></a>
+
+### Story 8: Extension UX enhancements & configurability — 🟡 In Progress
+
+> **Detail doc:** [stories/story8-extension-ux-enhancements.md](stories/story8-extension-ux-enhancements.md)
+>
+> Jira: Story **APPENG-6102** (epic APPENG-5763), one sub-task per batch (A–F, APPENG-6103–6108).
+> A grab-bag of UX polish, feedback/observability, and configurability improvements noticed
+> during dogfooding, plus two larger forward-looking features (layout config, project wizard).
+
+| Batch | Summary | Status |
+|-------|---------|--------|
+| A — Quick UI wins | Deploy in-progress status, Remove-during-warmup, deploy-banner cleanup, route-readiness gating | ✅ Done |
+| B — Build/push observability | Stale-log labeling, log timestamps, build/push duration, collapsible Image Builder sections | ✅ Done |
+| C — OpenShift configurability & safety | Cluster URL override, `oc whoami` pre-check, default-namespace setting, reflect already-spawned robots | ⚪ Not Started (next) |
+| D — Image Builder flow | SIM-only build path without full Quick Start | ⚪ Not Started |
+| E — Layout config | Selectable Sidebar / Horizontal tabs / Cards navigation | ⚪ Not Started |
+| F — Secure base images → wizard | Hummingbird/bootc feasibility spike, then a project wizard for layers/worlds/robots | ⚪ Not Started (design/vision) |
 
 ---
 
