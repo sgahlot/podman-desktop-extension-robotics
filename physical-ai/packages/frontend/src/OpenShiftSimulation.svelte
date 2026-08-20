@@ -16,12 +16,15 @@ let name = 'ros2-jazzy-sim';
  * none, or sets it to the generic 'default' project (S8-16), instead of silently landing
  * on 'default'. */
 let namespace = '';
+/** Every context available in the kubeconfig (S8-10), for the cluster picker. */
+let kubeContexts: { name: string; clusterUrl?: string; namespace?: string }[] = [];
 /**
- * Seeded from the current kube context's cluster server URL on mount (see onMount);
- * editable for display/reference only (S8-10) — does not retarget deploy/oc calls, which
- * still use the kubeconfig's current context (see OpenShiftContext.clusterUrl doc).
+ * Context name to deploy into and target with every cluster operation (S8-10) — defaults
+ * to the kubeconfig's current-context on mount, editable via the Cluster picker.
+ * Switching it re-seeds namespace/login status and refreshes the workload list for the
+ * newly selected cluster (see onContextChange).
  */
-let clusterUrl = '';
+let selectedContext = '';
 let loggedIn = true;
 let loginMessage = '';
 let image = 'quay.io/ecosystem-appeng/ros2-jazzy-sim:noble-amd64';
@@ -64,41 +67,43 @@ let robotsByWorkload: Record<string, RobotEntry[]> = {};
 let reconciledWorkloads = new Set<string>();
 let warmTimer: ReturnType<typeof setInterval> | null = null;
 
-$: config = { name, namespace, image, useGpu, cpu, gpuToleration: useGpu ? gpuToleration : undefined };
+$: config = {
+  name,
+  namespace,
+  image,
+  useGpu,
+  cpu,
+  gpuToleration: useGpu ? gpuToleration : undefined,
+  context: selectedContext || undefined,
+};
 $: canDeploy = !!context && !!name && !!namespace && !!image && !deploying && loggedIn;
 
-onMount(async () => {
-  try {
-    context = await physicalAiClient.getOpenShiftContext();
-    if (context?.clusterUrl) clusterUrl = context.clusterUrl;
-    // Seed the namespace from the current context so the user targets the project
-    // they're already logged into, rather than a baked-in default. Still editable.
-    // A context namespace of literally 'default' is treated the same as "not bound" —
-    // `oc login` commonly sets it explicitly even when the user hasn't picked a real
-    // project (`oc project <ns>`), so treating it as a real signal defeats S8-16's
-    // fallback entirely for the exact case it was meant to fix.
-    if (context?.namespace && context.namespace !== 'default') {
-      namespace = context.namespace;
-    } else {
-      // No real namespace bound — fall back to the configured default (S8-16) rather
-      // than silently landing on 'default', which showed a confusing "no deployments
-      // in this namespace" until the user typed the right one. If no override is
-      // configured either, fall back to whatever the context did specify (even
-      // 'default') rather than leaving the field blank.
-      try {
-        const fallback = await physicalAiClient.getDefaultOpenShiftNamespace();
-        namespace = fallback || context?.namespace || namespace;
-      } catch {
-        namespace = context?.namespace || namespace;
-      }
-    }
-  } catch {
-    context = undefined;
+/**
+ * Seeds `namespace` from a context's namespace, applying the same "'default' means
+ * unbound" + configured-fallback logic (S8-16) whether it's the initial context on
+ * mount or a cluster the user just switched to (onContextChange) — `oc login`
+ * commonly sets `namespace: default` explicitly even when the user hasn't picked a
+ * real project (`oc project <ns>`), so treating it as a real signal defeats the
+ * fallback entirely for the exact case it was meant to fix.
+ */
+async function seedNamespaceFromContext(ctxNamespace: string | undefined) {
+  if (ctxNamespace && ctxNamespace !== 'default') {
+    namespace = ctxNamespace;
+    return;
   }
-  // Pre-check oc login (S8-11) so Deploy/Spawn fail early with a clear message
-  // instead of a confusing mid-deploy oc error.
   try {
-    const login = await physicalAiClient.checkOpenShiftLogin();
+    const fallback = await physicalAiClient.getDefaultOpenShiftNamespace();
+    namespace = fallback || ctxNamespace || namespace;
+  } catch {
+    namespace = ctxNamespace || namespace;
+  }
+}
+
+/** Pre-check oc login (S8-11) for the selected context, so Deploy/Spawn fail early
+ * with a clear message instead of a confusing mid-deploy oc error. */
+async function refreshLoginStatus() {
+  try {
+    const login = await physicalAiClient.checkOpenShiftLogin(selectedContext || undefined);
     loggedIn = login.loggedIn;
     loginMessage = login.message ?? '';
   } catch {
@@ -107,6 +112,31 @@ onMount(async () => {
     loggedIn = true;
     loginMessage = '';
   }
+}
+
+/** Re-seed namespace/login status and refresh the workload list for the cluster the
+ * user just picked from the Cluster dropdown (S8-10). */
+async function onContextChange() {
+  const entry = kubeContexts.find(c => c.name === selectedContext);
+  await seedNamespaceFromContext(entry?.namespace);
+  await refreshLoginStatus();
+  await refreshWorkloads();
+}
+
+onMount(async () => {
+  try {
+    context = await physicalAiClient.getOpenShiftContext();
+    if (context) selectedContext = context.context;
+    await seedNamespaceFromContext(context?.namespace);
+  } catch {
+    context = undefined;
+  }
+  try {
+    kubeContexts = await physicalAiClient.listKubeContexts();
+  } catch {
+    kubeContexts = [];
+  }
+  await refreshLoginStatus();
   // Seed the CPU field from the configurable default (still editable per deploy).
   try {
     cpu = await physicalAiClient.getDefaultSoftwareRenderCpus();
@@ -214,7 +244,7 @@ async function refreshWorkloads(opts?: { silent?: boolean }) {
     listError = '';
   }
   try {
-    workloads = await physicalAiClient.listOpenShiftDeployments(namespace);
+    workloads = await physicalAiClient.listOpenShiftDeployments(namespace, selectedContext || undefined);
     listError = '';
     // Drop robot state for deployments that no longer exist; seed the rest.
     const names = new Set(workloads.map(w => w.name));
@@ -261,7 +291,7 @@ async function refreshWorkloads(opts?: { silent?: boolean }) {
 async function reconcileRobots(w: OpenShiftWorkload) {
   let names: string[];
   try {
-    names = await physicalAiClient.listSpawnedRobotsInOpenShift(w.namespace, w.name);
+    names = await physicalAiClient.listSpawnedRobotsInOpenShift(w.namespace, w.name, selectedContext || undefined);
   } catch {
     return;
   }
@@ -286,7 +316,7 @@ async function reconcileRobots(w: OpenShiftWorkload) {
 async function remove(w: OpenShiftWorkload) {
   deletingName = w.name;
   try {
-    await physicalAiClient.deleteOpenShiftDeployment(w.namespace, w.name);
+    await physicalAiClient.deleteOpenShiftDeployment(w.namespace, w.name, selectedContext || undefined);
     // Clear this deployment's robot list and the stale result panel.
     delete robotsByWorkload[w.name];
     reconciledWorkloads.delete(w.name);
@@ -304,7 +334,15 @@ async function remove(w: OpenShiftWorkload) {
 }
 
 async function spawnRobot(w: OpenShiftWorkload, form: { name: string; x: string; y: string; yaw: string }) {
-  await physicalAiClient.spawnRobotInOpenShift(w.namespace, w.name, form.name, form.x, form.y, form.yaw);
+  await physicalAiClient.spawnRobotInOpenShift(
+    w.namespace,
+    w.name,
+    form.name,
+    form.x,
+    form.y,
+    form.yaw,
+    selectedContext || undefined,
+  );
   robotsByWorkload[w.name] = [
     ...(robotsByWorkload[w.name] ?? []),
     {
@@ -335,6 +373,7 @@ async function navigateRobot(w: OpenShiftWorkload, index: number) {
       robot.name,
       Number(robot.navTarget.x),
       Number(robot.navTarget.y),
+      selectedContext || undefined,
     );
     robots[index] = {
       ...robots[index],
@@ -351,7 +390,7 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
   const robots = robotsByWorkload[w.name];
   const robot = robots?.[index];
   if (!robot) return;
-  await physicalAiClient.despawnRobotInOpenShift(w.namespace, w.name, robot.name);
+  await physicalAiClient.despawnRobotInOpenShift(w.namespace, w.name, robot.name, selectedContext || undefined);
   robotsByWorkload[w.name] = robots.filter((_, i) => i !== index);
   robotsByWorkload = robotsByWorkload;
 }
@@ -375,15 +414,16 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
           <div class="opacity-70 font-mono break-all">{context.kubeconfigPath}</div>
           <div class="flex flex-col gap-1">
             <label for="dep-cluster-url" class="text-xs text-[var(--pd-content-text)]">Cluster URL</label>
-            <input
+            <select
               id="dep-cluster-url"
-              bind:value={clusterUrl}
+              bind:value={selectedContext}
+              on:change={onContextChange}
               disabled={deploying}
-              placeholder="e.g. https://api.cluster.example.com:6443"
-              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
-            <span class="text-xs pai-text-muted">
-              Informational only — deploy still targets the kubeconfig's current context, not this value.
-            </span>
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono">
+              {#each kubeContexts as ctx}
+                <option value={ctx.name}>{ctx.clusterUrl ?? ctx.name}</option>
+              {/each}
+            </select>
           </div>
         </div>
       {:else}

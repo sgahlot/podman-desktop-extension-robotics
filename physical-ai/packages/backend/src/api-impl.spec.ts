@@ -2180,6 +2180,36 @@ describe('PhysicalAiApiImpl', () => {
       });
     });
 
+    describe('listKubeContexts', () => {
+      it('lists every context in the kubeconfig with its namespace and cluster URL', async () => {
+        mockKubeconfig(CONTEXT, 'my-project', 'https://api.cluster.example.com:6443');
+        const contexts = await api.listKubeContexts();
+        expect(contexts).toEqual([
+          { name: CONTEXT, clusterUrl: 'https://api.cluster.example.com:6443', namespace: 'my-project' },
+          { name: 'other-context', clusterUrl: 'https://decoy.example.com:6443', namespace: 'decoy-ns' },
+        ]);
+      });
+
+      it('leaves clusterUrl undefined for a context whose cluster cannot be resolved', async () => {
+        mockKubeconfig(CONTEXT, 'my-project');
+        const contexts = await api.listKubeContexts();
+        expect(contexts.find(c => c.name === CONTEXT)?.clusterUrl).toBeUndefined();
+      });
+
+      it('returns [] when there is no contexts: block', async () => {
+        mockKubeconfig();
+        expect(await api.listKubeContexts()).toEqual([]);
+      });
+
+      it('returns [] when the kubeconfig cannot be read', async () => {
+        vi.mocked(extensionApi.kubernetes.getKubeconfig).mockReturnValue({
+          fsPath: KUBECONFIG_PATH,
+        } as unknown as extensionApi.Uri);
+        vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
+        expect(await api.listKubeContexts()).toEqual([]);
+      });
+    });
+
     describe('checkOpenShiftLogin', () => {
       it('reports logged in when oc whoami resolves with a user', async () => {
         vi.mocked(extensionApi.process.exec).mockResolvedValue({
@@ -2219,6 +2249,26 @@ describe('PhysicalAiApiImpl', () => {
         const result = await api.checkOpenShiftLogin();
         expect(result.loggedIn).toBe(false);
         expect(result.message).toMatch(/OpenShift CLI/);
+      });
+
+      it('passes --context when a context is provided (S8-10)', async () => {
+        vi.mocked(extensionApi.process.exec).mockResolvedValue({
+          stdout: 'sgahlot\n',
+          stderr: '',
+          command: 'oc',
+        } as extensionApi.RunResult);
+        await api.checkOpenShiftLogin('other-context');
+        expect(extensionApi.process.exec).toHaveBeenCalledWith('oc', ['--context', 'other-context', 'whoami']);
+      });
+
+      it('omits --context when none is provided', async () => {
+        vi.mocked(extensionApi.process.exec).mockResolvedValue({
+          stdout: 'sgahlot\n',
+          stderr: '',
+          command: 'oc',
+        } as extensionApi.RunResult);
+        await api.checkOpenShiftLogin();
+        expect(extensionApi.process.exec).toHaveBeenCalledWith('oc', ['whoami']);
       });
     });
 
@@ -2277,6 +2327,23 @@ describe('PhysicalAiApiImpl', () => {
         mockKubeconfig(CONTEXT);
         await expect(api.deployToOpenShift({ ...CONFIG, name: 'BAD_NAME' })).rejects.toThrow();
         expect(extensionApi.kubernetes.createResources).not.toHaveBeenCalled();
+      });
+
+      it("targets config.context over the kubeconfig's current-context when set (S8-10)", async () => {
+        mockKubeconfig(CONTEXT);
+        vi.mocked(extensionApi.kubernetes.createResources).mockResolvedValue(undefined);
+        vi.mocked(extensionApi.process.exec).mockResolvedValue({
+          stdout: '',
+          stderr: '',
+          command: 'oc',
+        } as extensionApi.RunResult);
+
+        await api.deployToOpenShift({ ...CONFIG, context: 'other-context' });
+
+        const createCall = vi.mocked(extensionApi.kubernetes.createResources).mock.calls[0];
+        expect(createCall[0]).toBe('other-context');
+        const routeArgs = vi.mocked(extensionApi.process.exec).mock.calls[0][1] as string[];
+        expect(routeArgs.slice(0, 2)).toEqual(['--context', 'other-context']);
       });
     });
 
@@ -2349,6 +2416,17 @@ describe('PhysicalAiApiImpl', () => {
       it('rejects an invalid namespace', async () => {
         await expect(api.listOpenShiftDeployments('BAD NS')).rejects.toThrow(/namespace/i);
       });
+
+      it('passes --context when a context is provided (S8-10)', async () => {
+        vi.mocked(extensionApi.process.exec).mockResolvedValue({
+          stdout: JSON.stringify({ items: [] }),
+          stderr: '',
+          command: 'oc',
+        } as extensionApi.RunResult);
+        await api.listOpenShiftDeployments('sgahlot-pd-extn', 'other-context');
+        const listArgs = vi.mocked(extensionApi.process.exec).mock.calls[0][1] as string[];
+        expect(listArgs.slice(0, 2)).toEqual(['--context', 'other-context']);
+      });
     });
 
     describe('deleteOpenShiftDeployment', () => {
@@ -2372,6 +2450,25 @@ describe('PhysicalAiApiImpl', () => {
       it('rejects an invalid name before running oc', async () => {
         await expect(api.deleteOpenShiftDeployment('sgahlot-pd-extn', 'BAD NAME')).rejects.toThrow();
         expect(extensionApi.process.exec).not.toHaveBeenCalled();
+      });
+
+      it('passes --context when a context is provided (S8-10)', async () => {
+        vi.mocked(extensionApi.process.exec).mockResolvedValue({
+          stdout: '',
+          stderr: '',
+          command: 'oc',
+        } as extensionApi.RunResult);
+        await api.deleteOpenShiftDeployment('sgahlot-pd-extn', 'ros2-jazzy-sim', 'other-context');
+        expect(extensionApi.process.exec).toHaveBeenCalledWith('oc', [
+          '--context',
+          'other-context',
+          'delete',
+          'deployment,service,route',
+          'ros2-jazzy-sim',
+          '-n',
+          'sgahlot-pd-extn',
+          '--ignore-not-found',
+        ]);
       });
     });
 
@@ -2528,7 +2625,8 @@ describe('PhysicalAiApiImpl', () => {
       function mockOc(nodeListStdout: string, options?: { image?: string; exitCode?: number }) {
         const image = options?.image ?? 'quay.io/ns/ros2-jazzy-sim:noble-amd64';
         vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
-          const a = args as string[];
+          // Skip an optional leading `--context <name>` pair (S8-10) before checking the subcommand.
+          const a = ((args as string[])[0] === '--context' ? (args as string[]).slice(2) : args) as string[];
           if (a[0] === 'get' && a[1] === 'deployment') {
             return { stdout: image, stderr: '', command: 'oc' } as extensionApi.RunResult;
           }
@@ -2570,6 +2668,16 @@ describe('PhysicalAiApiImpl', () => {
       it('dedupes multiple nodes under the same robot namespace', async () => {
         mockOc('/robot_1/a\n/robot_1/b\n/robot_1/c\n');
         expect(await api.listSpawnedRobotsInOpenShift(NS, NAME)).toEqual(['robot_1']);
+      });
+
+      it('passes --context to every oc invocation (image lookup, pod lookup, exec) when provided (S8-10)', async () => {
+        mockOc('/robot_1/a\n');
+        await api.listSpawnedRobotsInOpenShift(NS, NAME, 'other-context');
+        const calls = vi.mocked(extensionApi.process.exec).mock.calls;
+        expect(calls).toHaveLength(3); // get deployment, get pods, exec
+        for (const call of calls) {
+          expect((call[1] as string[]).slice(0, 2)).toEqual(['--context', 'other-context']);
+        }
       });
     });
 

@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import DeployOpenShift from './OpenShiftSimulation.svelte';
 
 const mockGetOpenShiftContext = vi.fn();
+const mockListKubeContexts = vi.fn();
 const mockGetDefaultNamespace = vi.fn();
 const mockGetDefaultOpenShiftNamespace = vi.fn();
 const mockCheckOpenShiftLogin = vi.fn();
@@ -21,6 +22,7 @@ const mockGoto = vi.fn();
 vi.mock('./api/client', () => ({
   physicalAiClient: {
     getOpenShiftContext: (...args: unknown[]) => mockGetOpenShiftContext(...args),
+    listKubeContexts: (...args: unknown[]) => mockListKubeContexts(...args),
     getDefaultNamespace: (...args: unknown[]) => mockGetDefaultNamespace(...args),
     getDefaultOpenShiftNamespace: (...args: unknown[]) => mockGetDefaultOpenShiftNamespace(...args),
     checkOpenShiftLogin: (...args: unknown[]) => mockCheckOpenShiftLogin(...args),
@@ -63,6 +65,7 @@ describe('OpenShiftSimulation', () => {
       kubeconfigPath: '/k/config',
       namespace: 'sgahlot-pd-extn',
     });
+    mockListKubeContexts.mockResolvedValue([{ name: 'ctx', namespace: 'sgahlot-pd-extn' }]);
     mockGetDefaultNamespace.mockResolvedValue('sgahlot-pd-extn');
     mockGetDefaultOpenShiftNamespace.mockResolvedValue('');
     mockCheckOpenShiftLogin.mockResolvedValue({ loggedIn: true });
@@ -175,6 +178,7 @@ describe('OpenShiftSimulation', () => {
         '-2.0',
         '-0.5',
         '0.0',
+        'ctx',
       );
 
       // Jazzy spawn is optimistically 'warming' → Navigate hidden until warm.
@@ -191,6 +195,7 @@ describe('OpenShiftSimulation', () => {
         'robot_1',
         2.0,
         0.5,
+        'ctx',
       );
       expect(screen.getByText(/Reached/)).toBeTruthy();
     } finally {
@@ -246,21 +251,52 @@ describe('OpenShiftSimulation', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => {
-      expect(mockDeleteOpenShiftDeployment).toHaveBeenCalledWith('sgahlot-pd-extn', 'ros2-jazzy-sim');
+      expect(mockDeleteOpenShiftDeployment).toHaveBeenCalledWith('sgahlot-pd-extn', 'ros2-jazzy-sim', 'ctx');
     });
   });
 
-  it('seeds the Cluster URL field from the context (S8-10)', async () => {
+  it('populates the Cluster picker from kubeconfig contexts, defaulting to the current one (S8-10)', async () => {
     mockGetOpenShiftContext.mockResolvedValue({
       context: 'ctx',
       kubeconfigPath: '/k/config',
       namespace: 'sgahlot-pd-extn',
       clusterUrl: 'https://api.cluster.example.com:6443',
     });
+    mockListKubeContexts.mockResolvedValue([
+      { name: 'ctx', clusterUrl: 'https://api.cluster.example.com:6443', namespace: 'sgahlot-pd-extn' },
+      { name: 'other-ctx', clusterUrl: 'https://api.other-cluster.example.com:6443', namespace: 'other-ns' },
+    ]);
 
     render(DeployOpenShift);
-    const input = (await screen.findByLabelText('Cluster URL')) as HTMLInputElement;
-    expect(input.value).toBe('https://api.cluster.example.com:6443');
+    const select = (await screen.findByLabelText('Cluster URL')) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('ctx'));
+    expect(screen.getByText('https://api.cluster.example.com:6443')).toBeTruthy();
+    expect(screen.getByText('https://api.other-cluster.example.com:6443')).toBeTruthy();
+  });
+
+  it('switching the Cluster picker re-checks login and re-targets the workload list (S8-10)', async () => {
+    mockGetOpenShiftContext.mockResolvedValue({
+      context: 'ctx',
+      kubeconfigPath: '/k/config',
+      namespace: 'sgahlot-pd-extn',
+    });
+    mockListKubeContexts.mockResolvedValue([
+      { name: 'ctx', namespace: 'sgahlot-pd-extn' },
+      { name: 'other-ctx', namespace: 'other-ns' },
+    ]);
+
+    render(DeployOpenShift);
+    const select = (await screen.findByLabelText('Cluster URL')) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('ctx'));
+    mockCheckOpenShiftLogin.mockClear();
+    mockListOpenShiftDeployments.mockClear();
+
+    await fireEvent.change(select, { target: { value: 'other-ctx' } });
+
+    await waitFor(() => {
+      expect(mockCheckOpenShiftLogin).toHaveBeenCalledWith('other-ctx');
+      expect(mockListOpenShiftDeployments).toHaveBeenCalledWith('other-ns', 'other-ctx');
+    });
   });
 
   it('falls back to the configured default namespace when the context sets none (S8-16)', async () => {
@@ -333,7 +369,7 @@ describe('OpenShiftSimulation', () => {
     await screen.findByText('ros2-jazzy-sim');
 
     await waitFor(() => {
-      expect(mockListSpawnedRobotsInOpenShift).toHaveBeenCalledWith('sgahlot-pd-extn', 'ros2-jazzy-sim');
+      expect(mockListSpawnedRobotsInOpenShift).toHaveBeenCalledWith('sgahlot-pd-extn', 'ros2-jazzy-sim', 'ctx');
     });
     expect(await screen.findByText('robot_1')).toBeTruthy();
   });
