@@ -19,6 +19,28 @@ let namespace = '';
 /** Every context available in the kubeconfig (S8-10), for the cluster picker. */
 let kubeContexts: { name: string; clusterUrl?: string; namespace?: string }[] = [];
 /**
+ * Projects/namespaces visible on the targeted cluster (S8-21), for the Project/namespace
+ * field's type-to-filter combobox. Empty when listing fails (not logged in, `oc`
+ * missing) — the field still works as free-text in that case, it just has no suggestions.
+ */
+let openShiftProjects: string[] = [];
+/**
+ * Custom combobox state for the Project/namespace field (S8-21). A native
+ * `<input list>`/`<datalist>` renders misaligned and with an uncontrollable height in
+ * the Podman Desktop (Electron) webview, so suggestions are rendered as a positioned,
+ * height-capped menu instead (see the field markup below).
+ */
+let namespaceMenuOpen = false;
+/** Index into `filteredProjects` for keyboard nav; -1 means nothing highlighted. */
+let namespaceHighlight = -1;
+/** Delays closing the menu on blur just long enough for a click on an option (which
+ * blurs the input first) to register as a click before the menu unmounts. */
+let namespaceBlurTimeout: ReturnType<typeof setTimeout> | undefined;
+/** Whether to include OpenShift/Kubernetes system & default namespaces in the
+ * Project/namespace suggestion list (S8-21); off by default to cut noise. Toggled via
+ * the "Show system projects" checkbox, only rendered when at least one is present. */
+let showSystemProjects = false;
+/**
  * Context name to deploy into and target with every cluster operation (S8-10) — defaults
  * to the kubeconfig's current-context on mount, editable via the Cluster picker.
  * Switching it re-seeds namespace/login status and refreshes the workload list for the
@@ -77,6 +99,24 @@ $: config = {
   context: selectedContext || undefined,
 };
 $: canDeploy = !!context && !!name && !!namespace && !!image && !deploying && loggedIn;
+/** Suggestions matching the current free-text `namespace` (S8-21), case-insensitive
+ * substring match, with system/default namespaces dropped first unless
+ * `showSystemProjects` is on. Empty text shows the full (filtered) list, still
+ * height-capped + scrollable. */
+$: filteredProjects = (
+  showSystemProjects ? openShiftProjects : openShiftProjects.filter(p => !isSystemProject(p))
+).filter(p => !namespace || p.toLowerCase().includes(namespace.toLowerCase()));
+/** Single source of truth for whether the menu is actually shown — `namespaceMenuOpen`
+ * is just user intent (focused/typed); it collapses to nothing when there are no
+ * matches instead of showing an empty menu. */
+$: namespaceMenuVisible = namespaceMenuOpen && filteredProjects.length > 0;
+// Reset the highlighted option whenever the filtered list changes (new text typed, or a
+// fresh project list arriving from refreshProjects()) so a stale index never points past
+// the end of a shorter list.
+$: {
+  filteredProjects;
+  namespaceHighlight = -1;
+}
 
 /**
  * Seeds `namespace` from a context's namespace, applying the same "'default' means
@@ -114,13 +154,88 @@ async function refreshLoginStatus() {
   }
 }
 
-/** Re-seed namespace/login status and refresh the workload list for the cluster the
- * user just picked from the Cluster dropdown (S8-10). */
+/** Well-known OpenShift/Kubernetes system & default namespaces, hidden from the
+ * Project/namespace suggestions by default (S8-21). Free-text entry still reaches them. */
+function isSystemProject(name: string): boolean {
+  return name === 'default' || name === 'openshift' || name.startsWith('openshift-') || name.startsWith('kube-');
+}
+
+/** Refresh the project/namespace suggestions (S8-21) for the targeted cluster. Fails
+ * soft to [] — the combobox still accepts free text if listing fails. */
+async function refreshProjects() {
+  try {
+    openShiftProjects = await physicalAiClient.listOpenShiftProjects(selectedContext || undefined);
+  } catch {
+    openShiftProjects = [];
+  }
+}
+
+/** Open the Project/namespace menu on focus (S8-21); cancels a pending blur-close from a
+ * previous focus/blur cycle. */
+function handleNamespaceFocus() {
+  if (namespaceBlurTimeout) clearTimeout(namespaceBlurTimeout);
+  namespaceMenuOpen = true;
+}
+
+/** Keep the menu open while typing; `namespaceMenuVisible` collapses it automatically
+ * once there are no matches for the new text. */
+function handleNamespaceInput() {
+  namespaceMenuOpen = true;
+}
+
+/** Close the menu shortly after blur rather than immediately — clicking an option blurs
+ * the input first, and without this delay the menu would unmount before the option's
+ * click handler runs. */
+function handleNamespaceBlur() {
+  namespaceBlurTimeout = setTimeout(() => {
+    namespaceMenuOpen = false;
+  }, 150);
+}
+
+/** Commit a suggestion from the custom Project/namespace dropdown (S8-21) — mirrors the
+ * input's own `on:change` side effect so picking a project immediately retargets the
+ * workload list, exactly like typing one and committing it. */
+function selectProject(project: string) {
+  namespace = project;
+  namespaceMenuOpen = false;
+  refreshWorkloads();
+}
+
+/** Arrow-key nav + Enter-to-select/commit + Escape-to-close for the custom combobox. */
+function handleNamespaceKeydown(e: KeyboardEvent) {
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (!namespaceMenuVisible) {
+      namespaceMenuOpen = true;
+      return;
+    }
+    namespaceHighlight = Math.min(namespaceHighlight + 1, filteredProjects.length - 1);
+  } else if (e.key === 'ArrowUp') {
+    if (!namespaceMenuVisible) return;
+    e.preventDefault();
+    namespaceHighlight = Math.max(namespaceHighlight - 1, 0);
+  } else if (e.key === 'Enter') {
+    if (namespaceMenuVisible && namespaceHighlight >= 0) {
+      e.preventDefault();
+      selectProject(filteredProjects[namespaceHighlight]);
+    } else {
+      namespaceMenuOpen = false;
+      refreshWorkloads();
+    }
+  } else if (e.key === 'Escape') {
+    namespaceMenuOpen = false;
+    namespaceHighlight = -1;
+  }
+}
+
+/** Re-seed namespace/login status and refresh the workload list + project suggestions
+ * for the cluster the user just picked from the Cluster dropdown (S8-10). */
 async function onContextChange() {
   const entry = kubeContexts.find(c => c.name === selectedContext);
   await seedNamespaceFromContext(entry?.namespace);
   await refreshLoginStatus();
   await refreshWorkloads();
+  await refreshProjects();
 }
 
 onMount(async () => {
@@ -137,6 +252,7 @@ onMount(async () => {
     kubeContexts = [];
   }
   await refreshLoginStatus();
+  await refreshProjects();
   // Seed the CPU field from the configurable default (still editable per deploy).
   try {
     cpu = await physicalAiClient.getDefaultSoftwareRenderCpus();
@@ -165,6 +281,7 @@ onMount(async () => {
 
 onDestroy(() => {
   if (warmTimer) clearInterval(warmTimer);
+  if (namespaceBlurTimeout) clearTimeout(namespaceBlurTimeout);
 });
 
 /** Poll Nav2 pre-warm state for robots still warming across all deployments. */
@@ -451,13 +568,67 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
 
       <div class="flex flex-col gap-1">
         <label for="dep-ns" class="text-xs text-[var(--pd-content-text)]">Project / namespace</label>
-        <input
-          id="dep-ns"
-          bind:value={namespace}
-          on:change={() => refreshWorkloads()}
-          disabled={deploying}
-          placeholder="e.g. my-project"
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
+        <!-- Custom filtered combobox (S8-21), replacing a native <input list>/<datalist>:
+             the datalist popup rendered misaligned (floating over the next field) and its
+             height was uncontrollable in the Podman Desktop (Electron) webview. This menu
+             is anchored under the input, height-capped + scrollable, and still lets you
+             commit any free-text value — a failed/empty project listing (not logged in,
+             `oc` missing) degrades cleanly. -->
+        <div class="relative">
+          <input
+            id="dep-ns"
+            role="combobox"
+            aria-expanded={namespaceMenuVisible}
+            aria-controls="dep-ns-listbox"
+            aria-autocomplete="list"
+            aria-activedescendant={namespaceHighlight >= 0 ? `dep-ns-option-${namespaceHighlight}` : undefined}
+            bind:value={namespace}
+            on:focus={handleNamespaceFocus}
+            on:input={handleNamespaceInput}
+            on:keydown={handleNamespaceKeydown}
+            on:blur={handleNamespaceBlur}
+            on:change={() => refreshWorkloads()}
+            disabled={deploying}
+            placeholder="e.g. my-project"
+            autocomplete="off"
+            class="w-full px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
+          {#if namespaceMenuVisible}
+            <ul
+              id="dep-ns-listbox"
+              role="listbox"
+              class="absolute top-full left-0 right-0 z-50 mt-1 max-h-60 overflow-y-auto rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] shadow-lg">
+              {#each filteredProjects as project, i (project)}
+                <!-- Selection is fully reachable via keyboard through handleNamespaceKeydown
+                     (ArrowUp/Down + Enter) on the input itself; the click here is a pointer
+                     convenience, so no separate keyboard handler belongs on the option. -->
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <li
+                  id={`dep-ns-option-${i}`}
+                  role="option"
+                  aria-selected={i === namespaceHighlight}
+                  on:mousedown|preventDefault
+                  on:click={() => selectProject(project)}
+                  class="px-3 py-1.5 text-sm font-mono cursor-pointer text-[var(--pd-content-text)] {i ===
+                  namespaceHighlight
+                    ? 'bg-[var(--pd-content-card-border)]'
+                    : ''}">
+                  {project}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+        {#if openShiftProjects.length > 0}
+          <span class="text-xs pai-text-muted">
+            Click to browse available projects, or type to filter — any value is allowed.
+          </span>
+        {/if}
+        {#if openShiftProjects.some(isSystemProject)}
+          <label class="flex flex-row items-center gap-2 text-xs text-[var(--pd-content-text)]">
+            <input type="checkbox" bind:checked={showSystemProjects} disabled={deploying} />
+            Show system projects (default, openshift-*, kube-*)
+          </label>
+        {/if}
       </div>
 
       <div class="flex flex-col gap-1">
