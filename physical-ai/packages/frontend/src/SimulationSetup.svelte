@@ -47,11 +47,31 @@ let existsCheckKey = '';
 
 let optionsExpanded = false;
 
+// Single source of truth for the Quick Start preset — used both to apply it
+// and to detect whether the current config already matches it (targetArch is
+// intentionally excluded; Quick Start never touches it).
+const QUICK_START_PRESET = {
+  robot: 'turtlebot3',
+  distro: 'jazzy',
+  middleware: 'dds',
+  engine: 'gazebo',
+  baseImage: 'jazzy-noble' as SimulationBaseImageId,
+};
+const QUICK_START_SUMMARY = 'TurtleBot3 · Jazzy · DDS · gazebo · Ubuntu Noble';
+
+let showQuickStartConfirm = false;
+
 $: buildBusy = baseBusy || simBusy;
 $: currentConfig = { robot, distro, middleware, engine, baseImage, targetArch } as SimulationConfig;
 $: crossArch = targetArch !== hostArch;
 $: otherArch = (hostArch === 'amd64' ? 'arm64' : 'amd64') as TargetArch;
 $: otherArchLabel = otherArch === 'amd64' ? 'amd64 (for OpenShift)' : `${otherArch} (cross-build)`;
+$: quickStartMatchesCurrent =
+  robot === QUICK_START_PRESET.robot &&
+  distro === QUICK_START_PRESET.distro &&
+  middleware === QUICK_START_PRESET.middleware &&
+  engine === QUICK_START_PRESET.engine &&
+  baseImage === QUICK_START_PRESET.baseImage;
 $: profile = resolveSimulationProfile(currentConfig);
 $: simSupported = profile ? hasSimulationSupport(profile) : false;
 $: availableBaseImages = baseImagesForDistro(distro);
@@ -142,16 +162,30 @@ async function save() {
 }
 
 async function applyQuickStart() {
-  robot = 'turtlebot3';
-  distro = 'jazzy';
-  middleware = 'dds';
-  engine = 'gazebo';
-  baseImage = 'jazzy-noble';
+  robot = QUICK_START_PRESET.robot;
+  distro = QUICK_START_PRESET.distro;
+  middleware = QUICK_START_PRESET.middleware;
+  engine = QUICK_START_PRESET.engine;
+  baseImage = QUICK_START_PRESET.baseImage;
+  showQuickStartConfirm = false;
   // Target arch comes from the Target toggle, not from Quick Start.
   // Let reactive tags update before save
   await tick();
   await save();
   document.getElementById('step1-build')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function onQuickStartClick() {
+  if (quickStartMatchesCurrent) {
+    // Nothing would change — apply immediately, no confirmation needed.
+    void applyQuickStart();
+  } else {
+    showQuickStartConfirm = true;
+  }
+}
+
+function cancelQuickStart() {
+  showQuickStartConfirm = false;
 }
 </script>
 
@@ -225,12 +259,28 @@ async function applyQuickStart() {
         TurtleBot3 + Jazzy — the recommended configuration for the simulation demo. Use the Target toggle above to
         choose this machine or amd64 (for OpenShift).
       </p>
+      <span class="text-xs pai-text-muted">
+        Applies the recommended configuration. If you've changed anything in Customize, Quick Start will overwrite it.
+      </span>
       <button
-        on:click={applyQuickStart}
+        on:click={onQuickStartClick}
         disabled={buildBusy || saving}
         class="self-start px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] cursor-pointer hover:border-[var(--pd-content-header)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
         TurtleBot3 Sim (Jazzy)
       </button>
+      {#if showQuickStartConfirm}
+        <div class="flex flex-col gap-2 mt-1 p-2 rounded border border-[var(--pd-content-card-border)]">
+          <span class="text-xs pai-text-warning">
+            This will change your configuration to: {QUICK_START_SUMMARY}.
+          </span>
+          <div class="flex flex-row gap-2">
+            <button on:click={applyQuickStart} disabled={buildBusy || saving} class="pai-btn pai-btn-primary">
+              Apply Quick Start
+            </button>
+            <button on:click={cancelQuickStart} disabled={buildBusy || saving} class="pai-btn"> Cancel </button>
+          </div>
+        </div>
+      {/if}
     </div>
 
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] max-w-md">

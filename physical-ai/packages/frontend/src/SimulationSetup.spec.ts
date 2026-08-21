@@ -100,7 +100,11 @@ describe('SimulationSetup (Image Builder)', () => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
 
+    // Default loaded config (humble/sloretz) differs from the preset, so clicking
+    // Quick Start surfaces a confirmation instead of saving immediately.
     await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
+    expect(mockSaveSimulationConfig).not.toHaveBeenCalled();
+    await fireEvent.click(await screen.findByRole('button', { name: 'Apply Quick Start' }));
 
     await waitFor(() => {
       expect(mockSaveSimulationConfig).toHaveBeenCalledWith(
@@ -125,6 +129,7 @@ describe('SimulationSetup (Image Builder)', () => {
 
     await fireEvent.click(screen.getByRole('radio', { name: /amd64 \(for OpenShift\)/ }));
     await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Apply Quick Start' }));
 
     await waitFor(() => {
       expect(mockSaveSimulationConfig).toHaveBeenCalledWith(
@@ -138,6 +143,53 @@ describe('SimulationSetup (Image Builder)', () => {
         }),
       );
     });
+  });
+
+  it('Quick Start applies immediately without a confirmation when the current config already matches the preset', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    mockGetSimulationConfig.mockResolvedValue({
+      robot: 'turtlebot3',
+      distro: 'jazzy',
+      middleware: 'dds',
+      engine: 'gazebo',
+      baseImage: 'jazzy-noble',
+    });
+    render(SimulationSetup);
+    await waitFor(() => {
+      expect(screen.queryByText('Loading configuration...')).toBeNull();
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
+
+    await waitFor(() => {
+      expect(mockSaveSimulationConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          robot: 'turtlebot3',
+          distro: 'jazzy',
+          middleware: 'dds',
+          engine: 'gazebo',
+          baseImage: 'jazzy-noble',
+        }),
+      );
+    });
+    expect(screen.queryByRole('button', { name: 'Apply Quick Start' })).toBeNull();
+  });
+
+  it('Quick Start shows a confirmation when the config differs, and Cancel dismisses it without saving', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    render(SimulationSetup);
+    await waitFor(() => {
+      expect(screen.queryByText('Loading configuration...')).toBeNull();
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
+    expect(await screen.findByRole('button', { name: 'Apply Quick Start' })).toBeTruthy();
+    expect(mockSaveSimulationConfig).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('button', { name: 'Apply Quick Start' })).toBeNull();
+    expect(mockSaveSimulationConfig).not.toHaveBeenCalled();
   });
 
   it('surfaces save errors', async () => {
