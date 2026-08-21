@@ -13,12 +13,13 @@
 > on `main` (not any one batch branch) so every batch can read and update it without
 > depending on another batch's branch.
 >
-> **Status:** in progress. **Batch A (S8-1…S8-5) done** — `feature/APPENG-6103-quick-ui-wins`,
-> frontend suite 88/88 green, user-verified. **Batch B (S8-6…S8-9) done** —
-> `feature/APPENG-6104-build-push-observability`, user-verified in the running extension.
-> **Batch C (S8-10, S8-11, S8-16, S8-17) done** — `feature/APPENG-6105-openshift-config-safety`,
-> full test suite green, pending user verification in the running extension. Next up per
-> the suggested order: **Batch D** (S8-12 SIM-only build path).
+> **Status:** in progress. **Batches A, B and C are all merged to `main`** (2026-08-21) with
+> merge commits, full suite green on the integrated `main` (397 unit + 23 script tests, 0
+> failures). **Batch A (S8-1…S8-5)**, **Batch B (S8-6…S8-9)** and
+> **Batch C (S8-10, S8-11, S8-16, S8-17)** are all done and user-verified in the running
+> extension. Next up per the suggested order: **Batch D** (S8-12 SIM-only build path). Two
+> small follow-ups (S8-19, S8-20) are deferred to a single direct-to-`main` cleanup commit —
+> see Housekeeping; S8-18 (APPENG-6149) is a larger follow-up feature with its own branch.
 
 ---
 
@@ -87,7 +88,13 @@ Needed backend type additions (`BuildProgress`/`PushProgress` in
 | ✅ | S8-16 | Default namespace via extension setting | Added a **new**, dedicated setting `physical-ai.defaultOpenShiftNamespace` (separate from the Quay-purposed `physical-ai.defaultNamespace`) and a `getDefaultOpenShiftNamespace()` backend method. `OpenShiftSimulation.svelte`'s `onMount` now falls back to it only when the kube context sets no namespace — the context's own namespace, when present, always still wins; unconfigured means `''`, never a silent `'default'`. | `package.json` (contributes.configuration), `api-impl.ts` (`getDefaultOpenShiftNamespace`), `PhysicalAiApi.ts`, `OpenShiftSimulation.svelte` |
 | ✅ | S8-17 | Reflect already-spawned robots | New `listSpawnedRobotsInOpenShift()` backend method runs `ros2 node list` in the pod and extracts robot names from namespaced nodes (`/robot_1/...`). `refreshWorkloads()` reconciles each ready workload's robot list against it **once** (guarded by a `reconciledWorkloads` set, cleared on delete/vanish so a redeploy reconciles fresh) — only ever appending missing entries, never overwriting live `navStatus`/`navTarget`. Reconciled robots get a placeholder `x`/`y` (`'?'`, not recoverable from `ros2 node list` alone) and pick up `warmStatus` via the existing 3s `pollWarmStatus` loop with no extra wiring. | `api-impl.ts` (`listSpawnedRobotsInOpenShift`), `PhysicalAiApi.ts`, `OpenShiftSimulation.svelte` (`refreshWorkloads`, `reconcileRobots`) |
 | ⚪ | S8-18 | Prune stale robot entries | **Found during APPENG-6148 testing (2026-08-20):** a pod crashed/restarted mid-spawn (Path B always resets to an empty world), but the UI kept showing the robot as spawned — "Nav2 warming…" → "Nav2 warm-up failed" → Navigate "Failed" — since nothing told it the spawn attempt died with the pod. Confirmed zero ROS nodes/topics/Gazebo models actually existed. S8-17 only handles the ADD direction (by design — "only ever appends missing entries, never removes"); this is the missing REMOVE/prune direction: detect a previously-tracked robot no longer present in the actual world and drop it. APPENG-6149. | `OpenShiftSimulation.svelte` (`refreshWorkloads`, `robotsByWorkload`), `api-impl.ts` (`listSpawnedRobotsInOpenShift`) |
-| ⚪ | S8-19 | Fix duplicate robot-name suggestion | **Found alongside S8-18** — screenshot showed `robot_1` listed twice (the Name field's suggested value *and* an already-tracked entry). Root cause: `RobotControls.svelte`'s `form.name` is seeded once from the static `initialName` prop at mount; the dedup logic (`nextFreeName()`) only reruns after a spawn *in the same session* — never against `robots` at mount or on later updates (e.g. after S8-17/S8-18 reconciliation). Make the suggested name reactive to the current `robots` array. APPENG-6150. | `RobotControls.svelte` (`form`, `nextFreeName`, `startCounter`) |
+| ⚪ | S8-19 | Fix duplicate robot-name suggestion | **Found alongside S8-18** — screenshot showed `robot_1` listed twice (the Name field's suggested value *and* an already-tracked entry). Root cause: `RobotControls.svelte`'s `form.name` is seeded once from the static `initialName` prop at mount; the dedup logic (`nextFreeName()`) only reruns after a spawn *in the same session* — never against `robots` at mount or on later updates (e.g. after S8-17/S8-18 reconciliation). Make the suggested name reactive to the current `robots` array. (A spawn-time guard already blocks creating a real duplicate; this is only the misleading pre-filled name.) APPENG-6150. | `RobotControls.svelte` (`form`, `nextFreeName`, `startCounter`) |
+| ⚪ | S8-20 | Space out resource/namespace in deploy banner | **Found during Batch C verification (2026-08-21):** the S8-4 success banner renders the flat backend `deployResult.message` ("Deployed ros2-jazzy-sim to sgahlot-pd-extn") so the resource name, "to" and namespace run together and the "to" is easy to miss. `deployResult` already carries `name`/`namespace` separately — render them as distinct emphasized `font-mono` spans instead of the flat message string. Not yet filed (tracked here). | `OpenShiftSimulation.svelte` (deploy banner ~537) |
+
+> **Deferred cleanup (S8-19 + S8-20):** both are small, cosmetic, and only became relevant
+> once Batch A's banner + `RobotControls` reached `main` — which happened with the 2026-08-21
+> A/B/C merges. They'll land together as one small **direct-to-`main`** commit (no feature
+> branch). S8-18 (APPENG-6149) is separate: a real prune feature that gets its own branch.
 
 <a id="s8-quickstart"></a>
 
@@ -125,10 +132,9 @@ Needed backend type additions (`BuildProgress`/`PushProgress` in
   `grep`/`cat` treat the file as binary and silently return nothing (use `rg --text`
   or the editor's read). Worth stripping in a small cleanup commit — it has bitten
   tooling more than once.
-- **"Nav2 warming…" indicator is easy to miss** (found during Batch A live testing,
-  2026-08-20) — small, same-weight text next to the Remove button in the robot row
-  (`RobotControls.svelte`). Make it a bit more prominent (size/weight/badge styling)
-  so it's not overlooked while a robot is mid-warm-up.
+- ✅ **"Nav2 warming…" indicator is easy to miss** — **done in Batch A** (commit `247c815`):
+  it's now a rounded accent pill (larger pulsing dot + `text-sm font-medium` in
+  `RobotControls.svelte`), no longer same-weight inline text.
 
 ---
 
