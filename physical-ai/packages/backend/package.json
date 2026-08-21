@@ -90,7 +90,7 @@
             "Single-page pipeline: base image (Step 1) and simulation image (Step 2) shown together",
             "Guided chooser: pick whether to build the base image, the simulation image, or both"
           ],
-          "default": "pipeline",
+          "default": "guided",
           "description": "Layout for the Image Builder page"
         },
         "physical-ai.catalogCuratedAllowlist": {

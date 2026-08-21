@@ -271,8 +271,13 @@ describe('SimulationSetup (Image Builder)', () => {
     expect(buildButtons[buildButtons.length - 1].disabled).toBe(true);
   });
 
+  // Note: the beforeEach above pins mockGetImageBuilderLayout to 'pipeline' so the
+  // legacy pipeline-mode tests below stay deterministic. The *actual* default (both
+  // the `imageBuilderLayout` preference default and the component's pre-load `layout`
+  // initializer) is now 'guided' — see the "guided layout hides both build steps..."
+  // test, which exercises that mode explicitly.
   describe('Image Builder layout', () => {
-    it('defaults to pipeline layout, rendering both build steps', async () => {
+    it('pipeline layout mode renders both build steps (explicitly mocked, not the default)', async () => {
       render(SimulationSetup);
       await waitFor(() => {
         expect(screen.queryByText('Loading configuration...')).toBeNull();
@@ -298,6 +303,8 @@ describe('SimulationSetup (Image Builder)', () => {
       });
     });
 
+    // Guided is the actual default layout (imageBuilderLayout preference default
+    // and the component's pre-load `layout` initializer both resolve to 'guided').
     it('guided layout hides both build steps until a choice is made', async () => {
       mockGetImageBuilderLayout.mockResolvedValue('guided');
 

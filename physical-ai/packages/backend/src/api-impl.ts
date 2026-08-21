@@ -644,7 +644,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   async getImageBuilderLayout(): Promise<'pipeline' | 'guided'> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
     const layout = config.get<string>('imageBuilderLayout');
-    return layout === 'guided' ? 'guided' : 'pipeline';
+    return layout === 'pipeline' ? 'pipeline' : 'guided';
   }
 
   async setImageBuilderLayout(layout: 'pipeline' | 'guided'): Promise<void> {
