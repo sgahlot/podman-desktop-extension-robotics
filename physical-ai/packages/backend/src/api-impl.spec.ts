@@ -2276,6 +2276,61 @@ describe('PhysicalAiApiImpl', () => {
       });
     });
 
+    describe('listOpenShiftProjects', () => {
+      it('parses project names, stripping the resource-type prefix', async () => {
+        vi.mocked(extensionApi.process.exec).mockResolvedValue({
+          stdout: 'project.project.openshift.io/my-project\nproject.project.openshift.io/other-ns\n',
+          stderr: '',
+          command: 'oc',
+        } as extensionApi.RunResult);
+        expect(await api.listOpenShiftProjects()).toEqual(['my-project', 'other-ns']);
+      });
+
+      it('returns [] when oc fails (not logged in, oc missing, etc.)', async () => {
+        vi.mocked(extensionApi.process.exec).mockRejectedValue({
+          exitCode: 1,
+          stderr: 'error: You must be logged in to the server (Unauthorized)',
+        });
+        expect(await api.listOpenShiftProjects()).toEqual([]);
+      });
+
+      it('returns [] when stdout is empty', async () => {
+        vi.mocked(extensionApi.process.exec).mockResolvedValue({
+          stdout: '',
+          stderr: '',
+          command: 'oc',
+        } as extensionApi.RunResult);
+        expect(await api.listOpenShiftProjects()).toEqual([]);
+      });
+
+      it('passes --context when a context is provided (S8-10)', async () => {
+        vi.mocked(extensionApi.process.exec).mockResolvedValue({
+          stdout: 'project.project.openshift.io/my-project\n',
+          stderr: '',
+          command: 'oc',
+        } as extensionApi.RunResult);
+        await api.listOpenShiftProjects('other-context');
+        expect(extensionApi.process.exec).toHaveBeenCalledWith('oc', [
+          '--context',
+          'other-context',
+          'get',
+          'projects',
+          '-o',
+          'name',
+        ]);
+      });
+
+      it('omits --context when none is provided', async () => {
+        vi.mocked(extensionApi.process.exec).mockResolvedValue({
+          stdout: 'project.project.openshift.io/my-project\n',
+          stderr: '',
+          command: 'oc',
+        } as extensionApi.RunResult);
+        await api.listOpenShiftProjects();
+        expect(extensionApi.process.exec).toHaveBeenCalledWith('oc', ['get', 'projects', '-o', 'name']);
+      });
+    });
+
     describe('generateOpenShiftManifests', () => {
       it('renders a three-document YAML preview', async () => {
         const { yaml } = await api.generateOpenShiftManifests(CONFIG);

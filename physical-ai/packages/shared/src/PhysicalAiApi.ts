@@ -80,6 +80,11 @@ export abstract class PhysicalAiApi {
   /** Whether `oc` is currently logged in to a cluster (S8-11), via `oc whoami`. Checks the
    * given context (S8-10) when provided, else the kubeconfig's current-context. */
   abstract checkOpenShiftLogin(context?: string): Promise<{ loggedIn: boolean; message?: string }>;
+  /** Every project/namespace the user can see on the given context (S8-21), via
+   * `oc get projects`, for the deploy form's type-to-filter combobox. Returns [] on any
+   * failure (not logged in, `oc` missing) rather than throwing, so the UI degrades to
+   * free-text entry — mirrors listKubeContexts' fail-soft style. */
+  abstract listOpenShiftProjects(context?: string): Promise<string[]>;
   /** Render the Deployment/Service/Route manifests as a YAML preview (no side effects). */
   abstract generateOpenShiftManifests(config: OpenShiftDeployConfig): Promise<{ yaml: string }>;
   /** Apply the manifests to config.context when set (S8-10), else the current context. */

@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
 import DeployOpenShift from './OpenShiftSimulation.svelte';
 
 const mockGetOpenShiftContext = vi.fn();
@@ -7,6 +7,7 @@ const mockListKubeContexts = vi.fn();
 const mockGetDefaultNamespace = vi.fn();
 const mockGetDefaultOpenShiftNamespace = vi.fn();
 const mockCheckOpenShiftLogin = vi.fn();
+const mockListOpenShiftProjects = vi.fn();
 const mockGetSimulationConfig = vi.fn();
 const mockGetDefaultSoftwareRenderCpus = vi.fn();
 const mockListOpenShiftDeployments = vi.fn();
@@ -26,6 +27,7 @@ vi.mock('./api/client', () => ({
     getDefaultNamespace: (...args: unknown[]) => mockGetDefaultNamespace(...args),
     getDefaultOpenShiftNamespace: (...args: unknown[]) => mockGetDefaultOpenShiftNamespace(...args),
     checkOpenShiftLogin: (...args: unknown[]) => mockCheckOpenShiftLogin(...args),
+    listOpenShiftProjects: (...args: unknown[]) => mockListOpenShiftProjects(...args),
     getSimulationConfig: (...args: unknown[]) => mockGetSimulationConfig(...args),
     getDefaultSoftwareRenderCpus: (...args: unknown[]) => mockGetDefaultSoftwareRenderCpus(...args),
     generateOpenShiftManifests: vi.fn(),
@@ -69,6 +71,7 @@ describe('OpenShiftSimulation', () => {
     mockGetDefaultNamespace.mockResolvedValue('sgahlot-pd-extn');
     mockGetDefaultOpenShiftNamespace.mockResolvedValue('');
     mockCheckOpenShiftLogin.mockResolvedValue({ loggedIn: true });
+    mockListOpenShiftProjects.mockResolvedValue([]);
     mockGetDefaultSoftwareRenderCpus.mockResolvedValue(8);
     // Keep the default image (avoids exercising simulationImageTag here).
     mockGetSimulationConfig.mockRejectedValue(new Error('no config'));
@@ -307,6 +310,171 @@ describe('OpenShiftSimulation', () => {
       expect(mockCheckOpenShiftLogin).toHaveBeenCalledWith('other-ctx');
       expect(mockListOpenShiftDeployments).toHaveBeenCalledWith('other-ns', 'other-ctx');
     });
+  });
+
+  it('renders project options in the custom dropdown after focusing the namespace field (S8-21)', async () => {
+    // No context namespace/default configured, so `namespace` starts empty (S8-16) and
+    // focusing shows the full suggestion list rather than filtering against stale text.
+    mockGetOpenShiftContext.mockResolvedValue({ context: 'ctx', kubeconfigPath: '/k/config' });
+    mockListOpenShiftProjects.mockResolvedValue(['my-project', 'other-ns']);
+
+    render(DeployOpenShift);
+    const input = (await screen.findByLabelText('Project / namespace')) as HTMLInputElement;
+    await waitFor(() => expect(mockListOpenShiftProjects).toHaveBeenCalledWith('ctx'));
+
+    await fireEvent.focus(input);
+
+    const listbox = await screen.findByRole('listbox');
+    const options = within(listbox).getAllByRole('option');
+    expect(options.map(o => o.textContent?.trim())).toEqual(['my-project', 'other-ns']);
+    expect(input.getAttribute('aria-expanded')).toBe('true');
+    expect(input.getAttribute('aria-controls')).toBe(listbox.id);
+  });
+
+  it('filters the dropdown options as the namespace text is typed (S8-21)', async () => {
+    mockListOpenShiftProjects.mockResolvedValue(['my-project', 'other-ns', 'my-other-project']);
+
+    render(DeployOpenShift);
+    const input = (await screen.findByLabelText('Project / namespace')) as HTMLInputElement;
+    await waitFor(() => expect(mockListOpenShiftProjects).toHaveBeenCalledWith('ctx'));
+
+    await fireEvent.focus(input);
+    await fireEvent.input(input, { target: { value: 'other' } });
+
+    const listbox = await screen.findByRole('listbox');
+    const options = within(listbox).getAllByRole('option');
+    expect(options.map(o => o.textContent?.trim())).toEqual(['other-ns', 'my-other-project']);
+  });
+
+  it('selecting a dropdown option sets the namespace and closes the menu, retargeting the workload list (S8-21)', async () => {
+    mockGetOpenShiftContext.mockResolvedValue({ context: 'ctx', kubeconfigPath: '/k/config' });
+    mockListOpenShiftProjects.mockResolvedValue(['my-project', 'other-ns']);
+
+    render(DeployOpenShift);
+    const input = (await screen.findByLabelText('Project / namespace')) as HTMLInputElement;
+    await waitFor(() => expect(mockListOpenShiftProjects).toHaveBeenCalledWith('ctx'));
+    mockListOpenShiftDeployments.mockClear();
+
+    await fireEvent.focus(input);
+    const listbox = await screen.findByRole('listbox');
+    await fireEvent.click(within(listbox).getByText('other-ns'));
+
+    expect(input.value).toBe('other-ns');
+    expect(screen.queryByRole('listbox')).toBeNull();
+    await waitFor(() => {
+      expect(mockListOpenShiftDeployments).toHaveBeenCalledWith('other-ns', 'ctx');
+    });
+  });
+
+  it('closes the dropdown on Escape without altering the typed value (S8-21)', async () => {
+    mockGetOpenShiftContext.mockResolvedValue({ context: 'ctx', kubeconfigPath: '/k/config' });
+    mockListOpenShiftProjects.mockResolvedValue(['my-project', 'other-ns']);
+
+    render(DeployOpenShift);
+    const input = (await screen.findByLabelText('Project / namespace')) as HTMLInputElement;
+    await waitFor(() => expect(mockListOpenShiftProjects).toHaveBeenCalledWith('ctx'));
+
+    await fireEvent.focus(input);
+    await screen.findByRole('listbox');
+    await fireEvent.keyDown(input, { key: 'Escape' });
+
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('re-loads the project list when the targeted cluster/context changes (S8-21)', async () => {
+    mockListKubeContexts.mockResolvedValue([
+      { name: 'ctx', namespace: 'sgahlot-pd-extn' },
+      { name: 'other-ctx', namespace: 'other-ns' },
+    ]);
+    mockListOpenShiftProjects.mockResolvedValueOnce(['my-project']).mockResolvedValueOnce(['other-project']);
+
+    render(DeployOpenShift);
+    const select = (await screen.findByLabelText('Cluster URL')) as HTMLSelectElement;
+    await waitFor(() => expect(mockListOpenShiftProjects).toHaveBeenCalledWith('ctx'));
+    mockListOpenShiftProjects.mockClear();
+
+    await fireEvent.change(select, { target: { value: 'other-ctx' } });
+
+    await waitFor(() => {
+      expect(mockListOpenShiftProjects).toHaveBeenCalledWith('other-ctx');
+    });
+  });
+
+  it('falls back to free-text entry when project listing fails/returns empty (S8-21)', async () => {
+    mockListOpenShiftProjects.mockResolvedValue([]);
+
+    render(DeployOpenShift);
+    const input = (await screen.findByLabelText('Project / namespace')) as HTMLInputElement;
+    await fireEvent.focus(input);
+    await fireEvent.input(input, { target: { value: 'a-brand-new-namespace' } });
+
+    expect(input.value).toBe('a-brand-new-namespace');
+    // No matches for free text against an empty suggestion list — the menu stays hidden
+    // rather than showing an empty popup.
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('hides OpenShift/Kubernetes system projects from the dropdown by default (S8-21)', async () => {
+    mockGetOpenShiftContext.mockResolvedValue({ context: 'ctx', kubeconfigPath: '/k/config' });
+    mockListOpenShiftProjects.mockResolvedValue([
+      'default',
+      'openshift-apiserver',
+      'kube-system',
+      'sgahlot-pd-extn',
+      'my-app',
+    ]);
+
+    render(DeployOpenShift);
+    const input = (await screen.findByLabelText('Project / namespace')) as HTMLInputElement;
+    await waitFor(() => expect(mockListOpenShiftProjects).toHaveBeenCalledWith('ctx'));
+
+    await fireEvent.focus(input);
+
+    const listbox = await screen.findByRole('listbox');
+    const options = within(listbox).getAllByRole('option');
+    expect(options.map(o => o.textContent?.trim())).toEqual(['sgahlot-pd-extn', 'my-app']);
+    expect(within(listbox).queryByText('default')).toBeNull();
+    expect(within(listbox).queryByText('openshift-apiserver')).toBeNull();
+    expect(within(listbox).queryByText('kube-system')).toBeNull();
+  });
+
+  it('reveals system projects in the dropdown when "Show system projects" is checked (S8-21)', async () => {
+    mockGetOpenShiftContext.mockResolvedValue({ context: 'ctx', kubeconfigPath: '/k/config' });
+    mockListOpenShiftProjects.mockResolvedValue([
+      'default',
+      'openshift-apiserver',
+      'kube-system',
+      'sgahlot-pd-extn',
+      'my-app',
+    ]);
+
+    render(DeployOpenShift);
+    const input = (await screen.findByLabelText('Project / namespace')) as HTMLInputElement;
+    await waitFor(() => expect(mockListOpenShiftProjects).toHaveBeenCalledWith('ctx'));
+
+    await fireEvent.click(await screen.findByRole('checkbox', { name: /Show system projects/ }));
+    await fireEvent.focus(input);
+
+    const listbox = await screen.findByRole('listbox');
+    const options = within(listbox).getAllByRole('option');
+    expect(options.map(o => o.textContent?.trim())).toEqual([
+      'default',
+      'openshift-apiserver',
+      'kube-system',
+      'sgahlot-pd-extn',
+      'my-app',
+    ]);
+  });
+
+  it('does not render the "Show system projects" toggle when no system projects are present (S8-21)', async () => {
+    mockGetOpenShiftContext.mockResolvedValue({ context: 'ctx', kubeconfigPath: '/k/config' });
+    mockListOpenShiftProjects.mockResolvedValue(['sgahlot-pd-extn', 'my-app']);
+
+    render(DeployOpenShift);
+    await screen.findByLabelText('Project / namespace');
+    await waitFor(() => expect(mockListOpenShiftProjects).toHaveBeenCalledWith('ctx'));
+
+    expect(screen.queryByRole('checkbox', { name: /Show system projects/ })).toBeNull();
   });
 
   it('falls back to the configured default namespace when the context sets none (S8-16)', async () => {

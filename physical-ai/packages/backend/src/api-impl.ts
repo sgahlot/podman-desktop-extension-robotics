@@ -1751,6 +1751,30 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
   }
 
+  /**
+   * Every project/namespace the user can see on the given context (S8-21), so the deploy
+   * form's namespace field can offer a type-to-filter combobox instead of pure free-text.
+   * `oc get projects -o name` emits `project.project.openshift.io/<name>` per line; strip
+   * the resource-type prefix. Fails soft (returns []) on any error — not logged in, `oc`
+   * missing, or no `oc get projects` access — so the UI degrades to free-text entry rather
+   * than surfacing an error for what's just a UX nicety.
+   */
+  async listOpenShiftProjects(context?: string): Promise<string[]> {
+    try {
+      const contextArgs = context ? ['--context', context] : [];
+      const res = await extensionApi.process.exec('oc', [...contextArgs, 'get', 'projects', '-o', 'name']);
+      const stdout = res.stdout ?? '';
+      return stdout
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean)
+        .map(line => line.replace(/^project\.project\.openshift\.io\//, ''))
+        .sort();
+    } catch {
+      return [];
+    }
+  }
+
   async generateOpenShiftManifests(config: OpenShiftDeployConfig): Promise<{ yaml: string }> {
     const manifests = buildOpenShiftManifests(config);
     return { yaml: manifestsToYaml(manifests) };
