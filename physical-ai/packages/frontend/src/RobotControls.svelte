@@ -147,12 +147,14 @@ async function remove(index: number) {
           <span class="font-mono font-medium text-[var(--pd-content-header)]">{robot.name}</span>
           <span class="pai-text-muted">spawned at ({robot.x}, {robot.y})</span>
           {#if robot.warmStatus === 'warming'}
-            <!-- Still warming: show only the indicator; hide the nav controls so the
-                 user can't fire a goal before Nav2 is up (which stutters/queues). -->
+            <!-- Still warming: show the warm indicator and (after this block) Remove;
+                 hide only the nav controls so the user can't fire a goal before Nav2 is
+                 up (which stutters/queues). Remove stays available so a robot stuck in
+                 warm-up can still be reaped. -->
             <span
-              class="inline-flex items-center gap-1 pai-text-accent"
+              class="inline-flex items-center gap-1.5 text-sm font-medium px-2.5 py-0.5 rounded-full border border-[var(--pd-content-card-border)] pai-text-accent"
               title="Nav2 is starting in the background; navigation controls appear once it's ready.">
-              <span class="inline-block w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>
+              <span class="inline-block w-2 h-2 rounded-full bg-current animate-pulse"></span>
               Nav2 warming…
             </span>
           {:else}
@@ -179,12 +181,6 @@ async function remove(index: number) {
               class="pai-btn pai-btn-primary text-xs">
               Navigate
             </button>
-            <button
-              on:click={() => remove(i)}
-              disabled={removing[robot.name] || robot.navStatus === 'navigating'}
-              class="pai-btn pai-btn-danger text-xs">
-              {removing[robot.name] ? 'Removing…' : 'Remove'}
-            </button>
             <span
               class={robot.navStatus === 'reached'
                 ? 'pai-text-success'
@@ -204,6 +200,14 @@ async function remove(index: number) {
                     : 'Idle'}
             </span>
           {/if}
+          <!-- Remove is always shown (even while Nav2 is warming) so a robot stuck in
+               warm-up can be reaped. Disabled only mid-navigation or mid-removal. -->
+          <button
+            on:click={() => remove(i)}
+            disabled={removing[robot.name] || robot.navStatus === 'navigating'}
+            class="pai-btn pai-btn-danger text-xs">
+            {removing[robot.name] ? 'Removing…' : 'Remove'}
+          </button>
         </div>
       {/each}
     </div>

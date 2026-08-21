@@ -86,10 +86,11 @@ describe('RobotControls', () => {
       onNavigate: vi.fn(),
       onRemove: vi.fn(),
     });
-    // Warming: only the indicator, no Navigate/Remove/target inputs.
+    // Warming: the indicator is shown and Remove stays available (so a robot stuck
+    // warming can be reaped), but Navigate + target inputs are hidden.
     expect(screen.getByText('Nav2 warming…')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Navigate' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
     expect(screen.queryByLabelText('target X for robot_1')).toBeNull();
 
     // Ready: controls appear, and there's no leftover "ready" badge text.

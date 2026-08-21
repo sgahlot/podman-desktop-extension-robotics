@@ -92,6 +92,16 @@ describe('OpenShiftSimulation', () => {
     });
   });
 
+  it('does not offer the Route link until the pod is ready, even if the route is admitted', async () => {
+    // Route admitted (routeUrl present) but pod not ready → opening it early 503s (S8-5).
+    mockListOpenShiftDeployments.mockResolvedValue([{ ...READY_WORKLOAD, readyReplicas: 0, ready: false }]);
+    render(DeployOpenShift);
+
+    await screen.findByText('ros2-jazzy-sim');
+    expect(screen.queryByRole('button', { name: /Open https:\/\/host\.apps\.example\.com/ })).toBeNull();
+    expect(screen.getByText(/waiting for the pod to be ready/i)).toBeTruthy();
+  });
+
   it('deploys with software rendering by default (useGpu false)', async () => {
     mockDeployToOpenShift.mockResolvedValue({
       name: 'ros2-jazzy-sim',

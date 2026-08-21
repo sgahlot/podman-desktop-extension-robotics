@@ -169,6 +169,12 @@
   border: 1px solid color-mix(in srgb, var(--pai-success) 35%, transparent);
 }
 
+.pai-banner-info {
+  background-color: color-mix(in srgb, var(--pai-accent) 14%, var(--pd-content-card-bg));
+  color: color-mix(in srgb, var(--pai-accent) 70%, var(--pd-content-text));
+  border: 1px solid color-mix(in srgb, var(--pai-accent) 35%, transparent);
+}
+
 .pai-input-error {
   border-color: var(--pai-error);
 }
