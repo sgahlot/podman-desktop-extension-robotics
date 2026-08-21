@@ -442,7 +442,9 @@ function cancelQuickStart() {
          live built/not-built status driven by the reactive existence check above. -->
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
       <div class="flex flex-row items-center justify-between flex-wrap gap-2 mb-2">
-        <h2 class="text-xl text-[var(--pd-content-header)]">Image Builder Pipeline</h2>
+        <h2 class="text-xl text-[var(--pd-content-header)]">
+          {layout === 'guided' ? 'Guided Image Builder' : 'Image Builder Pipeline'}
+        </h2>
         <span class="text-xs text-[var(--pd-content-text)] opacity-80 font-mono">
           {robot} &middot; {distro} &middot; {engine} &middot; {basePreset.label}
         </span>
