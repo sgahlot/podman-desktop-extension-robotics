@@ -125,7 +125,34 @@ describe('BuildPushPanel', () => {
     await waitFor(() => {
       expect(mockCancelBuild).toHaveBeenCalledWith(TAG);
     });
-    expect(await screen.findByText('Build cancelled')).toBeTruthy();
+    expect(await screen.findByText(/Build cancelled/)).toBeTruthy();
+  });
+
+  it('shows build duration and a "Last build" label once done', async () => {
+    const startedAt = 1_000;
+    mockGetBuildProgress.mockResolvedValue({
+      tag: TAG,
+      status: 'Complete',
+      logs: ['[00:00:01] STEP 1/1', '[00:00:06] Build finished'],
+      currentStep: 1,
+      totalSteps: 1,
+      done: true,
+      startedAt,
+      finishedAt: startedAt + 5_000,
+    });
+
+    render(BuildPushPanel, {
+      props: {
+        buildImage,
+        tag: TAG,
+        tagInputId: 'phase1-tag',
+      },
+    });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Build' }));
+    expect(await screen.findByText(/Image built successfully/)).toBeTruthy();
+    expect(screen.getByText(/built in 5s/)).toBeTruthy();
+    expect(screen.getByText(/Last build/)).toBeTruthy();
   });
 
   it('surfaces build start failures', async () => {

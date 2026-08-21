@@ -33,6 +33,10 @@ export interface BuildProgress {
   done?: boolean;
   error?: string;
   cancelled?: boolean;
+  /** Epoch ms when the build started. */
+  startedAt?: number;
+  /** Epoch ms when the build finished (success, error, or cancel). */
+  finishedAt?: number;
 }
 
 export interface PushProgress {
@@ -42,4 +46,8 @@ export interface PushProgress {
   done?: boolean;
   error?: string;
   cancelled?: boolean;
+  /** Epoch ms when the push started. */
+  startedAt?: number;
+  /** Epoch ms when the push finished (success, error, or cancel). */
+  finishedAt?: number;
 }

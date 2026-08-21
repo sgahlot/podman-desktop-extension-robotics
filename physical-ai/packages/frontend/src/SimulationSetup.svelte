@@ -40,6 +40,10 @@ let baseBusy = false;
 let simBusy = false;
 let baseImageExists = false;
 
+let optionsExpanded = true;
+let phase1Expanded = true;
+let phase2Expanded = true;
+
 $: buildBusy = baseBusy || simBusy;
 $: currentConfig = { robot, distro, middleware, engine, baseImage, targetArch } as SimulationConfig;
 $: crossArch = targetArch !== hostArch;
@@ -133,6 +137,7 @@ async function applyQuickStart(arch?: TargetArch) {
   // Let reactive tags update before save
   await tick();
   await save();
+  phase1Expanded = true;
   document.getElementById('phase1-build')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 </script>
@@ -186,120 +191,130 @@ async function applyQuickStart(arch?: TargetArch) {
       </div>
     </div>
 
-    <div class="flex flex-col gap-4 max-w-md">
-      <div class="flex flex-col gap-1">
-        <label for="robot" class="text-xs text-[var(--pd-content-text)]">Robot type</label>
-        <select
-          id="robot"
-          bind:value={robot}
-          disabled={buildBusy || !simSupported}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-          <option value="turtlebot3">TurtleBot3</option>
-        </select>
-        {#if !simSupported}
-          <span class="text-xs pai-text-muted">Not applicable — simulation not available for {distro}</span>
-        {/if}
-      </div>
+    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] max-w-md">
+      <button
+        on:click={() => (optionsExpanded = !optionsExpanded)}
+        class="w-full text-left p-3 flex flex-row items-center gap-3 hover:bg-[var(--pd-content-bg)] rounded-lg cursor-pointer">
+        <span class="text-xs text-[var(--pd-content-text)]">{optionsExpanded ? '▼' : '▶'}</span>
+        <span class="text-sm font-medium text-[var(--pd-content-header)]">Configuration</span>
+      </button>
+      {#if optionsExpanded}
+        <div class="flex flex-col gap-4 p-4 pt-0">
+          <div class="flex flex-col gap-1">
+            <label for="robot" class="text-xs text-[var(--pd-content-text)]">Robot type</label>
+            <select
+              id="robot"
+              bind:value={robot}
+              disabled={buildBusy || !simSupported}
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+              <option value="turtlebot3">TurtleBot3</option>
+            </select>
+            {#if !simSupported}
+              <span class="text-xs pai-text-muted">Not applicable — simulation not available for {distro}</span>
+            {/if}
+          </div>
 
-      <div class="flex flex-col gap-1">
-        <label for="distro" class="text-xs text-[var(--pd-content-text)]">ROS distro</label>
-        <select
-          id="distro"
-          bind:value={distro}
-          disabled={buildBusy}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-          <option value="humble">Humble (simulation/desktop)</option>
-          <option value="jazzy">Jazzy (simulation)</option>
-        </select>
-      </div>
+          <div class="flex flex-col gap-1">
+            <label for="distro" class="text-xs text-[var(--pd-content-text)]">ROS distro</label>
+            <select
+              id="distro"
+              bind:value={distro}
+              disabled={buildBusy}
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+              <option value="humble">Humble (simulation/desktop)</option>
+              <option value="jazzy">Jazzy (simulation)</option>
+            </select>
+          </div>
 
-      <div class="flex flex-col gap-1">
-        <label for="middleware" class="text-xs text-[var(--pd-content-text)]">Middleware</label>
-        <select
-          id="middleware"
-          bind:value={middleware}
-          disabled={buildBusy || !simSupported}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-          <option value="dds">DDS (default)</option>
-          <option value="zenoh" disabled>Zenoh (coming soon)</option>
-        </select>
-        {#if !simSupported}
-          <span class="text-xs pai-text-muted">Not applicable — simulation not available for {distro}</span>
-        {/if}
-      </div>
+          <div class="flex flex-col gap-1">
+            <label for="middleware" class="text-xs text-[var(--pd-content-text)]">Middleware</label>
+            <select
+              id="middleware"
+              bind:value={middleware}
+              disabled={buildBusy || !simSupported}
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+              <option value="dds">DDS (default)</option>
+              <option value="zenoh" disabled>Zenoh (coming soon)</option>
+            </select>
+            {#if !simSupported}
+              <span class="text-xs pai-text-muted">Not applicable — simulation not available for {distro}</span>
+            {/if}
+          </div>
 
-      <div class="flex flex-col gap-1">
-        <label for="engine" class="text-xs text-[var(--pd-content-text)]">Simulation engine</label>
-        <select
-          id="engine"
-          bind:value={engine}
-          disabled={buildBusy || !simSupported}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-          <option value="gazebo">Gazebo</option>
-        </select>
-        {#if !simSupported}
-          <span class="text-xs pai-text-muted">Not applicable — simulation not available for {distro}</span>
-        {/if}
-      </div>
+          <div class="flex flex-col gap-1">
+            <label for="engine" class="text-xs text-[var(--pd-content-text)]">Simulation engine</label>
+            <select
+              id="engine"
+              bind:value={engine}
+              disabled={buildBusy || !simSupported}
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+              <option value="gazebo">Gazebo</option>
+            </select>
+            {#if !simSupported}
+              <span class="text-xs pai-text-muted">Not applicable — simulation not available for {distro}</span>
+            {/if}
+          </div>
 
-      <div class="flex flex-col gap-1">
-        <label for="baseImage" class="text-xs text-[var(--pd-content-text)]">Base image</label>
-        <select
-          id="baseImage"
-          bind:value={baseImage}
-          disabled={buildBusy}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-          {#each availableBaseImages as preset}
-            <option value={preset.id}>{preset.label}</option>
-          {/each}
-        </select>
-        <span class="text-xs text-[var(--pd-content-text)] opacity-80">{basePreset.description}</span>
-        {#if !basePreset.architectures.includes(hostArch)}
-          <span class="text-xs pai-text-warning">
-            Warning: this preset does not support {hostArch}. The build may fail or use slow emulation.
-          </span>
-        {/if}
-      </div>
+          <div class="flex flex-col gap-1">
+            <label for="baseImage" class="text-xs text-[var(--pd-content-text)]">Base image</label>
+            <select
+              id="baseImage"
+              bind:value={baseImage}
+              disabled={buildBusy}
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+              {#each availableBaseImages as preset}
+                <option value={preset.id}>{preset.label}</option>
+              {/each}
+            </select>
+            <span class="text-xs text-[var(--pd-content-text)] opacity-80">{basePreset.description}</span>
+            {#if !basePreset.architectures.includes(hostArch)}
+              <span class="text-xs pai-text-warning">
+                Warning: this preset does not support {hostArch}. The build may fail or use slow emulation.
+              </span>
+            {/if}
+          </div>
 
-      <div class="flex flex-col gap-1">
-        <label for="targetArch" class="text-xs text-[var(--pd-content-text)]">Target architecture</label>
-        <select
-          id="targetArch"
-          bind:value={targetArch}
-          disabled={buildBusy}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-          <option value="amd64">amd64 (x86_64 — OpenShift / Linux clusters)</option>
-          <option value="arm64">arm64 (Apple Silicon — local)</option>
-        </select>
-        <span class="text-xs text-[var(--pd-content-text)] opacity-80">
-          Host is {hostArch}. Deploying to OpenShift needs an <span class="font-mono">amd64</span> image.
-        </span>
-        {#if crossArch && targetArch === 'amd64'}
-          <span class="text-xs pai-text-muted">
-            &#8505; Building an <span class="font-mono">amd64</span> image for OpenShift on a {hostArch} host uses QEMU emulation
-            — this is expected and the build will be slower. Images are tagged
-            <span class="font-mono">-amd64</span>.
-          </span>
-        {:else if crossArch}
-          <span class="text-xs pai-text-warning">
-            &#9888; Cross-building {targetArch} on a {hostArch} host uses QEMU emulation — expect a significantly slower build.
-            Images are tagged <span class="font-mono">-{targetArch}</span>.
-          </span>
-        {/if}
-      </div>
+          <div class="flex flex-col gap-1">
+            <label for="targetArch" class="text-xs text-[var(--pd-content-text)]">Target architecture</label>
+            <select
+              id="targetArch"
+              bind:value={targetArch}
+              disabled={buildBusy}
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+              <option value="amd64">amd64 (x86_64 — OpenShift / Linux clusters)</option>
+              <option value="arm64">arm64 (Apple Silicon — local)</option>
+            </select>
+            <span class="text-xs text-[var(--pd-content-text)] opacity-80">
+              Host is {hostArch}. Deploying to OpenShift needs an <span class="font-mono">amd64</span> image.
+            </span>
+            {#if crossArch && targetArch === 'amd64'}
+              <span class="text-xs pai-text-muted">
+                &#8505; Building an <span class="font-mono">amd64</span> image for OpenShift on a {hostArch} host uses QEMU
+                emulation — this is expected and the build will be slower. Images are tagged
+                <span class="font-mono">-amd64</span>.
+              </span>
+            {:else if crossArch}
+              <span class="text-xs pai-text-warning">
+                &#9888; Cross-building {targetArch} on a {hostArch} host uses QEMU emulation — expect a significantly slower
+                build. Images are tagged <span class="font-mono">-{targetArch}</span>.
+              </span>
+            {/if}
+          </div>
 
-      <div class="flex flex-row items-center gap-3 mt-2">
-        <button on:click={save} disabled={saving || buildBusy} class="pai-btn pai-btn-primary">
-          {saving ? 'Saving...' : 'Save'}
-        </button>
+          <div class="flex flex-row items-center gap-3 mt-2">
+            <button on:click={save} disabled={saving || buildBusy} class="pai-btn pai-btn-primary">
+              {saving ? 'Saving...' : 'Save'}
+            </button>
 
-        {#if saveSuccess}
-          <span class="text-sm pai-text-success">Configuration saved</span>
-        {/if}
-        {#if saveError}
-          <span class="text-sm pai-text-error">{saveError}</span>
-        {/if}
-      </div>
+            {#if saveSuccess}
+              <span class="text-sm pai-text-success">Configuration saved</span>
+            {/if}
+            {#if saveError}
+              <span class="text-sm pai-text-error">{saveError}</span>
+            {/if}
+          </div>
+        </div>
+      {/if}
     </div>
 
     <div
@@ -334,66 +349,87 @@ async function applyQuickStart(arch?: TargetArch) {
 
     <hr class="border-[var(--pd-content-card-border)] my-2" />
 
-    <h2 id="phase1-build" class="text-xl text-[var(--pd-content-header)]">Phase 1: Build & Push Base Image</h2>
+    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)]">
+      <button
+        id="phase1-build"
+        on:click={() => (phase1Expanded = !phase1Expanded)}
+        class="w-full text-left p-3 flex flex-row items-center gap-3 hover:bg-[var(--pd-content-bg)] rounded-lg cursor-pointer">
+        <span class="text-xs text-[var(--pd-content-text)]">{phase1Expanded ? '▼' : '▶'}</span>
+        <h2 class="text-xl text-[var(--pd-content-header)]">Phase 1: Build &amp; Push Base Image</h2>
+      </button>
+      {#if phase1Expanded}
+        <div class="flex flex-col gap-3 p-4 pt-0">
+          {#if profile && baseTag}
+            <p class="text-sm text-[var(--pd-content-text)]">
+              Builds <span class="font-mono">{profile.baseAssetDir}</span> — ROS2 {distro} + build tools.
+              {#if simSupported}
+                This is the FROM layer for the simulation image below.
+              {/if}
+            </p>
 
-    {#if profile && baseTag}
-      <p class="text-sm text-[var(--pd-content-text)]">
-        Builds <span class="font-mono">{profile.baseAssetDir}</span> — ROS2 {distro} + build tools.
-        {#if simSupported}
-          This is the FROM layer for the simulation image below.
-        {/if}
-      </p>
-
-      <BuildPushPanel
-        bind:tag={baseTag}
-        bind:busy={baseBusy}
-        buildImage={t => physicalAiClient.buildBaseImage(t, currentConfig)}
-        onBuildComplete={() => {
-          baseImageExists = true;
-        }}
-        tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-base:noble"
-        tagInputId="baseTag" />
-    {:else}
-      <p class="text-sm p-3 rounded pai-banner-error">
-        Cannot build: no base image Containerfile is bundled for
-        <span class="font-mono">{distro}/{robot}/{middleware}/{engine}</span>. Choose a supported combination (Humble or
-        Jazzy + TurtleBot3 + DDS + Gazebo).
-      </p>
-    {/if}
+            <BuildPushPanel
+              bind:tag={baseTag}
+              bind:busy={baseBusy}
+              buildImage={t => physicalAiClient.buildBaseImage(t, currentConfig)}
+              onBuildComplete={() => {
+                baseImageExists = true;
+              }}
+              tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-base:noble"
+              tagInputId="baseTag" />
+          {:else}
+            <p class="text-sm p-3 rounded pai-banner-error">
+              Cannot build: no base image Containerfile is bundled for
+              <span class="font-mono">{distro}/{robot}/{middleware}/{engine}</span>. Choose a supported combination
+              (Humble or Jazzy + TurtleBot3 + DDS + Gazebo).
+            </p>
+          {/if}
+        </div>
+      {/if}
+    </div>
 
     <hr class="border-[var(--pd-content-card-border)] my-2" />
 
-    <h2 class="text-xl text-[var(--pd-content-header)]">Phase 2: Build & Push Simulation Image</h2>
+    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)]">
+      <button
+        on:click={() => (phase2Expanded = !phase2Expanded)}
+        class="w-full text-left p-3 flex flex-row items-center gap-3 hover:bg-[var(--pd-content-bg)] rounded-lg cursor-pointer">
+        <span class="text-xs text-[var(--pd-content-text)]">{phase2Expanded ? '▼' : '▶'}</span>
+        <h2 class="text-xl text-[var(--pd-content-header)]">Phase 2: Build &amp; Push Simulation Image</h2>
+      </button>
+      {#if phase2Expanded}
+        <div class="flex flex-col gap-3 p-4 pt-0">
+          {#if profile && simSupported && simTag}
+            {#if !baseImageExists}
+              <p class="text-sm p-3 rounded pai-banner-warning">
+                Build the base image (Phase 1) first — the simulation image depends on it.
+              </p>
+            {:else}
+              <p class="text-sm text-[var(--pd-content-text)]">
+                Builds <span class="font-mono">{profile.assetDir}</span> on top of the base image — Gazebo, Nav2, and TurtleBot3
+                packages (plus noVNC for Jazzy). Launch starts an empty world; add robots from the Simulation page.
+              </p>
+            {/if}
 
-    {#if profile && simSupported && simTag}
-      {#if !baseImageExists}
-        <p class="text-sm p-3 rounded pai-banner-warning">
-          Build the base image (Phase 1) first — the simulation image depends on it.
-        </p>
-      {:else}
-        <p class="text-sm text-[var(--pd-content-text)]">
-          Builds <span class="font-mono">{profile.assetDir}</span> on top of the base image — Gazebo, Nav2, and TurtleBot3
-          packages (plus noVNC for Jazzy). Launch starts an empty world; add robots from the Simulation page.
-        </p>
+            <BuildPushPanel
+              bind:tag={simTag}
+              bind:busy={simBusy}
+              buildImage={t => physicalAiClient.buildSimulationImage(t, currentConfig)}
+              tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-sim:noble"
+              tagInputId="simTag"
+              disabled={!baseImageExists} />
+          {:else if profile && !simSupported}
+            <p class="text-sm p-3 rounded pai-banner-warning">
+              <strong>Not available yet.</strong> Simulation images (Gazebo, Nav2, TurtleBot3) are not yet available for
+              ROS2 {distro}. Only the base image can be built at this time.
+            </p>
+          {:else}
+            <p class="text-sm p-3 rounded pai-banner-error">
+              Cannot build: no simulation Containerfile is bundled for
+              <span class="font-mono">{distro}/{robot}/{middleware}/{engine}</span>. Choose a supported combination.
+            </p>
+          {/if}
+        </div>
       {/if}
-
-      <BuildPushPanel
-        bind:tag={simTag}
-        bind:busy={simBusy}
-        buildImage={t => physicalAiClient.buildSimulationImage(t, currentConfig)}
-        tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-sim:noble"
-        tagInputId="simTag"
-        disabled={!baseImageExists} />
-    {:else if profile && !simSupported}
-      <p class="text-sm p-3 rounded pai-banner-warning">
-        <strong>Not available yet.</strong> Simulation images (Gazebo, Nav2, TurtleBot3) are not yet available for ROS2 {distro}.
-        Only the base image can be built at this time.
-      </p>
-    {:else}
-      <p class="text-sm p-3 rounded pai-banner-error">
-        Cannot build: no simulation Containerfile is bundled for
-        <span class="font-mono">{distro}/{robot}/{middleware}/{engine}</span>. Choose a supported combination.
-      </p>
-    {/if}
+    </div>
   {/if}
 </div>

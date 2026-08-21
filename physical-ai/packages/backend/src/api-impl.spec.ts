@@ -470,6 +470,7 @@ describe('PhysicalAiApiImpl', () => {
         tag: 'my-tag:latest',
         status: 'Starting...',
         logs: [],
+        startedAt: expect.any(Number),
       });
     });
 
@@ -493,7 +494,7 @@ describe('PhysicalAiApiImpl', () => {
       expect(progress!.currentStep).toBe(3);
       expect(progress!.totalSteps).toBe(8);
       expect(progress!.status).toBe('Building... Step 3/8');
-      expect(progress!.logs).toContain('STEP 3/8: RUN apt-get update');
+      expect(progress!.logs.some(l => l.includes('STEP 3/8: RUN apt-get update'))).toBe(true);
     });
 
     it('records error events', async () => {
@@ -513,7 +514,7 @@ describe('PhysicalAiApiImpl', () => {
 
       const progress = await api.getBuildProgress('my-tag:latest');
       expect(progress!.error).toBe('something broke');
-      expect(progress!.logs).toContain('ERROR: something broke');
+      expect(progress!.logs.some(l => l.includes('ERROR: something broke'))).toBe(true);
     });
 
     it('sets done on successful build', async () => {
@@ -764,6 +765,7 @@ describe('PhysicalAiApiImpl', () => {
         tag: 'my-img:latest',
         status: 'Pushing...',
         logs: [],
+        startedAt: expect.any(Number),
       });
     });
 
@@ -832,7 +834,7 @@ describe('PhysicalAiApiImpl', () => {
 
       const progress = await api.getPushProgress('my-img:latest');
       expect(progress!.status).toBe('Pushing layer abc123');
-      expect(progress!.logs).toContain('Pushing layer abc123');
+      expect(progress!.logs.some(l => l.includes('Pushing layer abc123'))).toBe(true);
     });
 
     it('handles multi-line callback data', async () => {
@@ -850,7 +852,9 @@ describe('PhysicalAiApiImpl', () => {
       pushCallback!('data', '{"status":"line1"}\n{"status":"line2"}');
 
       const progress = await api.getPushProgress('my-img:latest');
-      expect(progress!.logs).toEqual(['line1', 'line2']);
+      expect(progress!.logs).toHaveLength(2);
+      expect(progress!.logs[0]).toMatch(/line1$/);
+      expect(progress!.logs[1]).toMatch(/line2$/);
       expect(progress!.status).toBe('line2');
     });
 
