@@ -15,6 +15,8 @@ const mockPushImage = vi.fn();
 const mockCancelPush = vi.fn();
 const mockGetPushProgress = vi.fn();
 const mockGetImageTags = vi.fn();
+const mockGetImageBuilderLayout = vi.fn();
+const mockSetImageBuilderLayout = vi.fn();
 const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
@@ -32,6 +34,8 @@ vi.mock('./api/client', () => ({
     cancelPush: (...args: unknown[]) => mockCancelPush(...args),
     getPushProgress: (...args: unknown[]) => mockGetPushProgress(...args),
     getImageTags: (...args: unknown[]) => mockGetImageTags(...args),
+    getImageBuilderLayout: (...args: unknown[]) => mockGetImageBuilderLayout(...args),
+    setImageBuilderLayout: (...args: unknown[]) => mockSetImageBuilderLayout(...args),
   },
 }));
 
@@ -56,6 +60,8 @@ describe('SimulationSetup (Image Builder)', () => {
     mockGetImageTags.mockResolvedValue([]);
     mockGetBuildProgress.mockResolvedValue(undefined);
     mockGetPushProgress.mockResolvedValue(undefined);
+    mockGetImageBuilderLayout.mockResolvedValue('pipeline');
+    mockSetImageBuilderLayout.mockResolvedValue(undefined);
   });
 
   it('renders heading after config loads', async () => {
@@ -263,5 +269,113 @@ describe('SimulationSetup (Image Builder)', () => {
     const buildButtons = screen.getAllByRole('button', { name: 'Build' }) as HTMLButtonElement[];
     // Step 2's Build button (the second BuildPushPanel rendered) is disabled.
     expect(buildButtons[buildButtons.length - 1].disabled).toBe(true);
+  });
+
+  describe('Image Builder layout', () => {
+    it('defaults to pipeline layout, rendering both build steps', async () => {
+      render(SimulationSetup);
+      await waitFor(() => {
+        expect(screen.queryByText('Loading configuration...')).toBeNull();
+      });
+
+      expect(mockGetImageBuilderLayout).toHaveBeenCalled();
+      expect(screen.getByText(/Step 1.*Base image/)).toBeTruthy();
+      expect(screen.getByText(/Step 2.*Simulation image/)).toBeTruthy();
+      expect(screen.getByRole('radio', { name: 'Pipeline' })).toBeTruthy();
+      expect(screen.getByRole('radio', { name: 'Guided' })).toBeTruthy();
+    });
+
+    it('clicking the Guided layout switcher persists the preference', async () => {
+      render(SimulationSetup);
+      await waitFor(() => {
+        expect(screen.queryByText('Loading configuration...')).toBeNull();
+      });
+
+      await fireEvent.click(screen.getByRole('radio', { name: 'Guided' }));
+
+      await waitFor(() => {
+        expect(mockSetImageBuilderLayout).toHaveBeenCalledWith('guided');
+      });
+    });
+
+    it('guided layout hides both build steps until a choice is made', async () => {
+      mockGetImageBuilderLayout.mockResolvedValue('guided');
+
+      render(SimulationSetup);
+      await waitFor(() => {
+        expect(screen.queryByText('Loading configuration...')).toBeNull();
+      });
+
+      expect(screen.getByText('What do you want to build?')).toBeTruthy();
+      expect(screen.getByText('Choose what to build to continue.')).toBeTruthy();
+      expect(screen.queryByText(/Step 1.*Base image/)).toBeNull();
+      expect(screen.queryByText(/Step 2.*Simulation image/)).toBeNull();
+      expect(screen.getByRole('radio', { name: 'Base image only' })).toBeTruthy();
+      expect(screen.getByRole('radio', { name: 'Simulation image' })).toBeTruthy();
+      expect(screen.getByRole('radio', { name: 'Both' })).toBeTruthy();
+    });
+
+    it('guided layout: choosing "Base image only" reveals Step 1 and not Step 2', async () => {
+      mockGetImageBuilderLayout.mockResolvedValue('guided');
+
+      render(SimulationSetup);
+      await waitFor(() => {
+        expect(screen.queryByText('Loading configuration...')).toBeNull();
+      });
+
+      await fireEvent.click(screen.getByRole('radio', { name: 'Base image only' }));
+
+      expect(await screen.findByText(/Step 1.*Base image/)).toBeTruthy();
+      expect(screen.queryByText(/Step 2.*Simulation image/)).toBeNull();
+      expect(screen.queryByText('Choose what to build to continue.')).toBeNull();
+    });
+
+    it('guided layout: choosing "Simulation image" reveals Step 2 (enabled) and hides Step 1 when the base image already exists locally', async () => {
+      mockGetImageBuilderLayout.mockResolvedValue('guided');
+      mockGetSimulationConfig.mockResolvedValue({
+        robot: 'turtlebot3',
+        distro: 'jazzy',
+        middleware: 'dds',
+        engine: 'gazebo',
+        baseImage: 'jazzy-noble',
+      });
+      const baseTag = 'quay.io/ecosystem-appeng/ros2-jazzy-base:noble';
+      mockListLocalImages.mockResolvedValue([baseTag]);
+
+      render(SimulationSetup);
+      await waitFor(() => {
+        expect(screen.queryByText('Loading configuration...')).toBeNull();
+      });
+
+      await fireEvent.click(screen.getByRole('radio', { name: 'Simulation image' }));
+
+      expect(screen.queryByText(/Step 1.*Base image/)).toBeNull();
+      const simBuildButton = (await screen.findByRole('button', { name: 'Build' })) as HTMLButtonElement;
+      await waitFor(() => expect(simBuildButton.disabled).toBe(false));
+    });
+
+    it('guided layout: choosing "Simulation image" without the base image reveals Step 1 as a prerequisite and keeps Step 2 disabled', async () => {
+      mockGetImageBuilderLayout.mockResolvedValue('guided');
+      mockGetSimulationConfig.mockResolvedValue({
+        robot: 'turtlebot3',
+        distro: 'jazzy',
+        middleware: 'dds',
+        engine: 'gazebo',
+        baseImage: 'jazzy-noble',
+      });
+      mockListLocalImages.mockResolvedValue([]);
+
+      render(SimulationSetup);
+      await waitFor(() => {
+        expect(screen.queryByText('Loading configuration...')).toBeNull();
+      });
+
+      await fireEvent.click(screen.getByRole('radio', { name: 'Simulation image' }));
+
+      expect(await screen.findByText(/Step 1.*Base image/)).toBeTruthy();
+      expect(await screen.findByText(/Build the base image \(Step 1\) first/)).toBeTruthy();
+      const buildButtons = screen.getAllByRole('button', { name: 'Build' }) as HTMLButtonElement[];
+      expect(buildButtons[buildButtons.length - 1].disabled).toBe(true);
+    });
   });
 });

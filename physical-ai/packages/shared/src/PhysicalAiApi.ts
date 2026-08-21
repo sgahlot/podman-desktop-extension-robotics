@@ -28,6 +28,8 @@ export abstract class PhysicalAiApi {
   abstract getHostArch(): Promise<string>;
   abstract getCatalogViewMode(): Promise<'all' | 'curated'>;
   abstract setCatalogViewMode(mode: 'all' | 'curated'): Promise<void>;
+  abstract getImageBuilderLayout(): Promise<'pipeline' | 'guided'>;
+  abstract setImageBuilderLayout(layout: 'pipeline' | 'guided'): Promise<void>;
   abstract getCatalogCuratedAllowlist(): Promise<string>;
   /** Empty string = default ros2-*-sim* / ros2-*-turtlebot3 patterns. */
   abstract getSimulationImageAllowlist(): Promise<string>;

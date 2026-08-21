@@ -80,6 +80,19 @@
           "default": "all",
           "description": "Default Image Catalog view mode"
         },
+        "physical-ai.imageBuilderLayout": {
+          "type": "string",
+          "enum": [
+            "pipeline",
+            "guided"
+          ],
+          "enumDescriptions": [
+            "Single-page pipeline: base image (Step 1) and simulation image (Step 2) shown together",
+            "Guided chooser: pick whether to build the base image, the simulation image, or both"
+          ],
+          "default": "pipeline",
+          "description": "Layout for the Image Builder page"
+        },
         "physical-ai.catalogCuratedAllowlist": {
           "type": "string",
           "default": "ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*",
