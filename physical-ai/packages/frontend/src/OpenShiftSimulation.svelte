@@ -300,11 +300,10 @@ async function reconcileRobots(w: OpenShiftWorkload) {
   if (missing.length === 0) return;
   robotsByWorkload[w.name] = [
     ...(robotsByWorkload[w.name] ?? []),
-    // x/y aren't recoverable from `ros2 node list` alone — '?' is a placeholder.
+    // x/y aren't recoverable from `ros2 node list` alone, so they're omitted — the row
+    // shows just the robot name rather than a meaningless "(?, ?)".
     ...missing.map(n => ({
       name: n,
-      x: '?',
-      y: '?',
       navStatus: 'idle' as const,
       navTarget: { x: '0', y: '0' },
       navReached: null,
@@ -547,8 +546,10 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
              here (S8-3). -->
         <div class="text-sm p-3 rounded pai-banner-success flex flex-col gap-1">
           <div>
-            Deployed <span class="font-mono">{deployResult.name}</span> to
-            <span class="font-mono">{deployResult.namespace}</span>
+            Deployed
+            <span class="font-mono font-semibold text-[var(--pd-content-header)]">{deployResult.name}</span>
+            to
+            <span class="font-mono font-semibold pai-text-accent">{deployResult.namespace}</span>
           </div>
           <div class="text-xs opacity-80">
             Route:

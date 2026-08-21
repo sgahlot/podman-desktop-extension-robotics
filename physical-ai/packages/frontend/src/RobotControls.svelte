@@ -32,6 +32,9 @@ let counter = startCounter(initialName);
 let spawning = false;
 let spawnError = '';
 let removing: Record<string, boolean> = {};
+/** True once the user types into the Name field; blocks the auto-suggestion below so we
+ * never clobber a name they picked themselves. */
+let nameEdited = false;
 
 function startCounter(n: string): number {
   const m = /^robot_(\d+)$/.exec(n);
@@ -49,6 +52,22 @@ function nextFreeName(justSpawned: string): string {
   return `robot_${c}`;
 }
 
+/** Peek at the next free `robot_N` at/after `counter` given `list`, without advancing
+ * `counter`. Pure (unlike `nextFreeName`) so it's safe to call from a reactive statement
+ * every time `list` changes, e.g. after backend reconciliation adds/removes robots. */
+function suggestedName(list: RobotEntry[]): string {
+  const taken = new Set(list.map(r => r.name));
+  let c = counter;
+  while (taken.has(`robot_${c}`)) {
+    c += 1;
+  }
+  return `robot_${c}`;
+}
+
+// Keep the pre-filled Name suggestion honest against the live `robots` list (mount and
+// any later change, e.g. reconciliation) as long as the user hasn't typed their own name.
+$: if (!nameEdited) form.name = suggestedName(robots);
+
 async function spawn() {
   if (disabled || spawning || !form.name) return;
   if (robots.some(r => r.name === form.name)) {
@@ -61,6 +80,9 @@ async function spawn() {
   try {
     await onSpawn({ ...form });
     form = { ...form, name: nextFreeName(justSpawned) };
+    // The freshly suggested name isn't a user edit; keep the auto-suggestion live so it
+    // stays correct once `robots` actually reflects the spawn.
+    nameEdited = false;
   } catch (e) {
     spawnError = e instanceof Error ? e.message : String(e);
   } finally {
@@ -103,6 +125,7 @@ async function remove(index: number) {
       <input
         id="{idPrefix}-name"
         bind:value={form.name}
+        on:input={() => (nameEdited = true)}
         disabled={disabled || spawning}
         class="w-28 px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
     </div>
@@ -145,7 +168,9 @@ async function remove(index: number) {
         <div
           class="flex flex-row flex-wrap items-center gap-2 text-xs rounded border border-[var(--pd-content-card-border)] p-2">
           <span class="font-mono font-medium text-[var(--pd-content-header)]">{robot.name}</span>
-          <span class="pai-text-muted">spawned at ({robot.x}, {robot.y})</span>
+          {#if robot.x !== undefined && robot.y !== undefined}
+            <span class="pai-text-muted">spawned at ({robot.x}, {robot.y})</span>
+          {/if}
           {#if robot.warmStatus === 'warming'}
             <!-- Still warming: show the warm indicator and (after this block) Remove;
                  hide only the nav controls so the user can't fire a goal before Nav2 is

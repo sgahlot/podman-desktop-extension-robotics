@@ -45,6 +45,10 @@ describe('RobotControls', () => {
     const onSpawn = vi.fn().mockResolvedValue(undefined);
     render(RobotControls, { robots: [robot('robot_1')], onSpawn, onNavigate: vi.fn(), onRemove: vi.fn() });
 
+    // The pre-filled name auto-corrects away from the taken robot_1 (to robot_2); to hit the
+    // spawn-time duplicate guard the user has to type a colliding name themselves, which also
+    // marks the field as user-edited so the auto-suggestion no longer overrides it.
+    await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'robot_1' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Spawn' }));
 
     expect(await screen.findByText(/already exists/)).toBeTruthy();
