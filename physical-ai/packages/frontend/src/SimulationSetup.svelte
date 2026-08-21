@@ -227,7 +227,7 @@ function cancelQuickStart() {
   {#if loading}
     <div class="text-sm text-[var(--pd-content-text)]">Loading configuration...</div>
   {:else}
-    <!-- Image Builder layout switcher — pipeline (default) vs. guided chooser -->
+    <!-- Image Builder layout switcher — guided (default) vs. pipeline chooser -->
     <div class="flex flex-row items-center gap-2 max-w-md">
       <span class="text-xs text-[var(--pd-content-text)]">Layout:</span>
       <div class="flex flex-row gap-2" role="radiogroup" aria-label="Image Builder layout">
