@@ -28,3 +28,11 @@
   `npm run format:check`, and `npm test` (all packages) — fix pre-existing errors
   encountered along the way too, even if unrelated to the branch's own feature scope,
   rather than letting them keep sitting on `main`
+- **Merge-to-main before Closed:** never transition a sub-task to **Closed** until its branch
+  is merged to `main`. Required sequence: user-tested → merge the branch to `main` with a
+  **merge commit** (`--no-ff`, so the branch's commit SHAs stay reachable from `main` and every
+  Jira commit link keeps resolving even after the branch is deleted) → zero-errors gate green on
+  the integrated `main` → post a comment on the Jira citing the **merge commit id** as a Markdown
+  commit link → then transition to Closed. Use **Review** (transition id 41) for
+  code-complete-but-untested; In Progress until testing starts. Only merged branches are safe to
+  delete.
