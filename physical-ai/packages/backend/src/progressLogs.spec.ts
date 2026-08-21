@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { appendProgressLog, MAX_PROGRESS_LOG_LINES, PROGRESS_LOG_TRUNCATION_MARKER } from './progressLogs';
 
 describe('appendProgressLog', () => {
@@ -15,6 +15,25 @@ describe('appendProgressLog', () => {
     const logs: string[] = [];
     appendProgressLog(logs, 'hello');
     expect(logs[0]).toMatch(/^\[\d{2}:\d{2}:\d{2}\] hello$/);
+  });
+
+  it('formats the timestamp using the local time-of-day, not UTC', () => {
+    // Regression test: the timestamp must come from getHours()/getMinutes()/getSeconds()
+    // (local timezone), not toISOString() (always UTC). Fake a fixed instant and compare
+    // against both possible sources so the assertion holds regardless of the machine's
+    // configured timezone offset (including offsets where local and UTC coincide).
+    const fixed = new Date('2026-08-19T15:59:37.000Z');
+    vi.useFakeTimers();
+    vi.setSystemTime(fixed);
+
+    const logs: string[] = [];
+    appendProgressLog(logs, 'hello');
+
+    const pad = (n: number): string => n.toString().padStart(2, '0');
+    const expectedLocal = `${pad(fixed.getHours())}:${pad(fixed.getMinutes())}:${pad(fixed.getSeconds())}`;
+    expect(logs[0]).toBe(`[${expectedLocal}] hello`);
+
+    vi.useRealTimers();
   });
 
   it('keeps only the newest lines once the cap is exceeded', () => {
