@@ -25,6 +25,11 @@
           "default": "ecosystem-appeng",
           "description": "Default Quay.io namespace for browsing and building images"
         },
+        "physical-ai.defaultOpenShiftNamespace": {
+          "type": "string",
+          "default": "",
+          "description": "Default OpenShift/Kubernetes namespace to use when the current kubeconfig context doesn't specify one (the kubeconfig context's own namespace, when present, always takes priority)"
+        },
         "physical-ai.simulationRobot": {
           "type": "string",
           "default": "turtlebot3",

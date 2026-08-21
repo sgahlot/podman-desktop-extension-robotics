@@ -69,14 +69,23 @@ export abstract class PhysicalAiApi {
   // --- OpenShift deployment (APPENG-5777) ---
   /** Current Kubernetes/OpenShift context from the kubeconfig, or undefined if none. */
   abstract getOpenShiftContext(): Promise<OpenShiftContext | undefined>;
+  /** Every context available in the kubeconfig, so the UI can offer switching to a
+   * different cluster (S8-10) — each carries its own credentials/user. */
+  abstract listKubeContexts(): Promise<{ name: string; clusterUrl?: string; namespace?: string }[]>;
+  /** Configured fallback namespace (physical-ai.defaultOpenShiftNamespace) for when the
+   * kubeconfig context sets none; '' when unconfigured (S8-16). */
+  abstract getDefaultOpenShiftNamespace(): Promise<string>;
+  /** Whether `oc` is currently logged in to a cluster (S8-11), via `oc whoami`. Checks the
+   * given context (S8-10) when provided, else the kubeconfig's current-context. */
+  abstract checkOpenShiftLogin(context?: string): Promise<{ loggedIn: boolean; message?: string }>;
   /** Render the Deployment/Service/Route manifests as a YAML preview (no side effects). */
   abstract generateOpenShiftManifests(config: OpenShiftDeployConfig): Promise<{ yaml: string }>;
-  /** Apply the manifests to the current context and return the Route URL when available. */
+  /** Apply the manifests to config.context when set (S8-10), else the current context. */
   abstract deployToOpenShift(config: OpenShiftDeployConfig): Promise<OpenShiftDeployResult>;
   /** List physical-ai-managed deployments in a namespace. */
-  abstract listOpenShiftDeployments(namespace: string): Promise<OpenShiftWorkload[]>;
+  abstract listOpenShiftDeployments(namespace: string, context?: string): Promise<OpenShiftWorkload[]>;
   /** Delete the Deployment/Service/Route for a named workload. */
-  abstract deleteOpenShiftDeployment(namespace: string, name: string): Promise<void>;
+  abstract deleteOpenShiftDeployment(namespace: string, name: string, context?: string): Promise<void>;
   /** Spawn a TurtleBot3 into a deployed simulation pod (mirrors the local spawn). */
   abstract spawnRobotInOpenShift(
     namespace: string,
@@ -85,6 +94,7 @@ export abstract class PhysicalAiApi {
     x: string,
     y: string,
     yaw: string,
+    context?: string,
   ): Promise<void>;
   /** Drive a spawned robot to (x, y) in a deployed pod (Nav2 on Jazzy, cmd_vel on Humble). */
   abstract sendOpenShiftNavigationGoal(
@@ -93,9 +103,13 @@ export abstract class PhysicalAiApi {
     robotName: string,
     x: number,
     y: number,
+    context?: string,
   ): Promise<NavigationGoalResult>;
   /** Tear down a robot in a deployed pod: kill its ROS processes and remove its Gazebo model. */
-  abstract despawnRobotInOpenShift(namespace: string, name: string, robotName: string): Promise<void>;
+  abstract despawnRobotInOpenShift(namespace: string, name: string, robotName: string, context?: string): Promise<void>;
   /** Nav2 pre-warm state for a robot in a deployed pod, for an honest "warming…" indicator. */
   abstract getRobotWarmStatusInOpenShift(namespace: string, name: string, robotName: string): Promise<Nav2WarmStatus>;
+  /** Robots actually running in the deployment's pod, via `ros2 node list` (S8-17) — used
+   * to reconcile the UI's robot list after a reload/restart forgets in-memory spawn state. */
+  abstract listSpawnedRobotsInOpenShift(namespace: string, name: string, context?: string): Promise<string[]>;
 }

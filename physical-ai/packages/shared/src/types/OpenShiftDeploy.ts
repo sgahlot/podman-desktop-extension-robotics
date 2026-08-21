@@ -37,6 +37,12 @@ export interface OpenShiftDeployConfig {
    * A bare `key:effect` (no value) tolerates the taint via `Exists`.
    */
   gpuToleration?: string;
+  /**
+   * Kubeconfig context name to deploy into (S8-10), overriding the kubeconfig's
+   * current-context — lets the user target a cluster other than the default one
+   * without switching `oc`'s current context globally. Undefined uses current-context.
+   */
+  context?: string;
 }
 
 export interface OpenShiftDeployResult {
@@ -59,6 +65,12 @@ export interface OpenShiftContext {
    * rather than a baked-in default. Undefined when the context sets no namespace.
    */
   namespace?: string;
+  /**
+   * Cluster API server URL bound to the current context's cluster, if resolvable from
+   * the kubeconfig. Purely for display next to the context picker — the picker itself
+   * switches by context name (see listKubeContexts), not by this URL.
+   */
+  clusterUrl?: string;
 }
 
 /** A physical-ai-managed workload observed in a namespace. */

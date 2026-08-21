@@ -114,7 +114,7 @@ const MAX_IN_FLIGHT_OPS = 5;
  */
 type ExecTarget =
   | { readonly kind: 'podman'; readonly id: string }
-  | { readonly kind: 'oc'; readonly pod: string; readonly namespace: string };
+  | { readonly kind: 'oc'; readonly pod: string; readonly namespace: string; readonly context?: string };
 
 /** Single-quote a value for safe interpolation into a remote `bash -c` string. */
 function shSingleQuote(value: string): string {
@@ -123,31 +123,80 @@ function shSingleQuote(value: string): string {
 }
 
 /**
- * Best-effort read of the namespace bound to a named context in a kubeconfig, without a
- * YAML parser (matching getOpenShiftContext's `current-context` grep — the project has no
- * YAML dependency). Scans the top-level `contexts:` list for the entry whose `name:`
- * matches and returns its `context.namespace`. Tolerates field order within an entry and
- * both flush and indented list markers; returns undefined when the context or its
+ * Extracts the raw text block for a top-level kubeconfig list key (e.g. `contexts` or
+ * `clusters`), without a YAML parser (the project has no YAML dependency). The block
+ * runs until the next top-level key (a line starting flush-left with a letter, e.g.
+ * `current-context:` / `users:`). Returns undefined when the list key isn't present.
+ */
+function kubeconfigListBlock(kubeconfig: string, listKey: string): string | undefined {
+  const start = kubeconfig.search(new RegExp(`^${listKey}:[ \\t]*$`, 'm'));
+  if (start < 0) return undefined;
+  const body = kubeconfig.slice(start).replace(new RegExp(`^${listKey}:[ \\t]*\\n?`), '');
+  const nextKey = body.match(/^[A-Za-z]/m);
+  return nextKey?.index ? body.slice(0, nextKey.index) : body;
+}
+
+/** Splits a kubeconfig list block into per-entry raw text chunks (see kubeconfigListBlock). */
+function kubeconfigListEntries(block: string): string[] {
+  // Each list entry begins with a `- ` marker (possibly indented under the list key).
+  return block.split(/^[ \t]*-[ \t]+/m).filter(entry => entry.trim());
+}
+
+/**
+ * Locates the kubeconfig entry (as raw text) whose `name:` matches `entryName` within a
+ * top-level list keyed by `listKey` (e.g. `contexts` or `clusters`). Tolerates field
+ * order within an entry and both flush and indented list markers; returns undefined
+ * when the list or a matching entry isn't found.
+ */
+function kubeconfigFindEntry(kubeconfig: string, listKey: string, entryName: string): string | undefined {
+  const block = kubeconfigListBlock(kubeconfig, listKey);
+  if (!block) return undefined;
+  for (const entry of kubeconfigListEntries(block)) {
+    const nameMatch = entry.match(/(?:^|\n)[ \t]*name:[ \t]*["']?([^"'\s]+)["']?[ \t]*$/m);
+    if (nameMatch?.[1] === entryName) return entry;
+  }
+  return undefined;
+}
+
+/** Lists every entry `name:` under a top-level kubeconfig list key (see kubeconfigListBlock). */
+function kubeconfigListEntryNames(kubeconfig: string, listKey: string): string[] {
+  const block = kubeconfigListBlock(kubeconfig, listKey);
+  if (!block) return [];
+  const names: string[] = [];
+  for (const entry of kubeconfigListEntries(block)) {
+    const nameMatch = entry.match(/(?:^|\n)[ \t]*name:[ \t]*["']?([^"'\s]+)["']?[ \t]*$/m);
+    if (nameMatch?.[1]) names.push(nameMatch[1]);
+  }
+  return names;
+}
+
+/** Reads a scalar `field:` value out of a kubeconfig entry's raw text (see kubeconfigFindEntry). */
+function kubeconfigFieldValue(entry: string, field: string): string | undefined {
+  const match = entry.match(new RegExp(`(?:^|\\n)[ \\t]*${field}:[ \\t]*["']?([^"'\\s]+)["']?[ \\t]*$`, 'm'));
+  return match ? match[1] : undefined;
+}
+
+/**
+ * Best-effort read of the namespace bound to a named context in a kubeconfig (matching
+ * getOpenShiftContext's `current-context` grep). Returns undefined when the context or its
  * namespace isn't present.
  */
 function kubeconfigContextNamespace(kubeconfig: string, contextName: string): string | undefined {
-  const start = kubeconfig.search(/^contexts:[ \t]*$/m);
-  if (start < 0) return undefined;
-  const body = kubeconfig.slice(start).replace(/^contexts:[ \t]*\n?/, '');
-  // The block runs until the next top-level key (a line starting flush-left with a
-  // letter, e.g. `current-context:` / `users:`); list items are `-`-prefixed or indented.
-  const nextKey = body.match(/^[A-Za-z]/m);
-  const block = nextKey?.index ? body.slice(0, nextKey.index) : body;
-  // Each list entry begins with a `- ` marker (possibly indented under `contexts:`).
-  const entries = block.split(/^[ \t]*-[ \t]+/m).filter(entry => entry.trim());
-  for (const entry of entries) {
-    const nameMatch = entry.match(/(?:^|\n)[ \t]*name:[ \t]*["']?([^"'\s]+)["']?[ \t]*$/m);
-    if (nameMatch?.[1] === contextName) {
-      const nsMatch = entry.match(/(?:^|\n)[ \t]*namespace:[ \t]*["']?([^"'\s]+)["']?[ \t]*$/m);
-      return nsMatch ? nsMatch[1] : undefined;
-    }
-  }
-  return undefined;
+  const entry = kubeconfigFindEntry(kubeconfig, 'contexts', contextName);
+  return entry ? kubeconfigFieldValue(entry, 'namespace') : undefined;
+}
+
+/**
+ * Best-effort read of the API server URL for the cluster bound to a named context in a
+ * kubeconfig. Resolves the context's `cluster:` reference, then looks up that cluster's
+ * `cluster.server` in the top-level `clusters:` list.
+ */
+function kubeconfigClusterServer(kubeconfig: string, contextName: string): string | undefined {
+  const contextEntry = kubeconfigFindEntry(kubeconfig, 'contexts', contextName);
+  const clusterName = contextEntry ? kubeconfigFieldValue(contextEntry, 'cluster') : undefined;
+  if (!clusterName) return undefined;
+  const clusterEntry = kubeconfigFindEntry(kubeconfig, 'clusters', clusterName);
+  return clusterEntry ? kubeconfigFieldValue(clusterEntry, 'server') : undefined;
 }
 
 export class PhysicalAiApiImpl implements PhysicalAiApi {
@@ -1445,7 +1494,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     if (target.kind === 'podman') {
       return ['podman', ['exec', target.id, ...command]];
     }
-    return ['oc', ['exec', '-n', target.namespace, target.pod, '--', ...command]];
+    const contextArgs = target.context ? ['--context', target.context] : [];
+    return ['oc', [...contextArgs, 'exec', '-n', target.namespace, target.pod, '--', ...command]];
   }
 
   async #execDetached(
@@ -1472,7 +1522,18 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const remoteCmd = [entrypoint, ...args].map(shSingleQuote).join(' ');
     const logName = entrypoint.replace(/[^a-zA-Z0-9._-]/g, '_');
     const remote = `${envPrefix}nohup ${remoteCmd} >"/tmp/pai-${logName}.log" 2>&1 &`;
-    await extensionApi.process.exec('oc', ['exec', '-n', target.namespace, target.pod, '--', 'bash', '-c', remote]);
+    const contextArgs = target.context ? ['--context', target.context] : [];
+    await extensionApi.process.exec('oc', [
+      ...contextArgs,
+      'exec',
+      '-n',
+      target.namespace,
+      target.pod,
+      '--',
+      'bash',
+      '-c',
+      remote,
+    ]);
   }
 
   static #sleep(ms: number): Promise<void> {
@@ -1625,9 +1686,54 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         context: contextName,
         kubeconfigPath,
         namespace: kubeconfigContextNamespace(content, contextName),
+        clusterUrl: kubeconfigClusterServer(content, contextName),
       };
     } catch {
       return undefined;
+    }
+  }
+
+  /**
+   * Every context available in the kubeconfig (not just current-context), so the UI can
+   * offer switching to a different cluster (S8-10) — each context carries its own
+   * credentials/user, so this is the only way to target a cluster other than the
+   * kubeconfig's default without inventing credentials for an arbitrary URL. Returns []
+   * on any read/parse failure (mirrors getOpenShiftContext's fail-soft style).
+   */
+  async listKubeContexts(): Promise<{ name: string; clusterUrl?: string; namespace?: string }[]> {
+    try {
+      const uri = extensionApi.kubernetes.getKubeconfig();
+      const content = await readFile(uri.fsPath, 'utf-8');
+      return kubeconfigListEntryNames(content, 'contexts').map(name => ({
+        name,
+        clusterUrl: kubeconfigClusterServer(content, name),
+        namespace: kubeconfigContextNamespace(content, name),
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  async getDefaultOpenShiftNamespace(): Promise<string> {
+    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    return config.get<string>('defaultOpenShiftNamespace') ?? '';
+  }
+
+  async checkOpenShiftLogin(context?: string): Promise<{ loggedIn: boolean; message?: string }> {
+    try {
+      const contextArgs = context ? ['--context', context] : [];
+      const res = await extensionApi.process.exec('oc', [...contextArgs, 'whoami']);
+      if (res.stdout?.trim()) {
+        return { loggedIn: true };
+      }
+      return { loggedIn: false, message: 'Not logged in to OpenShift — run `oc login` first.' };
+    } catch (err: unknown) {
+      const e = err as { stderr?: string; message?: string };
+      const detail = firstNonEmpty(e.stderr?.trim(), e.message, String(err));
+      if (/Unauthorized|Missing or incomplete configuration|must provide credentials/i.test(detail)) {
+        return { loggedIn: false, message: 'Not logged in to OpenShift — run `oc login` first.' };
+      }
+      return { loggedIn: false, message: this.#ocErrorMessage(err, 'verify OpenShift login') };
     }
   }
 
@@ -1643,10 +1749,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     if (!ctx) {
       throw new Error('No current Kubernetes/OpenShift context found. Log in first (e.g. `oc login`).');
     }
+    // config.context (S8-10) overrides the kubeconfig's current-context when the user
+    // picked a different cluster from the dropdown; falls back to today's behavior.
+    const targetContext = config.context ?? ctx.context;
 
-    await extensionApi.kubernetes.createResources(ctx.context, manifests);
+    await extensionApi.kubernetes.createResources(targetContext, manifests);
 
-    const routeUrl = await this.#readRouteUrl(config.namespace, config.name);
+    const routeUrl = await this.#readRouteUrl(config.namespace, config.name, config.context);
     const applied = manifests.map(m => String(m.kind));
     return {
       name: config.name,
@@ -1659,11 +1768,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     };
   }
 
-  async listOpenShiftDeployments(namespace: string): Promise<OpenShiftWorkload[]> {
+  async listOpenShiftDeployments(namespace: string, context?: string): Promise<OpenShiftWorkload[]> {
     const ns = assertNamespace(namespace);
     let stdout: string;
     try {
+      const contextArgs = context ? ['--context', context] : [];
       const res = await extensionApi.process.exec('oc', [
+        ...contextArgs,
         'get',
         'deployment',
         '-n',
@@ -1698,7 +1809,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       const replicas = d.spec?.replicas ?? 0;
       const readyReplicas = d.status?.readyReplicas ?? 0;
       const image = d.spec?.template?.spec?.containers?.[0]?.image;
-      const routeUrl = await this.#readRouteUrl(ns, name);
+      const routeUrl = await this.#readRouteUrl(ns, name, context);
       workloads.push({
         name,
         namespace: ns,
@@ -1712,11 +1823,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return workloads;
   }
 
-  async deleteOpenShiftDeployment(namespace: string, name: string): Promise<void> {
+  async deleteOpenShiftDeployment(namespace: string, name: string, context?: string): Promise<void> {
     const ns = assertNamespace(namespace);
     const safeName = assertK8sName(name, 'name');
     try {
+      const contextArgs = context ? ['--context', context] : [];
       await extensionApi.process.exec('oc', [
+        ...contextArgs,
         'delete',
         'deployment,service,route',
         safeName,
@@ -1736,19 +1849,20 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     x: string,
     y: string,
     yaw: string,
+    context?: string,
   ): Promise<void> {
     const ns = assertNamespace(namespace);
     const safeName = assertK8sName(name, 'name');
     // Reuse the same argv validation as the local spawn path.
     const [, safeRobot, safeX, safeY, safeYaw] = assertSpawnExecCommand([SPAWN_ENTRYPOINT, robotName, x, y, yaw]);
-    const pod = await this.#resolveOpenShiftPod(ns, safeName);
-    const target = { kind: 'oc', pod, namespace: ns } as const;
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    const target = { kind: 'oc', pod, namespace: ns, context } as const;
     await this.#execDetached(target, SPAWN_ENTRYPOINT, [safeRobot, safeX, safeY, safeYaw]);
 
     // Warm Nav2 in the background so the first Navigate click is instant (Jazzy only).
     // The spawn already succeeded — never let pre-warm setup surface as an error.
     try {
-      const image = await this.#openShiftDeploymentImage(ns, safeName);
+      const image = await this.#openShiftDeploymentImage(ns, safeName, context);
       if (image.includes('jazzy')) {
         const pose = { x: Number(safeX), y: Number(safeY), yaw: Number(safeYaw) };
         const warmKey = PhysicalAiApiImpl.#warmKey(`${ns}/${safeName}`, safeRobot);
@@ -1765,14 +1879,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     robotName: string,
     x: number,
     y: number,
+    context?: string,
   ): Promise<NavigationGoalResult> {
     const ns = assertNamespace(namespace);
     const safeName = assertK8sName(name, 'name');
     const safeRobot = assertRobotName(robotName);
-    const image = await this.#openShiftDeploymentImage(ns, safeName);
+    const image = await this.#openShiftDeploymentImage(ns, safeName, context);
     const distro = PhysicalAiApiImpl.#distroFromImage(image);
-    const pod = await this.#resolveOpenShiftPod(ns, safeName);
-    const target = { kind: 'oc', pod, namespace: ns } as const;
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    const target = { kind: 'oc', pod, namespace: ns, context } as const;
 
     if (distro === 'jazzy') {
       return this.#sendNav2NavigationGoal(target, safeRobot, x, y, distro);
@@ -1780,16 +1895,18 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return this.#sendCmdVelNavigationGoal(target, safeRobot, x, y, distro);
   }
 
-  async despawnRobotInOpenShift(namespace: string, name: string, robotName: string): Promise<void> {
+  async despawnRobotInOpenShift(namespace: string, name: string, robotName: string, context?: string): Promise<void> {
     const ns = assertNamespace(namespace);
     const safeName = assertK8sName(name, 'name');
     const safeRobot = assertRobotName(robotName);
-    const image = await this.#openShiftDeploymentImage(ns, safeName);
+    const image = await this.#openShiftDeploymentImage(ns, safeName, context);
     const distro = PhysicalAiApiImpl.#distroFromImage(image);
-    const pod = await this.#resolveOpenShiftPod(ns, safeName);
-    await this.#teardownRobot({ kind: 'oc', pod, namespace: ns }, safeRobot, distro);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    await this.#teardownRobot({ kind: 'oc', pod, namespace: ns, context }, safeRobot, distro);
     this.nav2WarmStatus.delete(PhysicalAiApiImpl.#warmKey(`${ns}/${safeName}`, safeRobot));
-    this.nav2ClearPending.delete(PhysicalAiApiImpl.#navTargetKey({ kind: 'oc', pod, namespace: ns }, safeRobot));
+    this.nav2ClearPending.delete(
+      PhysicalAiApiImpl.#navTargetKey({ kind: 'oc', pod, namespace: ns, context }, safeRobot),
+    );
   }
 
   async getRobotWarmStatusInOpenShift(namespace: string, name: string, robotName: string): Promise<Nav2WarmStatus> {
@@ -1799,11 +1916,46 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return this.nav2WarmStatus.get(PhysicalAiApiImpl.#warmKey(`${ns}/${safeName}`, safeRobot)) ?? 'idle';
   }
 
+  /**
+   * Robots actually running in the deployment's pod, reconciled via `ros2 node list`
+   * (S8-17) — spawn state otherwise lives only in frontend memory, so a page reload or
+   * extension restart forgets robots spawned earlier even though they're still running.
+   * Returns [] (never throws) on any resolution/exec failure, matching listRosTopics.
+   */
+  async listSpawnedRobotsInOpenShift(namespace: string, name: string, context?: string): Promise<string[]> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    try {
+      const image = await this.#openShiftDeploymentImage(ns, safeName, context);
+      const distro = PhysicalAiApiImpl.#distroFromImage(image);
+      const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+      const target = { kind: 'oc', pod, namespace: ns, context } as const;
+      const result = await this.#execRosBash(target, distro, 'ros2 node list');
+      if (result.exitCode !== 0 || !result.stdout.trim()) {
+        return [];
+      }
+      // A node under a robot namespace looks like /robot_1/some_node; bare top-level
+      // nodes (e.g. /some_node) aren't under any robot and are filtered out. Robot
+      // names aren't restricted to `robot_N` (see ROBOT_NAME_RE), so match generically
+      // on "has at least one namespace segment before further path".
+      const names = new Set<string>();
+      for (const line of result.stdout.trim().split('\n')) {
+        const match = line.trim().match(/^\/([^/]+)\/.+/);
+        if (match) names.add(match[1]);
+      }
+      return [...names].sort();
+    } catch {
+      return [];
+    }
+  }
+
   /** Name of a Running pod for the deployment (selected by the `app=<name>` label). */
-  async #resolveOpenShiftPod(namespace: string, name: string): Promise<string> {
+  async #resolveOpenShiftPod(namespace: string, name: string, context?: string): Promise<string> {
     let stdout: string;
     try {
+      const contextArgs = context ? ['--context', context] : [];
       const res = await extensionApi.process.exec('oc', [
+        ...contextArgs,
         'get',
         'pods',
         '-n',
@@ -1827,10 +1979,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   /** The deployment's first container image (used to detect the ROS distro). */
-  async #openShiftDeploymentImage(namespace: string, name: string): Promise<string> {
+  async #openShiftDeploymentImage(namespace: string, name: string, context?: string): Promise<string> {
     let stdout: string;
     try {
+      const contextArgs = context ? ['--context', context] : [];
       const res = await extensionApi.process.exec('oc', [
+        ...contextArgs,
         'get',
         'deployment',
         name,
@@ -1850,9 +2004,11 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   /** Best-effort Route host lookup; returns undefined if not admitted or oc unavailable. */
-  async #readRouteUrl(namespace: string, name: string): Promise<string | undefined> {
+  async #readRouteUrl(namespace: string, name: string, context?: string): Promise<string | undefined> {
     try {
+      const contextArgs = context ? ['--context', context] : [];
       const res = await extensionApi.process.exec('oc', [
+        ...contextArgs,
         'get',
         'route',
         name,
