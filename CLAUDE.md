@@ -23,6 +23,13 @@
 - Check the plan doc for context on what each story/sub-task requires
 - Ask questions before starting a new task if the scope or approach is unclear
 - Keep this rules doc updated as decisions are made
+- **Delegate to sub-agents by default:** run tasks through sub-agents (Agent tool) unless
+  it's genuinely not necessary. This includes searches/research (grep sweeps, "where is X
+  documented"), implementation, edits, and validation runs — anything that would otherwise
+  read many files or produce large tool output into the main context. Do NOT do this work
+  inline in the main context just because it seems quick. Only stay inline when delegation
+  is clearly wasteful: a single trivial edit/command, or when the needed result is already
+  in the main context. Always verify a sub-agent's output before relying on it.
 - **Zero-errors-on-merge:** before pushing/merging any branch back to `main`, it must be
   clean on `npm run typecheck`, `npm run lint:check`, `npm run svelte:check`,
   `npm run format:check`, and `npm test` (all packages) — fix pre-existing errors
