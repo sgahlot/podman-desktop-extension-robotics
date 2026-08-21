@@ -13,13 +13,14 @@
 > on `main` (not any one batch branch) so every batch can read and update it without
 > depending on another batch's branch.
 >
-> **Status:** in progress. **Batches A, B and C are all merged to `main`** (2026-08-21) with
-> merge commits, full suite green on the integrated `main` (397 unit + 23 script tests, 0
-> failures). **Batch A (S8-1…S8-5)**, **Batch B (S8-6…S8-9)** and
-> **Batch C (S8-10, S8-11, S8-16, S8-17)** are all done and user-verified in the running
-> extension. Next up per the suggested order: **Batch D** (S8-12 SIM-only build path). Two
-> small follow-ups (S8-19, S8-20) are deferred to a single direct-to-`main` cleanup commit —
-> see Housekeeping; S8-18 (APPENG-6149) is a larger follow-up feature with its own branch.
+> **Status:** in progress. **Batches A, B, C and D are all merged to `main`** (2026-08-21) with
+> merge commits, full suite green on the integrated `main` (408 unit + 23 script tests, 0
+> failures). **Batch A (S8-1…S8-5)**, **Batch B (S8-6…S8-9)**,
+> **Batch C (S8-10, S8-11, S8-16, S8-17)** and **Batch D (S8-12)** are all done and
+> user-verified in the running extension. Next up per the suggested order: **Batch E**
+> (S8-13 layout config). Two small follow-ups (S8-19, S8-20) are deferred to a single
+> direct-to-`main` cleanup commit — see Housekeeping; S8-18 (APPENG-6149) and S8-21
+> (filterable namespace picker) are larger follow-up features with their own branches.
 
 ---
 
@@ -100,11 +101,11 @@ Needed backend type additions (`BuildProgress`/`PushProgress` in
 
 <a id="s8-quickstart"></a>
 
-### Batch D — Image Builder flow — APPENG-6106
+### Batch D — Image Builder flow — APPENG-6106 ✅ Done
 
 | Status | ID | Summary | Description | Files |
 |--------|-----|---------|-------------|-------|
-| ⚪ | S8-12 | Build only the SIM image without full Quick Start | Today you must click **Quick Start** (Local/OCP) to configure the right image even if you only want the Phase 2 SIM image. `applyQuickStart` (`SimulationSetup.svelte:125-137`) hard-sets robot/distro/middleware/engine/base + arch. Provide an alternative path to configure/build+push just the SIM image (Phase 2) without re-running the whole Quick Start. | `SimulationSetup.svelte` (Quick Start 155-187, Phase 2 366-397) |
+| ✅ | S8-12 | Build only the SIM image without full Quick Start | **Done** — the Image Builder was reworked so the SIM image no longer requires re-running Quick Start. The old two Quick Start cards + separate Phase 1/Phase 2 became a single unified pipeline: a first-class **Target** arch toggle (this machine vs amd64-for-OpenShift), one Quick Start button (with an overwrite-confirmation when the current config differs from the preset), and a reactive base/SIM image-existence check (keyed on `${baseTag}\|${simTag}`) that unlocks the SIM build the moment the base exists — no Quick Start needed. Also added: build-log timestamps rendered in the **host local timezone** (was UTC), and a selectable **layout** (`physical-ai.imageBuilderLayout` preference — `guided` default / `pipeline`) with an in-page switcher; the guided layout leads with a "what do you want to build?" chooser (base only / simulation / both) and reveals only the relevant build panel(s), reusing the same base-existence gating. Panel heading is context-aware ("Guided Image Builder" vs "Image Builder Pipeline"). | `SimulationSetup.svelte`, `SimulationSetup.spec.ts`, `progressLogs.ts`, `progressLogs.spec.ts`, `PhysicalAiApi.ts`, `api-impl.ts`, `backend/package.json` |
 
 <a id="s8-layout"></a>
 
@@ -145,8 +146,8 @@ Needed backend type additions (`BuildProgress`/`PushProgress` in
 1. **Batch A** (S8-1…S8-5) — quick wins, no GPU. ✅ done (`feature/APPENG-6103-quick-ui-wins`)
 2. **Batch B** (S8-6…S8-9) — build/push observability. ✅ done (`feature/APPENG-6104-build-push-observability`)
 3. **Batch C** (S8-10 cluster URL, S8-11 `oc whoami`, S8-16 default-namespace setting, S8-17 reflect already-spawned robots). ✅ done (`feature/APPENG-6105-openshift-config-safety`)
-4. **Batch D** (S8-12) — SIM-only build path. ← next
-5. **Batch E** (S8-13) — layout config (prototype variants first).
+4. **Batch D** (S8-12) — SIM-only build path. ✅ done (`feature/APPENG-6106-sim-only-build`)
+5. **Batch E** (S8-13) — layout config (prototype variants first). ← next
 6. **Batch F** (S8-14 spike → S8-15 wizard) — secure layers, then the full wizard.
 
 ---
