@@ -19,11 +19,11 @@
 > **Batch C (S8-10, S8-11, S8-16, S8-17)** and **Batch D (S8-12)** are all done and
 > user-verified in the running extension. The S8-19 + S8-20 cleanup (plus an
 > S8-17 `(?, ?)` refinement) landed direct-to-`main` on 2026-08-21. **S8-21** (filterable
-> namespace picker, APPENG-6156) is done and merged to `main` (2026-08-21) on
-> `feature/APPENG-6156-namespace-picker`. **Batch E** (S8-13 layout config, APPENG-6107) is
-> implemented on `feature/APPENG-6107-nav-layout` (not yet merged to `main`). Next up per
-> the suggested order: **Batch F** (S8-14 spike → S8-15 wizard). S8-18 (APPENG-6149, prune
-> stale robots) is another follow-up feature with its own branch.
+> namespace picker, APPENG-6156) is done and merged to `main` (2026-08-21). **Batch E**
+> (S8-13 layout config, APPENG-6107) is done, user-verified, and merged to `main` (2026-08-24,
+> merge commit `c06d4e4`); APPENG-6107 is Closed. Next up per the suggested order: **Batch F**
+> (S8-14 spike → S8-15 wizard). S8-18 (APPENG-6149, prune stale robots) is another follow-up
+> feature with its own branch.
 
 ---
 
@@ -151,7 +151,7 @@ Needed backend type additions (`BuildProgress`/`PushProgress` in
 2. **Batch B** (S8-6…S8-9) — build/push observability. ✅ done (`feature/APPENG-6104-build-push-observability`)
 3. **Batch C** (S8-10 cluster URL, S8-11 `oc whoami`, S8-16 default-namespace setting, S8-17 reflect already-spawned robots). ✅ done (`feature/APPENG-6105-openshift-config-safety`)
 4. **Batch D** (S8-12) — SIM-only build path. ✅ done (`feature/APPENG-6106-sim-only-build`)
-5. **Batch E** (S8-13) — layout config. ✅ done (`feature/APPENG-6107-nav-layout`)
+5. **Batch E** (S8-13) — layout config. ✅ done (merged to `main`, commit `c06d4e4`)
 6. **Batch F** (S8-14 spike → S8-15 wizard) — secure layers, then the full wizard. ← next
 
 ---
