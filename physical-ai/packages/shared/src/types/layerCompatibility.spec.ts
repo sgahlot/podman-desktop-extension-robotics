@@ -110,6 +110,33 @@ describe('evaluateStack', () => {
     expect(result.buildable).toBe(true);
     expect(result.messages.some(m => m.text.includes('Red Hat subscription'))).toBe(true);
   });
+
+  it('bare ubuntu with no ROS/sim builds but warns it is not a robotics image yet', () => {
+    const result = evaluateStack(sel({ baseOs: 'ubuntu-noble', ros: 'none', sim: 'none' }));
+    expect(result.level).toBe('warn');
+    expect(result.buildable).toBe(true);
+    expect(result.failsAtStep).toBeUndefined();
+    expect(result.messages.some(m => m.level === 'warn' && m.text.includes('no ROS layer'))).toBe(true);
+    // the non-bootc phrasing — it is not a bootc base
+    expect(result.messages.some(m => m.text.includes('bootc base image'))).toBe(false);
+  });
+
+  it('ubuntu + hummingbird app but no ROS still warns it is not a robotics image yet', () => {
+    const result = evaluateStack(
+      sel({
+        baseOs: 'ubuntu-noble',
+        hardened: 'hummingbird-app',
+        ros: 'none',
+        sim: 'none',
+        hummingbirdApps: ['nginx'],
+      }),
+    );
+    expect(result.level).toBe('warn');
+    expect(result.buildable).toBe(true);
+    expect(result.messages.some(m => m.text.includes('no ROS layer'))).toBe(true);
+    // the hummingbird side-component note only applies when a ROS layer is present
+    expect(result.messages.some(m => m.text.includes('optional hardened application images'))).toBe(false);
+  });
 });
 
 describe('generateLayerContainerfile', () => {

@@ -213,11 +213,11 @@ Build and that clicking it shows the prototype notice.
 | 2 | Ubuntu Noble | None | Humble | Gazebo+Nav2+TB3 | ✅ Ready | — | Enabled |
 | 3 | Ubuntu Noble | None | Jazzy | None | ✅ Ready | — | Enabled |
 | 4 | Ubuntu Noble | None | Humble | None | ✅ Ready | — | Enabled |
-| 5 | Ubuntu Noble | None | None | None | ✅ Ready · see note | — | Enabled |
+| 5 | Ubuntu Noble | None | None | None | ⚠️ Builds, not robotics | — | Enabled |
 | 6 | Ubuntu Noble | None | None | Gazebo+Nav2+TB3 | ❌ Won't build | sim-install | Disabled |
 | 7 | Ubuntu Noble | Hummingbird (nginx) | Jazzy | Gazebo+Nav2+TB3 | ✅ Ready | — | Enabled |
 | 8 | Ubuntu Noble | Hummingbird (nginx+nodejs) | Humble | Gazebo+Nav2+TB3 | ✅ Ready | — | Enabled |
-| 9 | Ubuntu Noble | Hummingbird (nginx) | None | None | ✅ Ready · see note | — | Enabled |
+| 9 | Ubuntu Noble | Hummingbird (nginx) | None | None | ⚠️ Builds, not robotics | — | Enabled |
 | 10 | CentOS bootc S9 | None | None | None | ⚠️ Builds, not robotics | — | Enabled |
 | 11 | CentOS bootc S9 | Hummingbird (nginx) | None | None | ⚠️ Builds, not robotics | — | Enabled |
 | 12 | CentOS bootc S9 | None | Jazzy | None | ❌ Won't build | ros-install | Disabled |
@@ -253,11 +253,10 @@ Notes on specific rows:
   with a sim layer but no ROS) — same el9-RPM gap, one step earlier in the chain. Rows 18 /
   23 / 29 also prove the Stream 10 / Fedora 42 / RHEL 10 variants behave identically to
   their family siblings.
-- **Open item — Row 5 (bare Ubuntu, no ROS/Sim) currently reads ✅ Ready with no message.**
-  A bootc base alone correctly warns "builds but not a robotics image" (rule R6), but that
-  warning is gated to bootc bases, so a bare Ubuntu image doesn't get it. If we want
-  bare-Ubuntu to also read ⚠️, generalize R6 to fire for any base with no ROS layer. Left
-  as-is pending a product call.
+- **Rows 5 & 9 (bare Ubuntu / Ubuntu + Hummingbird, no ROS) read ⚠️ "not a robotics
+  image yet"** — the same classification any base with no ROS layer gets. This closed a
+  gap in the original hand-written rules (a non-bootc base with no robotics layers fell
+  through to a blank ✅). See "Why the verdict is derived, not hand-written" below.
 
 ### Hummingbird app sub-layer (drill-down) checks
 
@@ -268,6 +267,32 @@ Notes on specific rows:
   **nginx** and **nodejs** yields `# nginx  -> quay.io/hummingbird/nginx:latest` and
   `# nodejs -> quay.io/hummingbird/nodejs:latest`.
 - Switching Hardened back to **None** hides the group and clears the app selection.
+
+### Why the verdict is derived, not hand-written
+
+`evaluateStack()` does **not** probe registries or the network at runtime — the spike
+established that the answer (which bases can install ROS/sim) is stable and that the
+bootc/Hummingbird extensions expose no queryable API (see "Why the wizard's layer lists
+aren't queried live" above). But the verdict is also no longer a bag of ad-hoc
+per-combination `if`s. Each base OS declares its **capabilities** as data
+(`isBootc`, `packaging`, `requiresSubscription`, `supportsRos`, `supportsSim`,
+`hasRosRepo`), and the verdict is *derived* from those facts in three ordered concerns:
+
+1. **Build-feasibility** — a selected layer the base can't satisfy (ROS/sim on a base
+   whose `supportsRos`/`supportsSim` is false, or sim with no ROS beneath it) → a
+   `blocked` error naming the failing step.
+2. **Advisories** — independent facts like the RHEL subscription requirement or the
+   Hummingbird side-component note.
+3. **Image classification** — for a build that *would* succeed: no ROS layer → ⚠️ "not a
+   robotics image yet"; a supported robotics stack → ✅ "known-good".
+
+Because step 3 is exhaustive over buildable selections, **every** combination resolves to
+a coherent, complete verdict — which is what closed the Row-5/9 gap that the earlier
+rule set missed. Flipping one capability fact (e.g. if upstream ever ships el9 ROS sim
+RPMs) updates the whole matrix consistently, with no per-row rule to hunt down. A future
+enhancement can decorate this static model with **local image availability**
+(`listLocalImages()`) — the one genuinely-runtime signal that's feasible — without
+changing the derivation.
 
 ## Follow-ups
 

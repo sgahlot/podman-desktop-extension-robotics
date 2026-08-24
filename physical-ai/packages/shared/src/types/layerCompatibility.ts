@@ -99,9 +99,97 @@ export const SIM_OPTIONS: readonly LayerOption<SimLayer>[] = [
   { id: 'gazebo-nav2-tb3', label: 'Gazebo + Nav2 + TurtleBot3', note: 'Requires a ROS layer beneath it' },
 ];
 
-function isBootc(baseOs: BaseOsLayer): boolean {
-  return baseOs !== 'ubuntu-noble';
+/**
+ * Declarative capability model for each base OS. The compatibility verdict is *derived*
+ * from these facts rather than hand-written per combination, so every layer selection is
+ * classified completely (build-feasible? × robotics-image?) with no coverage gaps.
+ *
+ * Empirical basis (S8-14 spike): ROS 2 Jazzy and the Gazebo/Nav2/TurtleBot3 sim stack
+ * install via apt on Ubuntu and have no installable equivalent on the dnf-based bootc
+ * bases today, so those bases support neither ROS nor sim. This table is the single place
+ * to flip a fact if upstream packaging changes (or to add a new base).
+ */
+interface BaseOsCapability {
+  /** a bootc (bootable-container) base rather than the plain Ubuntu base */
+  isBootc: boolean;
+  /** OS package manager the base ships with */
+  packaging: 'apt' | 'dnf';
+  /** pulling the base image needs a Red Hat subscription (registry.redhat.io) */
+  requiresSubscription: boolean;
+  /** ROS 2 packages are installable on this base today (empirically: Ubuntu only) */
+  supportsRos: boolean;
+  /** the Gazebo/Nav2/TurtleBot3 sim stack is installable on this base today (Ubuntu only) */
+  supportsSim: boolean;
+  /** an official ROS package repository exists for this distro family at all (Fedora has none) */
+  hasRosRepo: boolean;
 }
+
+const BASE_OS_CAPABILITY: Record<BaseOsLayer, BaseOsCapability> = {
+  'ubuntu-noble': {
+    isBootc: false,
+    packaging: 'apt',
+    requiresSubscription: false,
+    supportsRos: true,
+    supportsSim: true,
+    hasRosRepo: true,
+  },
+  'centos-bootc-stream9': {
+    isBootc: true,
+    packaging: 'dnf',
+    requiresSubscription: false,
+    supportsRos: false,
+    supportsSim: false,
+    hasRosRepo: true,
+  },
+  'centos-bootc-stream10': {
+    isBootc: true,
+    packaging: 'dnf',
+    requiresSubscription: false,
+    supportsRos: false,
+    supportsSim: false,
+    hasRosRepo: true,
+  },
+  'fedora-bootc-42': {
+    isBootc: true,
+    packaging: 'dnf',
+    requiresSubscription: false,
+    supportsRos: false,
+    supportsSim: false,
+    hasRosRepo: false,
+  },
+  'fedora-bootc-43': {
+    isBootc: true,
+    packaging: 'dnf',
+    requiresSubscription: false,
+    supportsRos: false,
+    supportsSim: false,
+    hasRosRepo: false,
+  },
+  'fedora-bootc-44': {
+    isBootc: true,
+    packaging: 'dnf',
+    requiresSubscription: false,
+    supportsRos: false,
+    supportsSim: false,
+    hasRosRepo: false,
+  },
+  'rhel-bootc': {
+    isBootc: true,
+    packaging: 'dnf',
+    requiresSubscription: true,
+    supportsRos: false,
+    supportsSim: false,
+    hasRosRepo: true,
+  },
+  'rhel10-bootc': {
+    isBootc: true,
+    packaging: 'dnf',
+    requiresSubscription: true,
+    supportsRos: false,
+    supportsSim: false,
+    hasRosRepo: true,
+  },
+};
 
 function labelForBaseOs(baseOs: BaseOsLayer): string {
   return BASE_OS_OPTIONS.find(o => o.id === baseOs)?.label ?? baseOs;
@@ -109,24 +197,33 @@ function labelForBaseOs(baseOs: BaseOsLayer): string {
 
 const LEVEL_RANK: Record<CompatMessage['level'], number> = { info: 0, warn: 1, error: 2 };
 
+/**
+ * Derive the compatibility verdict for a layer selection from the base OS capability
+ * model above. The logic is three ordered concerns — (1) build-feasibility errors,
+ * (2) independent advisories, (3) a mutually-exclusive image classification — so that
+ * *every* selection resolves to a coherent, complete verdict.
+ */
 export function evaluateStack(sel: LayerSelection): CompatResult {
   const messages: CompatMessage[] = [];
-  const bootc = isBootc(sel.baseOs);
+  const cap = BASE_OS_CAPABILITY[sel.baseOs];
   const baseLabel = labelForBaseOs(sel.baseOs);
+  const wantsRos = sel.ros !== 'none';
+  const wantsSim = sel.sim !== 'none';
 
   let failsAtStep: string | undefined;
 
-  // R1
-  if (sel.ros !== 'none' && bootc) {
+  // (1) Build-feasibility — a selected layer the base can't satisfy fails at build time.
+  if (wantsRos && !cap.supportsRos) {
     messages.push({
       level: 'error',
-      text: `ROS layers install via apt on Ubuntu; base ${baseLabel} is dnf-based with no ROS Jazzy sim packages — the build fails at the ROS install step.`,
+      text: cap.hasRosRepo
+        ? `ROS layers install via apt on Ubuntu; base ${baseLabel} is ${cap.packaging}-based with no ROS Jazzy sim packages — the build fails at the ROS install step.`
+        : `${baseLabel} has no official ROS repository at all — the build fails at the ROS install step.`,
     });
     failsAtStep = 'ros-install';
   }
 
-  // R2
-  if (sel.sim !== 'none' && bootc) {
+  if (wantsSim && !cap.supportsSim) {
     messages.push({
       level: 'error',
       text: `Gazebo Harmonic / Nav2 / TurtleBot3 sim are not published for ${baseLabel} (no el9 RPMs) — the build fails at the simulation install step.`,
@@ -134,8 +231,7 @@ export function evaluateStack(sel: LayerSelection): CompatResult {
     failsAtStep ??= 'sim-install';
   }
 
-  // R3
-  if (sel.sim !== 'none' && sel.ros === 'none') {
+  if (wantsSim && !wantsRos) {
     messages.push({
       level: 'error',
       text: 'The simulation layer needs a ROS layer beneath it — select a ROS layer.',
@@ -143,45 +239,38 @@ export function evaluateStack(sel: LayerSelection): CompatResult {
     failsAtStep ??= 'sim-install';
   }
 
-  // R4 (optional clarifying warn, non-duplicative with R1's error)
-  if (sel.baseOs.startsWith('fedora-bootc') && sel.ros !== 'none') {
-    messages.push({
-      level: 'warn',
-      text: 'Fedora has no official ROS repository at all.',
-    });
-  }
+  const blocked = messages.some(m => m.level === 'error');
 
-  // R5
-  if (sel.hardened === 'hummingbird-app' && sel.ros !== 'none') {
-    messages.push({
-      level: 'info',
-      text: 'Hummingbird provides optional hardened application images (quay.io/hummingbird/*) as a side component — it does not change the ROS/robotics build.',
-    });
-  }
-
-  // R6
-  if (bootc && sel.ros === 'none' && sel.sim === 'none') {
-    messages.push({
-      level: 'warn',
-      text: 'Builds a bootc base image, but it contains no ROS layer — not a robotics image yet.',
-    });
-  }
-
-  // R7
-  if (sel.baseOs.startsWith('rhel')) {
+  // (2) Advisories — independent of build-feasibility.
+  if (cap.requiresSubscription) {
     messages.push({
       level: 'warn',
       text: 'RHEL bootc requires a Red Hat subscription (registry.redhat.io) to pull.',
     });
   }
 
-  // R8
-  const hasErrorOrWarn = messages.some(m => m.level === 'error' || m.level === 'warn');
-  if (sel.baseOs === 'ubuntu-noble' && sel.ros !== 'none' && !hasErrorOrWarn) {
+  if (sel.hardened === 'hummingbird-app' && wantsRos) {
     messages.push({
       level: 'info',
-      text: 'Known-good combination — builds and runs today.',
+      text: 'Hummingbird provides optional hardened application images (quay.io/hummingbird/*) as a side component — it does not change the ROS/robotics build.',
     });
+  }
+
+  // (3) Image classification — only meaningful for a build that would succeed. ROS is what
+  // makes the image a robotics image; without it, a buildable image is "just a base". This
+  // branch is exhaustive over buildable selections, so no combination is left unclassified.
+  if (!blocked) {
+    if (!wantsRos) {
+      messages.push({
+        level: 'warn',
+        text: `Builds ${cap.isBootc ? 'a bootc base image' : 'a base image'}, but it has no ROS layer — not a robotics image yet.`,
+      });
+    } else if (!messages.some(m => m.level === 'error' || m.level === 'warn')) {
+      messages.push({
+        level: 'info',
+        text: 'Known-good combination — builds and runs today.',
+      });
+    }
   }
 
   const worst = messages.reduce<CompatMessage['level']>(
