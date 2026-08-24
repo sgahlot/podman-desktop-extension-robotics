@@ -127,6 +127,24 @@ describe('Dashboard', () => {
     expect(screen.getByText('Quick Links')).toBeTruthy();
   });
 
+  it('shows shared guidance content alongside Quick Links in cards mode', async () => {
+    render(Dashboard, { layout: 'cards' });
+    expect(screen.getByText('Quick Links')).toBeTruthy();
+    expect(screen.getByText('Welcome to Physical AI')).toBeTruthy();
+    expect(screen.getByText('Open Image Builder')).toBeTruthy();
+    expect(screen.getByText('Local ROS 2 images')).toBeTruthy();
+    expect(screen.getByText('Running simulations')).toBeTruthy();
+    expect(screen.getByText('ROS 2 Jazzy documentation')).toBeTruthy();
+    expect(screen.getByText('TurtleBot3')).toBeTruthy();
+    expect(screen.getByText('Nav2')).toBeTruthy();
+    expect(screen.getByText('Extension guide')).toBeTruthy();
+    // Metric counts load async.
+    const ros2Count = await screen.findByText('1');
+    expect(ros2Count).toBeTruthy();
+    const simCount = await screen.findByText('2');
+    expect(simCount).toBeTruthy();
+  });
+
   it('shows dashboard content instead of Quick Links in sidebar layout', async () => {
     render(Dashboard, { layout: 'sidebar' });
     expect(screen.getByText('Welcome to Physical AI')).toBeTruthy();
