@@ -1,9 +1,12 @@
 <script lang="ts">
 import { router } from 'tinro';
+import { navigationLayout } from './lib/navigationLayout';
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
-  <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
+  {#if $navigationLayout === 'cards'}
+    <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
+  {/if}
   <h1 class="text-3xl text-[var(--pd-content-header)]">Help</h1>
   <p class="text-sm text-[var(--pd-content-text)]">
     Quick guide to using the Physical AI extension for Podman Desktop.

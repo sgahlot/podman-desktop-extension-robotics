@@ -13,6 +13,7 @@ import type {
 import { parseEchoYamlTree, shortMessageType, PEEK_TIMEOUT_DEFAULT_SEC } from '/@shared/src/ros/topicPeek';
 import MessageTree from './lib/MessageTree.svelte';
 import QuickLinks from './lib/QuickLinks.svelte';
+import { navigationLayout } from './lib/navigationLayout';
 
 let containers: SimContainerInfo[] = [];
 let selectedContainerId = '';
@@ -240,9 +241,13 @@ onDestroy(() => {
 </script>
 
 <div class="flex flex-col p-4 gap-4 w-full flex-1 min-h-0 min-w-0 overflow-auto">
-  <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
+  {#if $navigationLayout === 'cards'}
+    <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
+  {/if}
   <h1 class="text-3xl text-[var(--pd-content-header)]">Topic Monitor</h1>
-  <QuickLinks links={[{ label: 'Simulation', to: '/simulation' }]} />
+  {#if $navigationLayout === 'cards'}
+    <QuickLinks links={[{ label: 'Simulation', to: '/simulation' }]} />
+  {/if}
   <p class="text-sm text-[var(--pd-content-text)]">
     Inspect active ROS2 topics, message types, and publisher/subscriber counts in a running simulation.
   </p>

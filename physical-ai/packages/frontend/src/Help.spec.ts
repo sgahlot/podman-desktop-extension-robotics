@@ -1,6 +1,7 @@
-import { vi, describe, it, expect } from 'vitest';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import Help from './Help.svelte';
+import { navigationLayout } from './lib/navigationLayout';
 
 const mockGoto = vi.fn();
 
@@ -9,6 +10,10 @@ vi.mock('tinro', () => ({
 }));
 
 describe('Help', () => {
+  beforeEach(() => {
+    navigationLayout.set('sidebar');
+  });
+
   it('renders heading', () => {
     render(Help);
     expect(screen.getByText('Help')).toBeTruthy();
@@ -26,10 +31,17 @@ describe('Help', () => {
   });
 
   it('navigates back to dashboard on click', async () => {
+    navigationLayout.set('cards');
     render(Help);
     const backBtn = screen.getByText(/Back to Dashboard/);
     await fireEvent.click(backBtn);
     expect(mockGoto).toHaveBeenCalledWith('/');
+  });
+
+  it('hides the back-to-dashboard link when navigation layout is sidebar', () => {
+    navigationLayout.set('sidebar');
+    render(Help);
+    expect(screen.queryByText(/Back to Dashboard/)).toBeNull();
   });
 
   it('mentions key features in coming soon section', () => {

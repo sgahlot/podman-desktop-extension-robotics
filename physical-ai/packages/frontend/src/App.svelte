@@ -11,6 +11,7 @@ import Help from './Help.svelte';
 import ImageBuilder from './SimulationSetup.svelte';
 import Simulation from './Simulation.svelte';
 import TopicMonitor from './TopicMonitor.svelte';
+import { navigationLayout as navigationLayoutStore } from './lib/navigationLayout';
 
 router.mode.hash();
 
@@ -19,12 +20,14 @@ let navigationLayout: 'sidebar' | 'tabs' | 'cards' = 'sidebar';
 
 function setNavigationLayout(next: 'sidebar' | 'tabs' | 'cards'): void {
   navigationLayout = next;
+  navigationLayoutStore.set(next);
   void physicalAiClient.setNavigationLayout(next);
 }
 
 onMount(async () => {
   try {
     navigationLayout = await physicalAiClient.getNavigationLayout();
+    navigationLayoutStore.set(navigationLayout);
   } catch {
     // default sidebar
   }

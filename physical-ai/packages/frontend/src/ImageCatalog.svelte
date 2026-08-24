@@ -5,6 +5,7 @@ import { router } from 'tinro';
 import type { QuayRepository, QuayTag, PullProgress } from '/@shared/src/types/ImageCatalog';
 import { filterCuratedRepos, type CatalogViewMode, DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
 import QuickLinks from './lib/QuickLinks.svelte';
+import { navigationLayout } from './lib/navigationLayout';
 
 let namespace = '';
 let filter = '';
@@ -241,9 +242,13 @@ onDestroy(() => {
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
-  <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
+  {#if $navigationLayout === 'cards'}
+    <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
+  {/if}
   <h1 class="text-3xl text-[var(--pd-content-header)]">Image Catalog</h1>
-  <QuickLinks links={[{ label: 'Image Builder', to: '/build' }]} />
+  {#if $navigationLayout === 'cards'}
+    <QuickLinks links={[{ label: 'Image Builder', to: '/build' }]} />
+  {/if}
   <p class="text-sm text-[var(--pd-content-text)]">
     Browse and pull ROS2 container images from a Quay.io organization. Bases are Ubuntu interim today (Fedora/RHEL
     migration is tracked separately).

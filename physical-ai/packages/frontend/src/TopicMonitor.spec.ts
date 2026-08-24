@@ -1,6 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import TopicMonitor from './TopicMonitor.svelte';
+import { navigationLayout } from './lib/navigationLayout';
 
 const mockListSimulationContainers = vi.fn();
 const mockListRosTopics = vi.fn();
@@ -30,6 +31,7 @@ vi.mock('tinro', () => ({
 describe('TopicMonitor', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    navigationLayout.set('sidebar');
     mockListSimulationContainers.mockResolvedValue([]);
     mockListRosTopics.mockResolvedValue([]);
     mockGetRosTopicDetail.mockResolvedValue({ topicName: '', type: '', publishers: [], subscribers: [] });
@@ -47,6 +49,20 @@ describe('TopicMonitor', () => {
   it('renders heading', () => {
     render(TopicMonitor);
     expect(screen.getByText('Topic Monitor')).toBeTruthy();
+  });
+
+  it('shows the back-to-dashboard link and Quick Links when navigation layout is cards', () => {
+    navigationLayout.set('cards');
+    render(TopicMonitor);
+    expect(screen.getByText(/Back to Dashboard/)).toBeTruthy();
+    expect(screen.getByText('Quick Links:')).toBeTruthy();
+  });
+
+  it('hides the back-to-dashboard link and Quick Links when navigation layout is sidebar', () => {
+    navigationLayout.set('sidebar');
+    render(TopicMonitor);
+    expect(screen.queryByText(/Back to Dashboard/)).toBeNull();
+    expect(screen.queryByText('Quick Links:')).toBeNull();
   });
 
   it('shows no-simulation message when no containers running', async () => {
