@@ -59,10 +59,13 @@ vi.mock('@podman-desktop/api', () => ({
 
 vi.mock('node:fs/promises', () => ({
   readFile: vi.fn(),
+  writeFile: vi.fn(),
+  mkdtemp: vi.fn(),
+  rm: vi.fn(),
 }));
 
 import * as extensionApi from '@podman-desktop/api';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 
 const MOCK_CONTEXT = {
   extensionUri: { fsPath: '/fake/extension/path' },
@@ -375,6 +378,111 @@ describe('PhysicalAiApiImpl', () => {
   describe('getPullProgress', () => {
     it('returns undefined for unknown image', async () => {
       expect(await api.getPullProgress('nonexistent')).toBeUndefined();
+    });
+  });
+
+  describe('pullImageByRef', () => {
+    it('pulls an arbitrary registry ref verbatim (no quay.io prefix)', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.pullImage).mockReturnValue(new Promise(() => {}));
+
+      await api.pullImageByRef('docker.io/library/ubuntu:24.04');
+
+      expect(extensionApi.containerEngine.pullImage).toHaveBeenCalledWith(
+        expect.anything(),
+        'docker.io/library/ubuntu:24.04',
+        expect.any(Function),
+      );
+      const progress = await api.getPullProgress('docker.io/library/ubuntu:24.04');
+      expect(progress).toEqual({ image: 'docker.io/library/ubuntu:24.04', status: 'Starting...' });
+    });
+
+    it('rejects an invalid reference before touching the container engine', async () => {
+      await expect(api.pullImageByRef('  ')).rejects.toThrow(/Invalid image reference/);
+      await expect(api.pullImageByRef('bad ref with spaces')).rejects.toThrow(/Invalid image reference/);
+      expect(extensionApi.containerEngine.pullImage).not.toHaveBeenCalled();
+    });
+
+    it('throws when no Podman connection found', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([]);
+
+      await expect(api.pullImageByRef('registry.redhat.io/rhel10/rhel-bootc:latest')).rejects.toThrow(
+        'No running Podman connection found',
+      );
+    });
+  });
+
+  describe('buildFromContainerfile', () => {
+    it('rejects an empty Containerfile without touching disk or the engine', async () => {
+      await expect(api.buildFromContainerfile('my-tag:latest', '   ')).rejects.toThrow(/Containerfile is empty/);
+      expect(mkdtemp).not.toHaveBeenCalled();
+      expect(extensionApi.containerEngine.buildImage).not.toHaveBeenCalled();
+    });
+
+    it('writes the Containerfile to a throwaway context and builds with the containerFile option', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(mkdtemp).mockResolvedValue('/tmp/physical-ai-layer-build-abc');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
+
+      const containerfile = 'FROM docker.io/library/ubuntu:24.04\n';
+      await api.buildFromContainerfile('my-layer:latest', containerfile);
+
+      expect(writeFile).toHaveBeenCalledWith('/tmp/physical-ai-layer-build-abc/Containerfile', containerfile, 'utf8');
+      expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
+        '/tmp/physical-ai-layer-build-abc',
+        expect.any(Function),
+        expect.objectContaining({ containerFile: 'Containerfile', tag: 'my-layer:latest' }),
+      );
+    });
+
+    it('passes the platform through to the build', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(mkdtemp).mockResolvedValue('/tmp/physical-ai-layer-build-def');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
+
+      await api.buildFromContainerfile('my-layer:latest', 'FROM scratch\n', 'linux/arm64');
+
+      expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
+        '/tmp/physical-ai-layer-build-def',
+        expect.any(Function),
+        expect.objectContaining({ platform: 'linux/arm64' }),
+      );
+    });
+
+    it('removes the throwaway context and rethrows when no Podman connection is available', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([]);
+      vi.mocked(mkdtemp).mockResolvedValue('/tmp/physical-ai-layer-build-ghi');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(rm).mockResolvedValue(undefined);
+
+      await expect(api.buildFromContainerfile('my-layer:latest', 'FROM scratch\n')).rejects.toThrow(
+        'No running Podman connection found',
+      );
+      expect(rm).toHaveBeenCalledWith('/tmp/physical-ai-layer-build-ghi', { recursive: true, force: true });
+      expect(extensionApi.containerEngine.buildImage).not.toHaveBeenCalled();
+    });
+
+    it('cleans up the throwaway context once the build settles', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(mkdtemp).mockResolvedValue('/tmp/physical-ai-layer-build-jkl');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(rm).mockResolvedValue(undefined);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+
+      await api.buildFromContainerfile('my-layer:latest', 'FROM scratch\n');
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(rm).toHaveBeenCalledWith('/tmp/physical-ai-layer-build-jkl', { recursive: true, force: true });
     });
   });
 

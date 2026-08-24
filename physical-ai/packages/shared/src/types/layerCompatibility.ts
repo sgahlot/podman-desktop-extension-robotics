@@ -21,7 +21,28 @@ export type BaseOsLayer =
 export type HardenedLayer = 'none' | 'hummingbird-app';
 export type RosLayer = 'none' | 'ros2-jazzy' | 'ros2-humble';
 export type SimLayer = 'none' | 'gazebo-nav2-tb3';
-export type HardenedApp = 'nginx' | 'python' | 'nodejs' | 'postgresql' | 'valkey' | 'prometheus' | 'grafana' | 'cosign';
+export type HardenedApp =
+  | 'nginx'
+  | 'python'
+  | 'nodejs'
+  | 'postgresql'
+  | 'valkey'
+  | 'prometheus'
+  | 'grafana'
+  | 'cosign'
+  | 'curl'
+  | 'jq'
+  | 'kubectl'
+  | 'helm';
+
+/**
+ * How a Hummingbird hardened app image is consumed:
+ * - `companion` — a full service image pulled and run *alongside* the robotics image
+ *   (nginx, postgresql, grafana …). It is not baked into the built image.
+ * - `tool` — a single hardened CLI binary baked *into* the built image with a real
+ *   `COPY --from` from the hardened image (cosign, jq, kubectl …).
+ */
+export type HummingbirdKind = 'companion' | 'tool';
 
 export interface LayerSelection {
   baseOs: BaseOsLayer;
@@ -53,6 +74,20 @@ export interface LayerOption<TId extends string> {
   note: string;
 }
 
+export interface HummingbirdAppOption extends LayerOption<HardenedApp> {
+  kind: HummingbirdKind;
+  /**
+   * For `tool` apps: the binary path inside the hardened image to `COPY --from`.
+   * The generated line copies it onto the built image's PATH (`/usr/local/bin`).
+   */
+  binPath?: string;
+}
+
+/** Full hardened image reference for a Hummingbird app (always the `:latest` daily rebuild). */
+export function hummingbirdImageRef(app: HardenedApp): string {
+  return `quay.io/hummingbird/${app}:latest`;
+}
+
 export const BASE_OS_OPTIONS: readonly LayerOption<BaseOsLayer>[] = [
   { id: 'ubuntu-noble', label: 'Ubuntu Noble', note: 'ROS-ready (current default)' },
   {
@@ -77,16 +112,71 @@ export const HARDENED_OPTIONS: readonly LayerOption<HardenedLayer>[] = [
   { id: 'hummingbird-app', label: 'Hummingbird app', note: 'Hardened nginx/python-class application images' },
 ];
 
-export const HUMMINGBIRD_APP_OPTIONS: readonly LayerOption<HardenedApp>[] = [
-  { id: 'nginx', label: 'Nginx', note: 'Hardened web server / reverse proxy (dashboards, noVNC)' },
-  { id: 'python', label: 'Python', note: 'Hardened Python runtime (ROS 2 nodes & tooling)' },
-  { id: 'nodejs', label: 'Node.js', note: 'Hardened Node.js runtime (web dashboards & tooling)' },
-  { id: 'postgresql', label: 'PostgreSQL', note: 'Hardened PostgreSQL (telemetry / state store)' },
-  { id: 'valkey', label: 'Valkey', note: 'Hardened Redis-compatible store (cache / message backing)' },
-  { id: 'prometheus', label: 'Prometheus', note: 'Hardened Prometheus (fleet metrics)' },
-  { id: 'grafana', label: 'Grafana', note: 'Hardened Grafana (fleet dashboards)' },
-  { id: 'cosign', label: 'Cosign', note: 'Hardened cosign (sign & verify images)' },
+export const HUMMINGBIRD_APP_OPTIONS: readonly HummingbirdAppOption[] = [
+  // Companions — pulled and run as separate service images alongside the robotics image.
+  {
+    id: 'nginx',
+    label: 'Nginx',
+    note: 'Hardened web server / reverse proxy (dashboards, noVNC)',
+    kind: 'companion',
+  },
+  { id: 'python', label: 'Python', note: 'Hardened Python runtime (ROS 2 nodes & tooling)', kind: 'companion' },
+  { id: 'nodejs', label: 'Node.js', note: 'Hardened Node.js runtime (web dashboards & tooling)', kind: 'companion' },
+  {
+    id: 'postgresql',
+    label: 'PostgreSQL',
+    note: 'Hardened PostgreSQL (telemetry / state store)',
+    kind: 'companion',
+  },
+  {
+    id: 'valkey',
+    label: 'Valkey',
+    note: 'Hardened Redis-compatible store (cache / message backing)',
+    kind: 'companion',
+  },
+  { id: 'prometheus', label: 'Prometheus', note: 'Hardened Prometheus (fleet metrics)', kind: 'companion' },
+  { id: 'grafana', label: 'Grafana', note: 'Hardened Grafana (fleet dashboards)', kind: 'companion' },
+  // Tools — hardened CLI binaries baked into the built image with a real COPY --from.
+  {
+    id: 'cosign',
+    label: 'Cosign',
+    note: 'Hardened cosign CLI (sign & verify images)',
+    kind: 'tool',
+    binPath: '/usr/local/bin/cosign',
+  },
+  {
+    id: 'curl',
+    label: 'curl',
+    note: 'Hardened curl CLI (health checks, fetches)',
+    kind: 'tool',
+    binPath: '/usr/bin/curl',
+  },
+  { id: 'jq', label: 'jq', note: 'Hardened jq CLI (JSON wrangling in scripts)', kind: 'tool', binPath: '/usr/bin/jq' },
+  {
+    id: 'kubectl',
+    label: 'kubectl',
+    note: 'Hardened kubectl CLI (cluster ops from the image)',
+    kind: 'tool',
+    binPath: '/usr/local/bin/kubectl',
+  },
+  {
+    id: 'helm',
+    label: 'Helm',
+    note: 'Hardened helm CLI (chart deploys from the image)',
+    kind: 'tool',
+    binPath: '/usr/local/bin/helm',
+  },
 ];
+
+/** Companion Hummingbird apps — pulled & run alongside; not baked into the image. */
+export const HUMMINGBIRD_COMPANION_OPTIONS: readonly HummingbirdAppOption[] = HUMMINGBIRD_APP_OPTIONS.filter(
+  o => o.kind === 'companion',
+);
+
+/** Tool Hummingbird apps — hardened CLIs baked into the image via COPY --from. */
+export const HUMMINGBIRD_TOOL_OPTIONS: readonly HummingbirdAppOption[] = HUMMINGBIRD_APP_OPTIONS.filter(
+  o => o.kind === 'tool',
+);
 
 export const ROS_OPTIONS: readonly LayerOption<RosLayer>[] = [
   { id: 'none', label: 'None', note: 'No ROS layer' },
@@ -299,6 +389,11 @@ const BASE_OS_IMAGE_REF: Record<BaseOsLayer, string> = {
   'rhel10-bootc': 'registry.redhat.io/rhel10/rhel-bootc:latest',
 };
 
+/** Full image reference this wizard would pull/FROM for a given base OS layer. */
+export function baseOsImageRef(baseOs: BaseOsLayer): string {
+  return BASE_OS_IMAGE_REF[baseOs];
+}
+
 const ROS_DISTRO: Record<Exclude<RosLayer, 'none'>, string> = {
   'ros2-jazzy': 'jazzy',
   'ros2-humble': 'humble',
@@ -326,8 +421,18 @@ export function generateLayerContainerfile(sel: LayerSelection): string {
       if (apps.length === 0) {
         lines.push('# (no hardened app images selected yet)');
       } else {
-        for (const app of apps) {
-          lines.push(`# ${app}  -> quay.io/hummingbird/${app}:latest (hardened drop-in)`);
+        const optionById = new Map<HardenedApp, HummingbirdAppOption>(HUMMINGBIRD_APP_OPTIONS.map(o => [o.id, o]));
+        const companions = apps.filter(a => optionById.get(a)?.kind === 'companion');
+        const tools = apps.filter(a => optionById.get(a)?.kind === 'tool');
+        // Companions run as their own images — noted, not baked into this build.
+        for (const app of companions) {
+          lines.push(`# companion image (pull & run alongside): ${hummingbirdImageRef(app)}`);
+        }
+        // Tools are baked in with a real COPY --from from the hardened image.
+        for (const app of tools) {
+          const binPath = optionById.get(app)?.binPath ?? `/usr/bin/${app}`;
+          lines.push(`# ${app} — hardened CLI baked in from ${hummingbirdImageRef(app)}`);
+          lines.push(`COPY --from=${hummingbirdImageRef(app)} ${binPath} /usr/local/bin/${app}`);
         }
       }
     } else {

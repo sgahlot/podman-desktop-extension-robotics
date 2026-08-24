@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateStack, generateLayerContainerfile, type LayerSelection } from './layerCompatibility';
+import {
+  evaluateStack,
+  generateLayerContainerfile,
+  hummingbirdImageRef,
+  HUMMINGBIRD_APP_OPTIONS,
+  HUMMINGBIRD_COMPANION_OPTIONS,
+  HUMMINGBIRD_TOOL_OPTIONS,
+  type LayerSelection,
+} from './layerCompatibility';
 
 function sel(overrides: Partial<LayerSelection>): LayerSelection {
   return {
@@ -180,6 +188,31 @@ describe('generateLayerContainerfile', () => {
     expect(containerfile).toContain('quay.io/hummingbird/postgresql');
   });
 
+  it('a hummingbird tool (jq) is baked in with a real COPY --from line', () => {
+    const containerfile = generateLayerContainerfile(
+      sel({ baseOs: 'ubuntu-noble', hardened: 'hummingbird-app', hummingbirdApps: ['jq'] }),
+    );
+    expect(containerfile).toContain('COPY --from=quay.io/hummingbird/jq:latest /usr/bin/jq /usr/local/bin/jq');
+  });
+
+  it('a hummingbird companion (nginx) is a pull-alongside comment, not a COPY --from', () => {
+    const containerfile = generateLayerContainerfile(
+      sel({ baseOs: 'ubuntu-noble', hardened: 'hummingbird-app', hummingbirdApps: ['nginx'] }),
+    );
+    expect(containerfile).toContain('companion image (pull & run alongside): quay.io/hummingbird/nginx:latest');
+    expect(containerfile).not.toContain('COPY --from=quay.io/hummingbird/nginx');
+  });
+
+  it('a mixed companion + tool selection renders both a comment and a COPY --from', () => {
+    const containerfile = generateLayerContainerfile(
+      sel({ baseOs: 'ubuntu-noble', hardened: 'hummingbird-app', hummingbirdApps: ['grafana', 'cosign'] }),
+    );
+    expect(containerfile).toContain('companion image (pull & run alongside): quay.io/hummingbird/grafana:latest');
+    expect(containerfile).toContain(
+      'COPY --from=quay.io/hummingbird/cosign:latest /usr/local/bin/cosign /usr/local/bin/cosign',
+    );
+  });
+
   it('centos-bootc-stream10 resolves the stream10 FROM ref', () => {
     const containerfile = generateLayerContainerfile(sel({ baseOs: 'centos-bootc-stream10' }));
     expect(containerfile).toContain('FROM quay.io/centos-bootc/centos-bootc:stream10');
@@ -198,5 +231,28 @@ describe('generateLayerContainerfile', () => {
   it('rhel10-bootc resolves the rhel10 FROM ref', () => {
     const containerfile = generateLayerContainerfile(sel({ baseOs: 'rhel10-bootc' }));
     expect(containerfile).toContain('FROM registry.redhat.io/rhel10/rhel-bootc:latest');
+  });
+});
+
+describe('Hummingbird app catalog', () => {
+  it('hummingbirdImageRef builds the latest hardened ref', () => {
+    expect(hummingbirdImageRef('nginx')).toBe('quay.io/hummingbird/nginx:latest');
+    expect(hummingbirdImageRef('cosign')).toBe('quay.io/hummingbird/cosign:latest');
+  });
+
+  it('partitions every app into exactly one of companion / tool', () => {
+    const companions = new Set(HUMMINGBIRD_COMPANION_OPTIONS.map(o => o.id));
+    const tools = new Set(HUMMINGBIRD_TOOL_OPTIONS.map(o => o.id));
+    expect(HUMMINGBIRD_COMPANION_OPTIONS.length + HUMMINGBIRD_TOOL_OPTIONS.length).toBe(HUMMINGBIRD_APP_OPTIONS.length);
+    for (const o of HUMMINGBIRD_APP_OPTIONS) {
+      expect(companions.has(o.id) !== tools.has(o.id)).toBe(true);
+    }
+  });
+
+  it('every tool option carries a binPath to COPY --from', () => {
+    for (const o of HUMMINGBIRD_TOOL_OPTIONS) {
+      expect(o.kind).toBe('tool');
+      expect(o.binPath && o.binPath.length > 0).toBe(true);
+    }
   });
 });

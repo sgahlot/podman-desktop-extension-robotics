@@ -39,7 +39,9 @@ import {
   PART_OF_LABEL,
   PART_OF_VALUE,
 } from '/@shared/src/openshift/manifests';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join as pathJoin } from 'node:path';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
 import type {
   TopicInfo,
@@ -377,9 +379,28 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   #startImageBuild(tag: string, assetDir: string, buildargs?: { [key: string]: string }, platform?: string): void {
     this.#assertCanStartOp(this.activeBuilds, tag, 'build');
-    const podmanConnection = this.#getRunningPodmanConnection();
-
+    // Fail fast if there's no running Podman, before resolving the asset context dir.
+    this.#getRunningPodmanConnection();
     const contextDir = extensionApi.Uri.joinPath(this.extensionContext.extensionUri, 'assets', assetDir).fsPath;
+    this.#runContainerBuild(tag, contextDir, 'Containerfile', buildargs, platform);
+  }
+
+  /**
+   * Core build machinery shared by bundled asset-dir builds (#startImageBuild) and the
+   * layer-composition wizard's in-memory Containerfile build (buildFromContainerfile).
+   * The caller owns the concurrency guard (#assertCanStartOp) before invoking this.
+   * `onSettled` runs once the buildImage promise settles — used to remove a throwaway
+   * build context after the build finishes (success, failure, or cancel).
+   */
+  #runContainerBuild(
+    tag: string,
+    contextDir: string,
+    containerFileName: string,
+    buildargs?: { [key: string]: string },
+    platform?: string,
+    onSettled?: () => void,
+  ): void {
+    const podmanConnection = this.#getRunningPodmanConnection();
 
     // Replace any in-flight build for this tag
     const existing = this.buildAbortControllers.get(tag);
@@ -443,7 +464,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
           }
         },
         {
-          containerFile: 'Containerfile',
+          containerFile: containerFileName,
           tag,
           provider: podmanConnection.connection,
           abortController,
@@ -489,6 +510,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
           }
         }
         this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
+      })
+      .finally(() => {
+        try {
+          onSettled?.();
+        } catch {
+          // best-effort cleanup of a throwaway build context
+        }
       });
   }
 
@@ -518,9 +546,20 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async pullImage(fullImageName: string, tag: string): Promise<void> {
+    this.#startPull(`quay.io/${fullImageName}:${tag}`);
+  }
+
+  async pullImageByRef(imageRef: string): Promise<void> {
+    const ref = imageRef?.trim();
+    if (!ref || !/^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/.test(ref)) {
+      throw new Error(`Invalid image reference "${String(imageRef)}".`);
+    }
+    this.#startPull(ref);
+  }
+
+  #startPull(imageToPull: string): void {
     const podmanConnection = this.#getRunningPodmanConnection();
 
-    const imageToPull = `quay.io/${fullImageName}:${tag}`;
     this.#assertCanStartOp(this.activePulls, imageToPull, 'pull');
     this.activePulls.set(imageToPull, { image: imageToPull, status: 'Starting...' });
     this.layerProgress.set(imageToPull, new Map());
@@ -612,6 +651,32 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       { LOCAL_BASE_IMAGE: localBaseTag },
       platformForArch(config.targetArch),
     );
+  }
+
+  async buildFromContainerfile(tag: string, containerfile: string, platform?: string): Promise<void> {
+    if (!containerfile?.trim()) {
+      throw new Error('Cannot build: the Containerfile is empty.');
+    }
+    // Guard concurrency before touching disk so an over-cap request fails fast.
+    this.#assertCanStartOp(this.activeBuilds, tag, 'build');
+
+    const contextDir = await mkdtemp(pathJoin(tmpdir(), 'physical-ai-layer-build-'));
+    try {
+      await writeFile(pathJoin(contextDir, 'Containerfile'), containerfile, 'utf8');
+    } catch (err) {
+      await rm(contextDir, { recursive: true, force: true }).catch(() => {});
+      throw err;
+    }
+
+    try {
+      this.#runContainerBuild(tag, contextDir, 'Containerfile', undefined, platform, () => {
+        void rm(contextDir, { recursive: true, force: true }).catch(() => {});
+      });
+    } catch (err) {
+      // buildImage never kicked off (e.g. no running Podman) — remove the context now.
+      await rm(contextDir, { recursive: true, force: true }).catch(() => {});
+      throw err;
+    }
   }
 
   async getPushProgress(tag: string): Promise<PushProgress | undefined> {

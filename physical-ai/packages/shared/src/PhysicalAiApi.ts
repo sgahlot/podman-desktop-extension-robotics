@@ -15,10 +15,15 @@ export abstract class PhysicalAiApi {
   abstract listCatalogImages(namespace: string): Promise<QuayRepository[]>;
   abstract getImageTags(namespace: string, name: string): Promise<QuayTag[]>;
   abstract pullImage(fullImageName: string, tag: string): Promise<void>;
+  /** Pull an image by its full registry reference (any registry, not just quay.io). */
+  abstract pullImageByRef(imageRef: string): Promise<void>;
   abstract getPullProgress(image: string): Promise<PullProgress | undefined>;
   abstract listLocalImages(): Promise<string[]>;
   abstract buildBaseImage(tag: string, config: SimulationConfig): Promise<void>;
   abstract buildSimulationImage(tag: string, config: SimulationConfig): Promise<void>;
+  /** Build an image from an in-memory Containerfile (layer-composition wizard). The
+   * Containerfile is written to a throwaway build context; no bundled asset dir is used. */
+  abstract buildFromContainerfile(tag: string, containerfile: string, platform?: string): Promise<void>;
   abstract cancelBuild(tag: string): Promise<void>;
   abstract getBuildProgress(tag: string): Promise<BuildProgress | undefined>;
   abstract pushImage(tag: string): Promise<void>;
