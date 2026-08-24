@@ -698,7 +698,7 @@ Comprehensive security audit and hardening of the extension's backend API, entry
 | C — OpenShift configurability & safety | Cluster URL override, `oc whoami` pre-check, default-namespace setting, reflect already-spawned robots | ✅ Done |
 | D — Image Builder flow | SIM-only build path without full Quick Start | ✅ Done |
 | E — Layout config | Selectable Sidebar / Horizontal tabs / Cards navigation | ✅ Done |
-| F — Secure base images → wizard | Hummingbird/bootc feasibility spike, then a project wizard for layers/worlds/robots | ⚪ Not Started (design/vision) |
+| F — Secure base images → wizard | Hummingbird/bootc feasibility spike (NO-GO natively today), then a layer-composition wizard prototype | ✅ Code-complete on `feature/APPENG-6108-secure-base-spike`, awaiting user testing + merge |
 
 ---
 

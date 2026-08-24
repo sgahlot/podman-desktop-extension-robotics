@@ -420,7 +420,7 @@ The extension contributes 15 settings under **Settings → Preferences → Physi
 | `physical-ai.simulationEngine` | string | `gazebo` | Simulation engine
 | `physical-ai.simulationBaseImage` | enum | `sloretz` | Base preset: `sloretz` (multi-arch Humble), `osrf` (amd64 Humble), `jazzy-noble` (Noble / multi-arch Quick Start), or `jazzy` (amd64 Jazzy `:latest`)
 | `physical-ai.catalogViewMode` | enum | `all` | Image Catalog view: `all` (show all public repos) or `curated` (filter by allowlist)
-| `physical-ai.imageBuilderLayout` | enum | `guided` | Layout for the Image Builder page: `guided` (chooser leads to base/simulation/both) or `pipeline` (single-page base + simulation steps)
+| `physical-ai.imageBuilderLayout` | enum | `guided` | Layout for the Image Builder page: `guided` (chooser leads to base/simulation/both), `pipeline` (single-page base + simulation steps), or `layers` (secure-base layer-composition wizard prototype with a live compatibility verdict, S8-15)
 | `physical-ai.navigationLayout` | enum | `sidebar` | Navigation layout for the extension shell: `sidebar` (persistent left sidebar), `tabs` (persistent horizontal tab bar), or `cards` (original Dashboard-only hub, no persistent chrome) (S8-13)
 | `physical-ai.catalogCuratedAllowlist` | string | `ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*` | Comma-separated wildcard patterns for curated catalog view
 | `physical-ai.simulationImageAllowlist` | string | _(empty)_ | Optional comma-separated image refs or patterns for Simulation launch. Empty = default `ros2-*-sim*` / `ros2-*-turtlebot3`. Pin exact tags or digests for demos.
