@@ -110,7 +110,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 
 ==== Responsibilities
 
-* Dashboard landing page with feature cards; doubles as the `Home` destination under the Sidebar/Tabs layouts (`physical-ai.navigationLayout` preference, S8-13)
+* Dashboard landing page; the Quick Links feature-card grid is shown only in Cards mode. Under the Sidebar/Tabs layouts it doubles as the `Home` destination and instead renders a guidance dashboard (welcome + get-started + live metrics + explore) so it doesn't duplicate the persistent nav (`physical-ai.navigationLayout` preference, S8-13)
 * Image catalog browser with All/Curated views and pull progress _(APPENG-5770, done)_
 * Image Builder for base and simulation images with Quick Start presets (Local host-native + OpenShift amd64) _(done)_
 * Simulation page — launch, status, open in browser, stop & remove, add TurtleBot3, per-robot X/Y + **Navigate** (Jazzy: Nav2 `navigate_to_pose`; Humble: `cmd_vel`). Lidar/IMU sensors active on Mac (2026-08).
@@ -125,7 +125,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 | File | Role
 
 | `src/App.svelte` | Root component, hash-based routing via tinro; wraps routed content in `NavShell` for the persistent Sidebar/Tabs layouts
-| `src/Dashboard.svelte` | Landing page with quick-link cards
+| `src/Dashboard.svelte` | Layout-aware Home: Quick Links grid in cards mode; welcome/get-started/metrics/explore dashboard under sidebar/tabs
 | `src/ImageCatalog.svelte` | Browse Quay repos (All/Curated), pull images, show local images
 | `src/SimulationSetup.svelte` | Image Builder — configure + build/push base and simulation images (Quick Start panels: Local host-native + OpenShift amd64)
 | `src/SimulationPage.svelte` | Simulation — launch containers, view status, open noVNC, add TurtleBot3
