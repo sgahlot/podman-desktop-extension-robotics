@@ -1,12 +1,18 @@
 # APPENG-6108 (Story 8, Batch F) — Secure base spike: S8-14 → S8-15
 
 **Status:** S8-14 (feasibility spike) **done — verdict NO-GO natively today**. S8-15
-(layer-composition wizard) **prototype code-complete** on
+(layer-composition wizard) **code-complete with a real build + pull path** on
 `feature/APPENG-6108-secure-base-spike` (commits `4e608f6`, `528a6df`, `a0f8463`,
-`22e784c`) — awaiting user testing + merge to `main`. The Hummingbird app list now
-mirrors the real `quay.io/hummingbird/*` catalog and both the wizard and Help note that
-the bootc/Hummingbird layers come from the `redhat.bootc` / `redhat.hummingbird`
-extensions (install them and pull the images locally to use the layers for real). See
+`22e784c`, `8e2604e`) — awaiting user testing + merge to `main`. The wizard is no longer
+preview-only: it **pulls the layer images** (base OS + selected Hummingbird images, any
+registry) and **builds the composed image for real** — a tested Ubuntu+ROS[+Sim] preset
+reuses the full asset recipe, everything else builds from the generated Containerfile (so
+a blocked combo actually fails at the predicted step). The Hummingbird app list mirrors
+the real `quay.io/hummingbird/*` catalog, split into **companion** images (pulled & run
+alongside) and **tool** binaries (baked in via `COPY --from`); both the wizard and Help
+note that the bootc/Hummingbird layers come from the `redhat.bootc` /
+`redhat.hummingbird` extensions (install them and pull the images locally to use the
+layers for real). See
 [Story 8 — Batch F](story8-extension-ux-enhancements.md#s8-wizard) for the tracking table.
 
 ---
@@ -119,10 +125,13 @@ returns it, or a documented endpoint.
   can change shape without notice. That fragility (and that it would cover only
   Hummingbird, not bootc) is why it isn't the prototype default.
 
-**Chosen path.** Hardcode a curated catalog now, and (planned fast-follow) decorate it
-with **local availability** using the extension's existing local-image listing
-(`listLocalImages()`): show the known layers and mark which are actually pulled on this
-machine. That pairs naturally with declaring `redhat.bootc` / `redhat.hummingbird` as
+**Chosen path.** Hardcode a curated catalog now, and decorate it with **local
+availability** using the extension's existing local-image listing (`listLocalImages()`):
+show the known layers and mark which are actually pulled on this machine. This is now
+**implemented** — the wizard's pull section lists the base OS + selected Hummingbird
+image refs, gives each a **Pull** button (going through the new `pullImageByRef()` so any
+registry works, not just quay.io), and shows a **✓ Local** badge for refs already present.
+That pairs naturally with declaring `redhat.bootc` / `redhat.hummingbird` as
 prerequisites and letting the user pull the images themselves — giving real, per-machine
 dynamism **without** depending on any remote or private API. The same completion note is
 mirrored on the Jira for future reference.
@@ -144,15 +153,16 @@ shipping demo image today:
 Given the NO-GO verdict, continuing to chase a specific "secure base + ROS + Sim" build
 today would be spending effort on a combination that structurally can't succeed until
 upstream ROS packaging catches up (tracked passively via APPENG-5809's revisit
-triggers). Instead, Batch F pivoted to a **prototype** that showcases the *user
-experience* of composing a secure image now, so it "just works" the moment a viable
-secure ROS/Sim layer exists upstream — without hard-coding today's infeasibility into
-the UI.
+triggers). Instead, Batch F built a wizard for the *user experience* of composing a
+secure image now, so it "just works" the moment a viable secure ROS/Sim layer exists
+upstream — without hard-coding today's infeasibility into the UI.
 
-The image the wizard describes **doesn't need to be buildable today**. Infeasible
-combinations get a clear warning, not a hard block — there's an **"Attempt anyway"**
-escape hatch for exploration, dev-only source builds, or a future world where a given
-combination becomes viable.
+The wizard is **real, not a mock-up**: it pulls the layer images and builds the composed
+image. Infeasible combinations get a clear warning, not a hard block — there's an
+**"Attempt anyway"** escape hatch that lets the build actually run and **fail for real at
+the predicted step** (useful for exploration, dev-only source builds, or a future world
+where a given combination becomes viable). The verdict is honest precisely because a
+❌ combo, if attempted, fails exactly where the engine says it will.
 
 ## What was built
 
@@ -171,23 +181,48 @@ combination:
 Implemented as a third mode, `'layers'`, of the existing
 `physical-ai.imageBuilderLayout` preference (alongside `guided` and `pipeline`).
 
+On top of the verdict, the wizard **pulls and builds for real** (commit `8e2604e`):
+
+- **Pull the layers** — a per-ref pull section for the base OS image and each selected
+  Hummingbird image, backed by a new `pullImageByRef()` backend method that pulls **any**
+  registry reference (`docker.io/library/ubuntu`, `registry.redhat.io/rhel10/rhel-bootc`,
+  `quay.io/hummingbird/*`), unlike the pre-existing `pullImage()` which hardcoded a
+  `quay.io/` prefix. A **✓ Local** badge marks refs already present (`listLocalImages()`).
+- **Build the composed image** — two modes, chosen automatically:
+  - **Tested preset** — an Ubuntu + ROS [+ Sim] stack with no baked-in tools maps to a
+    known-good preset and builds the *real, runnable* image via the existing
+    `buildBaseImage()` / `buildSimulationImage()` asset recipe (entrypoints, worlds,
+    noVNC) — not the naive Containerfile.
+  - **Generated Containerfile** — everything else (bootc bases, "Attempt anyway",
+    baked-in tool selections) builds from the previewed Containerfile via a new
+    `buildFromContainerfile()` backend method (writes it to a throwaway temp context,
+    builds, cleans up). Selecting a bake-in **tool** forces this mode so its
+    `COPY --from` actually lands in the image.
+
 Key files:
 
 - `physical-ai/packages/shared/src/types/layerCompatibility.ts` — the pure
   compatibility engine: `evaluateStack()` (produces the 3-state verdict for a chosen
   layer combination) and `generateLayerContainerfile()` (renders the corresponding
-  Containerfile for a combination, whether or not it's marked Ready).
+  Containerfile for a combination, whether or not it's marked Ready). Also the split
+  Hummingbird catalog (companions vs. tools) and the `baseOsImageRef()` /
+  `hummingbirdImageRef()` helpers the pull section uses.
+- `physical-ai/packages/backend/src/api-impl.ts` — `pullImageByRef()`,
+  `buildFromContainerfile()`, and the shared `#runContainerBuild()` machinery both the
+  bundled-asset and in-memory-Containerfile builds reuse.
 - `physical-ai/packages/frontend/src/lib/LayerComposer.svelte` — the wizard UI (layer
-  pickers + live verdict + "Attempt anyway" escape hatch).
+  pickers + live verdict + pull section + real build, reusing `BuildPushPanel.svelte`).
 - `physical-ai/packages/frontend/src/SimulationSetup.svelte` — wires the `'layers'`
   mode into the existing Image Builder layout switcher alongside `guided`/`pipeline`.
 
 Branch: `feature/APPENG-6108-secure-base-spike`. Commits: `4e608f6` (foundation — engine
-+ `'layers'` mode plumbing), `528a6df` (wizard UI, prototype), `a0f8463` (wizard + Help
-notes that the layers come from the `redhat.bootc` / `redhat.hummingbird` extensions),
-`22e784c` (Hummingbird app list corrected to the real `quay.io/hummingbird/*` catalog;
-R5 downgraded warn→info so Hummingbird-alongside-ROS reads ✅ Ready). **Not yet merged to
-`main`** — awaiting user testing before merge, per this project's zero-errors-on-merge /
++ `'layers'` mode plumbing), `528a6df` (wizard UI, preview-only), `a0f8463` (wizard +
+Help notes that the layers come from the `redhat.bootc` / `redhat.hummingbird`
+extensions), `22e784c` (Hummingbird app list corrected to the real `quay.io/hummingbird/*`
+catalog; R5 downgraded warn→info so Hummingbird-alongside-ROS reads ✅ Ready), `8e2604e`
+(real pull + build: `pullImageByRef`, `buildFromContainerfile`, the companion/tool
+catalog split, and the pull/build UI). **Not yet merged to `main`** — awaiting user
+testing before merge, per this project's zero-errors-on-merge /
 merge-to-main-before-Closed workflow.
 
 ## Manual test matrix
@@ -205,7 +240,9 @@ for each row set Base OS / Hardened / ROS / Simulation to the row's values (and,
 Hardened column names apps, select **Hardened app = Hummingbird app** and tick those app
 checkboxes). Confirm the banner verdict, the "Fails at build step" line, and the Build
 button state match the table; for ❌ rows also confirm ticking **Attempt anyway** re-enables
-Build and that clicking it shows the prototype notice.
+Build and that clicking it **runs a real build that fails at the named step** (`ros-install`
+/ `sim-install`) rather than being blocked in the UI. For ✅ rows, the Pull buttons fetch
+the layer images and the Build panel produces a real image.
 
 | # | Base OS | Hardened | ROS | Sim | Verdict | Fails at | Build button |
 |---|---------|----------|-----|-----|---------|----------|--------------|
@@ -260,13 +297,23 @@ Notes on specific rows:
 
 ### Hummingbird app sub-layer (drill-down) checks
 
-- Selecting **Hardened app = Hummingbird app** reveals the app checkbox group
-  (nginx, python, nodejs, postgresql, valkey, prometheus, grafana, cosign — the real
-  `quay.io/hummingbird/*` catalog names).
-- Ticking apps adds one commented line per app to the Containerfile preview, e.g. checking
-  **nginx** and **nodejs** yields `# nginx  -> quay.io/hummingbird/nginx:latest` and
-  `# nodejs -> quay.io/hummingbird/nodejs:latest`.
-- Switching Hardened back to **None** hides the group and clears the app selection.
+- Selecting **Hardened app = Hummingbird app** reveals two labelled checkbox groups from
+  the real `quay.io/hummingbird/*` catalog:
+  - **Companion images — pulled & run alongside:** nginx, python, nodejs, postgresql,
+    valkey, prometheus, grafana. These are full service images consumed *next to* the
+    robotics image, not baked into it.
+  - **Tools to bake in — hardened CLI via `COPY --from`:** cosign, curl, jq, kubectl,
+    helm. These are single hardened binaries copied *into* the built image.
+- Ticking a **companion** adds a comment line to the Containerfile preview, e.g. nginx
+  yields `# companion image (pull & run alongside): quay.io/hummingbird/nginx:latest`
+  (no `COPY`).
+- Ticking a **tool** adds a real `COPY --from` line, e.g. jq yields
+  `COPY --from=quay.io/hummingbird/jq:latest /usr/bin/jq /usr/local/bin/jq`. Selecting any
+  tool switches the build to the generated-Containerfile mode so the `COPY --from` lands
+  in the image.
+- Every selected app (companion or tool) also appears in the **pull section** with its own
+  Pull button and ✓ Local badge.
+- Switching Hardened back to **None** hides both groups and clears the app selection.
 
 ### Why the verdict is derived, not hand-written
 
@@ -289,10 +336,10 @@ per-combination `if`s. Each base OS declares its **capabilities** as data
 Because step 3 is exhaustive over buildable selections, **every** combination resolves to
 a coherent, complete verdict — which is what closed the Row-5/9 gap that the earlier
 rule set missed. Flipping one capability fact (e.g. if upstream ever ships el9 ROS sim
-RPMs) updates the whole matrix consistently, with no per-row rule to hunt down. A future
-enhancement can decorate this static model with **local image availability**
-(`listLocalImages()`) — the one genuinely-runtime signal that's feasible — without
-changing the derivation.
+RPMs) updates the whole matrix consistently, with no per-row rule to hunt down. The static
+model is now decorated with **local image availability** (`listLocalImages()`) — the one
+genuinely-runtime signal that's feasible — in the pull section's ✓ Local badges, without
+changing the derivation itself.
 
 ## Follow-ups
 
