@@ -96,7 +96,7 @@ The backend is the entry point loaded by Podman Desktop. It manages the extensio
 | `src/extension.ts` | Entry point — creates webview panel, wires RPC, registers `physical-ai.open` command
 | `src/api-impl.ts` | `PhysicalAiApiImpl` — implements all API methods; private helpers use JS `#private` syntax (not RPC-callable)
 | `src/progressLogs.ts` | `appendProgressLog()` — capped at 500 lines with truncation marker
-| `package.json` | Extension manifest (contributes: commands, configuration with 11 properties)
+| `package.json` | Extension manifest (contributes: commands, configuration with 15 properties)
 | `vite.config.js` | Builds to CJS, externalizes `@podman-desktop/api`
 | `assets/ros2-jazzy-base/` | Bundled Containerfile + entrypoint for Jazzy base builds
 | `assets/ros2-jazzy-sim/` | Jazzy simulation image: Containerfile, entrypoint-gazebo.sh, entrypoint-spawn-robot.sh, world SDF, noVNC landing page
@@ -110,7 +110,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 
 ==== Responsibilities
 
-* Dashboard landing page with feature cards
+* Dashboard landing page with feature cards; doubles as the `Home` destination under the Sidebar/Tabs layouts (`physical-ai.navigationLayout` preference, S8-13)
 * Image catalog browser with All/Curated views and pull progress _(APPENG-5770, done)_
 * Image Builder for base and simulation images with Quick Start presets (Local host-native + OpenShift amd64) _(done)_
 * Simulation page — launch, status, open in browser, stop & remove, add TurtleBot3, per-robot X/Y + **Navigate** (Jazzy: Nav2 `navigate_to_pose`; Humble: `cmd_vel`). Lidar/IMU sensors active on Mac (2026-08).
@@ -124,7 +124,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 |===
 | File | Role
 
-| `src/App.svelte` | Root component, hash-based routing via tinro
+| `src/App.svelte` | Root component, hash-based routing via tinro; wraps routed content in `NavShell` for the persistent Sidebar/Tabs layouts
 | `src/Dashboard.svelte` | Landing page with quick-link cards
 | `src/ImageCatalog.svelte` | Browse Quay repos (All/Curated), pull images, show local images
 | `src/SimulationSetup.svelte` | Image Builder — configure + build/push base and simulation images (Quick Start panels: Local host-native + OpenShift amd64)
@@ -132,6 +132,9 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 | `src/TopicMonitor.svelte` | Topic Monitor — ROS2 topic list with message types and pub/sub counts, auto-poll
 | `src/Help.svelte` | In-extension documentation
 | `src/lib/BuildPushPanel.svelte` | Shared component for build/push/cancel lifecycle with polling
+| `src/lib/NavShell.svelte` | Persistent nav shell wrapping routed content — renders Sidebar, Tabs, or nothing (Cards) per `physical-ai.navigationLayout`; highlights the active route via `$router.path` (S8-13)
+| `src/lib/LayoutSwitcher.svelte` | 3-way in-app radiogroup for the navigation layout (Sidebar / Tabs / Cards), mirrored by the PD preference (S8-13)
+| `src/lib/navItems.ts` | Single source of truth for nav destinations (route, label, icon, disabled state e.g. Fleet "Coming soon") (S8-13)
 | `src/app.css` | `.pai-*` theme classes (buttons, links, text colors, cards, progress bars) using `--pd-*` CSS variables
 | `src/api/client.ts` | RPC client — creates proxy to backend API
 | `src/lib/Route.svelte` | Route component with state persistence
@@ -403,23 +406,27 @@ NOTE: Story 6 uses `podman exec` to spawn additional robots into a **single** si
 
 == Configuration Properties
 
-The extension contributes 11 settings under **Settings → Preferences → Physical AI**:
+The extension contributes 15 settings under **Settings → Preferences → Physical AI**:
 
 [cols="2,1,1,2"]
 |===
 | Property | Type | Default | Description
 
 | `physical-ai.defaultNamespace` | string | `ecosystem-appeng` | Quay.io namespace for catalog browsing and image tags
+| `physical-ai.defaultOpenShiftNamespace` | string | _(empty)_ | Default OpenShift/Kubernetes namespace used when the current kubeconfig context doesn't specify one (the context's own namespace, when present, always takes priority)
 | `physical-ai.simulationRobot` | string | `turtlebot3` | Robot type for simulation
 | `physical-ai.simulationDistro` | string | `humble` | ROS distro (`humble` and `jazzy` both have bundled simulation images)
 | `physical-ai.simulationMiddleware` | string | `dds` | Middleware (`dds` or `zenoh`)
 | `physical-ai.simulationEngine` | string | `gazebo` | Simulation engine
 | `physical-ai.simulationBaseImage` | enum | `sloretz` | Base preset: `sloretz` (multi-arch Humble), `osrf` (amd64 Humble), `jazzy-noble` (Noble / multi-arch Quick Start), or `jazzy` (amd64 Jazzy `:latest`)
 | `physical-ai.catalogViewMode` | enum | `all` | Image Catalog view: `all` (show all public repos) or `curated` (filter by allowlist)
+| `physical-ai.imageBuilderLayout` | enum | `guided` | Layout for the Image Builder page: `guided` (chooser leads to base/simulation/both) or `pipeline` (single-page base + simulation steps)
+| `physical-ai.navigationLayout` | enum | `sidebar` | Navigation layout for the extension shell: `sidebar` (persistent left sidebar), `tabs` (persistent horizontal tab bar), or `cards` (original Dashboard-only hub, no persistent chrome) (S8-13)
 | `physical-ai.catalogCuratedAllowlist` | string | `ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*` | Comma-separated wildcard patterns for curated catalog view
 | `physical-ai.simulationImageAllowlist` | string | _(empty)_ | Optional comma-separated image refs or patterns for Simulation launch. Empty = default `ros2-*-sim*` / `ros2-*-turtlebot3`. Pin exact tags or digests for demos.
 | `physical-ai.topicPeekTimeoutSeconds` | number | `5` | Timeout in seconds for Topic Monitor Peek (`ros2 topic echo --once`). Whole number from 1 to 30.
 | `physical-ai.simulationGpuPassthrough` | boolean | `true` | On arm64 Mac, pass `/dev/dri` into simulation containers and use virtio-gpu when available. Disable to force llvmpipe. Ignored on amd64.
+| `physical-ai.defaultSoftwareRenderCpus` | number | `8` | Default guaranteed CPU count (requests == limits) for the software-render OpenShift sim pod. Seeds the Software-render CPUs field on the Simulation → OpenShift tab (1–64); ignored when the cluster-has-a-GPU toggle is on.
 |===
 
 == Key Technical Decisions

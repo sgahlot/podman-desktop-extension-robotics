@@ -29,6 +29,10 @@
 import { physicalAiClient } from './api/client';
 import { onMount } from 'svelte';
 import { router } from 'tinro';
+import LayoutSwitcher from './lib/LayoutSwitcher.svelte';
+
+export let layout: 'sidebar' | 'tabs' | 'cards' = 'cards';
+export let onLayoutChange: ((next: 'sidebar' | 'tabs' | 'cards') => void) | undefined = undefined;
 
 let status = 'Loading...';
 
@@ -42,7 +46,15 @@ onMount(async () => {
 </script>
 
 <div class="flex flex-col p-4 gap-4">
-  <h1 class="text-3xl text-[var(--pd-content-header)]">Physical AI</h1>
+  <div class="flex flex-row items-start justify-between gap-4">
+    <h1 class="text-3xl text-[var(--pd-content-header)]">Physical AI</h1>
+    {#if layout === 'cards' && onLayoutChange}
+      <div class="flex flex-col items-end gap-1 shrink-0">
+        <span class="text-xs pai-text-muted">Layout</span>
+        <LayoutSwitcher value={layout} onSelect={onLayoutChange} />
+      </div>
+    {/if}
+  </div>
   <p class="text-[var(--pd-content-text)]">Podman Desktop extension for Physical AI robotics development.</p>
 
   <div class="flex flex-col gap-2 mt-4">

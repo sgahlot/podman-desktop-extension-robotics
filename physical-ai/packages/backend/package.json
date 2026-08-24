@@ -93,6 +93,21 @@
           "default": "guided",
           "description": "Layout for the Image Builder page"
         },
+        "physical-ai.navigationLayout": {
+          "type": "string",
+          "enum": [
+            "sidebar",
+            "tabs",
+            "cards"
+          ],
+          "enumDescriptions": [
+            "Persistent left sidebar listing every destination, with the active page highlighted",
+            "Persistent horizontal tab bar listing every destination, with the active page highlighted",
+            "No persistent navigation chrome — the Dashboard grid of cards is the hub (original behavior)"
+          ],
+          "default": "sidebar",
+          "description": "Navigation layout for the Physical AI extension shell"
+        },
         "physical-ai.catalogCuratedAllowlist": {
           "type": "string",
           "default": "ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*",

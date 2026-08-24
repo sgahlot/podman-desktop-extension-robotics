@@ -695,9 +695,9 @@ Comprehensive security audit and hardening of the extension's backend API, entry
 |-------|---------|--------|
 | A — Quick UI wins | Deploy in-progress status, Remove-during-warmup, deploy-banner cleanup, route-readiness gating | ✅ Done |
 | B — Build/push observability | Stale-log labeling, log timestamps, build/push duration, collapsible Image Builder sections | ✅ Done |
-| C — OpenShift configurability & safety | Cluster URL override, `oc whoami` pre-check, default-namespace setting, reflect already-spawned robots | ⚪ Not Started (next) |
-| D — Image Builder flow | SIM-only build path without full Quick Start | ⚪ Not Started |
-| E — Layout config | Selectable Sidebar / Horizontal tabs / Cards navigation | ⚪ Not Started |
+| C — OpenShift configurability & safety | Cluster URL override, `oc whoami` pre-check, default-namespace setting, reflect already-spawned robots | ✅ Done |
+| D — Image Builder flow | SIM-only build path without full Quick Start | ✅ Done |
+| E — Layout config | Selectable Sidebar / Horizontal tabs / Cards navigation | ✅ Done |
 | F — Secure base images → wizard | Hummingbird/bootc feasibility spike, then a project wizard for layers/worlds/robots | ⚪ Not Started (design/vision) |
 
 ---

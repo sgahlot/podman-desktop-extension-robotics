@@ -89,4 +89,24 @@ describe('Dashboard', () => {
     await fireEvent.click(btn);
     expect(mockGoto).toHaveBeenCalledWith('/topics');
   });
+
+  it('shows the layout switcher in cards layout when onLayoutChange is provided', () => {
+    render(Dashboard, { layout: 'cards', onLayoutChange: vi.fn() });
+    expect(screen.getByText('Layout')).toBeTruthy();
+    expect(screen.getByText('Sidebar')).toBeTruthy();
+    expect(screen.getByText('Tabs')).toBeTruthy();
+    expect(screen.getByText('Cards')).toBeTruthy();
+  });
+
+  it('hides the layout switcher by default', () => {
+    render(Dashboard);
+    expect(screen.queryByText('Layout')).toBeNull();
+  });
+
+  it('calls onLayoutChange when a switcher option is clicked in cards mode', async () => {
+    const onLayoutChange = vi.fn();
+    render(Dashboard, { layout: 'cards', onLayoutChange });
+    await fireEvent.click(screen.getByText('Tabs'));
+    expect(onLayoutChange).toHaveBeenCalledWith('tabs');
+  });
 });
