@@ -59,13 +59,27 @@ describe('evaluateStack', () => {
     expect(result.messages.some(m => m.text.includes('needs a ROS layer beneath it'))).toBe(true);
   });
 
-  it('hummingbird-app + ubuntu + jazzy warns but stays buildable', () => {
+  it('hummingbird-app + ubuntu + jazzy is ok — hummingbird is an informational side component', () => {
     const result = evaluateStack(
       sel({ baseOs: 'ubuntu-noble', hardened: 'hummingbird-app', ros: 'ros2-jazzy', sim: 'none' }),
     );
-    expect(result.level).toBe('warn');
+    expect(result.level).toBe('ok');
     expect(result.buildable).toBe(true);
-    expect(result.messages.some(m => m.text.includes('hardened application images'))).toBe(true);
+    expect(
+      result.messages.some(m => m.level === 'info' && m.text.includes('optional hardened application images')),
+    ).toBe(true);
+  });
+
+  it('ubuntu + hummingbird-app + jazzy + sim evaluates to ok with an info-level hummingbird message', () => {
+    const result = evaluateStack({
+      baseOs: 'ubuntu-noble',
+      hardened: 'hummingbird-app',
+      ros: 'ros2-jazzy',
+      sim: 'gazebo-nav2-tb3',
+      hummingbirdApps: ['nginx'],
+    });
+    expect(result.level).toBe('ok');
+    expect(result.messages.some(m => m.level === 'info' && m.text.toLowerCase().includes('hummingbird'))).toBe(true);
   });
 
   it('rhel bootc with no ros/sim warns about the subscription requirement', () => {
@@ -124,12 +138,19 @@ describe('generateLayerContainerfile', () => {
     expect(containerfile).toContain('no hardened app images selected yet');
   });
 
-  it('hummingbird hardened with nginx + node selected renders both hummingbird image refs', () => {
+  it('hummingbird hardened with nginx + nodejs selected renders both hummingbird image refs', () => {
     const containerfile = generateLayerContainerfile(
-      sel({ baseOs: 'ubuntu-noble', hardened: 'hummingbird-app', hummingbirdApps: ['nginx', 'node'] }),
+      sel({ baseOs: 'ubuntu-noble', hardened: 'hummingbird-app', hummingbirdApps: ['nginx', 'nodejs'] }),
     );
     expect(containerfile).toContain('quay.io/hummingbird/nginx');
-    expect(containerfile).toContain('quay.io/hummingbird/node');
+    expect(containerfile).toContain('quay.io/hummingbird/nodejs');
+  });
+
+  it('hummingbird hardened with postgresql selected renders the postgresql hummingbird image ref', () => {
+    const containerfile = generateLayerContainerfile(
+      sel({ baseOs: 'ubuntu-noble', hardened: 'hummingbird-app', hummingbirdApps: ['postgresql'] }),
+    );
+    expect(containerfile).toContain('quay.io/hummingbird/postgresql');
   });
 
   it('centos-bootc-stream10 resolves the stream10 FROM ref', () => {

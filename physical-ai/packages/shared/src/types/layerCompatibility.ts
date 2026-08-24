@@ -21,7 +21,7 @@ export type BaseOsLayer =
 export type HardenedLayer = 'none' | 'hummingbird-app';
 export type RosLayer = 'none' | 'ros2-jazzy' | 'ros2-humble';
 export type SimLayer = 'none' | 'gazebo-nav2-tb3';
-export type HardenedApp = 'nginx' | 'python' | 'node' | 'postgres' | 'redis';
+export type HardenedApp = 'nginx' | 'python' | 'nodejs' | 'postgresql' | 'valkey' | 'prometheus' | 'grafana' | 'cosign';
 
 export interface LayerSelection {
   baseOs: BaseOsLayer;
@@ -78,11 +78,14 @@ export const HARDENED_OPTIONS: readonly LayerOption<HardenedLayer>[] = [
 ];
 
 export const HUMMINGBIRD_APP_OPTIONS: readonly LayerOption<HardenedApp>[] = [
-  { id: 'nginx', label: 'Nginx', note: 'Hardened drop-in for nginx' },
-  { id: 'python', label: 'Python', note: 'Hardened drop-in for python' },
-  { id: 'node', label: 'Node', note: 'Hardened drop-in for node' },
-  { id: 'postgres', label: 'Postgres', note: 'Hardened drop-in for postgres' },
-  { id: 'redis', label: 'Redis', note: 'Hardened drop-in for redis' },
+  { id: 'nginx', label: 'Nginx', note: 'Hardened web server / reverse proxy (dashboards, noVNC)' },
+  { id: 'python', label: 'Python', note: 'Hardened Python runtime (ROS 2 nodes & tooling)' },
+  { id: 'nodejs', label: 'Node.js', note: 'Hardened Node.js runtime (web dashboards & tooling)' },
+  { id: 'postgresql', label: 'PostgreSQL', note: 'Hardened PostgreSQL (telemetry / state store)' },
+  { id: 'valkey', label: 'Valkey', note: 'Hardened Redis-compatible store (cache / message backing)' },
+  { id: 'prometheus', label: 'Prometheus', note: 'Hardened Prometheus (fleet metrics)' },
+  { id: 'grafana', label: 'Grafana', note: 'Hardened Grafana (fleet dashboards)' },
+  { id: 'cosign', label: 'Cosign', note: 'Hardened cosign (sign & verify images)' },
 ];
 
 export const ROS_OPTIONS: readonly LayerOption<RosLayer>[] = [
@@ -151,8 +154,8 @@ export function evaluateStack(sel: LayerSelection): CompatResult {
   // R5
   if (sel.hardened === 'hummingbird-app' && sel.ros !== 'none') {
     messages.push({
-      level: 'warn',
-      text: 'Hummingbird provides hardened application images (nginx/python-class), not a ROS OS base — treated as an optional component; it does not change the ROS build.',
+      level: 'info',
+      text: 'Hummingbird provides optional hardened application images (quay.io/hummingbird/*) as a side component — it does not change the ROS/robotics build.',
     });
   }
 
