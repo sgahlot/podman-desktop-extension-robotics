@@ -95,10 +95,15 @@ import { navigationLayout } from './lib/navigationLayout';
         </div>
         <div>
           <strong>Layers layout</strong> — Compose an image from Base OS, hardened app, ROS, and simulation layers, with
-          a live compatibility verdict as you pick. The bootc bases and Hummingbird hardened apps shown are a
-          representative catalog today; install the <span class="font-mono">redhat.bootc</span> and
-          <span class="font-mono">redhat.hummingbird</span> extensions and pull the images locally to use them for real. A
-          future update will show which layers you already have.
+          a live compatibility verdict as you pick. Pull the layer images (base OS + any selected Hummingbird images)
+          right from the wizard — a <span class="font-mono">&#10003; Local</span> badge marks the ones you already have
+          — then build the composed image: a tested Ubuntu + ROS [+ Sim] stack builds the full runnable image, and any
+          other combination builds from the generated Containerfile (an <em>Attempt anyway</em> build of a blocked
+          combination really runs and fails at the step the verdict names). The bootc bases and Hummingbird hardened
+          apps shown are a representative catalog; install the <span class="font-mono">redhat.bootc</span> and
+          <span class="font-mono">redhat.hummingbird</span> extensions to pull those images. Hummingbird apps split into
+          <em>companions</em> (pulled and run alongside) and <em>tools</em> (a hardened CLI baked in via
+          <span class="font-mono">COPY --from</span>).
         </div>
       </div>
     </div>
