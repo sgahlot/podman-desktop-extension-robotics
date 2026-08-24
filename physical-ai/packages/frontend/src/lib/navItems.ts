@@ -7,7 +7,7 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: readonly NavItem[] = [
-  { label: 'Home', to: '/' },
+  { label: 'Dashboard', to: '/' },
   { label: 'Image Builder', to: '/build' },
   { label: 'Image Catalog', to: '/images' },
   { label: 'Simulation', to: '/simulation' },

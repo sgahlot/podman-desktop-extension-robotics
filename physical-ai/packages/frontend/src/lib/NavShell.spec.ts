@@ -35,14 +35,30 @@ describe('NavShell', () => {
 
   it('renders all 7 nav labels in sidebar layout', () => {
     render(NavShell, { layout: 'sidebar', onLayoutChange: vi.fn() });
-    for (const label of ['Home', 'Image Builder', 'Image Catalog', 'Simulation', 'Topic Monitor', 'Fleet', 'Help']) {
+    for (const label of [
+      'Dashboard',
+      'Image Builder',
+      'Image Catalog',
+      'Simulation',
+      'Topic Monitor',
+      'Fleet',
+      'Help',
+    ]) {
       expect(screen.getByText(label)).toBeTruthy();
     }
   });
 
   it('renders all 7 nav labels + a tablist in tabs layout', () => {
     render(NavShell, { layout: 'tabs', onLayoutChange: vi.fn() });
-    for (const label of ['Home', 'Image Builder', 'Image Catalog', 'Simulation', 'Topic Monitor', 'Fleet', 'Help']) {
+    for (const label of [
+      'Dashboard',
+      'Image Builder',
+      'Image Catalog',
+      'Simulation',
+      'Topic Monitor',
+      'Fleet',
+      'Help',
+    ]) {
       expect(screen.getByText(label)).toBeTruthy();
     }
     expect(screen.getByRole('tablist')).toBeTruthy();
@@ -69,23 +85,23 @@ describe('NavShell', () => {
 
   it('moves the active sidebar highlight when the route changes after mount', async () => {
     render(NavShell, { layout: 'sidebar', onLayoutChange: vi.fn() });
-    expect(screen.getByText('Home').getAttribute('aria-current')).toBe('page');
+    expect(screen.getByText('Dashboard').getAttribute('aria-current')).toBe('page');
     expect(screen.getByText('Help').getAttribute('aria-current')).toBeNull();
 
     await navigateTo('/help');
 
-    expect(screen.getByText('Home').getAttribute('aria-current')).toBeNull();
+    expect(screen.getByText('Dashboard').getAttribute('aria-current')).toBeNull();
     expect(screen.getByText('Help').getAttribute('aria-current')).toBe('page');
   });
 
   it('moves the active tab highlight when the route changes after mount', async () => {
     render(NavShell, { layout: 'tabs', onLayoutChange: vi.fn() });
-    expect(screen.getByText('Home').getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByText('Dashboard').getAttribute('aria-selected')).toBe('true');
     expect(screen.getByText('Topic Monitor').getAttribute('aria-selected')).toBe('false');
 
     await navigateTo('/topics');
 
-    expect(screen.getByText('Home').getAttribute('aria-selected')).toBe('false');
+    expect(screen.getByText('Dashboard').getAttribute('aria-selected')).toBe('false');
     expect(screen.getByText('Topic Monitor').getAttribute('aria-selected')).toBe('true');
   });
 
