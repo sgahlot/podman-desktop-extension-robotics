@@ -171,3 +171,57 @@ export function evaluateStack(sel: LayerSelection): CompatResult {
     failsAtStep: level === 'blocked' ? failsAtStep : undefined,
   };
 }
+
+const BASE_OS_IMAGE_REF: Record<BaseOsLayer, string> = {
+  'ubuntu-noble': 'docker.io/library/ubuntu:24.04',
+  'centos-bootc-stream9': 'quay.io/centos-bootc/centos-bootc:stream9',
+  'fedora-bootc-43': 'quay.io/fedora/fedora-bootc:43',
+  'rhel-bootc': 'registry.redhat.io/rhel9/rhel-bootc:latest',
+};
+
+const ROS_DISTRO: Record<Exclude<RosLayer, 'none'>, string> = {
+  'ros2-jazzy': 'jazzy',
+  'ros2-humble': 'humble',
+};
+
+function labelFor<TId extends string>(options: readonly LayerOption<TId>[], id: TId): string {
+  return options.find(o => o.id === id)?.label ?? id;
+}
+
+/**
+ * Pure Containerfile generator for the layer-composition wizard. Produces a commented,
+ * human-readable Containerfile reflecting the selected layers — a preview of what would be
+ * built once secure bootc/Hummingbird layers are available. No I/O, no validation beyond
+ * skipping layers set to 'none'.
+ */
+export function generateLayerContainerfile(sel: LayerSelection): string {
+  const sections: string[] = [];
+
+  sections.push(`# Layer 1 — Base OS: ${labelFor(BASE_OS_OPTIONS, sel.baseOs)}\nFROM ${BASE_OS_IMAGE_REF[sel.baseOs]}`);
+
+  if (sel.hardened !== 'none') {
+    sections.push(
+      `# Layer 2 — Hardened application layer: ${labelFor(HARDENED_OPTIONS, sel.hardened)}\n` +
+        `# (Hummingbird provides hardened app images from quay.io/hummingbird/*; optional component)`,
+    );
+  }
+
+  if (sel.ros !== 'none') {
+    const distro = ROS_DISTRO[sel.ros];
+    sections.push(
+      `# Layer 3 — ROS: ${labelFor(ROS_OPTIONS, sel.ros)}\n` +
+        `RUN apt-get update && apt-get install -y ros-${distro}-desktop`,
+    );
+  }
+
+  if (sel.sim !== 'none') {
+    const distro = sel.ros !== 'none' ? ROS_DISTRO[sel.ros] : 'jazzy';
+    sections.push(
+      `# Layer 4 — Simulation: ${labelFor(SIM_OPTIONS, sel.sim)}\n` +
+        `RUN apt-get install -y ros-${distro}-navigation2 ros-${distro}-nav2-bringup ` +
+        `ros-${distro}-nav2-minimal-tb3-sim ros-${distro}-ros-gz-sim`,
+    );
+  }
+
+  return sections.join('\n\n') + '\n';
+}

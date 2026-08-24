@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateStack, type LayerSelection } from './layerCompatibility';
+import { evaluateStack, generateLayerContainerfile, type LayerSelection } from './layerCompatibility';
 
 function sel(overrides: Partial<LayerSelection>): LayerSelection {
   return {
@@ -73,5 +73,32 @@ describe('evaluateStack', () => {
     expect(result.level).toBe('warn');
     expect(result.buildable).toBe(true);
     expect(result.messages.some(m => m.text.includes('Red Hat subscription'))).toBe(true);
+  });
+});
+
+describe('generateLayerContainerfile', () => {
+  it('ubuntu + jazzy + sim contains the ubuntu FROM ref and the nav2 RUN line', () => {
+    const containerfile = generateLayerContainerfile(
+      sel({ baseOs: 'ubuntu-noble', ros: 'ros2-jazzy', sim: 'gazebo-nav2-tb3' }),
+    );
+    expect(containerfile).toContain('FROM docker.io/library/ubuntu:24.04');
+    expect(containerfile).toContain('ros-jazzy-nav2-bringup');
+  });
+
+  it('bootc base contains the centos FROM ref', () => {
+    const containerfile = generateLayerContainerfile(sel({ baseOs: 'centos-bootc-stream9' }));
+    expect(containerfile).toContain('FROM quay.io/centos-bootc/centos-bootc:stream9');
+  });
+
+  it("ros='none' omits the ROS RUN line", () => {
+    const containerfile = generateLayerContainerfile(sel({ baseOs: 'ubuntu-noble', ros: 'none' }));
+    expect(containerfile).not.toContain('ros-desktop');
+    expect(containerfile).not.toContain('apt-get install -y ros-');
+  });
+
+  it('hummingbird hardened adds the hardened comment', () => {
+    const containerfile = generateLayerContainerfile(sel({ baseOs: 'ubuntu-noble', hardened: 'hummingbird-app' }));
+    expect(containerfile).toContain('Hardened application layer');
+    expect(containerfile).toContain('quay.io/hummingbird/*');
   });
 });

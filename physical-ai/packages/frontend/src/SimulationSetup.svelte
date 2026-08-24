@@ -3,6 +3,7 @@ import { physicalAiClient } from './api/client';
 import { onMount, tick } from 'svelte';
 import { router } from 'tinro';
 import BuildPushPanel from './lib/BuildPushPanel.svelte';
+import LayerComposer from './lib/LayerComposer.svelte';
 import QuickLinks from './lib/QuickLinks.svelte';
 import { navigationLayout } from './lib/navigationLayout';
 import {
@@ -162,7 +163,7 @@ onMount(async () => {
   }
 });
 
-function setLayout(next: 'pipeline' | 'guided') {
+function setLayout(next: 'pipeline' | 'guided' | 'layers') {
   layout = next;
   void physicalAiClient.setImageBuilderLayout(next);
 }
@@ -259,6 +260,18 @@ function cancelQuickStart() {
             ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
             : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
           Guided
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={layout === 'layers'}
+          on:click={() => setLayout('layers')}
+          disabled={buildBusy}
+          class="px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {layout ===
+          'layers'
+            ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
+            : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
+          Layers
         </button>
       </div>
     </div>
@@ -445,153 +458,159 @@ function cancelQuickStart() {
 
     <!-- Image Builder pipeline: Step 1 (base) + Step 2 (simulation), each with a
          live built/not-built status driven by the reactive existence check above. -->
-    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
-      <div class="flex flex-row items-center justify-between flex-wrap gap-2 mb-2">
-        <h2 class="text-xl text-[var(--pd-content-header)]">
-          {layout === 'guided' ? 'Guided Image Builder' : 'Image Builder Pipeline'}
-        </h2>
-        <span class="text-xs text-[var(--pd-content-text)] opacity-80 font-mono">
-          {robot} &middot; {distro} &middot; {engine} &middot; {basePreset.label}
-        </span>
-      </div>
-
-      {#if layout === 'guided'}
-        <div class="flex flex-col gap-2 pb-3 mb-1 border-b border-[var(--pd-content-card-border)]">
-          <span class="text-sm font-medium text-[var(--pd-content-header)]">What do you want to build?</span>
-          <div class="flex flex-row gap-2 flex-wrap" role="radiogroup" aria-label="What to build">
-            <button
-              type="button"
-              role="radio"
-              aria-checked={buildChoice === 'base'}
-              on:click={() => (buildChoice = 'base')}
-              disabled={buildBusy}
-              class="px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {buildChoice ===
-              'base'
-                ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
-                : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
-              Base image only
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={buildChoice === 'sim'}
-              on:click={() => (buildChoice = 'sim')}
-              disabled={buildBusy}
-              class="px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {buildChoice ===
-              'sim'
-                ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
-                : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
-              Simulation image
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={buildChoice === 'both'}
-              on:click={() => (buildChoice = 'both')}
-              disabled={buildBusy}
-              class="px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {buildChoice ===
-              'both'
-                ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
-                : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
-              Both
-            </button>
-          </div>
-          {#if !buildChoice}
-            <span class="text-xs pai-text-muted">Choose what to build to continue.</span>
-          {/if}
+    {#if layout !== 'layers'}
+      <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
+        <div class="flex flex-row items-center justify-between flex-wrap gap-2 mb-2">
+          <h2 class="text-xl text-[var(--pd-content-header)]">
+            {layout === 'guided' ? 'Guided Image Builder' : 'Image Builder Pipeline'}
+          </h2>
+          <span class="text-xs text-[var(--pd-content-text)] opacity-80 font-mono">
+            {robot} &middot; {distro} &middot; {engine} &middot; {basePreset.label}
+          </span>
         </div>
-      {/if}
 
-      {#if showStep1}
-        <div id="step1-build" class="flex flex-col gap-3 pt-3 border-t border-[var(--pd-content-card-border)]">
-          <div class="flex flex-row items-center gap-3 flex-wrap">
-            <h3 class="text-sm font-medium text-[var(--pd-content-header)]">Step 1 &middot; Base image</h3>
-            {#if baseImageExists}
-              <span class="text-xs pai-text-success">&#10003; Built locally</span>
-            {:else}
-              <span class="text-xs pai-text-muted">&#9675; Not built</span>
-            {/if}
-            {#if baseTag}
-              <span class="text-xs text-[var(--pd-content-text)] opacity-80 font-mono">{baseTag}</span>
+        {#if layout === 'guided'}
+          <div class="flex flex-col gap-2 pb-3 mb-1 border-b border-[var(--pd-content-card-border)]">
+            <span class="text-sm font-medium text-[var(--pd-content-header)]">What do you want to build?</span>
+            <div class="flex flex-row gap-2 flex-wrap" role="radiogroup" aria-label="What to build">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={buildChoice === 'base'}
+                on:click={() => (buildChoice = 'base')}
+                disabled={buildBusy}
+                class="px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {buildChoice ===
+                'base'
+                  ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
+                  : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
+                Base image only
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={buildChoice === 'sim'}
+                on:click={() => (buildChoice = 'sim')}
+                disabled={buildBusy}
+                class="px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {buildChoice ===
+                'sim'
+                  ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
+                  : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
+                Simulation image
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={buildChoice === 'both'}
+                on:click={() => (buildChoice = 'both')}
+                disabled={buildBusy}
+                class="px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {buildChoice ===
+                'both'
+                  ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
+                  : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
+                Both
+              </button>
+            </div>
+            {#if !buildChoice}
+              <span class="text-xs pai-text-muted">Choose what to build to continue.</span>
             {/if}
           </div>
-          {#if profile && baseTag}
-            <p class="text-sm text-[var(--pd-content-text)]">
-              Builds <span class="font-mono">{profile.baseAssetDir}</span> — ROS2 {distro} + build tools.
-              {#if simSupported}
-                This is the FROM layer for the simulation image below.
+        {/if}
+
+        {#if showStep1}
+          <div id="step1-build" class="flex flex-col gap-3 pt-3 border-t border-[var(--pd-content-card-border)]">
+            <div class="flex flex-row items-center gap-3 flex-wrap">
+              <h3 class="text-sm font-medium text-[var(--pd-content-header)]">Step 1 &middot; Base image</h3>
+              {#if baseImageExists}
+                <span class="text-xs pai-text-success">&#10003; Built locally</span>
+              {:else}
+                <span class="text-xs pai-text-muted">&#9675; Not built</span>
               {/if}
-            </p>
+              {#if baseTag}
+                <span class="text-xs text-[var(--pd-content-text)] opacity-80 font-mono">{baseTag}</span>
+              {/if}
+            </div>
+            {#if profile && baseTag}
+              <p class="text-sm text-[var(--pd-content-text)]">
+                Builds <span class="font-mono">{profile.baseAssetDir}</span> — ROS2 {distro} + build tools.
+                {#if simSupported}
+                  This is the FROM layer for the simulation image below.
+                {/if}
+              </p>
 
-            <BuildPushPanel
-              bind:tag={baseTag}
-              bind:busy={baseBusy}
-              buildImage={t => physicalAiClient.buildBaseImage(t, currentConfig)}
-              onBuildComplete={() => {
-                baseImageExists = true;
-                refreshImageExistence(existsCheckKey);
-              }}
-              tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-base:noble"
-              tagInputId="baseTag" />
-          {:else}
-            <p class="text-sm p-3 rounded pai-banner-error">
-              Cannot build: no base image Containerfile is bundled for
-              <span class="font-mono">{distro}/{robot}/{middleware}/{engine}</span>. Choose a supported combination
-              (Humble or Jazzy + TurtleBot3 + DDS + Gazebo).
-            </p>
-          {/if}
-        </div>
-      {/if}
-
-      {#if showStep2}
-        <div class="flex flex-col gap-3 pt-3 mt-3 border-t border-[var(--pd-content-card-border)]">
-          <div class="flex flex-row items-center gap-3 flex-wrap">
-            <h3 class="text-sm font-medium text-[var(--pd-content-header)]">Step 2 &middot; Simulation image</h3>
-            {#if simImageExists}
-              <span class="text-xs pai-text-success">&#10003; Built locally</span>
+              <BuildPushPanel
+                bind:tag={baseTag}
+                bind:busy={baseBusy}
+                buildImage={t => physicalAiClient.buildBaseImage(t, currentConfig)}
+                onBuildComplete={() => {
+                  baseImageExists = true;
+                  refreshImageExistence(existsCheckKey);
+                }}
+                tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-base:noble"
+                tagInputId="baseTag" />
             {:else}
-              <span class="text-xs pai-text-muted">&#9675; Not built</span>
-            {/if}
-            {#if simTag}
-              <span class="text-xs text-[var(--pd-content-text)] opacity-80 font-mono">{simTag}</span>
+              <p class="text-sm p-3 rounded pai-banner-error">
+                Cannot build: no base image Containerfile is bundled for
+                <span class="font-mono">{distro}/{robot}/{middleware}/{engine}</span>. Choose a supported combination
+                (Humble or Jazzy + TurtleBot3 + DDS + Gazebo).
+              </p>
             {/if}
           </div>
-          {#if profile && simSupported && simTag}
-            {#if !baseImageExists}
+        {/if}
+
+        {#if showStep2}
+          <div class="flex flex-col gap-3 pt-3 mt-3 border-t border-[var(--pd-content-card-border)]">
+            <div class="flex flex-row items-center gap-3 flex-wrap">
+              <h3 class="text-sm font-medium text-[var(--pd-content-header)]">Step 2 &middot; Simulation image</h3>
+              {#if simImageExists}
+                <span class="text-xs pai-text-success">&#10003; Built locally</span>
+              {:else}
+                <span class="text-xs pai-text-muted">&#9675; Not built</span>
+              {/if}
+              {#if simTag}
+                <span class="text-xs text-[var(--pd-content-text)] opacity-80 font-mono">{simTag}</span>
+              {/if}
+            </div>
+            {#if profile && simSupported && simTag}
+              {#if !baseImageExists}
+                <p class="text-sm p-3 rounded pai-banner-warning">
+                  Build the base image (Step 1) first — the simulation image depends on it.
+                </p>
+              {:else}
+                <p class="text-sm text-[var(--pd-content-text)]">
+                  Builds <span class="font-mono">{profile.assetDir}</span> on top of the base image — Gazebo, Nav2, and TurtleBot3
+                  packages (plus noVNC for Jazzy). Launch starts an empty world; add robots from the Simulation page.
+                </p>
+              {/if}
+
+              <BuildPushPanel
+                bind:tag={simTag}
+                bind:busy={simBusy}
+                buildImage={t => physicalAiClient.buildSimulationImage(t, currentConfig)}
+                onBuildComplete={() => {
+                  simImageExists = true;
+                  refreshImageExistence(existsCheckKey);
+                }}
+                tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-sim:noble"
+                tagInputId="simTag"
+                disabled={!baseImageExists} />
+            {:else if profile && !simSupported}
               <p class="text-sm p-3 rounded pai-banner-warning">
-                Build the base image (Step 1) first — the simulation image depends on it.
+                <strong>Not available yet.</strong> Simulation images (Gazebo, Nav2, TurtleBot3) are not yet available
+                for ROS2 {distro}. Only the base image can be built at this time.
               </p>
             {:else}
-              <p class="text-sm text-[var(--pd-content-text)]">
-                Builds <span class="font-mono">{profile.assetDir}</span> on top of the base image — Gazebo, Nav2, and TurtleBot3
-                packages (plus noVNC for Jazzy). Launch starts an empty world; add robots from the Simulation page.
+              <p class="text-sm p-3 rounded pai-banner-error">
+                Cannot build: no simulation Containerfile is bundled for
+                <span class="font-mono">{distro}/{robot}/{middleware}/{engine}</span>. Choose a supported combination.
               </p>
             {/if}
+          </div>
+        {/if}
+      </div>
+    {/if}
 
-            <BuildPushPanel
-              bind:tag={simTag}
-              bind:busy={simBusy}
-              buildImage={t => physicalAiClient.buildSimulationImage(t, currentConfig)}
-              onBuildComplete={() => {
-                simImageExists = true;
-                refreshImageExistence(existsCheckKey);
-              }}
-              tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-sim:noble"
-              tagInputId="simTag"
-              disabled={!baseImageExists} />
-          {:else if profile && !simSupported}
-            <p class="text-sm p-3 rounded pai-banner-warning">
-              <strong>Not available yet.</strong> Simulation images (Gazebo, Nav2, TurtleBot3) are not yet available for
-              ROS2 {distro}. Only the base image can be built at this time.
-            </p>
-          {:else}
-            <p class="text-sm p-3 rounded pai-banner-error">
-              Cannot build: no simulation Containerfile is bundled for
-              <span class="font-mono">{distro}/{robot}/{middleware}/{engine}</span>. Choose a supported combination.
-            </p>
-          {/if}
-        </div>
-      {/if}
-    </div>
+    {#if layout === 'layers'}
+      <LayerComposer />
+    {/if}
   {/if}
 </div>
