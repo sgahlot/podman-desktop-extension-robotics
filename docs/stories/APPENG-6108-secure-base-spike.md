@@ -2,8 +2,11 @@
 
 **Status:** S8-14 (feasibility spike) **done — verdict NO-GO natively today**. S8-15
 (layer-composition wizard) **prototype code-complete** on
-`feature/APPENG-6108-secure-base-spike` (commits `4e608f6`, `528a6df`) — awaiting user
-testing + merge to `main`. See
+`feature/APPENG-6108-secure-base-spike` (commits `4e608f6`, `528a6df`, `a0f8463`,
+`22e784c`) — awaiting user testing + merge to `main`. The Hummingbird app list now
+mirrors the real `quay.io/hummingbird/*` catalog and both the wizard and Help note that
+the bootc/Hummingbird layers come from the `redhat.bootc` / `redhat.hummingbird`
+extensions (install them and pull the images locally to use the layers for real). See
 [Story 8 — Batch F](story8-extension-ux-enhancements.md#s8-wizard) for the tracking table.
 
 ---
@@ -180,9 +183,91 @@ Key files:
   mode into the existing Image Builder layout switcher alongside `guided`/`pipeline`.
 
 Branch: `feature/APPENG-6108-secure-base-spike`. Commits: `4e608f6` (foundation — engine
-+ `'layers'` mode plumbing), `528a6df` (wizard UI, prototype). **Not yet merged to
++ `'layers'` mode plumbing), `528a6df` (wizard UI, prototype), `a0f8463` (wizard + Help
+notes that the layers come from the `redhat.bootc` / `redhat.hummingbird` extensions),
+`22e784c` (Hummingbird app list corrected to the real `quay.io/hummingbird/*` catalog;
+R5 downgraded warn→info so Hummingbird-alongside-ROS reads ✅ Ready). **Not yet merged to
 `main`** — awaiting user testing before merge, per this project's zero-errors-on-merge /
 merge-to-main-before-Closed workflow.
+
+## Manual test matrix
+
+These rows are generated directly from the compatibility engine (`evaluateStack()`), so
+the **Verdict / Fails-at / Build-button** columns are exactly what the wizard renders for
+each combination. Use them to exercise every rule path in the UI.
+
+**Legend** — Verdict: ✅ Ready (builds and is a working robotics image) · ⚠️ Builds, not a
+robotics image · ❌ Won't build. Build button: *Enabled*, or *Disabled* until you tick
+**Attempt anyway**. "Fails at" is the build step named on a blocked combination.
+
+**How to run it:** open **Image Builder**, switch the layout switcher to **Layers**, then
+for each row set Base OS / Hardened / ROS / Simulation to the row's values (and, where the
+Hardened column names apps, select **Hardened app = Hummingbird app** and tick those app
+checkboxes). Confirm the banner verdict, the "Fails at build step" line, and the Build
+button state match the table; for ❌ rows also confirm ticking **Attempt anyway** re-enables
+Build and that clicking it shows the prototype notice.
+
+| # | Base OS | Hardened | ROS | Sim | Verdict | Fails at | Build button |
+|---|---------|----------|-----|-----|---------|----------|--------------|
+| 1 | Ubuntu Noble | None | Jazzy | Gazebo+Nav2+TB3 | ✅ Ready | — | Enabled |
+| 2 | Ubuntu Noble | None | Humble | Gazebo+Nav2+TB3 | ✅ Ready | — | Enabled |
+| 3 | Ubuntu Noble | None | Jazzy | None | ✅ Ready | — | Enabled |
+| 4 | Ubuntu Noble | None | Humble | None | ✅ Ready | — | Enabled |
+| 5 | Ubuntu Noble | None | None | None | ✅ Ready · see note | — | Enabled |
+| 6 | Ubuntu Noble | None | None | Gazebo+Nav2+TB3 | ❌ Won't build | sim-install | Disabled |
+| 7 | Ubuntu Noble | Hummingbird (nginx) | Jazzy | Gazebo+Nav2+TB3 | ✅ Ready | — | Enabled |
+| 8 | Ubuntu Noble | Hummingbird (nginx+nodejs) | Humble | Gazebo+Nav2+TB3 | ✅ Ready | — | Enabled |
+| 9 | Ubuntu Noble | Hummingbird (nginx) | None | None | ✅ Ready · see note | — | Enabled |
+| 10 | CentOS bootc S9 | None | None | None | ⚠️ Builds, not robotics | — | Enabled |
+| 11 | CentOS bootc S9 | Hummingbird (nginx) | None | None | ⚠️ Builds, not robotics | — | Enabled |
+| 12 | CentOS bootc S9 | None | Jazzy | None | ❌ Won't build | ros-install | Disabled |
+| 13 | CentOS bootc S9 | None | Humble | None | ❌ Won't build | ros-install | Disabled |
+| 14 | CentOS bootc S9 | None | Jazzy | Gazebo+Nav2+TB3 | ❌ Won't build | ros-install | Disabled |
+| 15 | CentOS bootc S9 | None | Humble | Gazebo+Nav2+TB3 | ❌ Won't build | ros-install | Disabled |
+| 16 | CentOS bootc S9 | Hummingbird (nginx) | Jazzy | Gazebo+Nav2+TB3 | ❌ Won't build | ros-install | Disabled |
+| 17 | CentOS bootc S9 | None | None | Gazebo+Nav2+TB3 | ❌ Won't build | sim-install | Disabled |
+| 18 | CentOS bootc S10 | None | Jazzy | None | ❌ Won't build | ros-install | Disabled |
+| 19 | Fedora bootc 43 | None | None | None | ⚠️ Builds, not robotics | — | Enabled |
+| 20 | Fedora bootc 43 | None | Jazzy | None | ❌ Won't build | ros-install | Disabled |
+| 21 | Fedora bootc 43 | None | Humble | None | ❌ Won't build | ros-install | Disabled |
+| 22 | Fedora bootc 43 | Hummingbird (python) | Jazzy | Gazebo+Nav2+TB3 | ❌ Won't build | ros-install | Disabled |
+| 23 | Fedora bootc 42 | None | Jazzy | None | ❌ Won't build | ros-install | Disabled |
+| 24 | RHEL bootc 9 | None | None | None | ⚠️ Builds, not robotics | — | Enabled |
+| 25 | RHEL bootc 9 | Hummingbird (nginx) | None | None | ⚠️ Builds, not robotics | — | Enabled |
+| 26 | RHEL bootc 9 | None | Jazzy | None | ❌ Won't build | ros-install | Disabled |
+| 27 | RHEL bootc 9 | None | Jazzy | Gazebo+Nav2+TB3 | ❌ Won't build | ros-install | Disabled |
+| 28 | RHEL bootc 9 | None | Humble | Gazebo+Nav2+TB3 | ❌ Won't build | ros-install | Disabled |
+| 29 | RHEL bootc 10 | None | None | None | ⚠️ Builds, not robotics | — | Enabled |
+
+Notes on specific rows:
+
+- **Rows 7–8 (Hummingbird alongside a full ROS+Sim stack) read ✅ Ready** — Hummingbird
+  hardened app images are an optional side component; they don't change the Ubuntu ROS
+  build, so the combination still produces a working robotics image (the wizard shows an
+  informational note to that effect, not a warning).
+- **Rows 10, 19, 24, 29 (and 11, 25) — a bootc base with no ROS layer — read ⚠️.** RHEL
+  rows additionally carry a "requires a Red Hat subscription (registry.redhat.io)" warning.
+- **Rows 12–16, 18, 20–23, 26–28 fail at `ros-install`**: ROS layers install via `apt` on
+  Ubuntu, and the dnf-based bootc bases have no ROS Jazzy/Humble sim packages — the build
+  fails the moment it tries to install ROS. **Row 17 fails at `sim-install`** (a bootc base
+  with a sim layer but no ROS) — same el9-RPM gap, one step earlier in the chain. Rows 18 /
+  23 / 29 also prove the Stream 10 / Fedora 42 / RHEL 10 variants behave identically to
+  their family siblings.
+- **Open item — Row 5 (bare Ubuntu, no ROS/Sim) currently reads ✅ Ready with no message.**
+  A bootc base alone correctly warns "builds but not a robotics image" (rule R6), but that
+  warning is gated to bootc bases, so a bare Ubuntu image doesn't get it. If we want
+  bare-Ubuntu to also read ⚠️, generalize R6 to fire for any base with no ROS layer. Left
+  as-is pending a product call.
+
+### Hummingbird app sub-layer (drill-down) checks
+
+- Selecting **Hardened app = Hummingbird app** reveals the app checkbox group
+  (nginx, python, nodejs, postgresql, valkey, prometheus, grafana, cosign — the real
+  `quay.io/hummingbird/*` catalog names).
+- Ticking apps adds one commented line per app to the Containerfile preview, e.g. checking
+  **nginx** and **nodejs** yields `# nginx  -> quay.io/hummingbird/nginx:latest` and
+  `# nodejs -> quay.io/hummingbird/nodejs:latest`.
+- Switching Hardened back to **None** hides the group and clears the app selection.
 
 ## Follow-ups
 
