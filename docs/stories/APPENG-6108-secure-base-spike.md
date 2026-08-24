@@ -94,6 +94,36 @@ today** — that's the extension's current shipping base and is unaffected by th
   layered on" — only shell out to `bootc.image.build` and then reference the resulting
   tag.
 
+### Why the wizard's layer lists aren't queried "live"
+
+A natural expectation is that the wizard should populate its bootc bases and its
+Hummingbird hardened-app images by querying those extensions directly, instead of
+carrying a hardcoded list. It can't today, for a concrete reason worth recording so it
+can be answered later: **seeing an image in an extension's own UI does not mean another
+extension can read that list programmatically.** For that, the source extension has to
+*expose* the data — via `extension.exports` (a JS API), a contributed command that
+returns it, or a documented endpoint.
+
+- **`redhat.bootc`** exposes neither: `exports` is `undefined`, and its only command
+  (`bootc.image.build`) doesn't return a catalog. Its base list lives hardcoded in its
+  own source (that's what its UI renders). So a "live" bootc list would just mean
+  **duplicating the same static list bootc itself maintains** — no dynamism is actually
+  gained.
+- **`redhat.hummingbird`** also exposes no `exports` and no commands; it fills its own UI
+  from a **remote HTTP catalog** (`api-hummingbird…`). We *could* call that same endpoint
+  ourselves, so a live Hummingbird list is technically possible — but it is a
+  third-party, undocumented network API, so it needs loading/error/timeout handling and
+  can change shape without notice. That fragility (and that it would cover only
+  Hummingbird, not bootc) is why it isn't the prototype default.
+
+**Chosen path.** Hardcode a curated catalog now, and (planned fast-follow) decorate it
+with **local availability** using the extension's existing local-image listing
+(`listLocalImages()`): show the known layers and mark which are actually pulled on this
+machine. That pairs naturally with declaring `redhat.bootc` / `redhat.hummingbird` as
+prerequisites and letting the user pull the images themselves — giving real, per-machine
+dynamism **without** depending on any remote or private API. The same completion note is
+mirrored on the Jira for future reference.
+
 ### Non-native alternatives (not pursued for the MVP)
 
 Two paths exist to get ROS 2 Jazzy onto a non-Ubuntu/non-apt base, neither viable for a
