@@ -2,6 +2,7 @@
 import {
   BASE_OS_OPTIONS,
   HARDENED_OPTIONS,
+  HUMMINGBIRD_APP_OPTIONS,
   ROS_OPTIONS,
   SIM_OPTIONS,
   evaluateStack,
@@ -14,6 +15,7 @@ let selection: LayerSelection = {
   hardened: 'none',
   ros: 'ros2-jazzy',
   sim: 'gazebo-nav2-tb3',
+  hummingbirdApps: [],
 };
 
 let attemptAnyway = false;
@@ -38,6 +40,12 @@ $: buildDisabled = result.level === 'blocked' && !attemptAnyway;
 // Reset the escape hatch and any stale notice whenever the selection changes so a
 // previously-blocked "attempt anyway" choice doesn't silently carry over.
 $: (selection, ((attemptAnyway = false), (buildNotice = '')));
+
+// Clear stale Hummingbird app picks when Hummingbird is turned off, without wiping them
+// on unrelated selection changes (e.g. toggling ROS while Hummingbird stays selected).
+$: if (selection.hardened !== 'hummingbird-app' && (selection.hummingbirdApps?.length ?? 0) > 0) {
+  selection.hummingbirdApps = [];
+}
 
 function onBuild() {
   buildNotice =
@@ -77,6 +85,19 @@ function onBuild() {
           {/each}
         </select>
         <span class="text-xs pai-text-muted">{hardenedNote}</span>
+
+        {#if selection.hardened === 'hummingbird-app'}
+          <div class="flex flex-col gap-1 mt-1 pl-3 border-l border-[var(--pd-content-card-border)]">
+            <span class="text-xs text-[var(--pd-content-text)]">Hardened app images</span>
+            {#each HUMMINGBIRD_APP_OPTIONS as o}
+              <label class="flex flex-row items-center gap-2 text-xs text-[var(--pd-content-text)]">
+                <input type="checkbox" bind:group={selection.hummingbirdApps} value={o.id} />
+                {o.label}
+                <span class="pai-text-muted">— {o.note}</span>
+              </label>
+            {/each}
+          </div>
+        {/if}
       </div>
 
       <div class="flex flex-col gap-1">

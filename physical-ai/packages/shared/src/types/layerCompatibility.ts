@@ -9,16 +9,26 @@
  * backend and the future wizard UI.
  */
 
-export type BaseOsLayer = 'ubuntu-noble' | 'centos-bootc-stream9' | 'fedora-bootc-43' | 'rhel-bootc';
+export type BaseOsLayer =
+  | 'ubuntu-noble'
+  | 'centos-bootc-stream9'
+  | 'centos-bootc-stream10'
+  | 'fedora-bootc-42'
+  | 'fedora-bootc-43'
+  | 'fedora-bootc-44'
+  | 'rhel-bootc'
+  | 'rhel10-bootc';
 export type HardenedLayer = 'none' | 'hummingbird-app';
 export type RosLayer = 'none' | 'ros2-jazzy' | 'ros2-humble';
 export type SimLayer = 'none' | 'gazebo-nav2-tb3';
+export type HardenedApp = 'nginx' | 'python' | 'node' | 'postgres' | 'redis';
 
 export interface LayerSelection {
   baseOs: BaseOsLayer;
   hardened: HardenedLayer;
   ros: RosLayer;
   sim: SimLayer;
+  hummingbirdApps?: HardenedApp[];
 }
 
 export type CompatLevel = 'ok' | 'warn' | 'blocked';
@@ -50,13 +60,29 @@ export const BASE_OS_OPTIONS: readonly LayerOption<BaseOsLayer>[] = [
     label: 'CentOS bootc (Stream 9)',
     note: 'bootc — core RPMs only, arm64 repo empty, unsigned',
   },
+  {
+    id: 'centos-bootc-stream10',
+    label: 'CentOS bootc (Stream 10)',
+    note: 'bootc — core RPMs only, unsigned',
+  },
+  { id: 'fedora-bootc-42', label: 'Fedora bootc 42', note: 'bootc — no ROS repo' },
   { id: 'fedora-bootc-43', label: 'Fedora bootc 43', note: 'bootc — no ROS repo' },
-  { id: 'rhel-bootc', label: 'RHEL bootc', note: 'bootc — requires Red Hat subscription' },
+  { id: 'fedora-bootc-44', label: 'Fedora bootc 44', note: 'bootc — no ROS repo' },
+  { id: 'rhel-bootc', label: 'RHEL bootc 9', note: 'bootc — requires Red Hat subscription' },
+  { id: 'rhel10-bootc', label: 'RHEL bootc 10', note: 'bootc — requires Red Hat subscription' },
 ];
 
 export const HARDENED_OPTIONS: readonly LayerOption<HardenedLayer>[] = [
   { id: 'none', label: 'None', note: 'Skip the hardened application layer' },
   { id: 'hummingbird-app', label: 'Hummingbird app', note: 'Hardened nginx/python-class application images' },
+];
+
+export const HUMMINGBIRD_APP_OPTIONS: readonly LayerOption<HardenedApp>[] = [
+  { id: 'nginx', label: 'Nginx', note: 'Hardened drop-in for nginx' },
+  { id: 'python', label: 'Python', note: 'Hardened drop-in for python' },
+  { id: 'node', label: 'Node', note: 'Hardened drop-in for node' },
+  { id: 'postgres', label: 'Postgres', note: 'Hardened drop-in for postgres' },
+  { id: 'redis', label: 'Redis', note: 'Hardened drop-in for redis' },
 ];
 
 export const ROS_OPTIONS: readonly LayerOption<RosLayer>[] = [
@@ -70,10 +96,8 @@ export const SIM_OPTIONS: readonly LayerOption<SimLayer>[] = [
   { id: 'gazebo-nav2-tb3', label: 'Gazebo + Nav2 + TurtleBot3', note: 'Requires a ROS layer beneath it' },
 ];
 
-const BOOTC_BASES: readonly BaseOsLayer[] = ['centos-bootc-stream9', 'fedora-bootc-43', 'rhel-bootc'];
-
 function isBootc(baseOs: BaseOsLayer): boolean {
-  return BOOTC_BASES.includes(baseOs);
+  return baseOs !== 'ubuntu-noble';
 }
 
 function labelForBaseOs(baseOs: BaseOsLayer): string {
@@ -117,7 +141,7 @@ export function evaluateStack(sel: LayerSelection): CompatResult {
   }
 
   // R4 (optional clarifying warn, non-duplicative with R1's error)
-  if (sel.baseOs === 'fedora-bootc-43' && sel.ros !== 'none') {
+  if (sel.baseOs.startsWith('fedora-bootc') && sel.ros !== 'none') {
     messages.push({
       level: 'warn',
       text: 'Fedora has no official ROS repository at all.',
@@ -141,7 +165,7 @@ export function evaluateStack(sel: LayerSelection): CompatResult {
   }
 
   // R7
-  if (sel.baseOs === 'rhel-bootc') {
+  if (sel.baseOs.startsWith('rhel')) {
     messages.push({
       level: 'warn',
       text: 'RHEL bootc requires a Red Hat subscription (registry.redhat.io) to pull.',
@@ -175,8 +199,12 @@ export function evaluateStack(sel: LayerSelection): CompatResult {
 const BASE_OS_IMAGE_REF: Record<BaseOsLayer, string> = {
   'ubuntu-noble': 'docker.io/library/ubuntu:24.04',
   'centos-bootc-stream9': 'quay.io/centos-bootc/centos-bootc:stream9',
+  'centos-bootc-stream10': 'quay.io/centos-bootc/centos-bootc:stream10',
+  'fedora-bootc-42': 'quay.io/fedora/fedora-bootc:42',
   'fedora-bootc-43': 'quay.io/fedora/fedora-bootc:43',
+  'fedora-bootc-44': 'quay.io/fedora/fedora-bootc:44',
   'rhel-bootc': 'registry.redhat.io/rhel9/rhel-bootc:latest',
+  'rhel10-bootc': 'registry.redhat.io/rhel10/rhel-bootc:latest',
 };
 
 const ROS_DISTRO: Record<Exclude<RosLayer, 'none'>, string> = {
@@ -200,10 +228,20 @@ export function generateLayerContainerfile(sel: LayerSelection): string {
   sections.push(`# Layer 1 — Base OS: ${labelFor(BASE_OS_OPTIONS, sel.baseOs)}\nFROM ${BASE_OS_IMAGE_REF[sel.baseOs]}`);
 
   if (sel.hardened !== 'none') {
-    sections.push(
-      `# Layer 2 — Hardened application layer: ${labelFor(HARDENED_OPTIONS, sel.hardened)}\n` +
-        `# (Hummingbird provides hardened app images from quay.io/hummingbird/*; optional component)`,
-    );
+    const lines = [`# Layer 2 — Hardened application layer: ${labelFor(HARDENED_OPTIONS, sel.hardened)}`];
+    if (sel.hardened === 'hummingbird-app') {
+      const apps = sel.hummingbirdApps ?? [];
+      if (apps.length === 0) {
+        lines.push('# (no hardened app images selected yet)');
+      } else {
+        for (const app of apps) {
+          lines.push(`# ${app}  -> quay.io/hummingbird/${app}:latest (hardened drop-in)`);
+        }
+      }
+    } else {
+      lines.push('# (Hummingbird provides hardened app images from quay.io/hummingbird/*; optional component)');
+    }
+    sections.push(lines.join('\n'));
   }
 
   if (sel.ros !== 'none') {

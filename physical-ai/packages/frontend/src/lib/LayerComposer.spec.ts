@@ -48,4 +48,34 @@ describe('LayerComposer', () => {
 
     expect(document.body.textContent).toContain('quay.io/centos-bootc/centos-bootc:stream9');
   });
+
+  it('Hummingbird app checkboxes are absent by default and appear after selecting Hardened=Hummingbird', async () => {
+    render(LayerComposer);
+    expect(screen.queryByText('Nginx')).toBeNull();
+
+    const hardenedSelect = screen.getByLabelText('Hardened app');
+    await fireEvent.change(hardenedSelect, { target: { value: 'hummingbird-app' } });
+
+    expect(screen.getByText('Nginx')).toBeTruthy();
+  });
+
+  it('checking an app makes the Containerfile preview contain its hummingbird image ref', async () => {
+    render(LayerComposer);
+    const hardenedSelect = screen.getByLabelText('Hardened app');
+    await fireEvent.change(hardenedSelect, { target: { value: 'hummingbird-app' } });
+
+    const nginxCheckbox = screen.getByText('Nginx').closest('label')?.querySelector('input[type="checkbox"]');
+    expect(nginxCheckbox).toBeTruthy();
+    await fireEvent.click(nginxCheckbox as HTMLInputElement);
+
+    expect(document.body.textContent).toContain('quay.io/hummingbird/nginx');
+  });
+
+  it('selecting a new bootc base (CentOS Stream 10) updates the preview FROM ref', async () => {
+    render(LayerComposer);
+    const baseOsSelect = screen.getByLabelText('Base OS');
+    await fireEvent.change(baseOsSelect, { target: { value: 'centos-bootc-stream10' } });
+
+    expect(document.body.textContent).toContain('quay.io/centos-bootc/centos-bootc:stream10');
+  });
 });

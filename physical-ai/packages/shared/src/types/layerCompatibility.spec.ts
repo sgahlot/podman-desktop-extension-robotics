@@ -74,6 +74,28 @@ describe('evaluateStack', () => {
     expect(result.buildable).toBe(true);
     expect(result.messages.some(m => m.text.includes('Red Hat subscription'))).toBe(true);
   });
+
+  it('centos bootc stream10 + jazzy is blocked at the ROS install step, same as stream9', () => {
+    const result = evaluateStack(sel({ baseOs: 'centos-bootc-stream10', ros: 'ros2-jazzy' }));
+    expect(result.level).toBe('blocked');
+    expect(result.buildable).toBe(false);
+    expect(result.failsAtStep).toBe('ros-install');
+  });
+
+  it('fedora-bootc-42 + jazzy is blocked and includes the Fedora-no-repo warning', () => {
+    const result = evaluateStack(sel({ baseOs: 'fedora-bootc-42', ros: 'ros2-jazzy' }));
+    expect(result.level).toBe('blocked');
+    expect(result.buildable).toBe(false);
+    expect(result.failsAtStep).toBe('ros-install');
+    expect(result.messages.some(m => m.text.includes('no official ROS repository'))).toBe(true);
+  });
+
+  it('rhel10-bootc alone warns about the subscription requirement', () => {
+    const result = evaluateStack(sel({ baseOs: 'rhel10-bootc', ros: 'none', sim: 'none' }));
+    expect(result.level).toBe('warn');
+    expect(result.buildable).toBe(true);
+    expect(result.messages.some(m => m.text.includes('Red Hat subscription'))).toBe(true);
+  });
 });
 
 describe('generateLayerContainerfile', () => {
@@ -96,9 +118,37 @@ describe('generateLayerContainerfile', () => {
     expect(containerfile).not.toContain('apt-get install -y ros-');
   });
 
-  it('hummingbird hardened adds the hardened comment', () => {
+  it('hummingbird hardened with no apps selected renders a placeholder note', () => {
     const containerfile = generateLayerContainerfile(sel({ baseOs: 'ubuntu-noble', hardened: 'hummingbird-app' }));
     expect(containerfile).toContain('Hardened application layer');
-    expect(containerfile).toContain('quay.io/hummingbird/*');
+    expect(containerfile).toContain('no hardened app images selected yet');
+  });
+
+  it('hummingbird hardened with nginx + node selected renders both hummingbird image refs', () => {
+    const containerfile = generateLayerContainerfile(
+      sel({ baseOs: 'ubuntu-noble', hardened: 'hummingbird-app', hummingbirdApps: ['nginx', 'node'] }),
+    );
+    expect(containerfile).toContain('quay.io/hummingbird/nginx');
+    expect(containerfile).toContain('quay.io/hummingbird/node');
+  });
+
+  it('centos-bootc-stream10 resolves the stream10 FROM ref', () => {
+    const containerfile = generateLayerContainerfile(sel({ baseOs: 'centos-bootc-stream10' }));
+    expect(containerfile).toContain('FROM quay.io/centos-bootc/centos-bootc:stream10');
+  });
+
+  it('fedora-bootc-42 resolves the fedora 42 FROM ref', () => {
+    const containerfile = generateLayerContainerfile(sel({ baseOs: 'fedora-bootc-42' }));
+    expect(containerfile).toContain('FROM quay.io/fedora/fedora-bootc:42');
+  });
+
+  it('fedora-bootc-44 resolves the fedora 44 FROM ref', () => {
+    const containerfile = generateLayerContainerfile(sel({ baseOs: 'fedora-bootc-44' }));
+    expect(containerfile).toContain('FROM quay.io/fedora/fedora-bootc:44');
+  });
+
+  it('rhel10-bootc resolves the rhel10 FROM ref', () => {
+    const containerfile = generateLayerContainerfile(sel({ baseOs: 'rhel10-bootc' }));
+    expect(containerfile).toContain('FROM registry.redhat.io/rhel10/rhel-bootc:latest');
   });
 });
