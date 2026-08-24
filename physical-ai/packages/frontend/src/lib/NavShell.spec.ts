@@ -1,23 +1,36 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { tick } from 'svelte';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import NavShell from './NavShell.svelte';
 
 const mockGoto = vi.fn();
 let currentPath = '/';
+let mockEmit: ((r: { path: string; url: string }) => void) | undefined;
 vi.mock('tinro', () => ({
   router: {
     goto: (...args: unknown[]) => mockGoto(...args),
     subscribe: (run: (r: { path: string; url: string }) => void) => {
+      mockEmit = run;
       run({ path: currentPath, url: currentPath });
-      return () => {};
+      return () => {
+        mockEmit = undefined;
+      };
     },
   },
 }));
+
+/** Simulate a route change after mount so we can assert the active highlight follows it. */
+async function navigateTo(path: string): Promise<void> {
+  currentPath = path;
+  mockEmit?.({ path, url: path });
+  await tick();
+}
 
 describe('NavShell', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     currentPath = '/';
+    mockEmit = undefined;
   });
 
   it('renders all 7 nav labels in sidebar layout', () => {
@@ -52,6 +65,28 @@ describe('NavShell', () => {
     render(NavShell, { layout: 'sidebar', onLayoutChange: vi.fn() });
     const item = screen.getByText('Image Builder');
     expect(item.getAttribute('aria-current')).toBe('page');
+  });
+
+  it('moves the active sidebar highlight when the route changes after mount', async () => {
+    render(NavShell, { layout: 'sidebar', onLayoutChange: vi.fn() });
+    expect(screen.getByText('Home').getAttribute('aria-current')).toBe('page');
+    expect(screen.getByText('Help').getAttribute('aria-current')).toBeNull();
+
+    await navigateTo('/help');
+
+    expect(screen.getByText('Home').getAttribute('aria-current')).toBeNull();
+    expect(screen.getByText('Help').getAttribute('aria-current')).toBe('page');
+  });
+
+  it('moves the active tab highlight when the route changes after mount', async () => {
+    render(NavShell, { layout: 'tabs', onLayoutChange: vi.fn() });
+    expect(screen.getByText('Home').getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByText('Topic Monitor').getAttribute('aria-selected')).toBe('false');
+
+    await navigateTo('/topics');
+
+    expect(screen.getByText('Home').getAttribute('aria-selected')).toBe('false');
+    expect(screen.getByText('Topic Monitor').getAttribute('aria-selected')).toBe('true');
   });
 
   it('marks Fleet as aria-disabled and does not navigate on click', async () => {

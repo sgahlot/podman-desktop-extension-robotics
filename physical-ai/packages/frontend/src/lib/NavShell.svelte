@@ -9,8 +9,11 @@ export let onLayoutChange: (next: 'sidebar' | 'tabs' | 'cards') => void;
 // Reactive active-route detection — same pattern as Simulation.svelte:7 ($router.path).
 $: activePath = $router.path;
 
-function isActive(to: string): boolean {
-  return to === '/' ? activePath === '/' : activePath === to || activePath.startsWith(`${to}/`);
+// `activePath` is passed in explicitly so Svelte tracks it as a dependency of the
+// class/aria expressions below; reading it from the closure would make the highlight
+// stale (it would only recompute when `to` changes, which never happens).
+function isActive(to: string, path: string): boolean {
+  return to === '/' ? path === '/' : path === to || path.startsWith(`${to}/`);
 }
 
 function goto(to: string): void {
@@ -28,9 +31,9 @@ function goto(to: string): void {
             {@const to = item.to}
             <button
               role="tab"
-              aria-selected={isActive(to)}
+              aria-selected={isActive(to, activePath)}
               on:click={() => goto(to)}
-              class="px-4 py-2 text-sm pai-tab {isActive(to) ? 'pai-tab-active' : ''}">
+              class="px-4 py-2 text-sm pai-tab {isActive(to, activePath) ? 'pai-tab-active' : ''}">
               {item.label}
             </button>
           {:else}
@@ -63,8 +66,8 @@ function goto(to: string): void {
               {@const to = item.to}
               <button
                 on:click={() => goto(to)}
-                aria-current={isActive(to) ? 'page' : undefined}
-                class="pai-nav-item {isActive(to) ? 'pai-nav-item-active' : ''}">
+                aria-current={isActive(to, activePath) ? 'page' : undefined}
+                class="pai-nav-item {isActive(to, activePath) ? 'pai-nav-item-active' : ''}">
                 {item.label}
               </button>
             {:else}
