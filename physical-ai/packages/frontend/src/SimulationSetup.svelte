@@ -62,7 +62,7 @@ const QUICK_START_SUMMARY = 'TurtleBot3 · Jazzy · DDS · gazebo · Ubuntu Nobl
 
 let showQuickStartConfirm = false;
 
-let layout: 'pipeline' | 'guided' = 'guided';
+let layout: 'pipeline' | 'guided' | 'layers' = 'guided';
 let buildChoice: 'base' | 'sim' | 'both' | undefined = undefined;
 
 $: buildBusy = baseBusy || simBusy;
