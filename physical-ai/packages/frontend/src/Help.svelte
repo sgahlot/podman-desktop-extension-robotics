@@ -93,6 +93,13 @@ import { navigationLayout } from './lib/navigationLayout';
           whether the current <span class="font-mono">quay.io/…</span> tag exists on Quay (public repos only; private repos
           show as unavailable).
         </div>
+        <div>
+          <strong>Layers layout</strong> — Compose an image from Base OS, hardened app, ROS, and simulation layers, with
+          a live compatibility verdict as you pick. The bootc bases and Hummingbird hardened apps shown are a
+          representative catalog today; install the <span class="font-mono">redhat.bootc</span> and
+          <span class="font-mono">redhat.hummingbird</span> extensions and pull the images locally to use them for real. A
+          future update will show which layers you already have.
+        </div>
       </div>
     </div>
 

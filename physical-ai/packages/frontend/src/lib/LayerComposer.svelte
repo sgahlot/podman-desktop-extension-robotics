@@ -58,6 +58,11 @@ function onBuild() {
     Experimental — compose an image from a base OS, hardened, ROS, and simulation layers. Pick any combination; the
     compatibility check tells you whether it will build.
   </p>
+  <p class="text-xs pai-text-muted">
+    This is a representative catalog: bootc bases come from the <span class="font-mono">redhat.bootc</span> extension
+    and hardened apps from the <span class="font-mono">redhat.hummingbird</span> extension. Install both and pull the images
+    locally to use these layers for real — a future update will show which ones you already have.
+  </p>
 
   <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
     <div class="flex flex-col gap-4">
