@@ -4,6 +4,7 @@ import { onMount, tick } from 'svelte';
 import { router } from 'tinro';
 import BuildPushPanel from './lib/BuildPushPanel.svelte';
 import QuickLinks from './lib/QuickLinks.svelte';
+import { navigationLayout } from './lib/navigationLayout';
 import {
   resolveSimulationProfile,
   hasSimulationSupport,
@@ -213,13 +214,17 @@ function cancelQuickStart() {
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
-  <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
+  {#if $navigationLayout === 'cards'}
+    <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
+  {/if}
   <h1 class="text-3xl text-[var(--pd-content-header)]">Image Builder</h1>
-  <QuickLinks
-    links={[
-      { label: 'Image Catalog', to: '/images' },
-      { label: 'Simulation', to: '/simulation' },
-    ]} />
+  {#if $navigationLayout === 'cards'}
+    <QuickLinks
+      links={[
+        { label: 'Image Catalog', to: '/images' },
+        { label: 'Simulation', to: '/simulation' },
+      ]} />
+  {/if}
   <p class="text-sm text-[var(--pd-content-text)]">
     Configure, build, and push ROS2 base and simulation container images.
   </p>

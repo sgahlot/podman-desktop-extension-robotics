@@ -1,6 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import ImageCatalog from './ImageCatalog.svelte';
+import { navigationLayout } from './lib/navigationLayout';
 
 const mockListCatalogImages = vi.fn();
 const mockGetImageTags = vi.fn();
@@ -34,6 +35,7 @@ vi.mock('tinro', () => ({
 describe('ImageCatalog', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    navigationLayout.set('sidebar');
     mockGetDefaultNamespace.mockResolvedValue('ecosystem-appeng');
     mockGetCatalogViewMode.mockResolvedValue('all');
     mockGetCatalogCuratedAllowlist.mockResolvedValue('ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*');
@@ -108,10 +110,18 @@ describe('ImageCatalog', () => {
   });
 
   it('navigates back to dashboard', async () => {
+    navigationLayout.set('cards');
     render(ImageCatalog);
     const backBtn = screen.getByText(/Back to Dashboard/);
     await fireEvent.click(backBtn);
     expect(mockGoto).toHaveBeenCalledWith('/');
+  });
+
+  it('hides the back-to-dashboard link and Quick Links when navigation layout is sidebar', () => {
+    navigationLayout.set('sidebar');
+    render(ImageCatalog);
+    expect(screen.queryByText(/Back to Dashboard/)).toBeNull();
+    expect(screen.queryByText('Quick Links:')).toBeNull();
   });
 
   it('expands repo to show tags', async () => {

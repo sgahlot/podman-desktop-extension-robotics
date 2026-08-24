@@ -30,6 +30,8 @@ export abstract class PhysicalAiApi {
   abstract setCatalogViewMode(mode: 'all' | 'curated'): Promise<void>;
   abstract getImageBuilderLayout(): Promise<'pipeline' | 'guided'>;
   abstract setImageBuilderLayout(layout: 'pipeline' | 'guided'): Promise<void>;
+  abstract getNavigationLayout(): Promise<'sidebar' | 'tabs' | 'cards'>;
+  abstract setNavigationLayout(layout: 'sidebar' | 'tabs' | 'cards'): Promise<void>;
   abstract getCatalogCuratedAllowlist(): Promise<string>;
   /** Empty string = default ros2-*-sim* / ros2-*-turtlebot3 patterns. */
   abstract getSimulationImageAllowlist(): Promise<string>;

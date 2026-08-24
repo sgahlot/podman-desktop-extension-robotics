@@ -20,9 +20,10 @@
 > user-verified in the running extension. The S8-19 + S8-20 cleanup (plus an
 > S8-17 `(?, ?)` refinement) landed direct-to-`main` on 2026-08-21. **S8-21** (filterable
 > namespace picker, APPENG-6156) is done and merged to `main` (2026-08-21) on
-> `feature/APPENG-6156-namespace-picker`. Next up per the suggested order: **Batch E**
-> (S8-13 layout config). S8-18 (APPENG-6149, prune stale robots) is another follow-up
-> feature with its own branch.
+> `feature/APPENG-6156-namespace-picker`. **Batch E** (S8-13 layout config, APPENG-6107) is
+> implemented on `feature/APPENG-6107-nav-layout` (not yet merged to `main`). Next up per
+> the suggested order: **Batch F** (S8-14 spike → S8-15 wizard). S8-18 (APPENG-6149, prune
+> stale robots) is another follow-up feature with its own branch.
 
 ---
 
@@ -112,11 +113,11 @@ Needed backend type additions (`BuildProgress`/`PushProgress` in
 
 <a id="s8-layout"></a>
 
-### Batch E — Layout config (larger) — APPENG-6107
+### Batch E — Layout config (larger) — APPENG-6107 ✅ Done
 
 | Status | ID | Summary | Description | Files |
 |--------|-----|---------|-------------|-------|
-| ⚪ | S8-13 | Selectable navigation layout | A preference to switch the shell between **Sidebar**, **Horizontal tabs**, and **Cards** (current). Net-new: a persistent nav component wrapping `<main>` (App.svelte), a persisted setting, and keeping the routes (App.svelte:28-47) working under each layout. Reference the bootc "Bootable Containers" and Hummingbird extensions' sidebar navigation for the sidebar variant. | `App.svelte`, `Dashboard.svelte` (cards 44-93), new nav component, Preferences |
+| ✅ | S8-13 | Selectable navigation layout | **Done** — a new `physical-ai.navigationLayout` preference (enum `sidebar` default / `tabs` / `cards`) switches the extension shell between a persistent left **Sidebar**, a persistent horizontal **Tabs** bar, or the original **Cards** hub (no persistent chrome). New `NavShell.svelte` is the persistent shell wrapping routed content — renders the sidebar/tabs/nothing and highlights the active route via `$router.path`; `navItems.ts` is the single source of truth for nav destinations; `LayoutSwitcher.svelte` is a 3-way in-app radiogroup switcher. Under sidebar/tabs the existing Dashboard becomes the "Home" (`/`) destination; under cards it stays the sole hub exactly as today. The Fleet item ("Coming soon") renders as a disabled, non-navigable nav entry in sidebar/tabs. The switcher is available both as the PD preference and in-app (sidebar footer / tabs bar / Dashboard header in cards mode). Preference plumbing mirrors the existing `imageBuilderLayout` pattern (`backend/package.json` contributes.configuration, `getNavigationLayout`/`setNavigationLayout` in shared `PhysicalAiApi.ts` + backend `api-impl.ts`). Home itself is now layout-aware: under sidebar/tabs it renders a guidance dashboard (welcome banner + Build→Simulate→Navigate→Monitor get-started flow with an "Open Image Builder" CTA + live **Local ROS 2 images** / **Running simulations** metrics + Explore cards for ROS 2 Jazzy, TurtleBot3, Nav2 docs and the in-app Help guide) instead of duplicating the persistent nav with the Quick Links grid; cards mode is unchanged and still shows the Quick Links grid as the sole navigation. | `App.svelte`, `Dashboard.svelte`, `Dashboard.spec.ts`, `NavShell.svelte`, `LayoutSwitcher.svelte`, `navItems.ts`, `app.css`, `PhysicalAiApi.ts`, `api-impl.ts`, `backend/package.json`, plus new specs |
 
 > **Approach:** prototyping the sidebar + horizontal-tabs variants first (to eyeball
 > them) is a sensible sub-step even though the end goal is the full 3-way config.
@@ -150,8 +151,8 @@ Needed backend type additions (`BuildProgress`/`PushProgress` in
 2. **Batch B** (S8-6…S8-9) — build/push observability. ✅ done (`feature/APPENG-6104-build-push-observability`)
 3. **Batch C** (S8-10 cluster URL, S8-11 `oc whoami`, S8-16 default-namespace setting, S8-17 reflect already-spawned robots). ✅ done (`feature/APPENG-6105-openshift-config-safety`)
 4. **Batch D** (S8-12) — SIM-only build path. ✅ done (`feature/APPENG-6106-sim-only-build`)
-5. **Batch E** (S8-13) — layout config (prototype variants first). ← next
-6. **Batch F** (S8-14 spike → S8-15 wizard) — secure layers, then the full wizard.
+5. **Batch E** (S8-13) — layout config. ✅ done (`feature/APPENG-6107-nav-layout`)
+6. **Batch F** (S8-14 spike → S8-15 wizard) — secure layers, then the full wizard. ← next
 
 ---
 

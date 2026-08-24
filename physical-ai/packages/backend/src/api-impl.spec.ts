@@ -1379,6 +1379,55 @@ describe('PhysicalAiApiImpl', () => {
     });
   });
 
+  describe('getNavigationLayout / setNavigationLayout', () => {
+    it('returns default "sidebar" when unset', async () => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue(undefined),
+        update: vi.fn(),
+      } as unknown as extensionApi.Configuration);
+      expect(await api.getNavigationLayout()).toBe('sidebar');
+    });
+    it('returns "tabs" when configured', async () => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue('tabs'),
+        update: vi.fn(),
+      } as unknown as extensionApi.Configuration);
+      expect(await api.getNavigationLayout()).toBe('tabs');
+    });
+    it('returns "cards" when configured', async () => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue('cards'),
+        update: vi.fn(),
+      } as unknown as extensionApi.Configuration);
+      expect(await api.getNavigationLayout()).toBe('cards');
+    });
+    it('falls back to "sidebar" for an unexpected stored value', async () => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue('bogus'),
+        update: vi.fn(),
+      } as unknown as extensionApi.Configuration);
+      expect(await api.getNavigationLayout()).toBe('sidebar');
+    });
+    it('rejects an invalid layout with a clear message', async () => {
+      const update = vi.fn();
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn(),
+        update,
+      } as unknown as extensionApi.Configuration);
+      await expect(api.setNavigationLayout('bogus' as 'sidebar')).rejects.toThrow(/Invalid navigation layout/);
+      expect(update).not.toHaveBeenCalled();
+    });
+    it('persists a valid layout', async () => {
+      const update = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn(),
+        update,
+      } as unknown as extensionApi.Configuration);
+      await api.setNavigationLayout('tabs');
+      expect(update).toHaveBeenCalledWith('navigationLayout', 'tabs');
+    });
+  });
+
   describe('getDefaultSoftwareRenderCpus', () => {
     it('returns the built-in default when unset', async () => {
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({

@@ -3,11 +3,17 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 import Dashboard from './Dashboard.svelte';
 
 const mockGetStatus = vi.fn();
+const mockListLocalImages = vi.fn();
+const mockListSimulationContainers = vi.fn();
+const mockOpenUrlInBrowser = vi.fn();
 const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
   physicalAiClient: {
     getStatus: (...args: unknown[]) => mockGetStatus(...args),
+    listLocalImages: (...args: unknown[]) => mockListLocalImages(...args),
+    listSimulationContainers: (...args: unknown[]) => mockListSimulationContainers(...args),
+    openUrlInBrowser: (...args: unknown[]) => mockOpenUrlInBrowser(...args),
   },
 }));
 
@@ -19,6 +25,12 @@ describe('Dashboard', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mockGetStatus.mockResolvedValue('Physical AI extension is running');
+    mockListLocalImages.mockResolvedValue(['quay.io/x/ros2-jazzy-sim:noble', 'docker.io/lib/nginx']);
+    mockListSimulationContainers.mockResolvedValue([
+      { id: 'c1', name: 'pai-sim-1', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [], labels: {} },
+      { id: 'c2', name: 'pai-sim-2', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [], labels: {} },
+    ]);
+    mockOpenUrlInBrowser.mockResolvedValue(undefined);
   });
 
   it('renders heading', () => {
@@ -88,5 +100,83 @@ describe('Dashboard', () => {
     const btn = screen.getByText('Topic Monitor');
     await fireEvent.click(btn);
     expect(mockGoto).toHaveBeenCalledWith('/topics');
+  });
+
+  it('shows the layout switcher in cards layout when onLayoutChange is provided', () => {
+    render(Dashboard, { layout: 'cards', onLayoutChange: vi.fn() });
+    expect(screen.getByText('Layout')).toBeTruthy();
+    expect(screen.getByText('Sidebar')).toBeTruthy();
+    expect(screen.getByText('Tabs')).toBeTruthy();
+    expect(screen.getByText('Cards')).toBeTruthy();
+  });
+
+  it('hides the layout switcher by default', () => {
+    render(Dashboard);
+    expect(screen.queryByText('Layout')).toBeNull();
+  });
+
+  it('calls onLayoutChange when a switcher option is clicked in cards mode', async () => {
+    const onLayoutChange = vi.fn();
+    render(Dashboard, { layout: 'cards', onLayoutChange });
+    await fireEvent.click(screen.getByText('Tabs'));
+    expect(onLayoutChange).toHaveBeenCalledWith('tabs');
+  });
+
+  it('shows Quick Links in cards mode', () => {
+    render(Dashboard, { layout: 'cards' });
+    expect(screen.getByText('Quick Links')).toBeTruthy();
+  });
+
+  it('shows shared guidance content alongside Quick Links in cards mode', async () => {
+    render(Dashboard, { layout: 'cards' });
+    expect(screen.getByText('Quick Links')).toBeTruthy();
+    expect(screen.getByText('Welcome to Physical AI')).toBeTruthy();
+    expect(screen.getByText('Open Image Builder')).toBeTruthy();
+    expect(screen.getByText('Local ROS 2 images')).toBeTruthy();
+    expect(screen.getByText('Running simulations')).toBeTruthy();
+    expect(screen.getByText('ROS 2 Jazzy documentation')).toBeTruthy();
+    expect(screen.getByText('TurtleBot3')).toBeTruthy();
+    expect(screen.getByText('Nav2')).toBeTruthy();
+    expect(screen.getByText('Extension guide')).toBeTruthy();
+    // Metric counts load async.
+    const ros2Count = await screen.findByText('1');
+    expect(ros2Count).toBeTruthy();
+    const simCount = await screen.findByText('2');
+    expect(simCount).toBeTruthy();
+  });
+
+  it('shows dashboard content instead of Quick Links in sidebar layout', async () => {
+    render(Dashboard, { layout: 'sidebar' });
+    expect(screen.getByText('Welcome to Physical AI')).toBeTruthy();
+    expect(screen.getByText('Open Image Builder')).toBeTruthy();
+    expect(screen.getByText('Local ROS 2 images')).toBeTruthy();
+    expect(screen.getByText('Running simulations')).toBeTruthy();
+    expect(screen.getByText('ROS 2 Jazzy documentation')).toBeTruthy();
+    expect(screen.getByText('TurtleBot3')).toBeTruthy();
+    expect(screen.getByText('Nav2')).toBeTruthy();
+    expect(screen.getByText('Extension guide')).toBeTruthy();
+    expect(screen.queryByText('Quick Links')).toBeNull();
+  });
+
+  it('loads and shows metric counts in sidebar layout', async () => {
+    render(Dashboard, { layout: 'sidebar' });
+    // Only the quay.io/x/ros2-jazzy-sim ref matches the ros2- image name filter.
+    const ros2Count = await screen.findByText('1');
+    expect(ros2Count).toBeTruthy();
+    // Two mocked running simulation containers.
+    const simCount = await screen.findByText('2');
+    expect(simCount).toBeTruthy();
+  });
+
+  it('opens the ROS 2 docs URL when the explore card is clicked', async () => {
+    render(Dashboard, { layout: 'sidebar' });
+    await fireEvent.click(screen.getByText('ROS 2 Jazzy documentation'));
+    expect(mockOpenUrlInBrowser).toHaveBeenCalledWith('https://docs.ros.org/en/jazzy/');
+  });
+
+  it('navigates to Help when the Extension guide card is clicked', async () => {
+    render(Dashboard, { layout: 'sidebar' });
+    await fireEvent.click(screen.getByText('Extension guide'));
+    expect(mockGoto).toHaveBeenCalledWith('/help');
   });
 });

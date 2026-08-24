@@ -655,6 +655,20 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     await config.update('imageBuilderLayout', layout);
   }
 
+  async getNavigationLayout(): Promise<'sidebar' | 'tabs' | 'cards'> {
+    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const layout = config.get<string>('navigationLayout');
+    return layout === 'tabs' || layout === 'cards' ? layout : 'sidebar';
+  }
+
+  async setNavigationLayout(layout: 'sidebar' | 'tabs' | 'cards'): Promise<void> {
+    if (layout !== 'sidebar' && layout !== 'tabs' && layout !== 'cards') {
+      throw new Error(`Invalid navigation layout "${String(layout)}". Use "sidebar", "tabs", or "cards".`);
+    }
+    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    await config.update('navigationLayout', layout);
+  }
+
   async getCatalogCuratedAllowlist(): Promise<string> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
     const stored = config.get<string>('catalogCuratedAllowlist');
