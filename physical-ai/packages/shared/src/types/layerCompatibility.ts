@@ -449,6 +449,21 @@ export function generateLayerContainerfile(sel: LayerSelection): string {
   const cap = BASE_OS_CAPABILITY[sel.baseOs];
   const installCmd = cap.packaging === 'dnf' ? 'dnf install -y' : 'apt-get update && apt-get install -y';
 
+  // The base OS images are bare (no ROS apt source configured), unlike the tested-preset
+  // path which FROMs an already-ROS-baked image — without this, "apt-get install ros-*"
+  // fails with "Unable to locate package" even on an otherwise-buildable Ubuntu base.
+  if (cap.packaging === 'apt' && (sel.ros !== 'none' || sel.sim !== 'none')) {
+    sections.push(
+      '# ROS 2 apt repository (required before installing any ros-* package on Ubuntu)\n' +
+        'RUN apt-get update && apt-get install -y curl gnupg lsb-release && ' +
+        'curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key ' +
+        '-o /usr/share/keyrings/ros-archive-keyring.gpg && ' +
+        'echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] ' +
+        'http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" ' +
+        '| tee /etc/apt/sources.list.d/ros2.list > /dev/null',
+    );
+  }
+
   if (sel.ros !== 'none') {
     const distro = ROS_DISTRO[sel.ros];
     sections.push(`# Layer 3 — ROS: ${labelFor(ROS_OPTIONS, sel.ros)}\nRUN ${installCmd} ros-${distro}-desktop`);

@@ -161,6 +161,17 @@ describe('generateLayerContainerfile', () => {
     expect(containerfile).toContain('FROM quay.io/centos-bootc/centos-bootc:stream9');
   });
 
+  it('ubuntu + ros adds the ROS 2 apt repository before installing any ros-* package', () => {
+    const containerfile = generateLayerContainerfile(sel({ baseOs: 'ubuntu-noble', ros: 'ros2-jazzy' }));
+    expect(containerfile).toContain('/etc/apt/sources.list.d/ros2.list');
+    expect(containerfile.indexOf('ros2.list')).toBeLessThan(containerfile.indexOf('ros-jazzy-desktop'));
+  });
+
+  it('dnf-based bootc base never adds the (irrelevant) apt ROS repository', () => {
+    const containerfile = generateLayerContainerfile(sel({ baseOs: 'centos-bootc-stream9', ros: 'ros2-jazzy' }));
+    expect(containerfile).not.toContain('sources.list.d/ros2.list');
+  });
+
   it("ros='none' omits the ROS RUN line", () => {
     const containerfile = generateLayerContainerfile(sel({ baseOs: 'ubuntu-noble', ros: 'none' }));
     expect(containerfile).not.toContain('ros-desktop');
