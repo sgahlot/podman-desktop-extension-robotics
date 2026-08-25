@@ -87,6 +87,14 @@ let robotsByWorkload: Record<string, RobotEntry[]> = {};
  * (deleted or vanished from the list) so a later redeploy of the same name reconciles
  * fresh instead of being skipped forever. */
 let reconciledWorkloads = new Set<string>();
+/** Consecutive-miss counters for prune debouncing (APPENG-6149), keyed by
+ * `${workloadName}::${robotName}`. `listSpawnedRobotsInOpenShift` never throws — it
+ * returns `[]` both for a genuinely empty world AND for a transient oc/exec failure — so a
+ * single empty poll can't be trusted to mean "this robot is really gone". Requiring the
+ * same robot to be confirmed missing across PRUNE_MISS_THRESHOLD consecutive polls before
+ * removing it keeps one blip from wiping an actively-driven robot's nav state. */
+let missingStreaks = new Map<string, number>();
+const PRUNE_MISS_THRESHOLD = 2;
 let warmTimer: ReturnType<typeof setInterval> | null = null;
 
 $: config = {
@@ -276,6 +284,7 @@ onMount(async () => {
   warmTimer = setInterval(async () => {
     await refreshWorkloads({ silent: true });
     await pollWarmStatus();
+    await pruneStaleRobots();
   }, 3000);
 });
 
@@ -369,6 +378,7 @@ async function refreshWorkloads(opts?: { silent?: boolean }) {
       if (!names.has(key)) {
         delete robotsByWorkload[key];
         reconciledWorkloads.delete(key);
+        clearMissingStreaksForWorkload(key);
       }
     }
     for (const w of workloads) {
@@ -429,6 +439,59 @@ async function reconcileRobots(w: OpenShiftWorkload) {
   robotsByWorkload = robotsByWorkload;
 }
 
+function clearMissingStreaksForWorkload(wname: string) {
+  const prefix = `${wname}::`;
+  for (const key of missingStreaks.keys()) {
+    if (key.startsWith(prefix)) missingStreaks.delete(key);
+  }
+}
+
+/**
+ * Removes tracked robots that no longer actually exist in the running world (APPENG-6149,
+ * S8-18) — e.g. a pod crash/restart resets a Path B world to empty, but a robot spawned
+ * before the crash otherwise sits in `robotsByWorkload` forever, failing every subsequent
+ * action (Navigate, Nav2 warm-up) against a robot that's gone. Unlike `reconcileRobots`
+ * (ADD direction, gated to run once per ready workload), this runs on every poll tick —
+ * the crash this fixes can happen mid-session, well after that one-time reconcile already
+ * ran, so a once-only check would miss it.
+ */
+async function pruneStaleRobots() {
+  let changed = false;
+  for (const w of workloads) {
+    if (!w.ready) continue;
+    const tracked = robotsByWorkload[w.name];
+    if (!tracked || tracked.length === 0) continue;
+    let live: string[];
+    try {
+      live = await physicalAiClient.listSpawnedRobotsInOpenShift(w.namespace, w.name, selectedContext || undefined);
+    } catch {
+      continue;
+    }
+    const liveNames = new Set(live);
+    const keep: RobotEntry[] = [];
+    for (const robot of tracked) {
+      const key = `${w.name}::${robot.name}`;
+      if (liveNames.has(robot.name)) {
+        missingStreaks.delete(key);
+        keep.push(robot);
+        continue;
+      }
+      const streak = (missingStreaks.get(key) ?? 0) + 1;
+      if (streak >= PRUNE_MISS_THRESHOLD) {
+        missingStreaks.delete(key);
+      } else {
+        missingStreaks.set(key, streak);
+        keep.push(robot);
+      }
+    }
+    if (keep.length !== tracked.length) {
+      robotsByWorkload[w.name] = keep;
+      changed = true;
+    }
+  }
+  if (changed) robotsByWorkload = robotsByWorkload;
+}
+
 async function remove(w: OpenShiftWorkload) {
   deletingName = w.name;
   try {
@@ -436,6 +499,7 @@ async function remove(w: OpenShiftWorkload) {
     // Clear this deployment's robot list and the stale result panel.
     delete robotsByWorkload[w.name];
     reconciledWorkloads.delete(w.name);
+    clearMissingStreaksForWorkload(w.name);
     robotsByWorkload = robotsByWorkload;
     if (deployedName === w.name) {
       deployResult = null;
@@ -450,6 +514,7 @@ async function remove(w: OpenShiftWorkload) {
 }
 
 async function spawnRobot(w: OpenShiftWorkload, form: { name: string; x: string; y: string; yaw: string }) {
+  missingStreaks.delete(`${w.name}::${form.name}`);
   await physicalAiClient.spawnRobotInOpenShift(
     w.namespace,
     w.name,
@@ -507,6 +572,7 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
   const robot = robots?.[index];
   if (!robot) return;
   await physicalAiClient.despawnRobotInOpenShift(w.namespace, w.name, robot.name, selectedContext || undefined);
+  missingStreaks.delete(`${w.name}::${robot.name}`);
   robotsByWorkload[w.name] = robots.filter((_, i) => i !== index);
   robotsByWorkload = robotsByWorkload;
 }

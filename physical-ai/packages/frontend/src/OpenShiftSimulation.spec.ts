@@ -568,4 +568,94 @@ describe('OpenShiftSimulation', () => {
     expect(mockListSpawnedRobotsInOpenShift).toHaveBeenCalledTimes(1);
     expect(screen.getAllByText('robot_1')).toHaveLength(1);
   });
+
+  it('prunes a robot confirmed missing across 2 consecutive poll ticks (APPENG-6149)', async () => {
+    vi.useFakeTimers();
+    try {
+      mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
+      mockListSpawnedRobotsInOpenShift
+        .mockResolvedValueOnce([]) // reconcile on mount — nothing running yet
+        .mockResolvedValueOnce(['robot_1']) // prune tick 1: still present
+        .mockResolvedValueOnce([]) // prune tick 2: miss #1 — below threshold, kept
+        .mockResolvedValueOnce([]); // prune tick 3: miss #2 — pruned
+
+      render(DeployOpenShift);
+      await vi.advanceTimersByTimeAsync(100); // onMount + reconcile
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Spawn' }));
+      await vi.advanceTimersByTimeAsync(0); // let the spawn promise settle
+      expect(screen.getByText('robot_1')).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(3000); // prune tick 1: present
+      expect(screen.getByText('robot_1')).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(3000); // prune tick 2: miss #1
+      expect(screen.getByText('robot_1')).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(3000); // prune tick 3: miss #2 -> pruned
+      expect(screen.queryByText('robot_1')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not prune a robot after only a single missed poll (debounce)', async () => {
+    vi.useFakeTimers();
+    try {
+      mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
+      mockListSpawnedRobotsInOpenShift
+        .mockResolvedValueOnce([]) // reconcile on mount
+        .mockResolvedValueOnce(['robot_1']) // prune tick 1: present
+        .mockResolvedValueOnce([]); // prune tick 2: miss #1 only
+
+      render(DeployOpenShift);
+      await vi.advanceTimersByTimeAsync(100);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Spawn' }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(3000);
+
+      // A single miss is below PRUNE_MISS_THRESHOLD (2) — a transient oc/exec hiccup
+      // can't be told apart from a genuinely empty world in one shot, so it must not
+      // wipe an actively-driven robot's state.
+      expect(screen.getByText('robot_1')).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('resets the miss streak when a robot reappears before hitting the prune threshold', async () => {
+    vi.useFakeTimers();
+    try {
+      mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
+      mockListSpawnedRobotsInOpenShift
+        .mockResolvedValueOnce([]) // reconcile on mount
+        .mockResolvedValueOnce(['robot_1']) // prune tick 1: present
+        .mockResolvedValueOnce([]) // prune tick 2: miss #1
+        .mockResolvedValueOnce(['robot_1']) // prune tick 3: reappears — streak resets
+        .mockResolvedValueOnce([]) // prune tick 4: miss #1 again (not #2)
+        .mockResolvedValueOnce([]); // prune tick 5: miss #2 -> pruned
+
+      render(DeployOpenShift);
+      await vi.advanceTimersByTimeAsync(100);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Spawn' }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      await vi.advanceTimersByTimeAsync(3000); // tick 1: present
+      await vi.advanceTimersByTimeAsync(3000); // tick 2: miss #1
+      await vi.advanceTimersByTimeAsync(3000); // tick 3: reappears
+      expect(screen.getByText('robot_1')).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(3000); // tick 4: miss #1 (post-reset)
+      expect(screen.getByText('robot_1')).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(3000); // tick 5: miss #2 -> pruned
+      expect(screen.queryByText('robot_1')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
