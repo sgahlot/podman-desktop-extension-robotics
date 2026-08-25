@@ -21,9 +21,15 @@
 > S8-17 `(?, ?)` refinement) landed direct-to-`main` on 2026-08-21. **S8-21** (filterable
 > namespace picker, APPENG-6156) is done and merged to `main` (2026-08-21). **Batch E**
 > (S8-13 layout config, APPENG-6107) is done, user-verified, and merged to `main` (2026-08-24,
-> merge commit `c06d4e4`); APPENG-6107 is Closed. Next up per the suggested order: **Batch F**
-> (S8-14 spike → S8-15 wizard). S8-18 (APPENG-6149, prune stale robots) is another follow-up
-> feature with its own branch.
+> merge commit `c06d4e4`); APPENG-6107 is Closed. **Batch F** (S8-14 spike → S8-15 wizard,
+> APPENG-6108) is code-complete on `feature/APPENG-6108-secure-base-spike`
+> (commits `4e608f6`, `528a6df`, `8e2604e`) — S8-14's spike found ROS 2 Jazzy + simulation
+> NO-GO on bootc/hummingbird today (see
+> [APPENG-6108-secure-base-spike.md](APPENG-6108-secure-base-spike.md)), and S8-15 built a
+> layer-composition wizard that now **pulls the layer images and builds the composed image
+> for real** (tested-preset path or generated Containerfile); **awaiting user testing +
+> merge to `main`**, not yet Closed. S8-18 (APPENG-6149, prune stale robots) is another
+> follow-up feature with its own branch.
 
 ---
 
@@ -124,12 +130,16 @@ Needed backend type additions (`BuildProgress`/`PushProgress` in
 
 <a id="s8-wizard"></a>
 
-### Batch F — Secure base images → project wizard (design/vision) — APPENG-6108
+### Batch F — Secure base images → project wizard — APPENG-6108 ✅ Code-complete on branch
+
+> **Branch:** `feature/APPENG-6108-secure-base-spike` (commits `4e608f6`, `528a6df`,
+> `8e2604e`) — **not yet merged to `main`**, awaiting user testing. Full writeup:
+> [APPENG-6108-secure-base-spike.md](APPENG-6108-secure-base-spike.md).
 
 | Status | ID | Summary | Description |
 |--------|-----|---------|-------------|
-| ⚪ | S8-14 | Feasibility spike: ROS 2 on hummingbird / bootc | **Near-term.** Can ROS 2 Jazzy (full apt/dnf base) layer onto a hardened, minimal **hummingbird** runtime image or a **bootc** bootable image at all? Write up findings + a go/no-go. Base presets are data-driven (`SimulationBaseImages.ts:SIMULATION_BASE_IMAGES`), so if feasible a new preset auto-appears in the base dropdown — but presets are keyed by `distro` only, so a "secure/variant" discriminator field would be needed. |
-| 💡 | S8-15 | Project wizard: layers + worlds + robots | **Ultimate vision.** A guided wizard to compose a build from: (1) **image layers** — let the user choose secure base layers (bootc/hummingbird); reuse those extensions if installed, else pull the images from upstream; (2) **worlds** — pick a Gazebo world beyond the default; (3) **robots** — pick robot type(s) beyond TurtleBot3. Supersedes the current fixed Quick Start / single-world / single-robot flow. Design-only for now. |
+| ✅ | S8-14 | Feasibility spike: ROS 2 on hummingbird / bootc — **NO-GO natively today** | **Done.** Empirically probed `centos-bootc:stream9` (el9) and `fedora-bootc:43`: on native arm64 the ROS el9 repo is **empty** (0 packages); on x86_64 ~1,455 `ros-jazzy-*` RPMs exist but the **simulation stack is absent on every arch** (no Nav2, no `ros-gz-sim`, no Gazebo), and the available RPMs are unsigned with a mismatched `packages.ros.org` TLS cert. `fedora-bootc:43` has no official ROS repo at all. Confirms/extends the parked APPENG-5809. Neither `redhat.bootc` nor `redhat.hummingbird` exposes a callable API — only `extensionDependencies` + consuming a built/pulled image by reference. Key nuance: a bootc base **builds fine alone**; layering apt-based ROS/Sim onto it fails at **build time** (no apt / packages don't exist), not runtime. Full findings: [APPENG-6108-secure-base-spike.md](APPENG-6108-secure-base-spike.md). |
+| ✅ | S8-15 | Project wizard: layer-composition wizard (real build + pull) | **Done**, pivoted from the original "worlds + robots" vision once S8-14 confirmed the underlying build path is infeasible today. Built a **layer-composition wizard** — pick Base OS + hardened + ROS + Sim layers freely and see a live 3-state compatibility verdict (✅ Ready / ⚠️ builds-but-not-a-robotics-image / ❌ won't-build, naming the failing build step). It's **not preview-only**: it **pulls** the base OS + selected Hummingbird images (new `pullImageByRef()`, any registry) with ✓ Local badges, and **builds** the composed image — a tested Ubuntu+ROS[+Sim] preset reuses the full asset recipe (`buildBaseImage`/`buildSimulationImage`), everything else builds from the generated Containerfile (new `buildFromContainerfile()`). "Attempt anyway" runs a real build that fails at the predicted step. The Hummingbird catalog is split into **companions** (pull & run alongside) and **tools** (baked in via `COPY --from`; curl/jq/kubectl/helm added). Implemented as a 3rd `physical-ai.imageBuilderLayout` mode, `'layers'`. Engine: `physical-ai/packages/shared/src/types/layerCompatibility.ts`; backend: `api-impl.ts` (`pullImageByRef`, `buildFromContainerfile`, shared `#runContainerBuild`); UI: `physical-ai/packages/frontend/src/lib/LayerComposer.svelte` (reusing `BuildPushPanel.svelte`), wired into `SimulationSetup.svelte`. |
 
 ---
 
@@ -152,7 +162,9 @@ Needed backend type additions (`BuildProgress`/`PushProgress` in
 3. **Batch C** (S8-10 cluster URL, S8-11 `oc whoami`, S8-16 default-namespace setting, S8-17 reflect already-spawned robots). ✅ done (`feature/APPENG-6105-openshift-config-safety`)
 4. **Batch D** (S8-12) — SIM-only build path. ✅ done (`feature/APPENG-6106-sim-only-build`)
 5. **Batch E** (S8-13) — layout config. ✅ done (merged to `main`, commit `c06d4e4`)
-6. **Batch F** (S8-14 spike → S8-15 wizard) — secure layers, then the full wizard. ← next
+6. **Batch F** (S8-14 spike → S8-15 wizard) — secure layers, then the full wizard with a
+   real pull + build path. ✅ code-complete on `feature/APPENG-6108-secure-base-spike`
+   (commits `4e608f6`, `528a6df`, `8e2604e`); awaiting user testing + merge to `main`.
 
 ---
 

@@ -155,6 +155,36 @@ describe('BuildPushPanel', () => {
     expect(screen.getByText(/Last build/)).toBeTruthy();
   });
 
+  it('clears stale build logs/status when the tag prop changes to a different (unbuilt) tag', async () => {
+    const startedAt = 1_000;
+    mockGetBuildProgress.mockResolvedValue({
+      tag: TAG,
+      status: 'Complete',
+      logs: ['[00:00:01] STEP 1/1', '[00:00:06] Build finished'],
+      currentStep: 1,
+      totalSteps: 1,
+      done: true,
+      startedAt,
+      finishedAt: startedAt + 5_000,
+    });
+
+    const { rerender } = render(BuildPushPanel, {
+      props: { buildImage, tag: TAG, tagInputId: 'phase1-tag' },
+    });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Build' }));
+    expect(await screen.findByText(/Image built successfully/)).toBeTruthy();
+    expect(screen.getByText(/Last build/)).toBeTruthy();
+
+    const OTHER_TAG = 'quay.io/ns/ros2-jazzy-base:noble-amd64';
+    await rerender({ buildImage, tag: OTHER_TAG, tagInputId: 'phase1-tag' });
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Last build/)).toBeNull();
+    });
+    expect(screen.queryByText(/Image built successfully/)).toBeNull();
+  });
+
   it('surfaces build start failures', async () => {
     buildImage.mockRejectedValue(new Error('no podman'));
 

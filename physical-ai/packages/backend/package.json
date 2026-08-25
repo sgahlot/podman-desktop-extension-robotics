@@ -84,11 +84,13 @@
           "type": "string",
           "enum": [
             "pipeline",
-            "guided"
+            "guided",
+            "layers"
           ],
           "enumDescriptions": [
             "Single-page pipeline: base image (Step 1) and simulation image (Step 2) shown together",
-            "Guided chooser: pick whether to build the base image, the simulation image, or both"
+            "Guided chooser: pick whether to build the base image, the simulation image, or both",
+            "Layers — compose an image from base OS + hardened + ROS + simulation layers (experimental)"
           ],
           "default": "guided",
           "description": "Layout for the Image Builder page"
