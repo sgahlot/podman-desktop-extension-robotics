@@ -569,15 +569,44 @@ describe('OpenShiftSimulation', () => {
     expect(screen.getAllByText('robot_1')).toHaveLength(1);
   });
 
+  it('skips the liveness check entirely for a robot still in the warming phase', async () => {
+    vi.useFakeTimers();
+    try {
+      mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]); // jazzy image
+      mockListSpawnedRobotsInOpenShift.mockResolvedValue([]); // would look "gone" if ever checked
+      mockGetRobotWarmStatusInOpenShift.mockResolvedValue('warming'); // stays warming every poll
+
+      render(DeployOpenShift);
+      await vi.advanceTimersByTimeAsync(100); // onMount + reconcile finds nothing yet
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Spawn' }));
+      await vi.advanceTimersByTimeAsync(0); // spawn settles; optimistically warmStatus 'warming'
+
+      const callsAfterSpawn = mockListSpawnedRobotsInOpenShift.mock.calls.length;
+
+      // A robot still 'warming' has its own state machine (pollWarmStatus + the backend's
+      // bounded pre-warm timeout) resolving it — pruneStaleRobots must not touch it, and
+      // shouldn't even bother calling the liveness check when every tracked robot for a
+      // workload is still warming.
+      await vi.advanceTimersByTimeAsync(9000); // 3 more poll ticks
+      expect(screen.getByText('robot_1')).toBeTruthy();
+      expect(mockListSpawnedRobotsInOpenShift.mock.calls.length).toBe(callsAfterSpawn);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not prune a freshly-spawned robot still within its startup grace period, even if briefly absent', async () => {
     vi.useFakeTimers();
     try {
-      mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
-      // Its own ROS nodes haven't registered yet (still initializing / Nav2 warming) —
-      // every poll reports it absent from `ros2 node list`, the whole time it's within
-      // PRUNE_GRACE_PERIOD_MS. Mirrors the backend's own Nav2 pre-warm loop, which polls
-      // up to 30 times at 1s intervals just waiting for the robot to appear (#prewarmNav2).
-      mockListSpawnedRobotsInOpenShift.mockResolvedValue([]);
+      // Humble, not Jazzy — this exercises the wall-clock grace fallback specifically
+      // (no `warming` phase at all is ever assigned on this path; that case has its own
+      // dedicated test above). Its ROS nodes still take a moment to register after a
+      // Gazebo spawn regardless of distro, matching the raw appear-in-world latency the
+      // backend's own pre-warm pose-poll accounts for (#prewarmNav2, up to 30 x 1s).
+      const humbleWorkload = { ...READY_WORKLOAD, image: 'quay.io/ns/ros2-humble-sim:sloretz-amd64' };
+      mockListOpenShiftDeployments.mockResolvedValue([humbleWorkload]);
+      mockListSpawnedRobotsInOpenShift.mockResolvedValue([]); // absent from ros2 node list the whole time
 
       render(DeployOpenShift);
       await vi.advanceTimersByTimeAsync(100); // onMount + reconcile finds nothing yet
@@ -586,28 +615,25 @@ describe('OpenShiftSimulation', () => {
       await vi.advanceTimersByTimeAsync(0); // spawn promise settles; trackedSince recorded
       expect(screen.getByText('robot_1')).toBeTruthy();
 
-      // Well past what the 2-miss debounce alone would need (6s), but still under the 45s
+      // Well past what the 2-miss debounce alone would need (6s), but still under the 30s
       // grace period — must survive.
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(25_000);
       expect(screen.getByText('robot_1')).toBeTruthy();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('prunes a robot confirmed missing across 2 consecutive polls once past its grace period (APPENG-6149)', async () => {
+  it('prunes a robot confirmed missing across 2 consecutive polls (APPENG-6149)', async () => {
     vi.useFakeTimers();
     try {
       mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
-      // Persistent default: reconciled as present on mount, and stays present through the
-      // whole startup grace window (so grace naturally elapses before the miss sequence).
       mockListSpawnedRobotsInOpenShift.mockResolvedValue(['robot_1']);
 
       render(DeployOpenShift);
+      // A reconciled robot was, by definition, just confirmed alive — it needs no startup
+      // grace at all, unlike a freshly-spawned one (see the grace-period test above).
       await vi.advanceTimersByTimeAsync(100); // onMount + reconcile adds robot_1
-      expect(screen.getByText('robot_1')).toBeTruthy();
-
-      await vi.advanceTimersByTimeAsync(45_000); // clear the startup grace period, still present
       expect(screen.getByText('robot_1')).toBeTruthy();
 
       mockListSpawnedRobotsInOpenShift.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
@@ -621,15 +647,14 @@ describe('OpenShiftSimulation', () => {
     }
   });
 
-  it('does not prune a robot after only a single missed poll past its grace period (debounce)', async () => {
+  it('does not prune a robot after only a single missed poll (debounce)', async () => {
     vi.useFakeTimers();
     try {
       mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
       mockListSpawnedRobotsInOpenShift.mockResolvedValue(['robot_1']);
 
       render(DeployOpenShift);
-      await vi.advanceTimersByTimeAsync(100);
-      await vi.advanceTimersByTimeAsync(45_000); // past grace, still present
+      await vi.advanceTimersByTimeAsync(100); // onMount + reconcile adds robot_1
 
       mockListSpawnedRobotsInOpenShift.mockResolvedValueOnce([]); // single miss only
       await vi.advanceTimersByTimeAsync(3000);
@@ -650,8 +675,7 @@ describe('OpenShiftSimulation', () => {
       mockListSpawnedRobotsInOpenShift.mockResolvedValue(['robot_1']);
 
       render(DeployOpenShift);
-      await vi.advanceTimersByTimeAsync(100);
-      await vi.advanceTimersByTimeAsync(45_000); // past grace, still present
+      await vi.advanceTimersByTimeAsync(100); // onMount + reconcile adds robot_1
 
       mockListSpawnedRobotsInOpenShift.mockResolvedValueOnce([]); // miss #1
       await vi.advanceTimersByTimeAsync(3000);

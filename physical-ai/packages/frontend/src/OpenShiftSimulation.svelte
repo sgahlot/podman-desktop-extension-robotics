@@ -95,16 +95,17 @@ let reconciledWorkloads = new Set<string>();
  * removing it keeps one blip from wiping an actively-driven robot's nav state. */
 let missingStreaks = new Map<string, number>();
 const PRUNE_MISS_THRESHOLD = 2;
-/** Wall-clock time each robot was first tracked (spawn or ADD-reconcile), keyed the same
- * way — set once, never refreshed. A freshly-spawned robot can legitimately take a while to
- * appear in `ros2 node list`: the backend's own Nav2 pre-warm polls up to 30 times at 1s
- * intervals just waiting for the robot's pose to become queryable (#prewarmNav2), and Nav2
- * bringup itself polls for up to 120s more (#ensureNav2Running). Pruning must not fire during
- * that legitimate startup window, so a robot is exempt from prune consideration entirely until
- * PRUNE_GRACE_PERIOD_MS has passed since it was first tracked — after that, the normal
- * miss-streak debounce above applies to catch a genuine later crash. */
+/** Wall-clock time each freshly-spawned robot was first tracked, keyed the same way — set
+ * once, never refreshed, and only for spawnRobot (ADD-reconciled robots are already proven
+ * alive at add time, so they need no grace at all). A robot with `warmStatus === 'warming'`
+ * is skipped entirely below rather than using this — pollWarmStatus and the backend's own
+ * bounded pre-warm timeout already own resolving that state precisely. This grace period
+ * exists only for the case that signal doesn't cover: Humble spawns, which have no `warming`
+ * phase at all, still take a moment for their ROS nodes to register after a Gazebo spawn
+ * (the same raw latency the backend's own pre-warm pose-poll accounts for — up to 30 attempts
+ * at 1s intervals, #prewarmNav2). */
 let trackedSince = new Map<string, number>();
-const PRUNE_GRACE_PERIOD_MS = 45_000;
+const PRUNE_GRACE_PERIOD_MS = 30_000;
 let warmTimer: ReturnType<typeof setInterval> | null = null;
 
 $: config = {
@@ -435,8 +436,9 @@ async function reconcileRobots(w: OpenShiftWorkload) {
   const existing = new Set((robotsByWorkload[w.name] ?? []).map(r => r.name));
   const missing = names.filter(n => !existing.has(n));
   if (missing.length === 0) return;
-  const now = Date.now();
-  for (const n of missing) trackedSince.set(`${w.name}::${n}`, now);
+  // No trackedSince entry needed — a reconciled robot was, by definition, just confirmed
+  // alive (it's in `names`), so it's immediately eligible for normal prune debounce with
+  // no startup grace required.
   robotsByWorkload[w.name] = [
     ...(robotsByWorkload[w.name] ?? []),
     // x/y aren't recoverable from `ros2 node list` alone, so they're omitted — the row
@@ -469,6 +471,11 @@ function clearMissingStreaksForWorkload(wname: string) {
  * (ADD direction, gated to run once per ready workload), this runs on every poll tick —
  * the crash this fixes can happen mid-session, well after that one-time reconcile already
  * ran, so a once-only check would miss it.
+ *
+ * Only ever checks robots whose existing phase actually warrants it: a `'warming'` robot
+ * is skipped (its own state machine already owns resolving that), an unconfirmed robot
+ * still within its startup grace period is skipped, and only a robot confirmed missing
+ * across PRUNE_MISS_THRESHOLD consecutive polls is actually removed.
  */
 async function pruneStaleRobots() {
   let changed = false;
@@ -476,6 +483,10 @@ async function pruneStaleRobots() {
     if (!w.ready) continue;
     const tracked = robotsByWorkload[w.name];
     if (!tracked || tracked.length === 0) continue;
+    // A 'warming' robot's liveness is already being resolved by pollWarmStatus (and the
+    // backend's own bounded pre-warm timeout) — skip the exec call entirely if there's
+    // nothing else here that actually needs checking this tick.
+    if (tracked.every(r => r.warmStatus === 'warming')) continue;
     let live: string[];
     try {
       live = await physicalAiClient.listSpawnedRobotsInOpenShift(w.namespace, w.name, selectedContext || undefined);
@@ -487,6 +498,12 @@ async function pruneStaleRobots() {
     const keep: RobotEntry[] = [];
     for (const robot of tracked) {
       const key = `${w.name}::${robot.name}`;
+      if (robot.warmStatus === 'warming') {
+        // Still initializing — its own state machine will resolve to 'ready'/'failed';
+        // don't count this tick's absence against it.
+        keep.push(robot);
+        continue;
+      }
       if (liveNames.has(robot.name)) {
         missingStreaks.delete(key);
         keep.push(robot);
@@ -494,7 +511,8 @@ async function pruneStaleRobots() {
       }
       const since = trackedSince.get(key);
       if (since !== undefined && now - since < PRUNE_GRACE_PERIOD_MS) {
-        // Still within its startup grace window — not suspicious yet.
+        // Still within its startup grace window (Humble spawn, no warmStatus signal) —
+        // not suspicious yet.
         keep.push(robot);
         continue;
       }
