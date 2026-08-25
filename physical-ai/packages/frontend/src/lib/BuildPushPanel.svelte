@@ -304,11 +304,13 @@ onDestroy(() => {
   stopPolling();
 });
 
-// Adopt parent-driven tag changes only when idle (avoid mid-build poll key desync)
+// Adopt parent-driven tag changes only when idle (avoid mid-build poll key desync).
+// Also clears any stale build/push logs and status left over from a previous tag —
+// otherwise a completed build's progress/logs stay visible against the new tag.
 $: if (tag !== lastSyncedTag && !building && !pushing) {
   inputValue = tag;
   lastSyncedTag = tag;
-  checkLocalImage(tag);
+  reset();
 }
 
 $: busy = building || pushing;
