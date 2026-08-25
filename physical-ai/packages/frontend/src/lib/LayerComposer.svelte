@@ -93,9 +93,14 @@ $: baseImageExists = !!presetBaseTag && localImages.includes(presetBaseTag);
 $: containerfileTag = `${ns ? `quay.io/${ns}/` : ''}pai-layer-${selection.baseOs}:latest`;
 
 // --- Images this stack pulls -----------------------------------------------------
+// The generic Base OS ref (BASE_OS_IMAGE_REF) is only what the *generated Containerfile*
+// FROMs — in preset mode the tested recipe pulls its own (different) base/sim images
+// itself via buildBaseImage/buildSimulationImage, so listing it here would be misleading.
 $: selectedHbApps = selection.hardened === 'hummingbird-app' ? (selection.hummingbirdApps ?? []) : [];
 $: pullTargets = [
-  { ref: baseOsImageRef(selection.baseOs), label: `Base OS — ${baseOsLabel}` },
+  ...(buildMode === 'containerfile'
+    ? [{ ref: baseOsImageRef(selection.baseOs), label: `Base OS — ${baseOsLabel}` }]
+    : []),
   ...selectedHbApps.map((a: HardenedApp) => ({ ref: hummingbirdImageRef(a), label: `Hummingbird — ${a}` })),
 ];
 
@@ -284,6 +289,11 @@ onDestroy(() => {
   <div class="flex flex-col gap-2">
     <h3 class="text-sm font-medium text-[var(--pd-content-header)]">Layer images</h3>
     <p class="text-xs pai-text-muted">Pull the images this stack uses so they're available locally.</p>
+    {#if pullTargets.length === 0}
+      <p class="text-xs pai-text-muted">
+        This preset's own base/simulation images are pulled automatically when you build below.
+      </p>
+    {/if}
     <div class="flex flex-col gap-2">
       {#each pullTargets as t (t.ref)}
         <div

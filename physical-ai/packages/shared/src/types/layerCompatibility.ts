@@ -137,12 +137,14 @@ export const HUMMINGBIRD_APP_OPTIONS: readonly HummingbirdAppOption[] = [
   { id: 'prometheus', label: 'Prometheus', note: 'Hardened Prometheus (fleet metrics)', kind: 'companion' },
   { id: 'grafana', label: 'Grafana', note: 'Hardened Grafana (fleet dashboards)', kind: 'companion' },
   // Tools — hardened CLI binaries baked into the built image with a real COPY --from.
+  // binPath values verified against the actual quay.io/hummingbird/<id>:latest image
+  // filesystem (podman create + export + tar -t) — all five ship at /usr/bin/<id>.
   {
     id: 'cosign',
     label: 'Cosign',
     note: 'Hardened cosign CLI (sign & verify images)',
     kind: 'tool',
-    binPath: '/usr/local/bin/cosign',
+    binPath: '/usr/bin/cosign',
   },
   {
     id: 'curl',
@@ -157,14 +159,14 @@ export const HUMMINGBIRD_APP_OPTIONS: readonly HummingbirdAppOption[] = [
     label: 'kubectl',
     note: 'Hardened kubectl CLI (cluster ops from the image)',
     kind: 'tool',
-    binPath: '/usr/local/bin/kubectl',
+    binPath: '/usr/bin/kubectl',
   },
   {
     id: 'helm',
     label: 'Helm',
     note: 'Hardened helm CLI (chart deploys from the image)',
     kind: 'tool',
-    binPath: '/usr/local/bin/helm',
+    binPath: '/usr/bin/helm',
   },
 ];
 
@@ -441,19 +443,22 @@ export function generateLayerContainerfile(sel: LayerSelection): string {
     sections.push(lines.join('\n'));
   }
 
+  // Package manager matches the base's actual packaging (BASE_OS_CAPABILITY) so an
+  // "Attempt anyway" build on a dnf-based bootc image fails on real package unavailability
+  // (the S8-14 finding), not on a misleading "apt-get: command not found".
+  const cap = BASE_OS_CAPABILITY[sel.baseOs];
+  const installCmd = cap.packaging === 'dnf' ? 'dnf install -y' : 'apt-get update && apt-get install -y';
+
   if (sel.ros !== 'none') {
     const distro = ROS_DISTRO[sel.ros];
-    sections.push(
-      `# Layer 3 — ROS: ${labelFor(ROS_OPTIONS, sel.ros)}\n` +
-        `RUN apt-get update && apt-get install -y ros-${distro}-desktop`,
-    );
+    sections.push(`# Layer 3 — ROS: ${labelFor(ROS_OPTIONS, sel.ros)}\nRUN ${installCmd} ros-${distro}-desktop`);
   }
 
   if (sel.sim !== 'none') {
     const distro = sel.ros !== 'none' ? ROS_DISTRO[sel.ros] : 'jazzy';
     sections.push(
       `# Layer 4 — Simulation: ${labelFor(SIM_OPTIONS, sel.sim)}\n` +
-        `RUN apt-get install -y ros-${distro}-navigation2 ros-${distro}-nav2-bringup ` +
+        `RUN ${installCmd} ros-${distro}-navigation2 ros-${distro}-nav2-bringup ` +
         `ros-${distro}-nav2-minimal-tb3-sim ros-${distro}-ros-gz-sim`,
     );
   }

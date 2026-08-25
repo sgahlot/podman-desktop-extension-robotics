@@ -209,7 +209,7 @@ describe('generateLayerContainerfile', () => {
     );
     expect(containerfile).toContain('companion image (pull & run alongside): quay.io/hummingbird/grafana:latest');
     expect(containerfile).toContain(
-      'COPY --from=quay.io/hummingbird/cosign:latest /usr/local/bin/cosign /usr/local/bin/cosign',
+      'COPY --from=quay.io/hummingbird/cosign:latest /usr/bin/cosign /usr/local/bin/cosign',
     );
   });
 
