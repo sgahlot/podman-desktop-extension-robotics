@@ -355,7 +355,9 @@ onDestroy(() => {
         <div class="flex flex-col gap-1">
           <span class="text-xs font-medium text-[var(--pd-content-text)]">2. Simulation image</span>
           {#if !baseImageExists}
-            <span class="text-xs pai-text-muted">Build the base image first.</span>
+            <p class="text-sm p-3 rounded pai-banner-warning">
+              Build the base image (Step 1) first — the simulation image depends on it.
+            </p>
           {/if}
           <BuildPushPanel
             tagInputId="layer-sim-tag"
