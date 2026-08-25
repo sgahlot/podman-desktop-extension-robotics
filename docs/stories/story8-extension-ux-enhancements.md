@@ -22,13 +22,13 @@
 > namespace picker, APPENG-6156) is done and merged to `main` (2026-08-21). **Batch E**
 > (S8-13 layout config, APPENG-6107) is done, user-verified, and merged to `main` (2026-08-24,
 > merge commit `c06d4e4`); APPENG-6107 is Closed. **Batch F** (S8-14 spike → S8-15 wizard,
-> APPENG-6108) is code-complete on `feature/APPENG-6108-secure-base-spike`
-> (commits `4e608f6`, `528a6df`, `8e2604e`) — S8-14's spike found ROS 2 Jazzy + simulation
-> NO-GO on bootc/hummingbird today (see
-> [APPENG-6108-secure-base-spike.md](APPENG-6108-secure-base-spike.md)), and S8-15 built a
-> layer-composition wizard that now **pulls the layer images and builds the composed image
-> for real** (tested-preset path or generated Containerfile); **awaiting user testing +
-> merge to `main`**, not yet Closed. S8-18 (APPENG-6149, prune stale robots) is another
+> APPENG-6108) is done, user-verified, and merged to `main` (2026-08-25, merge commit
+> `0b94ed0`) — S8-14's spike found ROS 2 Jazzy + simulation NO-GO on bootc/hummingbird
+> today (see [APPENG-6108-secure-base-spike.md](APPENG-6108-secure-base-spike.md)), and
+> S8-15 built a layer-composition wizard that **pulls the layer images and builds the
+> composed image for real** (tested-preset path or generated Containerfile), refined
+> through several rounds of user testing (commits `860c1a2`, `a24d382`, `f0c7736`,
+> `0a4220d`). S8-18 (APPENG-6149, prune stale robots) is another
 > follow-up feature with its own branch.
 
 ---
@@ -130,10 +130,11 @@ Needed backend type additions (`BuildProgress`/`PushProgress` in
 
 <a id="s8-wizard"></a>
 
-### Batch F — Secure base images → project wizard — APPENG-6108 ✅ Code-complete on branch
+### Batch F — Secure base images → project wizard — APPENG-6108 ✅ Done, merged to `main`
 
 > **Branch:** `feature/APPENG-6108-secure-base-spike` (commits `4e608f6`, `528a6df`,
-> `8e2604e`) — **not yet merged to `main`**, awaiting user testing. Full writeup:
+> `8e2604e`, plus user-testing fixes `860c1a2`, `a24d382`, `f0c7736`, `0a4220d`) —
+> **merged to `main`** via merge commit `0b94ed0` (2026-08-25). Full writeup:
 > [APPENG-6108-secure-base-spike.md](APPENG-6108-secure-base-spike.md).
 
 | Status | ID | Summary | Description |
@@ -163,8 +164,7 @@ Needed backend type additions (`BuildProgress`/`PushProgress` in
 4. **Batch D** (S8-12) — SIM-only build path. ✅ done (`feature/APPENG-6106-sim-only-build`)
 5. **Batch E** (S8-13) — layout config. ✅ done (merged to `main`, commit `c06d4e4`)
 6. **Batch F** (S8-14 spike → S8-15 wizard) — secure layers, then the full wizard with a
-   real pull + build path. ✅ code-complete on `feature/APPENG-6108-secure-base-spike`
-   (commits `4e608f6`, `528a6df`, `8e2604e`); awaiting user testing + merge to `main`.
+   real pull + build path. ✅ done, merged to `main` (commit `0b94ed0`).
 
 ---
 

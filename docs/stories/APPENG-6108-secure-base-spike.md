@@ -1,9 +1,10 @@
 # APPENG-6108 (Story 8, Batch F) — Secure base spike: S8-14 → S8-15
 
 **Status:** S8-14 (feasibility spike) **done — verdict NO-GO natively today**. S8-15
-(layer-composition wizard) **code-complete with a real build + pull path** on
-`feature/APPENG-6108-secure-base-spike` (commits `4e608f6`, `528a6df`, `a0f8463`,
-`22e784c`, `8e2604e`) — awaiting user testing + merge to `main`. The wizard is no longer
+(layer-composition wizard) **done — merged to `main`** (merge commit `0b94ed0`, branch
+`feature/APPENG-6108-secure-base-spike`, commits `4e608f6`, `528a6df`, `a0f8463`,
+`22e784c`, `8e2604e`, plus user-testing fixes `860c1a2`, `a24d382`, `f0c7736`, `0a4220d`).
+The wizard is no longer
 preview-only: it **pulls the layer images** (base OS + selected Hummingbird images, any
 registry) and **builds the composed image for real** — a tested Ubuntu+ROS[+Sim] preset
 reuses the full asset recipe, everything else builds from the generated Containerfile (so
@@ -221,9 +222,13 @@ Help notes that the layers come from the `redhat.bootc` / `redhat.hummingbird`
 extensions), `22e784c` (Hummingbird app list corrected to the real `quay.io/hummingbird/*`
 catalog; R5 downgraded warn→info so Hummingbird-alongside-ROS reads ✅ Ready), `8e2604e`
 (real pull + build: `pullImageByRef`, `buildFromContainerfile`, the companion/tool
-catalog split, and the pull/build UI). **Not yet merged to `main`** — awaiting user
-testing before merge, per this project's zero-errors-on-merge /
-merge-to-main-before-Closed workflow.
+catalog split, and the pull/build UI), plus user-testing fixes `860c1a2` (3 real bugs:
+wrong Hummingbird tool `binPath`s, apt/dnf install branching, misleading pull item),
+`a24d382` (base-image-missing warning parity with the Pipeline layout), `f0c7736` (missing
+ROS apt-repo setup on a Ready Ubuntu+ROS combo), `0a4220d` (stale build logs/status
+surviving a tag switch in the shared `BuildPushPanel`). **Merged to `main`** via merge
+commit `0b94ed0`, per this project's zero-errors-on-merge / merge-to-main-before-Closed
+workflow.
 
 ## Manual test matrix
 
