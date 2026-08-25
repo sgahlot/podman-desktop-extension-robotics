@@ -569,52 +569,69 @@ describe('OpenShiftSimulation', () => {
     expect(screen.getAllByText('robot_1')).toHaveLength(1);
   });
 
-  it('prunes a robot confirmed missing across 2 consecutive poll ticks (APPENG-6149)', async () => {
+  it('does not prune a freshly-spawned robot still within its startup grace period, even if briefly absent', async () => {
     vi.useFakeTimers();
     try {
       mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
-      mockListSpawnedRobotsInOpenShift
-        .mockResolvedValueOnce([]) // reconcile on mount — nothing running yet
-        .mockResolvedValueOnce(['robot_1']) // prune tick 1: still present
-        .mockResolvedValueOnce([]) // prune tick 2: miss #1 — below threshold, kept
-        .mockResolvedValueOnce([]); // prune tick 3: miss #2 — pruned
+      // Its own ROS nodes haven't registered yet (still initializing / Nav2 warming) —
+      // every poll reports it absent from `ros2 node list`, the whole time it's within
+      // PRUNE_GRACE_PERIOD_MS. Mirrors the backend's own Nav2 pre-warm loop, which polls
+      // up to 30 times at 1s intervals just waiting for the robot to appear (#prewarmNav2).
+      mockListSpawnedRobotsInOpenShift.mockResolvedValue([]);
 
       render(DeployOpenShift);
-      await vi.advanceTimersByTimeAsync(100); // onMount + reconcile
+      await vi.advanceTimersByTimeAsync(100); // onMount + reconcile finds nothing yet
 
       await fireEvent.click(screen.getByRole('button', { name: 'Spawn' }));
-      await vi.advanceTimersByTimeAsync(0); // let the spawn promise settle
+      await vi.advanceTimersByTimeAsync(0); // spawn promise settles; trackedSince recorded
       expect(screen.getByText('robot_1')).toBeTruthy();
 
-      await vi.advanceTimersByTimeAsync(3000); // prune tick 1: present
+      // Well past what the 2-miss debounce alone would need (6s), but still under the 45s
+      // grace period — must survive.
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(screen.getByText('robot_1')).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('prunes a robot confirmed missing across 2 consecutive polls once past its grace period (APPENG-6149)', async () => {
+    vi.useFakeTimers();
+    try {
+      mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
+      // Persistent default: reconciled as present on mount, and stays present through the
+      // whole startup grace window (so grace naturally elapses before the miss sequence).
+      mockListSpawnedRobotsInOpenShift.mockResolvedValue(['robot_1']);
+
+      render(DeployOpenShift);
+      await vi.advanceTimersByTimeAsync(100); // onMount + reconcile adds robot_1
       expect(screen.getByText('robot_1')).toBeTruthy();
 
-      await vi.advanceTimersByTimeAsync(3000); // prune tick 2: miss #1
+      await vi.advanceTimersByTimeAsync(45_000); // clear the startup grace period, still present
       expect(screen.getByText('robot_1')).toBeTruthy();
 
-      await vi.advanceTimersByTimeAsync(3000); // prune tick 3: miss #2 -> pruned
+      mockListSpawnedRobotsInOpenShift.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      await vi.advanceTimersByTimeAsync(3000); // miss #1 — below threshold, kept
+      expect(screen.getByText('robot_1')).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(3000); // miss #2 -> pruned
       expect(screen.queryByText('robot_1')).toBeNull();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('does not prune a robot after only a single missed poll (debounce)', async () => {
+  it('does not prune a robot after only a single missed poll past its grace period (debounce)', async () => {
     vi.useFakeTimers();
     try {
       mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
-      mockListSpawnedRobotsInOpenShift
-        .mockResolvedValueOnce([]) // reconcile on mount
-        .mockResolvedValueOnce(['robot_1']) // prune tick 1: present
-        .mockResolvedValueOnce([]); // prune tick 2: miss #1 only
+      mockListSpawnedRobotsInOpenShift.mockResolvedValue(['robot_1']);
 
       render(DeployOpenShift);
       await vi.advanceTimersByTimeAsync(100);
+      await vi.advanceTimersByTimeAsync(45_000); // past grace, still present
 
-      await fireEvent.click(screen.getByRole('button', { name: 'Spawn' }));
-      await vi.advanceTimersByTimeAsync(0);
-
-      await vi.advanceTimersByTimeAsync(3000);
+      mockListSpawnedRobotsInOpenShift.mockResolvedValueOnce([]); // single miss only
       await vi.advanceTimersByTimeAsync(3000);
 
       // A single miss is below PRUNE_MISS_THRESHOLD (2) — a transient oc/exec hiccup
@@ -630,29 +647,25 @@ describe('OpenShiftSimulation', () => {
     vi.useFakeTimers();
     try {
       mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
-      mockListSpawnedRobotsInOpenShift
-        .mockResolvedValueOnce([]) // reconcile on mount
-        .mockResolvedValueOnce(['robot_1']) // prune tick 1: present
-        .mockResolvedValueOnce([]) // prune tick 2: miss #1
-        .mockResolvedValueOnce(['robot_1']) // prune tick 3: reappears — streak resets
-        .mockResolvedValueOnce([]) // prune tick 4: miss #1 again (not #2)
-        .mockResolvedValueOnce([]); // prune tick 5: miss #2 -> pruned
+      mockListSpawnedRobotsInOpenShift.mockResolvedValue(['robot_1']);
 
       render(DeployOpenShift);
       await vi.advanceTimersByTimeAsync(100);
+      await vi.advanceTimersByTimeAsync(45_000); // past grace, still present
 
-      await fireEvent.click(screen.getByRole('button', { name: 'Spawn' }));
-      await vi.advanceTimersByTimeAsync(0);
-
-      await vi.advanceTimersByTimeAsync(3000); // tick 1: present
-      await vi.advanceTimersByTimeAsync(3000); // tick 2: miss #1
-      await vi.advanceTimersByTimeAsync(3000); // tick 3: reappears
+      mockListSpawnedRobotsInOpenShift.mockResolvedValueOnce([]); // miss #1
+      await vi.advanceTimersByTimeAsync(3000);
       expect(screen.getByText('robot_1')).toBeTruthy();
 
-      await vi.advanceTimersByTimeAsync(3000); // tick 4: miss #1 (post-reset)
+      // Falls back to the persistent ['robot_1'] default — reappears, streak resets.
+      await vi.advanceTimersByTimeAsync(3000);
       expect(screen.getByText('robot_1')).toBeTruthy();
 
-      await vi.advanceTimersByTimeAsync(3000); // tick 5: miss #2 -> pruned
+      mockListSpawnedRobotsInOpenShift.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      await vi.advanceTimersByTimeAsync(3000); // miss #1 (post-reset)
+      expect(screen.getByText('robot_1')).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(3000); // miss #2 -> pruned
       expect(screen.queryByText('robot_1')).toBeNull();
     } finally {
       vi.useRealTimers();

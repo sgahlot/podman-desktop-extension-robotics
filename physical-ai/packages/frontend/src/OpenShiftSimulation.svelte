@@ -95,6 +95,16 @@ let reconciledWorkloads = new Set<string>();
  * removing it keeps one blip from wiping an actively-driven robot's nav state. */
 let missingStreaks = new Map<string, number>();
 const PRUNE_MISS_THRESHOLD = 2;
+/** Wall-clock time each robot was first tracked (spawn or ADD-reconcile), keyed the same
+ * way — set once, never refreshed. A freshly-spawned robot can legitimately take a while to
+ * appear in `ros2 node list`: the backend's own Nav2 pre-warm polls up to 30 times at 1s
+ * intervals just waiting for the robot's pose to become queryable (#prewarmNav2), and Nav2
+ * bringup itself polls for up to 120s more (#ensureNav2Running). Pruning must not fire during
+ * that legitimate startup window, so a robot is exempt from prune consideration entirely until
+ * PRUNE_GRACE_PERIOD_MS has passed since it was first tracked — after that, the normal
+ * miss-streak debounce above applies to catch a genuine later crash. */
+let trackedSince = new Map<string, number>();
+const PRUNE_GRACE_PERIOD_MS = 45_000;
 let warmTimer: ReturnType<typeof setInterval> | null = null;
 
 $: config = {
@@ -425,6 +435,8 @@ async function reconcileRobots(w: OpenShiftWorkload) {
   const existing = new Set((robotsByWorkload[w.name] ?? []).map(r => r.name));
   const missing = names.filter(n => !existing.has(n));
   if (missing.length === 0) return;
+  const now = Date.now();
+  for (const n of missing) trackedSince.set(`${w.name}::${n}`, now);
   robotsByWorkload[w.name] = [
     ...(robotsByWorkload[w.name] ?? []),
     // x/y aren't recoverable from `ros2 node list` alone, so they're omitted — the row
@@ -443,6 +455,9 @@ function clearMissingStreaksForWorkload(wname: string) {
   const prefix = `${wname}::`;
   for (const key of missingStreaks.keys()) {
     if (key.startsWith(prefix)) missingStreaks.delete(key);
+  }
+  for (const key of trackedSince.keys()) {
+    if (key.startsWith(prefix)) trackedSince.delete(key);
   }
 }
 
@@ -468,6 +483,7 @@ async function pruneStaleRobots() {
       continue;
     }
     const liveNames = new Set(live);
+    const now = Date.now();
     const keep: RobotEntry[] = [];
     for (const robot of tracked) {
       const key = `${w.name}::${robot.name}`;
@@ -476,9 +492,16 @@ async function pruneStaleRobots() {
         keep.push(robot);
         continue;
       }
+      const since = trackedSince.get(key);
+      if (since !== undefined && now - since < PRUNE_GRACE_PERIOD_MS) {
+        // Still within its startup grace window — not suspicious yet.
+        keep.push(robot);
+        continue;
+      }
       const streak = (missingStreaks.get(key) ?? 0) + 1;
       if (streak >= PRUNE_MISS_THRESHOLD) {
         missingStreaks.delete(key);
+        trackedSince.delete(key);
       } else {
         missingStreaks.set(key, streak);
         keep.push(robot);
@@ -514,7 +537,9 @@ async function remove(w: OpenShiftWorkload) {
 }
 
 async function spawnRobot(w: OpenShiftWorkload, form: { name: string; x: string; y: string; yaw: string }) {
-  missingStreaks.delete(`${w.name}::${form.name}`);
+  const key = `${w.name}::${form.name}`;
+  missingStreaks.delete(key);
+  trackedSince.set(key, Date.now());
   await physicalAiClient.spawnRobotInOpenShift(
     w.namespace,
     w.name,
@@ -572,7 +597,9 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
   const robot = robots?.[index];
   if (!robot) return;
   await physicalAiClient.despawnRobotInOpenShift(w.namespace, w.name, robot.name, selectedContext || undefined);
-  missingStreaks.delete(`${w.name}::${robot.name}`);
+  const key = `${w.name}::${robot.name}`;
+  missingStreaks.delete(key);
+  trackedSince.delete(key);
   robotsByWorkload[w.name] = robots.filter((_, i) => i !== index);
   robotsByWorkload = robotsByWorkload;
 }
