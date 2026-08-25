@@ -128,7 +128,7 @@ describe('BuildPushPanel', () => {
     expect(await screen.findByText(/Build cancelled/)).toBeTruthy();
   });
 
-  it('shows build duration and a "Last build" label once done', async () => {
+  it('shows build duration and the build logs toggle once done', async () => {
     const startedAt = 1_000;
     mockGetBuildProgress.mockResolvedValue({
       tag: TAG,
@@ -152,7 +152,10 @@ describe('BuildPushPanel', () => {
     await fireEvent.click(await screen.findByRole('button', { name: 'Build' }));
     expect(await screen.findByText(/Image built successfully/)).toBeTruthy();
     expect(screen.getByText(/built in 5s/)).toBeTruthy();
-    expect(screen.getByText(/Last build/)).toBeTruthy();
+    // No "Last build" qualifier — logs are always the current/most-recent build, never
+    // a genuinely older one (reset() clears them), so that label would be misleading.
+    expect(screen.getByText(/Build logs \(2 lines\)/)).toBeTruthy();
+    expect(screen.queryByText(/Last build/)).toBeNull();
   });
 
   it('clears stale build logs/status when the tag prop changes to a different (unbuilt) tag', async () => {
@@ -174,13 +177,13 @@ describe('BuildPushPanel', () => {
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Build' }));
     expect(await screen.findByText(/Image built successfully/)).toBeTruthy();
-    expect(screen.getByText(/Last build/)).toBeTruthy();
+    expect(screen.getByText(/Build logs/)).toBeTruthy();
 
     const OTHER_TAG = 'quay.io/ns/ros2-jazzy-base:noble-amd64';
     await rerender({ buildImage, tag: OTHER_TAG, tagInputId: 'phase1-tag' });
 
     await waitFor(() => {
-      expect(screen.queryByText(/Last build/)).toBeNull();
+      expect(screen.queryByText(/Build logs/)).toBeNull();
     });
     expect(screen.queryByText(/Image built successfully/)).toBeNull();
   });

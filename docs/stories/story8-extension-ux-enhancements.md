@@ -153,6 +153,16 @@ Needed backend type additions (`BuildProgress`/`PushProgress` in
 - ✅ **"Nav2 warming…" indicator is easy to miss** — **done in Batch A** (commit `247c815`):
   it's now a rounded accent pill (larger pulsing dot + `text-sm font-medium` in
   `RobotControls.svelte`), no longer same-weight inline text.
+- ✅ **"Build again" / "Retry push" / the "Build logs" toggle looked like neither a button
+  nor a link, and the toggle's "· Last build" text was misleading** (found during APPENG-6108
+  user testing — pre-existing, app-wide, not specific to that branch) — **fixed
+  direct-to-`main`, user-tested before push (no branch needed for this size of fix)**: all
+  three actions in `BuildPushPanel.svelte` used `class="pai-link pai-link-sm"` (plain text,
+  no border/background), inconsistent with the real `.pai-btn` styling used right next to
+  them for Push/Cancel — switched all three to `class="pai-btn pai-btn-sm"`. Also dropped the
+  "· Last build" suffix entirely: `logs` is a single buffer fully cleared by `reset()`, so
+  there's never an actual current-vs-previous distinction to signal — the toggle now always
+  just reads "Build logs (N lines)".
 
 ---
 

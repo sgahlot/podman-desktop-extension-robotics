@@ -391,9 +391,8 @@ $: pushDurationSec =
       {/if}
 
       <div class="flex flex-col gap-1">
-        <button on:click={() => (buildLogsExpanded = !buildLogsExpanded)} class="pai-link pai-link-sm self-start">
-          {buildLogsExpanded ? '▼' : '▶'} Build logs ({logs.length} lines){#if buildDone && !building}
-            &nbsp;· Last build{/if}
+        <button on:click={() => (buildLogsExpanded = !buildLogsExpanded)} class="pai-btn pai-btn-sm self-start">
+          {buildLogsExpanded ? '▼' : '▶'} Build logs ({logs.length} lines)
         </button>
         {#if buildLogsExpanded}
           <div
@@ -429,7 +428,7 @@ $: pushDurationSec =
               {/if}
             </div>
           {/if}
-          <button on:click={reset} class="pai-link pai-link-sm"> Build again </button>
+          <button on:click={reset} class="pai-btn pai-btn-sm"> Build again </button>
         </div>
       {/if}
     </div>
@@ -464,12 +463,12 @@ $: pushDurationSec =
               Push cancelled{#if pushDurationSec !== undefined}
                 after {pushDurationSec}s{/if}
             </div>
-            <button on:click={startPush} class="pai-link pai-link-sm"> Retry push </button>
+            <button on:click={startPush} class="pai-btn pai-btn-sm"> Retry push </button>
           {:else if pushError}
             <div class="text-sm p-3 rounded pai-banner-error">
               Push failed: {pushError}
             </div>
-            <button on:click={startPush} class="pai-link pai-link-sm"> Retry push </button>
+            <button on:click={startPush} class="pai-btn pai-btn-sm"> Retry push </button>
           {:else}
             <div class="text-sm pai-text-success">
               Image pushed successfully to registry
