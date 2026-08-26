@@ -11,7 +11,7 @@
 | Status | Key | Summary |
 |--------|-----|---------|
 | ⚪ | APPENG-5774 | Podman Compose multi-container orchestration for 2+ robots |
-| 🟡 | APPENG-5775 | Native `rmw_zenoh_cpp` middleware, selectable at runtime (single-container/pod foundation done) |
+| ✅ | APPENG-5775 | Native `rmw_zenoh_cpp` middleware, selectable at runtime (single-container/pod foundation done, Closed) |
 | ⚪ | APPENG-5776 | Fleet status panel in the extension UI |
 
 ---
@@ -44,7 +44,7 @@ Story 6’s single-container **Add TurtleBot3 × N** remains a useful **lightwei
 
 ---
 
-## APPENG-5775: Native `rmw_zenoh_cpp` Middleware — 🟡 In Progress (single-container/pod foundation done)
+## APPENG-5775: Native `rmw_zenoh_cpp` Middleware — ✅ Closed (single-container/pod foundation done, tested locally + OpenShift)
 
 **Description:** Make `rmw_zenoh_cpp` a real, selectable middleware end-to-end (build + launch), as the foundation for later cross-container/cross-pod fleet communication.
 
