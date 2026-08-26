@@ -465,7 +465,7 @@ function cancelQuickStart() {
             {layout === 'guided' ? 'Guided Image Builder' : 'Image Builder Pipeline'}
           </h2>
           <span class="text-xs text-[var(--pd-content-text)] opacity-80 font-mono">
-            {robot} &middot; {distro} &middot; {engine} &middot; {basePreset.label}
+            {robot} &middot; {distro} &middot; {middleware} &middot; {engine} &middot; {basePreset.label}
           </span>
         </div>
 
