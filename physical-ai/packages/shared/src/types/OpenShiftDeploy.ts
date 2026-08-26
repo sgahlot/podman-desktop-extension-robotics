@@ -43,6 +43,12 @@ export interface OpenShiftDeployConfig {
    * without switching `oc`'s current context globally. Undefined uses current-context.
    */
   context?: string;
+  /**
+   * Middleware selection baked into the deployed pod's env (APPENG-5775); 'zenoh' sets
+   * RMW_IMPLEMENTATION=rmw_zenoh_cpp so the Zenoh router (rmw_zenohd) starts alongside
+   * the sim. Undefined/anything else keeps today's DDS default.
+   */
+  middleware?: string;
 }
 
 export interface OpenShiftDeployResult {

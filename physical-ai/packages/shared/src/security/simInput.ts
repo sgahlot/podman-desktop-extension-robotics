@@ -78,6 +78,7 @@ export const ALLOWED_LAUNCH_ENV_KEYS = new Set([
   'DISPLAY_NUM',
   'RESOLUTION',
   'TURTLEBOT3_MODEL',
+  'RMW_IMPLEMENTATION',
 ]);
 
 const WORLD_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -157,6 +158,15 @@ export function assertLaunchEnv(env: Record<string, string> | undefined): Record
       case 'TURTLEBOT3_MODEL':
         if (value !== 'burger' && value !== 'waffle' && value !== 'waffle_pi') {
           throw new Error(`Invalid TURTLEBOT3_MODEL "${value}".`);
+        }
+        out[key] = value;
+        break;
+      case 'RMW_IMPLEMENTATION':
+        // Only the middleware choice this feature adds (APPENG-5775) is allowed —
+        // an arbitrary RMW package name is not something the image is guaranteed to
+        // have installed, and there's no product need to accept one yet.
+        if (value !== 'rmw_zenoh_cpp') {
+          throw new Error(`Invalid RMW_IMPLEMENTATION "${value}". Only "rmw_zenoh_cpp" is supported.`);
         }
         out[key] = value;
         break;

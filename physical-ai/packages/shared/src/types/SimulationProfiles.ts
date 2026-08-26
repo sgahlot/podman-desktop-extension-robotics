@@ -44,6 +44,20 @@ export const SIMULATION_PROFILES: readonly SimulationProfile[] = [
     imageName: 'ros2-jazzy-sim',
     label: 'ROS2 Jazzy + TurtleBot3 + Gazebo + noVNC',
   },
+  {
+    robot: 'turtlebot3',
+    distro: 'jazzy',
+    middleware: 'zenoh',
+    engine: 'gazebo',
+    // Same image as the dds Jazzy profile above (APPENG-5775): rmw_zenoh_cpp is baked
+    // into the ros2-jazzy-sim image alongside the default DDS RMW, so middleware is a
+    // runtime choice (RMW_IMPLEMENTATION), not a separate build. No new asset dir/image.
+    baseAssetDir: 'ros2-jazzy-base',
+    baseImageName: 'ros2-jazzy-base',
+    assetDir: 'ros2-jazzy-sim',
+    imageName: 'ros2-jazzy-sim',
+    label: 'ROS2 Jazzy + TurtleBot3 + Gazebo + noVNC (Zenoh)',
+  },
 ];
 
 export function resolveSimulationProfile(config: SimulationConfig): SimulationProfile | undefined {

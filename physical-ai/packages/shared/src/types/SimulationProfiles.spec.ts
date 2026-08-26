@@ -26,8 +26,30 @@ describe('SimulationProfiles', () => {
   });
 
   it('returns undefined for unsupported combinations', () => {
+    // Zenoh is only supported on the jazzy profile added below (APPENG-5775); humble +
+    // zenoh has no profile and correctly stays unresolved.
     expect(resolveSimulationProfile({ ...supported, middleware: 'zenoh' })).toBeUndefined();
     expect(resolveSimulationProfile({ ...supported, distro: 'rolling' })).toBeUndefined();
+  });
+
+  it('resolves the jazzy zenoh simulation profile (APPENG-5775)', () => {
+    // rmw_zenoh_cpp is baked into the same ros2-jazzy-sim image as the dds profile —
+    // middleware is a runtime choice (RMW_IMPLEMENTATION), not a separate build, so
+    // this profile shares assetDir/imageName with the jazzy dds profile.
+    const profile = resolveSimulationProfile({
+      ...supported,
+      distro: 'jazzy',
+      middleware: 'zenoh',
+      baseImage: 'jazzy-noble',
+    });
+    expect(profile).toBeDefined();
+    expect(profile!.baseAssetDir).toBe('ros2-jazzy-base');
+    expect(profile!.baseImageName).toBe('ros2-jazzy-base');
+    expect(profile!.assetDir).toBe('ros2-jazzy-sim');
+    expect(profile!.imageName).toBe('ros2-jazzy-sim');
+    expect(profile!.label).not.toBe(
+      resolveSimulationProfile({ ...supported, distro: 'jazzy', baseImage: 'jazzy-noble' })!.label,
+    );
   });
 
   it('resolves the jazzy simulation profile', () => {
@@ -53,6 +75,14 @@ describe('SimulationProfiles', () => {
       baseImage: 'jazzy-noble',
     })!;
     expect(hasSimulationSupport(jazzy)).toBe(true);
+
+    const jazzyZenoh = resolveSimulationProfile({
+      ...supported,
+      distro: 'jazzy',
+      middleware: 'zenoh',
+      baseImage: 'jazzy-noble',
+    })!;
+    expect(hasSimulationSupport(jazzyZenoh)).toBe(true);
   });
 
   it('builds the image tag from the profile and base image preset', () => {
@@ -73,6 +103,24 @@ describe('SimulationProfiles', () => {
       baseImageTag('ecosystem-appeng', {
         ...supported,
         distro: 'jazzy',
+        baseImage: 'jazzy-noble',
+      }),
+    ).toBe('quay.io/ecosystem-appeng/ros2-jazzy-base:noble');
+    // Same image as the dds jazzy profile (APPENG-5775) — zenoh is a runtime
+    // middleware choice, not a separate build, so both tags match.
+    expect(
+      simulationImageTag('ecosystem-appeng', {
+        ...supported,
+        distro: 'jazzy',
+        middleware: 'zenoh',
+        baseImage: 'jazzy-noble',
+      }),
+    ).toBe('quay.io/ecosystem-appeng/ros2-jazzy-sim:noble');
+    expect(
+      baseImageTag('ecosystem-appeng', {
+        ...supported,
+        distro: 'jazzy',
+        middleware: 'zenoh',
         baseImage: 'jazzy-noble',
       }),
     ).toBe('quay.io/ecosystem-appeng/ros2-jazzy-base:noble');

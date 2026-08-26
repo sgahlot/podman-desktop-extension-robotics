@@ -200,6 +200,34 @@ describe('buildOpenShiftManifests', () => {
     expect(() => buildOpenShiftManifests({ ...config, useGpu: true, gpuToleration: 'BAD KEY=x' })).toThrow();
   });
 
+  it('sets RMW_IMPLEMENTATION=rmw_zenoh_cpp when zenoh middleware is selected', () => {
+    const [deployment] = buildOpenShiftManifests({ ...config, middleware: 'zenoh' });
+    const container = (deployment as unknown as DeploymentManifest).spec.template.spec.containers[0];
+    const env = Object.fromEntries(container.env.map(e => [e.name, e.value]));
+    expect(env.RMW_IMPLEMENTATION).toBe('rmw_zenoh_cpp');
+    // Coexists with the default software-render env (independent axis).
+    expect(env.LIBGL_ALWAYS_SOFTWARE).toBe('1');
+    expect(env.GALLIUM_DRIVER).toBe('llvmpipe');
+  });
+
+  it('omits RMW_IMPLEMENTATION when middleware is unset or not zenoh', () => {
+    const [deployment] = buildOpenShiftManifests(config);
+    const container = (deployment as unknown as DeploymentManifest).spec.template.spec.containers[0];
+    expect(container.env.some(e => e.name === 'RMW_IMPLEMENTATION')).toBe(false);
+
+    const [deploymentDds] = buildOpenShiftManifests({ ...config, middleware: 'dds' });
+    const containerDds = (deploymentDds as unknown as DeploymentManifest).spec.template.spec.containers[0];
+    expect(containerDds.env.some(e => e.name === 'RMW_IMPLEMENTATION')).toBe(false);
+  });
+
+  it('sets RMW_IMPLEMENTATION alongside the GPU env when both zenoh and useGpu are selected', () => {
+    const [deployment] = buildOpenShiftManifests({ ...config, middleware: 'zenoh', useGpu: true });
+    const container = (deployment as unknown as DeploymentManifest).spec.template.spec.containers[0];
+    const env = Object.fromEntries(container.env.map(e => [e.name, e.value]));
+    expect(env.RMW_IMPLEMENTATION).toBe('rmw_zenoh_cpp');
+    expect(env.PHYSICAL_AI_USE_GPU).toBe('1');
+  });
+
   it('exposes the noVNC port via an edge-terminated Route', () => {
     const [, service, route] = buildOpenShiftManifests(config);
     expect((service as unknown as ServiceManifest).spec.ports[0].port).toBe(NOVNC_CONTAINER_PORT);
