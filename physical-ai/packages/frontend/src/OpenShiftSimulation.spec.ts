@@ -170,6 +170,45 @@ describe('OpenShiftSimulation', () => {
     });
   });
 
+  it('deploys with middleware dds by default when getSimulationConfig fails', async () => {
+    mockDeployToOpenShift.mockResolvedValue({
+      name: 'ros2-jazzy-sim',
+      namespace: 'sgahlot-pd-extn',
+      applied: ['Deployment', 'Service', 'Route'],
+      message: 'Deployed',
+    });
+    render(DeployOpenShift);
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
+
+    await waitFor(() => {
+      expect(mockDeployToOpenShift).toHaveBeenCalledWith(expect.objectContaining({ middleware: 'dds' }));
+    });
+  });
+
+  it('seeds middleware from the sim config (zenoh) and passes it through to deployToOpenShift', async () => {
+    mockGetSimulationConfig.mockResolvedValue({
+      robot: 'turtlebot3',
+      distro: 'jazzy',
+      middleware: 'zenoh',
+      engine: 'gazebo',
+      baseImage: 'jazzy-noble',
+    });
+    mockDeployToOpenShift.mockResolvedValue({
+      name: 'ros2-jazzy-sim',
+      namespace: 'sgahlot-pd-extn',
+      applied: ['Deployment', 'Service', 'Route'],
+      message: 'Deployed',
+    });
+    render(DeployOpenShift);
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
+
+    await waitFor(() => {
+      expect(mockDeployToOpenShift).toHaveBeenCalledWith(expect.objectContaining({ middleware: 'zenoh' }));
+    });
+  });
+
   it('spawns a robot into a ready workload and then navigates it', async () => {
     vi.useFakeTimers();
     try {

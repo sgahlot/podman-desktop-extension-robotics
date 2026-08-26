@@ -63,6 +63,12 @@ let cpu = 8;
  * Only sent when GPU is enabled.
  */
 let gpuToleration = DEFAULT_GPU_TOLERATION;
+/**
+ * Middleware selection (APPENG-5775), seeded from the current sim config on mount
+ * (same fetch already used to default `image` below). 'zenoh' sets RMW_IMPLEMENTATION
+ * in the deployed pod's env (see manifests.ts); anything else keeps the DDS default.
+ */
+let middleware = 'dds';
 
 let previewYaml = '';
 let previewBusy = false;
@@ -116,6 +122,7 @@ $: config = {
   cpu,
   gpuToleration: useGpu ? gpuToleration : undefined,
   context: selectedContext || undefined,
+  middleware,
 };
 $: canDeploy = !!context && !!name && !!namespace && !!image && !deploying && loggedIn;
 /** Suggestions matching the current free-text `namespace` (S8-21), case-insensitive
@@ -285,6 +292,7 @@ onMount(async () => {
     const amd64Config = { ...simConfig, targetArch: 'amd64' } as SimulationConfig;
     const tag = simulationImageTag(ns, amd64Config);
     if (tag) image = tag;
+    middleware = simConfig.middleware;
   } catch {
     // keep the placeholder default
   }

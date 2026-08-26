@@ -12,6 +12,7 @@ const mockOpenSimulationInBrowser = vi.fn();
 const mockExecInSimulation = vi.fn();
 const mockSendNavigationGoal = vi.fn();
 const mockGetRobotWarmStatus = vi.fn();
+const mockGetSimulationConfig = vi.fn();
 const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
@@ -26,6 +27,7 @@ vi.mock('./api/client', () => ({
     execInSimulation: (...args: unknown[]) => mockExecInSimulation(...args),
     sendNavigationGoal: (...args: unknown[]) => mockSendNavigationGoal(...args),
     getRobotWarmStatus: (...args: unknown[]) => mockGetRobotWarmStatus(...args),
+    getSimulationConfig: (...args: unknown[]) => mockGetSimulationConfig(...args),
   },
 }));
 
@@ -46,6 +48,13 @@ describe('LocalSimulation', () => {
     mockStopSimulation.mockResolvedValue(undefined);
     mockOpenSimulationInBrowser.mockResolvedValue(undefined);
     mockGetRobotWarmStatus.mockResolvedValue('idle');
+    mockGetSimulationConfig.mockResolvedValue({
+      robot: 'turtlebot3',
+      distro: 'jazzy',
+      middleware: 'dds',
+      engine: 'gazebo',
+      baseImage: 'jazzy-noble',
+    });
   });
 
   afterEach(() => {
@@ -74,6 +83,28 @@ describe('LocalSimulation', () => {
     await fireEvent.click(launchBtn);
     await waitFor(() => {
       expect(mockLaunchSimulation).toHaveBeenCalledWith(SIM_IMAGE, '', undefined);
+    });
+  });
+
+  it('passes RMW_IMPLEMENTATION=rmw_zenoh_cpp when the sim config selects zenoh middleware', async () => {
+    mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
+    mockListSimulationContainers.mockResolvedValue([]);
+    mockGetSimulationConfig.mockResolvedValue({
+      robot: 'turtlebot3',
+      distro: 'jazzy',
+      middleware: 'zenoh',
+      engine: 'gazebo',
+      baseImage: 'jazzy-noble',
+    });
+
+    render(SimulationPage);
+    const launchBtn = await screen.findByRole('button', { name: 'Launch' });
+
+    await fireEvent.click(launchBtn);
+    await waitFor(() => {
+      expect(mockLaunchSimulation).toHaveBeenCalledWith(SIM_IMAGE, '', {
+        env: { RMW_IMPLEMENTATION: 'rmw_zenoh_cpp' },
+      });
     });
   });
 

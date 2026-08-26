@@ -398,7 +398,7 @@ function cancelQuickStart() {
               disabled={buildBusy || !simSupported}
               class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
               <option value="dds">DDS (default)</option>
-              <option value="zenoh" disabled>Zenoh (coming soon)</option>
+              <option value="zenoh">Zenoh</option>
             </select>
             {#if !simSupported}
               <span class="text-xs pai-text-muted">Not applicable — simulation not available for {distro}</span>
