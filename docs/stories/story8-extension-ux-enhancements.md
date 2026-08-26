@@ -13,7 +13,8 @@
 > on `main` (not any one batch branch) so every batch can read and update it without
 > depending on another batch's branch.
 >
-> **Status:** in progress. **Batches A, B, C and D are all merged to `main`** (2026-08-21) with
+> **Status:** ✅ **done — all batches merged to `main`, APPENG-6102 Closed** (2026-08-26).
+> **Batches A, B, C and D are all merged to `main`** (2026-08-21) with
 > merge commits, full suite green on the integrated `main` (408 unit + 23 script tests, 0
 > failures). **Batch A (S8-1…S8-5)**, **Batch B (S8-6…S8-9)**,
 > **Batch C (S8-10, S8-11, S8-16, S8-17)** and **Batch D (S8-12)** are all done and
@@ -30,7 +31,8 @@
 > through several rounds of user testing (commits `860c1a2`, `a24d382`, `f0c7736`,
 > `0a4220d`). **S8-18** (APPENG-6149, prune stale robots) is done, live-tested against a
 > real OpenShift pod restart, and merged to `main` (2026-08-26, merge commit `5d271c1`);
-> APPENG-6149 is Closed.
+> APPENG-6149 is Closed. With all 8 sub-tasks Closed, the parent Story **APPENG-6102 is
+> now Closed** too.
 
 ---
 
