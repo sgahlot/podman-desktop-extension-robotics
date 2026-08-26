@@ -87,6 +87,25 @@ let robotsByWorkload: Record<string, RobotEntry[]> = {};
  * (deleted or vanished from the list) so a later redeploy of the same name reconciles
  * fresh instead of being skipped forever. */
 let reconciledWorkloads = new Set<string>();
+/** Consecutive-miss counters for prune debouncing (APPENG-6149), keyed by
+ * `${workloadName}::${robotName}`. `listSpawnedRobotsInOpenShift` never throws — it
+ * returns `[]` both for a genuinely empty world AND for a transient oc/exec failure — so a
+ * single empty poll can't be trusted to mean "this robot is really gone". Requiring the
+ * same robot to be confirmed missing across PRUNE_MISS_THRESHOLD consecutive polls before
+ * removing it keeps one blip from wiping an actively-driven robot's nav state. */
+let missingStreaks = new Map<string, number>();
+const PRUNE_MISS_THRESHOLD = 2;
+/** Wall-clock time each freshly-spawned robot was first tracked, keyed the same way — set
+ * once, never refreshed, and only for spawnRobot (ADD-reconciled robots are already proven
+ * alive at add time, so they need no grace at all). A robot with `warmStatus === 'warming'`
+ * is skipped entirely below rather than using this — pollWarmStatus and the backend's own
+ * bounded pre-warm timeout already own resolving that state precisely. This grace period
+ * exists only for the case that signal doesn't cover: Humble spawns, which have no `warming`
+ * phase at all, still take a moment for their ROS nodes to register after a Gazebo spawn
+ * (the same raw latency the backend's own pre-warm pose-poll accounts for — up to 30 attempts
+ * at 1s intervals, #prewarmNav2). */
+let trackedSince = new Map<string, number>();
+const PRUNE_GRACE_PERIOD_MS = 30_000;
 let warmTimer: ReturnType<typeof setInterval> | null = null;
 
 $: config = {
@@ -276,6 +295,7 @@ onMount(async () => {
   warmTimer = setInterval(async () => {
     await refreshWorkloads({ silent: true });
     await pollWarmStatus();
+    await pruneStaleRobots();
   }, 3000);
 });
 
@@ -369,6 +389,7 @@ async function refreshWorkloads(opts?: { silent?: boolean }) {
       if (!names.has(key)) {
         delete robotsByWorkload[key];
         reconciledWorkloads.delete(key);
+        clearMissingStreaksForWorkload(key);
       }
     }
     for (const w of workloads) {
@@ -415,6 +436,9 @@ async function reconcileRobots(w: OpenShiftWorkload) {
   const existing = new Set((robotsByWorkload[w.name] ?? []).map(r => r.name));
   const missing = names.filter(n => !existing.has(n));
   if (missing.length === 0) return;
+  // No trackedSince entry needed — a reconciled robot was, by definition, just confirmed
+  // alive (it's in `names`), so it's immediately eligible for normal prune debounce with
+  // no startup grace required.
   robotsByWorkload[w.name] = [
     ...(robotsByWorkload[w.name] ?? []),
     // x/y aren't recoverable from `ros2 node list` alone, so they're omitted — the row
@@ -429,6 +453,86 @@ async function reconcileRobots(w: OpenShiftWorkload) {
   robotsByWorkload = robotsByWorkload;
 }
 
+function clearMissingStreaksForWorkload(wname: string) {
+  const prefix = `${wname}::`;
+  for (const key of missingStreaks.keys()) {
+    if (key.startsWith(prefix)) missingStreaks.delete(key);
+  }
+  for (const key of trackedSince.keys()) {
+    if (key.startsWith(prefix)) trackedSince.delete(key);
+  }
+}
+
+/**
+ * Removes tracked robots that no longer actually exist in the running world (APPENG-6149,
+ * S8-18) — e.g. a pod crash/restart resets a Path B world to empty, but a robot spawned
+ * before the crash otherwise sits in `robotsByWorkload` forever, failing every subsequent
+ * action (Navigate, Nav2 warm-up) against a robot that's gone. Unlike `reconcileRobots`
+ * (ADD direction, gated to run once per ready workload), this runs on every poll tick —
+ * the crash this fixes can happen mid-session, well after that one-time reconcile already
+ * ran, so a once-only check would miss it.
+ *
+ * Only ever checks robots whose existing phase actually warrants it: a `'warming'` robot
+ * is skipped (its own state machine already owns resolving that), an unconfirmed robot
+ * still within its startup grace period is skipped, and only a robot confirmed missing
+ * across PRUNE_MISS_THRESHOLD consecutive polls is actually removed.
+ */
+async function pruneStaleRobots() {
+  let changed = false;
+  for (const w of workloads) {
+    if (!w.ready) continue;
+    const tracked = robotsByWorkload[w.name];
+    if (!tracked || tracked.length === 0) continue;
+    // A 'warming' robot's liveness is already being resolved by pollWarmStatus (and the
+    // backend's own bounded pre-warm timeout) — skip the exec call entirely if there's
+    // nothing else here that actually needs checking this tick.
+    if (tracked.every(r => r.warmStatus === 'warming')) continue;
+    let live: string[];
+    try {
+      live = await physicalAiClient.listSpawnedRobotsInOpenShift(w.namespace, w.name, selectedContext || undefined);
+    } catch {
+      continue;
+    }
+    const liveNames = new Set(live);
+    const now = Date.now();
+    const keep: RobotEntry[] = [];
+    for (const robot of tracked) {
+      const key = `${w.name}::${robot.name}`;
+      if (robot.warmStatus === 'warming') {
+        // Still initializing — its own state machine will resolve to 'ready'/'failed';
+        // don't count this tick's absence against it.
+        keep.push(robot);
+        continue;
+      }
+      if (liveNames.has(robot.name)) {
+        missingStreaks.delete(key);
+        keep.push(robot);
+        continue;
+      }
+      const since = trackedSince.get(key);
+      if (since !== undefined && now - since < PRUNE_GRACE_PERIOD_MS) {
+        // Still within its startup grace window (Humble spawn, no warmStatus signal) —
+        // not suspicious yet.
+        keep.push(robot);
+        continue;
+      }
+      const streak = (missingStreaks.get(key) ?? 0) + 1;
+      if (streak >= PRUNE_MISS_THRESHOLD) {
+        missingStreaks.delete(key);
+        trackedSince.delete(key);
+      } else {
+        missingStreaks.set(key, streak);
+        keep.push(robot);
+      }
+    }
+    if (keep.length !== tracked.length) {
+      robotsByWorkload[w.name] = keep;
+      changed = true;
+    }
+  }
+  if (changed) robotsByWorkload = robotsByWorkload;
+}
+
 async function remove(w: OpenShiftWorkload) {
   deletingName = w.name;
   try {
@@ -436,6 +540,7 @@ async function remove(w: OpenShiftWorkload) {
     // Clear this deployment's robot list and the stale result panel.
     delete robotsByWorkload[w.name];
     reconciledWorkloads.delete(w.name);
+    clearMissingStreaksForWorkload(w.name);
     robotsByWorkload = robotsByWorkload;
     if (deployedName === w.name) {
       deployResult = null;
@@ -450,6 +555,9 @@ async function remove(w: OpenShiftWorkload) {
 }
 
 async function spawnRobot(w: OpenShiftWorkload, form: { name: string; x: string; y: string; yaw: string }) {
+  const key = `${w.name}::${form.name}`;
+  missingStreaks.delete(key);
+  trackedSince.set(key, Date.now());
   await physicalAiClient.spawnRobotInOpenShift(
     w.namespace,
     w.name,
@@ -507,6 +615,9 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
   const robot = robots?.[index];
   if (!robot) return;
   await physicalAiClient.despawnRobotInOpenShift(w.namespace, w.name, robot.name, selectedContext || undefined);
+  const key = `${w.name}::${robot.name}`;
+  missingStreaks.delete(key);
+  trackedSince.delete(key);
   robotsByWorkload[w.name] = robots.filter((_, i) => i !== index);
   robotsByWorkload = robotsByWorkload;
 }
