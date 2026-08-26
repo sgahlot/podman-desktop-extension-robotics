@@ -21,6 +21,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ROS2 Jazzy simulation + Nav2 packages (Tier 1 binaries on Ubuntu Noble)
+# ros-jazzy-rmw-zenoh-cpp: the Zenoh RMW implementation (APPENG-5775) — bundled
+# alongside the default DDS RMW so middleware is a runtime choice (RMW_IMPLEMENTATION),
+# not a separate image/build variant. Provides its own router executable (rmw_zenohd),
+# started as a background daemon by entrypoint-gazebo.sh when selected.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-jazzy-navigation2 \
     ros-jazzy-nav2-bringup \
@@ -29,6 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-jazzy-ros-gz-bridge \
     ros-jazzy-ros-gz-sim \
     ros-jazzy-gz-sim-vendor \
+    ros-jazzy-rmw-zenoh-cpp \
     && rm -rf /var/lib/apt/lists/*
 
 # noVNC display stack: Xvfb + x11vnc + websockify + openbox

@@ -52,6 +52,23 @@ set -u
 export TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-waffle}"
 export GZ_SIM_RESOURCE_PATH="/opt/ros/jazzy/share:/opt/ros/jazzy/share/nav2_minimal_tb3_sim/models:${GZ_SIM_RESOURCE_PATH:-}"
 
+# Zenoh middleware (APPENG-5775): RMW_IMPLEMENTATION is a runtime choice baked into the
+# same image as the default DDS RMW (rmw_cyclonedds_cpp/rmw_fastrtps_cpp). When the
+# caller selects rmw_zenoh_cpp, start its router (rmw_zenohd) as a background daemon
+# before any other ros2/gz process starts, so every node in this container/pod
+# discovers it at rclcpp init. podman exec/oc exec inherit this container's env, so
+# entrypoint-spawn-robot.sh and entrypoint-nav2.sh automatically pick up the same RMW
+# with no changes of their own. Single-pod only for this pass — a shared router across
+# pods is a later, deferred phase.
+ZENOHD_PID=""
+if [[ "${RMW_IMPLEMENTATION:-}" == "rmw_zenoh_cpp" ]]; then
+  echo "[gazebo] RMW_IMPLEMENTATION=rmw_zenoh_cpp — starting Zenoh router (rmw_zenohd)..."
+  ros2 run rmw_zenoh_cpp rmw_zenohd &
+  ZENOHD_PID=$!
+  # Give the router a couple seconds to bind before anything else starts discovery.
+  sleep 2
+fi
+
 # Cap render/physics thread pools to the CPU quota so they stop oversubscribing it
 # (Story 5 / story5-image-thread-caps.md). The container sees the node's nproc, but
 # under a cgroup CPU quota (e.g. the OpenShift Guaranteed pod) Gazebo/Ogre/llvmpipe/
@@ -435,7 +452,7 @@ echo "[gazebo] Simulation ready. noVNC at http://localhost:${NOVNC_PORT}"
 term_handler() {
   echo "[gazebo] Shutting down..."
   kill "${GUI_SUPERVISOR_PID:-}" 2>/dev/null || true
-  kill "${GZ_GUI_PID:-}" "${SPAWN_PIDS[@]:-}" "${GZ_SERVER_PID}" "${XVFB_PID}" 2>/dev/null || true
+  kill "${GZ_GUI_PID:-}" "${SPAWN_PIDS[@]:-}" "${GZ_SERVER_PID}" "${XVFB_PID}" "${ZENOHD_PID:-}" 2>/dev/null || true
   pkill -P $$ 2>/dev/null || true
   wait "${GZ_SERVER_PID}" 2>/dev/null || true
 }

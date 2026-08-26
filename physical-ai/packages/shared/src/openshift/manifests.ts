@@ -157,6 +157,13 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
         { name: 'LIBGL_ALWAYS_SOFTWARE', value: '1' },
         { name: 'GALLIUM_DRIVER', value: 'llvmpipe' },
       ];
+  // Zenoh middleware (APPENG-5775): the image bakes in both RMW implementations, so
+  // selecting zenoh here is just an extra env var — entrypoint-gazebo.sh starts the
+  // Zenoh router (rmw_zenohd) as a background daemon when it sees this set. Coexists
+  // with either the GPU or software-render env above (independent axis).
+  if (config.middleware === 'zenoh') {
+    env.push({ name: 'RMW_IMPLEMENTATION', value: 'rmw_zenoh_cpp' });
+  }
   // Software (llvmpipe) rendering is CPU-bound: the Gazebo GUI client alone needs
   // ~2.3 cores just to render the scene, and during *active* Nav2 navigation the
   // planner/controller/costmaps add ~1 more, so total demand is ~3.6 cores. A

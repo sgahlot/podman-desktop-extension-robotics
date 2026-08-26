@@ -77,6 +77,14 @@ describe('simInput security validators', () => {
     expect(() => assertRobotsEnv('robot;x:0:0:0')).toThrow(/Invalid robot name/);
   });
 
+  it('allows RMW_IMPLEMENTATION=rmw_zenoh_cpp for launchSimulation (APPENG-5775) and rejects other values', () => {
+    expect(assertLaunchEnv({ RMW_IMPLEMENTATION: 'rmw_zenoh_cpp' })).toEqual({
+      RMW_IMPLEMENTATION: 'rmw_zenoh_cpp',
+    });
+    expect(() => assertLaunchEnv({ RMW_IMPLEMENTATION: 'rmw_fastrtps_cpp' })).toThrow(/Invalid RMW_IMPLEMENTATION/);
+    expect(() => assertLaunchEnv({ RMW_IMPLEMENTATION: 'evil; rm -rf /' })).toThrow(/Invalid RMW_IMPLEMENTATION/);
+  });
+
   it('allowlists browser ports for openSimulationInBrowser', () => {
     expect(assertBrowserPort(6080)).toBe(6080);
     expect(assertBrowserPort(8080)).toBe(8080);

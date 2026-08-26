@@ -83,7 +83,14 @@ async function launchSim() {
   actionError = '';
   actionInfo = '';
   try {
-    await physicalAiClient.launchSimulation(selectedImage, '', undefined);
+    // Zenoh middleware (APPENG-5775): the image bakes in both RMW implementations, so
+    // selecting zenoh is just an extra env var — entrypoint-gazebo.sh starts the Zenoh
+    // router (rmw_zenohd) when it sees this set. Keep passing undefined for the
+    // dds/default case so existing behavior (and its test snapshot) is unchanged.
+    const simConfig = await physicalAiClient.getSimulationConfig();
+    const launchOptions =
+      simConfig.middleware === 'zenoh' ? { env: { RMW_IMPLEMENTATION: 'rmw_zenoh_cpp' } } : undefined;
+    await physicalAiClient.launchSimulation(selectedImage, '', launchOptions);
     spawnedRobots = [];
     await pollContainers();
   } catch (e) {

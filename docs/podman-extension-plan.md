@@ -42,7 +42,7 @@ Drivers:
 |-------|---------|--------|-----------|
 | [APPENG-5764](#story-1) | Extension scaffolding and base image catalog | ✅ Done | 4/4 done, 2 follow-ups parked |
 | [APPENG-5765](#story-2) | Single robot simulation workflow | 🟡 In Progress | Original + Topic Monitor done; APPENG-5920/5922/5923/5980/5981 **In Review** |
-| [APPENG-5766](#story-3) | Multi-robot local scaling | ⚪ Not Started | 5775 **In Progress** (native rmw_zenoh decision); 5774/5776 New |
+| [APPENG-5766](#story-3) | Multi-robot local scaling | ⚪ Not Started | 5775 **In Progress** (single-container/pod `rmw_zenoh_cpp` foundation landed; cross-container fleet win awaits 5774 Compose topology); 5774/5776 New |
 | [APPENG-5767](#story-4) | OpenShift deployment bridge | 🟡 In Progress | APPENG-5777 M1+M2 + follow-up hardening **done, live-validated**; APPENG-6070 (multi-pod scaling) **In Progress**; APPENG-6071 (Humble parity) New; 5778/5779 not started |
 | [Spike](#story-5) | Local-first deployment of reference demos | 🅿️ Parked (Kind OOM) | 0/6 proposed |
 | [Story 6](#story-6) | Podman-only simulation workflow (ROSCon demo) | 🟡 In Progress | 5/6 done — **demo path complete; S6-6 deferred** |
@@ -197,7 +197,7 @@ If you only ever build one sim image and never reuse the base, the two-phase spl
 | Status | Key | Summary | Description |
 |--------|-----|---------|-------------|
 | ⚪ | APPENG-5774 | Podman Compose multi-container orchestration for 2+ robots | **Podman Compose** fleet: Gazebo/noVNC + robot services (Zenoh-ready). Extension start/stop/scale via Compose. |
-| ⚪ | APPENG-5775 | Zenoh router and DDS bridge sidecar auto-configuration | Zenoh for cross-container DDS (and OpenShift CNI parity) after Compose topology exists. |
+| 🟡 | APPENG-5775 | Native `rmw_zenoh_cpp` middleware, selectable at runtime | Foundation landed: `rmw_zenoh_cpp` baked into `ros2-jazzy-sim` alongside DDS, selected via `RMW_IMPLEMENTATION`, router (`rmw_zenohd`) runs as a background daemon — working single-container (Podman) and single-pod (OpenShift). Cross-container/cross-pod fleet win (shared router across separate containers/pods) still needs 5774's Compose topology (here) and the multi-pod split ([story7](stories/story7-multipod-openshift-architecture.md)). |
 | ⚪ | APPENG-5776 | Fleet status panel in the extension UI | Fleet dashboard over Compose-managed services/containers. |
 
 ---
@@ -358,7 +358,7 @@ A Miro board would be useful for a team kickoff/planning session where people ne
 | ⚪ | APPENG-5980 | Sub-task | APPENG-5765 | Local Nav2 feasibility spike on Apple Silicon (Mac) |
 | ⚪ | APPENG-5981 | Sub-task | APPENG-5765 | Wire Simulation Go to local Nav2 (`navigate_to_pose`) |
 | ⚪ | APPENG-5774 | Sub-task | APPENG-5766 | Podman Compose multi-container orchestration for 2+ robots |
-| ⚪ | APPENG-5775 | Sub-task | APPENG-5766 | Zenoh router and DDS bridge sidecar auto-configuration |
+| 🟡 | APPENG-5775 | Sub-task | APPENG-5766 | Native `rmw_zenoh_cpp` middleware, selectable at runtime (single-container/pod foundation landed) |
 | ⚪ | APPENG-5776 | Sub-task | APPENG-5766 | Fleet status panel in the extension UI |
 | 🟡 | APPENG-5777 | Sub-task | APPENG-5767 | Generate K8s manifests from running Podman pod configuration + deploy to OpenShift |
 | ⚪ | APPENG-5778 | Sub-task | APPENG-5767 | Kind cluster integration for local validation |
