@@ -385,24 +385,37 @@ Uses a single Podman container (not a pod) with all components baked in. This av
 
 The original plan (Story 2/5) used a Podman pod with separate ROS2, Gazebo, and noVNC containers. On Mac Apple Silicon (arm64), the combined memory pressure of the K8s-style setup caused OOM at 4 GiB. A single container with Gazebo + noVNC baked in eliminates infra container overhead and fits within the default Podman VM (5.7 GB). Robot spawn via `podman exec` adds TurtleBot3 instances into the running container without additional containers.
 
-=== Multi-Robot Fleet (planned, Story 3)
+=== Zenoh Middleware Foundation (done, single-container/pod — APPENG-5775)
 
-NOTE: Story 6 uses `podman exec` to spawn additional robots into a **single** simulation container (lightweight demo). **Story 3** targets **Podman Compose** for a real multi-container fleet (APPENG-5774), then Zenoh and a fleet panel. Kind revisit still prefers one sim Deployment for packaging spikes (plan Story 5 lean Kind note, 2026-08-10); Compose/OpenShift multi-service is the fuller path.
+`rmw_zenoh_cpp` is baked into the `ros2-jazzy-sim` image alongside the default DDS RMW
+(`rmw_cyclonedds_cpp`/`rmw_fastrtps_cpp`) — middleware is a **runtime choice**
+(`RMW_IMPLEMENTATION`), not a separate image/build. Today every ROS2 node still runs as
+a process inside **one** container (Podman) or **one** pod (OpenShift) — a single
+network namespace, so there is no cross-container/cross-pod DDS multicast problem to
+solve yet. When `zenoh` is selected, `entrypoint-gazebo.sh` starts the Zenoh router
+(`rmw_zenohd`) as a background daemon in that same container/pod before any other
+ROS2/Gazebo process starts; every node (including ones launched later via `podman
+exec`/`oc exec` for robot spawn and Nav2) discovers it at `rclcpp` init because those
+exec'd processes inherit the container's env with zero extra code.
 
 [source]
 ----
-┌─── Container: robot-1 ──┐  ┌─── Container: robot-2 ──┐
-│  ROS2 + Gazebo          │  │  ROS2 + Gazebo          │
-│  DDS bridge             │  │  DDS bridge             │
-└────────┬────────────────┘  └────────┬────────────────┘
-         │                            │
-         └───────┬────────────────────┘
-                 │
-         ┌───────▼───────┐
-         │  Zenoh Router │
-         │  (sidecar)    │
-         └───────────────┘
+┌─────────── Container / Pod ───────────┐
+│  Gazebo + TurtleBot3 + Nav2 (ROS2)     │
+│  RMW_IMPLEMENTATION=rmw_zenoh_cpp      │
+│           │                            │
+│           ▼                            │
+│      rmw_zenohd (background daemon)    │
+└─────────────────────────────────────────┘
 ----
+
+There is no bridge and no sidecar in this design — `rmw_zenoh_cpp` talks Zenoh
+natively, and the single router in-container/pod is enough because nothing crosses a
+container/pod boundary yet.
+
+=== Multi-Robot / Multi-Pod Fleet (planned, later phase)
+
+NOTE: Story 6 uses `podman exec` to spawn additional robots into a **single** simulation container (lightweight demo). **Story 3** targets **Podman Compose** for a real multi-container fleet (APPENG-5774), then a fleet panel (APPENG-5776) building on the Zenoh foundation above. Kind revisit still prefers one sim Deployment for packaging spikes (plan Story 5 lean Kind note, 2026-08-10); Compose/OpenShift multi-service is the fuller path. On OpenShift, the equivalent later phase is the Nav2-per-pod split with a shared `zenoh-router` pod/Service described in link:stories/story7-multipod-openshift-architecture.md[story7-multipod-openshift-architecture.md] — deliberately **not** implemented yet; this pass only lays the per-container/per-pod groundwork (image + runtime env + router daemon) that phase will build on.
 
 == Configuration Properties
 
@@ -464,8 +477,8 @@ The extension contributes 15 settings under **Settings → Preferences → Physi
 | Presets ensure reproducible builds. `jazzy-noble` is the multi-arch Quick Start path. Pinned digests in `SimulationBaseImages.ts`, bumped deliberately.
 
 | Middleware
-| DDS (default); Zenoh planned
-| DDS is the ROS2 default and is implemented now. Zenoh with DDS bridge is planned for multi-robot fleet communication (Story 3)
+| DDS (default) or native `rmw_zenoh_cpp`, both baked into the same image; selected at runtime via `RMW_IMPLEMENTATION`
+| DDS is the ROS2 default. `rmw_zenoh_cpp` foundation (APPENG-5775) is implemented for the single-container/single-pod case (router runs as a background daemon); the cross-container/cross-pod fleet win still needs Story 3's Compose topology or the OpenShift multi-pod split (story7)
 
 | Build / push cancellation
 | `AbortController` per build and push tag
