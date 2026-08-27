@@ -14,6 +14,7 @@ vi.mock('../api/client', () => ({
 }));
 
 const SPDX_SBOM = JSON.stringify({ packages: [{ name: 'pkg-a' }, { name: 'pkg-b' }] });
+const CYCLONEDX_SBOM = JSON.stringify({ components: [{ name: 'comp-a' }, { name: 'comp-b' }, { name: 'comp-c' }] });
 
 describe('BuildHistoryPanel', () => {
   beforeEach(() => {
@@ -81,6 +82,23 @@ describe('BuildHistoryPanel', () => {
 
     await screen.findByText(entry.tag);
     expect(screen.queryByText(/SBOM/)).toBeNull();
+  });
+
+  it('labels a CycloneDX SBOM by its component count, not "packages"', async () => {
+    const entry: BuildHistoryEntry = {
+      tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
+      arch: 'amd64',
+      startedAt: Date.now(),
+      durationMs: 20_000,
+      success: true,
+      sbom: CYCLONEDX_SBOM,
+      sbomFormat: 'cyclonedx-json',
+    };
+    mockGetBuildHistory.mockResolvedValue([entry]);
+
+    render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
+
+    expect(await screen.findByRole('button', { name: /SBOM \(3 components\)/ })).toBeTruthy();
   });
 
   it('expands/collapses the SBOM toggle showing a parsed, pretty-printed package count, and copies the raw SBOM to clipboard', async () => {

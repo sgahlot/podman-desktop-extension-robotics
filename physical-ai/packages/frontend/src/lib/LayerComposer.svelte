@@ -13,6 +13,7 @@ import {
   type HardenedApp,
   type LayerSelection,
 } from '/@shared/src/types/layerCompatibility';
+import { SBOM_FORMAT_DEFAULT, type SbomFormat } from '/@shared/src/types/BuildHistory';
 import { baseImageTag, simulationImageTag } from '/@shared/src/types/SimulationProfiles';
 import { defaultBaseImageForDistro } from '/@shared/src/types/SimulationBaseImages';
 import type { SimulationConfig, TargetArch } from '/@shared/src/types/SimulationConfig';
@@ -27,6 +28,8 @@ let selection: LayerSelection = {
   sim: 'gazebo-nav2-tb3',
   hummingbirdApps: [],
 };
+
+let sbomFormat: SbomFormat = SBOM_FORMAT_DEFAULT;
 
 let attemptAnyway = false;
 
@@ -237,6 +240,31 @@ onDestroy(() => {
                 </label>
               {/each}
             </div>
+
+            {#if selectedHbApps.includes('syft')}
+              <div
+                class="flex flex-col gap-1 pl-3 border-l border-[var(--pd-content-card-border)]"
+                role="radiogroup"
+                aria-label="SBOM format">
+                <span class="text-xs text-[var(--pd-content-text)]">SBOM format</span>
+                <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
+                  <input type="radio" class="mt-0.5" bind:group={sbomFormat} value="cyclonedx-json" />
+                  <span
+                    >CycloneDX <span class="pai-text-muted"
+                      >(recommended) — same package data without SPDX's per-package CPE-variant overhead; typically much
+                      smaller, especially for images with many small packages (e.g. ROS/Nav2 stacks)</span
+                    ></span>
+                </label>
+                <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
+                  <input type="radio" class="mt-0.5" bind:group={sbomFormat} value="spdx-json" />
+                  <span
+                    >SPDX <span class="pai-text-muted"
+                      >— includes richer CPE metadata some vulnerability-scanning tools specifically require, but can
+                      run significantly larger for images with many packages</span
+                    ></span>
+                </label>
+              </div>
+            {/if}
           </div>
         {/if}
       </div>
@@ -386,6 +414,7 @@ onDestroy(() => {
         buildImage={t =>
           physicalAiClient.buildFromContainerfile(t, containerfile, undefined, {
             generateSbom: selectedHbApps.includes('syft'),
+            sbomFormat,
           })}
         onBuildComplete={() => {
           void refreshLocalImages();

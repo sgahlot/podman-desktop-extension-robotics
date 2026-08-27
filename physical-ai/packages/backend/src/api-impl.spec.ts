@@ -586,12 +586,12 @@ describe('PhysicalAiApiImpl', () => {
       );
     });
 
-    it('buildFromContainerfile with generateSbom:true runs syft against the built image and records the SBOM', async () => {
+    it('buildFromContainerfile with generateSbom:true defaults to cyclonedx-json and records the format', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
       vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
-      const sbomJson = JSON.stringify({ packages: [{ name: 'pkg-a' }] });
+      const sbomJson = JSON.stringify({ components: [{ name: 'comp-a' }] });
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
         stdout: sbomJson,
         stderr: '',
@@ -608,11 +608,44 @@ describe('PhysicalAiApiImpl', () => {
         'syft',
         'dir:/',
         '-o',
+        'cyclonedx-json',
+      ]);
+      const history = lastWrittenBuildHistory();
+      expect(history[0].sbom).toBe(sbomJson);
+      expect(history[0].sbomFormat).toBe('cyclonedx-json');
+      expect(history[0].success).toBe(true);
+    });
+
+    it('buildFromContainerfile with an explicit sbomFormat:"spdx-json" runs syft with that format', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+      const sbomJson = JSON.stringify({ packages: [{ name: 'pkg-a' }] });
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: sbomJson,
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
+      await api.buildFromContainerfile('my-layer:latest', 'FROM scratch\n', undefined, {
+        generateSbom: true,
+        sbomFormat: 'spdx-json',
+      });
+      await vi.runAllTimersAsync();
+
+      expect(extensionApi.process.exec).toHaveBeenCalledWith('podman', [
+        'run',
+        '--rm',
+        'my-layer:latest',
+        'syft',
+        'dir:/',
+        '-o',
         'spdx-json',
       ]);
       const history = lastWrittenBuildHistory();
       expect(history[0].sbom).toBe(sbomJson);
-      expect(history[0].success).toBe(true);
+      expect(history[0].sbomFormat).toBe('spdx-json');
     });
 
     it('SBOM generation failure leaves the sbom field absent without failing the build', async () => {

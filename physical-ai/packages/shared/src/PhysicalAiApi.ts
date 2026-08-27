@@ -1,5 +1,5 @@
 import type { QuayRepository, QuayTag, PullProgress, BuildProgress, PushProgress } from './types/ImageCatalog';
-import type { BuildHistoryEntry } from './types/BuildHistory';
+import type { BuildHistoryEntry, SbomFormat } from './types/BuildHistory';
 import type { SimulationConfig } from './types/SimulationConfig';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from './types/SimulationContainer';
 import type { TopicInfo, TopicDetailInfo, TopicPeekResult, TopicSchemaResult } from './types/TopicInfo';
@@ -25,12 +25,14 @@ export abstract class PhysicalAiApi {
   /** Build an image from an in-memory Containerfile (layer-composition wizard). The
    * Containerfile is written to a throwaway build context; no bundled asset dir is used.
    * `options.generateSbom` (only meaningful here — the base/sim build paths never set it)
-   * runs `syft` against the built image afterward and records the SBOM in build history. */
+   * runs `syft` against the built image afterward and records the SBOM in build history,
+   * in `options.sbomFormat` (defaults to SBOM_FORMAT_DEFAULT — see BuildHistory.ts for why
+   * CycloneDX is the recommended default over SPDX). */
   abstract buildFromContainerfile(
     tag: string,
     containerfile: string,
     platform?: string,
-    options?: { generateSbom?: boolean },
+    options?: { generateSbom?: boolean; sbomFormat?: SbomFormat },
   ): Promise<void>;
   abstract cancelBuild(tag: string): Promise<void>;
   abstract getBuildProgress(tag: string): Promise<BuildProgress | undefined>;

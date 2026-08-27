@@ -138,6 +138,7 @@ describe('LayerComposer', () => {
     await waitFor(() => {
       expect(mockBuildFromContainerfile).toHaveBeenCalledWith(expect.any(String), expect.any(String), undefined, {
         generateSbom: true,
+        sbomFormat: 'cyclonedx-json',
       });
     });
   });
@@ -158,6 +159,46 @@ describe('LayerComposer', () => {
     await waitFor(() => {
       expect(mockBuildFromContainerfile).toHaveBeenCalledWith(expect.any(String), expect.any(String), undefined, {
         generateSbom: false,
+        sbomFormat: 'cyclonedx-json',
+      });
+    });
+  });
+
+  it('only shows the SBOM format picker once syft is selected, defaulting to CycloneDX', async () => {
+    render(LayerComposer);
+    const hardenedSelect = screen.getByLabelText('Hardened app');
+    await fireEvent.change(hardenedSelect, { target: { value: 'hummingbird-app' } });
+
+    expect(screen.queryByRole('radiogroup', { name: 'SBOM format' })).toBeNull();
+
+    const syftCheckbox = screen.getByText('Syft').closest('label')?.querySelector('input[type="checkbox"]');
+    await fireEvent.click(syftCheckbox as HTMLInputElement);
+
+    const cyclonedxRadio = screen.getByRole('radio', { name: /CycloneDX/ }) as HTMLInputElement;
+    const spdxRadio = screen.getByRole('radio', { name: /^SPDX\b/ }) as HTMLInputElement;
+    expect(cyclonedxRadio.checked).toBe(true);
+    expect(spdxRadio.checked).toBe(false);
+  });
+
+  it('selecting SPDX passes sbomFormat: "spdx-json" to buildFromContainerfile on build', async () => {
+    mockBuildFromContainerfile.mockResolvedValue(undefined);
+    render(LayerComposer);
+    const hardenedSelect = screen.getByLabelText('Hardened app');
+    await fireEvent.change(hardenedSelect, { target: { value: 'hummingbird-app' } });
+
+    const syftCheckbox = screen.getByText('Syft').closest('label')?.querySelector('input[type="checkbox"]');
+    await fireEvent.click(syftCheckbox as HTMLInputElement);
+
+    const spdxRadio = screen.getByRole('radio', { name: /^SPDX\b/ });
+    await fireEvent.click(spdxRadio);
+
+    const buildButton = screen.getByRole('button', { name: 'Build' });
+    await fireEvent.click(buildButton);
+
+    await waitFor(() => {
+      expect(mockBuildFromContainerfile).toHaveBeenCalledWith(expect.any(String), expect.any(String), undefined, {
+        generateSbom: true,
+        sbomFormat: 'spdx-json',
       });
     });
   });

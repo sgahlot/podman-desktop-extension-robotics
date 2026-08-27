@@ -44,23 +44,34 @@ export async function refresh(): Promise<void> {
   }
 }
 
-/** Package count from an SPDX-JSON SBOM, or undefined if the shape doesn't match. */
-function parsePackageCount(sbom: string): number | undefined {
+/**
+ * Item count from an SBOM, or undefined if the shape doesn't match. SPDX uses a
+ * `packages` array; CycloneDX uses `components` — check by declared format first
+ * (entries recorded before `sbomFormat` existed are always SPDX), falling back to
+ * whichever array is actually present if the format is missing/unexpected.
+ */
+function parsePackageCount(sbom: string, format: BuildHistoryEntry['sbomFormat']): number | undefined {
   try {
-    const parsed = JSON.parse(sbom) as { packages?: unknown[] };
-    return Array.isArray(parsed.packages) ? parsed.packages.length : undefined;
+    const parsed = JSON.parse(sbom) as { packages?: unknown[]; components?: unknown[] };
+    const arr = format === 'cyclonedx-json' ? parsed.components : (parsed.packages ?? parsed.components);
+    return Array.isArray(arr) ? arr.length : undefined;
   } catch {
     return undefined;
   }
 }
 
-// Compute the package count once per build the first time it's seen, not on every poll —
-// cheap for a small SBOM, but a large one (thousands of packages) parsed every 3s adds up.
+/** "packages" for SPDX, "components" for CycloneDX — matches each format's own terminology. */
+function itemLabel(format: BuildHistoryEntry['sbomFormat']): string {
+  return format === 'cyclonedx-json' ? 'components' : 'packages';
+}
+
+// Compute the item count once per build the first time it's seen, not on every poll —
+// cheap for a small SBOM, but a large one (thousands of items) parsed every 3s adds up.
 $: for (const entry of history) {
   if (entry.sbom) {
     const key = entryKey(entry);
     if (!(key in packageCounts)) {
-      packageCounts = { ...packageCounts, [key]: parsePackageCount(entry.sbom) };
+      packageCounts = { ...packageCounts, [key]: parsePackageCount(entry.sbom, entry.sbomFormat) };
     }
   }
 }
@@ -158,7 +169,9 @@ onDestroy(() => {
             <div class="flex flex-col gap-1">
               <div class="flex flex-row items-center gap-2">
                 <button type="button" class="pai-btn pai-btn-sm self-start" on:click={() => toggleSbom(entry)}>
-                  {sbomExpanded[key] ? '▼' : '▶'} SBOM{pkgCount !== undefined ? ` (${pkgCount} packages)` : ''}
+                  {sbomExpanded[key] ? '▼' : '▶'} SBOM{pkgCount !== undefined
+                    ? ` (${pkgCount} ${itemLabel(entry.sbomFormat)})`
+                    : ''}
                 </button>
                 <button
                   type="button"

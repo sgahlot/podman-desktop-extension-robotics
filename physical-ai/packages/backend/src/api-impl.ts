@@ -43,8 +43,12 @@ import { readFile, writeFile, mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join as pathJoin } from 'node:path';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
-import type { BuildHistoryEntry } from '/@shared/src/types/BuildHistory';
-import { BUILD_HISTORY_LIMIT_DEFAULT, assertBuildHistoryLimit } from '/@shared/src/types/BuildHistory';
+import type { BuildHistoryEntry, SbomFormat } from '/@shared/src/types/BuildHistory';
+import {
+  BUILD_HISTORY_LIMIT_DEFAULT,
+  assertBuildHistoryLimit,
+  SBOM_FORMAT_DEFAULT,
+} from '/@shared/src/types/BuildHistory';
 import type {
   TopicInfo,
   TopicDetailInfo,
@@ -413,6 +417,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     platform?: string,
     onSettled?: () => void,
     generateSbom?: boolean,
+    sbomFormat: SbomFormat = SBOM_FORMAT_DEFAULT,
   ): void {
     const podmanConnection = this.#getRunningPodmanConnection();
 
@@ -472,7 +477,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
                 progress.currentStep = progress.totalSteps;
               }
               appendProgressLog(progress.logs, data?.trim() ? data.trim() : 'Build finished');
-              void this.#recordBuildHistory(tag, platform, progress, generateSbom);
+              void this.#recordBuildHistory(tag, platform, progress, generateSbom, sbomFormat);
             }
             this.buildAbortControllers.delete(tag);
             this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
@@ -502,7 +507,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
             progress.status = 'Complete';
             progress.done = true;
             progress.finishedAt = Date.now();
-            void this.#recordBuildHistory(tag, platform, progress, generateSbom);
+            void this.#recordBuildHistory(tag, platform, progress, generateSbom, sbomFormat);
           }
         }
         this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
@@ -523,7 +528,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
             progress.done = true;
             progress.finishedAt = Date.now();
             progress.error = err instanceof Error ? err.message : String(err);
-            void this.#recordBuildHistory(tag, platform, progress, generateSbom);
+            void this.#recordBuildHistory(tag, platform, progress, generateSbom, sbomFormat);
           }
         }
         this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
@@ -573,6 +578,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     platform: string | undefined,
     progress: BuildProgress,
     generateSbom: boolean | undefined,
+    sbomFormat: SbomFormat,
   ): Promise<void> {
     try {
       const success = progress.status === 'Complete' && !progress.error;
@@ -581,7 +587,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
       // Opt-in only, and only after a successful build — a failed build has no image to
       // scan. Best-effort: an SBOM failure must never fail the build or block history.
-      const sbom = success && generateSbom ? await this.#generateSbom(tag) : undefined;
+      const sbom = success && generateSbom ? await this.#generateSbom(tag, sbomFormat) : undefined;
 
       const entry: BuildHistoryEntry = {
         tag,
@@ -590,7 +596,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         durationMs: Math.max(0, finishedAt - startedAt),
         success,
         ...(success ? {} : { errorMessage: progress.error ?? 'Build failed' }),
-        ...(sbom ? { sbom } : {}),
+        ...(sbom ? { sbom, sbomFormat } : {}),
       };
 
       const limit = await this.getBuildHistoryLimit();
@@ -608,17 +614,9 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
    * any failure (syft missing, non-zero exit, etc.) is logged and the SBOM is left absent
    * for this history entry — it must never fail the build.
    */
-  async #generateSbom(tag: string): Promise<string | undefined> {
+  async #generateSbom(tag: string, format: SbomFormat): Promise<string | undefined> {
     try {
-      const result = await extensionApi.process.exec('podman', [
-        'run',
-        '--rm',
-        tag,
-        'syft',
-        'dir:/',
-        '-o',
-        'spdx-json',
-      ]);
+      const result = await extensionApi.process.exec('podman', ['run', '--rm', tag, 'syft', 'dir:/', '-o', format]);
       const sbom = result.stdout?.trim();
       return sbom || undefined;
     } catch (err) {
@@ -793,7 +791,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     tag: string,
     containerfile: string,
     platform?: string,
-    options?: { generateSbom?: boolean },
+    options?: { generateSbom?: boolean; sbomFormat?: SbomFormat },
   ): Promise<void> {
     if (!containerfile?.trim()) {
       throw new Error('Cannot build: the Containerfile is empty.');
@@ -820,6 +818,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
           void rm(contextDir, { recursive: true, force: true }).catch(() => {});
         },
         options?.generateSbom,
+        options?.sbomFormat ?? SBOM_FORMAT_DEFAULT,
       );
     } catch (err) {
       // buildImage never kicked off (e.g. no running Podman) — remove the context now.

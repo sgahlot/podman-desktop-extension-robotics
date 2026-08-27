@@ -7,6 +7,18 @@
  * Logs are intentionally never stored here — they stay ephemeral (BuildProgress.logs),
  * exactly as today.
  */
+/**
+ * SBOM output format passed to `syft -o <format>`. CycloneDX is recommended: for the same
+ * content it's typically much smaller than SPDX, which generates many combinatorial CPE
+ * (vulnerability-matching) string variants per package in `externalRefs` — for a real
+ * multi-thousand-package image (ROS/Gazebo/Python/Ruby ecosystems all cataloged together)
+ * this pushed a real SBOM to 84MB, well past a reasonable clipboard/render size, whereas
+ * CycloneDX for the same content ran ~54% smaller in testing. SPDX remains selectable for
+ * anyone specifically feeding this into SPDX-only downstream tooling.
+ */
+export type SbomFormat = 'cyclonedx-json' | 'spdx-json';
+export const SBOM_FORMAT_DEFAULT: SbomFormat = 'cyclonedx-json';
+
 export interface BuildHistoryEntry {
   tag: string;
   arch: 'amd64' | 'arm64';
@@ -17,11 +29,14 @@ export interface BuildHistoryEntry {
   /** Present only when `success` is false. */
   errorMessage?: string;
   /**
-   * SPDX-JSON SBOM text from `syft dir:/ -o spdx-json` run against the built image.
-   * Present only for builds that opted in (a Layers-wizard build with the `syft`
-   * Hummingbird tool selected) and where SBOM generation succeeded.
+   * SBOM text from `syft dir:/ -o <sbomFormat>` run against the built image. Present only
+   * for builds that opted in (a Layers-wizard build with the `syft` Hummingbird tool
+   * selected) and where SBOM generation succeeded.
    */
   sbom?: string;
+  /** The format `sbom` was generated in — undefined only for pre-existing entries recorded
+   * before this field existed, which are always SPDX (the only format that ever existed). */
+  sbomFormat?: SbomFormat;
 }
 
 /** Build history retention bounds (Preferences: physical-ai.buildHistoryLimit). */
