@@ -7,46 +7,49 @@ import {
   resolveSimulationProfile,
   formatSimulationConfig,
   platformForArch,
-  archTagSuffix,
 } from '../../../../shared/src/types/SimulationProfiles';
-import {
-  resolveSimulationBaseImage,
-  defaultBaseImageForDistro,
-} from '../../../../shared/src/types/SimulationBaseImages';
+import { defaultBaseImageForDistro } from '../../../../shared/src/types/SimulationBaseImages';
 import type { SimulationConfig } from '../../../../shared/src/types/SimulationConfig';
 
-/** CLI port of the extension's `buildSimulationImage` (api-impl.ts). */
+/**
+ * CLI port of the extension's `buildSimulationImage` (api-impl.ts).
+ *
+ * Unlike the extension (whose wizard UI drives Phase 1 and Phase 2 from the same
+ * namespace/distro/base-image selections, so it can safely reconstruct the expected base
+ * image reference), this takes the base image tag directly via `--base-tag` — two separate
+ * CLI invocations have no shared state to reconstruct a matching tag from, and guessing it
+ * risks a confusing failure (or an unintended `podman` pull from Quay of a same-named image
+ * that isn't actually yours) if the tags don't line up exactly.
+ */
 export default class BuildSim extends Command {
   static description = 'Build the ROS2 simulation image (Phase 2), layered on a base image.';
 
   static examples = [
     {
-      command: '<%= config.bin %> build:sim --tag quay.io/my-ns/ros2-humble-turtlebot3:sloretz',
-      description: 'Build the sim image on top of the matching base image already pushed to Quay',
+      command:
+        '<%= config.bin %> build:sim --tag quay.io/my-ns/ros2-humble-turtlebot3:test --base-tag quay.io/my-ns/ros2-humble-base:test',
+      description: 'Build the sim image on top of an already-built local base image',
     },
     {
-      command: '<%= config.bin %> build:sim --tag quay.io/my-ns/ros2-jazzy-sim:noble --distro jazzy --namespace my-ns',
-      description: 'Build the Jazzy sim image, resolving the base image under a custom namespace',
+      command:
+        '<%= config.bin %> build:sim --tag quay.io/my-ns/ros2-jazzy-sim:test --base-tag quay.io/my-ns/ros2-jazzy-base:test --distro jazzy',
+      description: 'Build the Jazzy sim image on top of an already-built local Jazzy base image',
     },
   ];
 
   static flags = {
-    tag: Flags.string({ required: true, description: 'Full image tag to build' }),
+    tag: Flags.string({ required: true, description: 'Full image tag to build for the sim image' }),
+    'base-tag': Flags.string({
+      required: true,
+      description: 'Tag of an already-built base image to layer this sim image on (must resolve locally via podman)',
+    }),
     robot: Flags.string({ default: 'turtlebot3', description: 'Robot type' }),
     distro: Flags.string({ options: ['humble', 'jazzy'], default: 'humble', description: 'ROS distro' }),
     middleware: Flags.string({ options: ['dds', 'zenoh'], default: 'dds', description: 'Middleware' }),
     engine: Flags.string({ default: 'gazebo', description: 'Simulation engine' }),
-    'base-image': Flags.string({
-      options: ['sloretz', 'osrf', 'jazzy', 'jazzy-noble'],
-      description: 'Base image preset (default depends on --distro)',
-    }),
     'target-arch': Flags.string({
       options: ['amd64', 'arm64'],
       description: 'Cross-build target architecture (default: host arch)',
-    }),
-    namespace: Flags.string({
-      default: 'ecosystem-appeng',
-      description: 'Quay namespace the base image was tagged under',
     }),
   };
 
@@ -57,7 +60,9 @@ export default class BuildSim extends Command {
       distro: flags.distro,
       middleware: flags.middleware,
       engine: flags.engine,
-      baseImage: (flags['base-image'] ?? defaultBaseImageForDistro(flags.distro)) as SimulationConfig['baseImage'],
+      // Not user-configurable here — build:sim no longer resolves a base-image preset itself
+      // (--base-tag replaces that); this only fills the SimulationConfig type / error text.
+      baseImage: defaultBaseImageForDistro(flags.distro),
       targetArch: flags['target-arch'] as SimulationConfig['targetArch'] | undefined,
     };
 
@@ -75,8 +80,6 @@ export default class BuildSim extends Command {
       );
     }
 
-    const baseImage = resolveSimulationBaseImage(config.baseImage);
-    const localBaseTag = `quay.io/${flags.namespace}/${profile.baseImageName}:${baseImage.imageTag}${archTagSuffix(config.targetArch)}`;
     const contextDir = resolveBundledAssetDir(profile.assetDir);
 
     await runWithProgress([
@@ -90,7 +93,7 @@ export default class BuildSim extends Command {
               contextDir,
               containerFile: 'Containerfile',
               tag: flags.tag,
-              buildArgs: { LOCAL_BASE_IMAGE: localBaseTag },
+              buildArgs: { LOCAL_BASE_IMAGE: flags['base-tag'] },
               platform: platformForArch(config.targetArch),
             },
             onLine,
