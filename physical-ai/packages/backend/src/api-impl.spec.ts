@@ -63,11 +63,12 @@ vi.mock('node:fs/promises', () => ({
   writeFile: vi.fn(),
   mkdtemp: vi.fn(),
   mkdir: vi.fn(),
+  rename: vi.fn(),
   rm: vi.fn(),
 }));
 
 import * as extensionApi from '@podman-desktop/api';
-import { readFile, writeFile, mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
 
 const MOCK_CONTEXT = {
   extensionUri: { fsPath: '/fake/extension/path' },
@@ -98,24 +99,42 @@ function execArgs(callIndex = 0): string[] {
   return call![1] as string[];
 }
 
-/** Parses the JSON body of the most recent writeFile call to the build-history file. */
+/**
+ * Parses the JSON body of the most recent writeFile call for the build-history file.
+ * #writeBuildHistory writes to a temp path (build-history.json.tmp-<pid>-<time>), then
+ * atomically renames it into place — so this matches on the substring, not an exact
+ * filename, and the content is captured from writeFile regardless (rename carries no
+ * content of its own).
+ */
 function lastWrittenBuildHistory(): BuildHistoryEntry[] {
-  const calls = vi.mocked(writeFile).mock.calls.filter(c => String(c[0]).endsWith('build-history.json'));
+  const calls = vi.mocked(writeFile).mock.calls.filter(c => String(c[0]).includes('build-history.json'));
   expect(calls.length).toBeGreaterThan(0);
   return JSON.parse(calls[calls.length - 1][1] as string) as BuildHistoryEntry[];
 }
 
 /**
- * Wires readFile/writeFile as a minimal stateful fake filesystem for build-history.json
- * only — needed for the SBOM two-phase write (record outcome, then patch in the SBOM once
- * ready), where the patch's own read must see the prior write. The real implementation
- * reads/writes an actual file, so this is purely a test-mock gap, not production behavior.
+ * Wires readFile/writeFile/rename as a minimal stateful fake filesystem for
+ * build-history.json only — needed for the SBOM two-phase write (record outcome, then
+ * patch in the SBOM once ready), where the patch's own read must see the prior write.
+ * Mirrors the real temp-file + atomic-rename write: content only becomes "readable" once
+ * rename() actually moves it to the final path, not merely once writeFile() lands on the
+ * temp path. The real implementation reads/writes an actual file, so this is purely a
+ * test-mock gap, not production behavior.
  */
 function mockStatefulBuildHistoryFile(): void {
   let stored: string | undefined;
+  const pendingByTmpPath = new Map<string, string>();
   vi.mocked(writeFile).mockImplementation(async (path, content) => {
-    if (String(path).endsWith('build-history.json')) {
-      stored = content as string;
+    const p = String(path);
+    if (p.includes('build-history.json')) {
+      pendingByTmpPath.set(p, content as string);
+    }
+  });
+  vi.mocked(rename).mockImplementation(async (oldPath, newPath) => {
+    const op = String(oldPath);
+    if (String(newPath).endsWith('build-history.json') && pendingByTmpPath.has(op)) {
+      stored = pendingByTmpPath.get(op);
+      pendingByTmpPath.delete(op);
     }
   });
   vi.mocked(readFile).mockImplementation(async path => {
@@ -702,6 +721,29 @@ describe('PhysicalAiApiImpl', () => {
       expect(extensionApi.process.exec).not.toHaveBeenCalled();
       const history = lastWrittenBuildHistory();
       expect(history[0].sbom).toBeUndefined();
+    });
+
+    it('writes build history via a temp file + atomic rename, not a direct write to the live path', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(rename).mockResolvedValue(undefined);
+
+      await api.buildFromContainerfile('my-layer:latest', 'FROM scratch\n');
+      await vi.runAllTimersAsync();
+
+      const historyWrite = vi.mocked(writeFile).mock.calls.find(c => String(c[0]).includes('build-history.json'));
+      expect(historyWrite).toBeDefined();
+      const tmpPath = String(historyWrite![0]);
+      // The write must NOT land on the live path directly — a concurrent poll reading
+      // build-history.json while this write is in flight would otherwise risk a
+      // truncated/partial read (observed live as a "No builds recorded yet" flash).
+      expect(tmpPath).not.toBe(`${MOCK_CONTEXT.storagePath}/build-history.json`);
+      expect(tmpPath).toContain('build-history.json.tmp-');
+
+      expect(rename).toHaveBeenCalledWith(tmpPath, `${MOCK_CONTEXT.storagePath}/build-history.json`);
     });
 
     it('records the build outcome immediately, without waiting for a slow SBOM scan', async () => {

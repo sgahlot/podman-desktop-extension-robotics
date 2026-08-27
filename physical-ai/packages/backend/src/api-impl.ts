@@ -39,7 +39,7 @@ import {
   PART_OF_LABEL,
   PART_OF_VALUE,
 } from '/@shared/src/openshift/manifests';
-import { readFile, writeFile, mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join as pathJoin } from 'node:path';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
@@ -681,9 +681,21 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
   }
 
+  /**
+   * Write via a temp file + atomic rename, not a direct write to the live path. A direct
+   * write truncates-then-writes in place, so the frontend's 3s history poll (a concurrent
+   * reader, not synchronized with this write at all) can land mid-write and read a
+   * truncated/invalid file — caught by #readBuildHistory's try/catch, which then returns
+   * [] for that one poll tick, flashing "No builds recorded yet" for ~3s (observed live).
+   * rename() is atomic on POSIX filesystems: a concurrent read always sees either the
+   * complete old file or the complete new one, never a partial write.
+   */
   async #writeBuildHistory(history: BuildHistoryEntry[]): Promise<void> {
     await mkdir(this.extensionContext.storagePath, { recursive: true });
-    await writeFile(this.#buildHistoryFilePath(), JSON.stringify(history), 'utf8');
+    const finalPath = this.#buildHistoryFilePath();
+    const tmpPath = `${finalPath}.tmp-${process.pid}-${Date.now()}`;
+    await writeFile(tmpPath, JSON.stringify(history), 'utf8');
+    await rename(tmpPath, finalPath);
   }
 
   /** Recent build results (newest first), persisted across restarts. See BuildHistoryEntry. */
