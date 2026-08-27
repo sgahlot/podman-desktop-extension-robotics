@@ -105,6 +105,27 @@ function lastWrittenBuildHistory(): BuildHistoryEntry[] {
   return JSON.parse(calls[calls.length - 1][1] as string) as BuildHistoryEntry[];
 }
 
+/**
+ * Wires readFile/writeFile as a minimal stateful fake filesystem for build-history.json
+ * only — needed for the SBOM two-phase write (record outcome, then patch in the SBOM once
+ * ready), where the patch's own read must see the prior write. The real implementation
+ * reads/writes an actual file, so this is purely a test-mock gap, not production behavior.
+ */
+function mockStatefulBuildHistoryFile(): void {
+  let stored: string | undefined;
+  vi.mocked(writeFile).mockImplementation(async (path, content) => {
+    if (String(path).endsWith('build-history.json')) {
+      stored = content as string;
+    }
+  });
+  vi.mocked(readFile).mockImplementation(async path => {
+    if (String(path).endsWith('build-history.json') && stored !== undefined) {
+      return stored as unknown as Awaited<ReturnType<typeof readFile>>;
+    }
+    throw new Error('ENOENT');
+  });
+}
+
 function mockConfigWithBuildHistoryLimit(limit: unknown): void {
   vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
     get: vi.fn((key: string) => (key === 'buildHistoryLimit' ? limit : undefined)),
@@ -587,6 +608,7 @@ describe('PhysicalAiApiImpl', () => {
     });
 
     it('buildFromContainerfile with generateSbom:true defaults to cyclonedx-json and records the format', async () => {
+      mockStatefulBuildHistoryFile();
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
@@ -609,6 +631,8 @@ describe('PhysicalAiApiImpl', () => {
         'dir:/',
         '-o',
         'cyclonedx-json',
+        '--select-catalogers',
+        '-file',
       ]);
       const history = lastWrittenBuildHistory();
       expect(history[0].sbom).toBe(sbomJson);
@@ -617,6 +641,7 @@ describe('PhysicalAiApiImpl', () => {
     });
 
     it('buildFromContainerfile with an explicit sbomFormat:"spdx-json" runs syft with that format', async () => {
+      mockStatefulBuildHistoryFile();
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
@@ -642,6 +667,8 @@ describe('PhysicalAiApiImpl', () => {
         'dir:/',
         '-o',
         'spdx-json',
+        '--select-catalogers',
+        '-file',
       ]);
       const history = lastWrittenBuildHistory();
       expect(history[0].sbom).toBe(sbomJson);
@@ -675,6 +702,40 @@ describe('PhysicalAiApiImpl', () => {
       expect(extensionApi.process.exec).not.toHaveBeenCalled();
       const history = lastWrittenBuildHistory();
       expect(history[0].sbom).toBeUndefined();
+    });
+
+    it('records the build outcome immediately, without waiting for a slow SBOM scan', async () => {
+      mockStatefulBuildHistoryFile();
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+
+      let resolveSyft!: (v: extensionApi.RunResult) => void;
+      vi.mocked(extensionApi.process.exec).mockReturnValue(
+        new Promise(resolve => {
+          resolveSyft = resolve;
+        }),
+      );
+
+      await api.buildFromContainerfile('my-layer:latest', 'FROM scratch\n', undefined, { generateSbom: true });
+      await vi.runAllTimersAsync();
+
+      // The build's own outcome (success/duration) is visible right away — the slow SBOM
+      // scan (still pending) must not have delayed it.
+      const beforeSbom = lastWrittenBuildHistory();
+      expect(beforeSbom[0].success).toBe(true);
+      expect(beforeSbom[0].sbom).toBeUndefined();
+
+      const sbomJson = JSON.stringify({ components: [{ name: 'comp-a' }] });
+      resolveSyft({ stdout: sbomJson, stderr: '', command: 'podman' } as extensionApi.RunResult);
+      await vi.runAllTimersAsync();
+
+      // Once the scan finishes, the same entry is patched in place with the SBOM.
+      const afterSbom = lastWrittenBuildHistory();
+      expect(afterSbom).toHaveLength(1);
+      expect(afterSbom[0].sbom).toBe(sbomJson);
+      expect(afterSbom[0].success).toBe(true);
     });
 
     it('resolves arch amd64/arm64 from the platform, defaulting to host arch when unset', async () => {

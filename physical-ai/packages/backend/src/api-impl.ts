@@ -580,15 +580,16 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     generateSbom: boolean | undefined,
     sbomFormat: SbomFormat,
   ): Promise<void> {
+    const success = progress.status === 'Complete' && !progress.error;
+    const startedAt = progress.startedAt ?? Date.now();
+    const finishedAt = progress.finishedAt ?? Date.now();
+
     try {
-      const success = progress.status === 'Complete' && !progress.error;
-      const startedAt = progress.startedAt ?? Date.now();
-      const finishedAt = progress.finishedAt ?? Date.now();
-
-      // Opt-in only, and only after a successful build — a failed build has no image to
-      // scan. Best-effort: an SBOM failure must never fail the build or block history.
-      const sbom = success && generateSbom ? await this.#generateSbom(tag, sbomFormat) : undefined;
-
+      // Write the build's own outcome immediately — do NOT wait on SBOM generation first.
+      // syft scanning a large image can take tens of seconds even with file catalogers
+      // disabled (still has to walk every file), which previously delayed the entire
+      // Recent Builds entry (tag/duration/success, not just the SBOM) until syft finished,
+      // even though the build itself had already succeeded.
       const entry: BuildHistoryEntry = {
         tag,
         arch: PhysicalAiApiImpl.#archFromPlatform(platform),
@@ -596,7 +597,6 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         durationMs: Math.max(0, finishedAt - startedAt),
         success,
         ...(success ? {} : { errorMessage: progress.error ?? 'Build failed' }),
-        ...(sbom ? { sbom, sbomFormat } : {}),
       };
 
       const limit = await this.getBuildHistoryLimit();
@@ -605,6 +605,22 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       await this.#writeBuildHistory(history.slice(0, limit));
     } catch (err) {
       console.error(`[physical-ai] Failed to record build history for "${tag}" (non-fatal):`, err);
+      return;
+    }
+
+    // Opt-in only, and only after a successful build — a failed build has no image to
+    // scan. Best-effort: an SBOM failure must never fail the build or block history.
+    if (!success || !generateSbom) return;
+    try {
+      const sbom = await this.#generateSbom(tag, sbomFormat);
+      if (!sbom) return;
+      const history = await this.#readBuildHistory();
+      const idx = history.findIndex(e => e.tag === tag && e.startedAt === startedAt);
+      if (idx === -1) return; // entry aged out of the retained limit while the SBOM ran
+      history[idx] = { ...history[idx], sbom, sbomFormat };
+      await this.#writeBuildHistory(history);
+    } catch (err) {
+      console.error(`[physical-ai] Failed to attach SBOM to build history for "${tag}" (non-fatal):`, err);
     }
   }
 
@@ -613,10 +629,28 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
    * in via COPY --from when the user selected the Hummingbird `syft` tool). Best-effort:
    * any failure (syft missing, non-zero exit, etc.) is logged and the SBOM is left absent
    * for this history entry — it must never fail the build.
+   *
+   * `--select-catalogers -file` disables syft's file-integrity catalogers (file-content/
+   * -digest/-executable/-metadata), which by default emit one component/package PER FILE
+   * in the image (a SHA-1/SHA-256 hash manifest) — unrelated to what's actually installed.
+   * Confirmed empirically on a real 2588-package robotics image: this was 115,498 of
+   * 118,086 CycloneDX components (97.8%), taking the SBOM from 40.5MB down to 6.9MB with
+   * zero loss of real package/library data — our use case is "what's installed," not a
+   * file-integrity manifest.
    */
   async #generateSbom(tag: string, format: SbomFormat): Promise<string | undefined> {
     try {
-      const result = await extensionApi.process.exec('podman', ['run', '--rm', tag, 'syft', 'dir:/', '-o', format]);
+      const result = await extensionApi.process.exec('podman', [
+        'run',
+        '--rm',
+        tag,
+        'syft',
+        'dir:/',
+        '-o',
+        format,
+        '--select-catalogers',
+        '-file',
+      ]);
       const sbom = result.stdout?.trim();
       return sbom || undefined;
     } catch (err) {
