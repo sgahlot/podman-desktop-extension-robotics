@@ -102,6 +102,9 @@ function toggleSbom(entry: BuildHistoryEntry): void {
 
 async function copySbom(entry: BuildHistoryEntry): Promise<void> {
   const key = entryKey(entry);
+  // Clear any stale error from a previous attempt right away, so a retry doesn't leave
+  // old and new feedback both on screen momentarily.
+  copyError = { ...copyError, [key]: '' };
   // The extension's own clipboard RPC (extensionApi.env.clipboard), not
   // navigator.clipboard.writeText — the latter silently no-ops in this webview (no
   // clipboard permission granted to the sandboxed frame), which is why "Copy to
@@ -109,14 +112,16 @@ async function copySbom(entry: BuildHistoryEntry): Promise<void> {
   try {
     await physicalAiClient.copyToClipboard(entry.sbom ?? '');
     copyFeedback = { ...copyFeedback, [key]: 'Copied' };
-    copyError = { ...copyError, [key]: '' };
+    setTimeout(() => {
+      copyFeedback = { ...copyFeedback, [key]: '' };
+    }, 1500);
   } catch (err) {
     copyFeedback = { ...copyFeedback, [key]: 'Copy failed' };
+    // Shown inline (not just as a hover tooltip — those have a built-in OS/browser hover
+    // delay that made this hard to actually read) and left up until the user retries via
+    // the button again, rather than auto-clearing on a timer like the success case.
     copyError = { ...copyError, [key]: err instanceof Error ? err.message : String(err) };
   }
-  setTimeout(() => {
-    copyFeedback = { ...copyFeedback, [key]: '' };
-  }, 1500);
 }
 
 function formatDuration(ms: number): string {
@@ -167,19 +172,18 @@ onDestroy(() => {
           {/if}
           {#if entry.sbom}
             <div class="flex flex-col gap-1">
-              <div class="flex flex-row items-center gap-2">
+              <div class="flex flex-row items-center gap-2 flex-wrap">
                 <button type="button" class="pai-btn pai-btn-sm self-start" on:click={() => toggleSbom(entry)}>
                   {sbomExpanded[key] ? '▼' : '▶'} SBOM{pkgCount !== undefined
                     ? ` (${pkgCount} ${itemLabel(entry.sbomFormat)})`
                     : ''}
                 </button>
-                <button
-                  type="button"
-                  class="pai-btn pai-btn-sm"
-                  title={copyError[key] || undefined}
-                  on:click={() => copySbom(entry)}>
+                <button type="button" class="pai-btn pai-btn-sm" on:click={() => copySbom(entry)}>
                   {copyFeedback[key] || 'Copy to clipboard'}
                 </button>
+                {#if copyError[key]}
+                  <span class="text-xs pai-text-error">{copyError[key]}</span>
+                {/if}
               </div>
               {#if sbomExpanded[key]}
                 {#if sbomFormatting[key]}

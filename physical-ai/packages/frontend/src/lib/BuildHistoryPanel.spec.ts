@@ -162,9 +162,39 @@ describe('BuildHistoryPanel', () => {
 
     const copyButton = await screen.findByRole('button', { name: 'Copy to clipboard' });
     await fireEvent.click(copyButton);
-    const failedButton = await screen.findByRole('button', { name: 'Copy failed' });
-    // The button label alone can't say why — the real error is on the tooltip.
-    expect(failedButton.title).toBe('Clipboard text exceeds the allowed size.');
+    await screen.findByRole('button', { name: 'Copy failed' });
+    // Shown inline, not just as a hover tooltip (which has a built-in hover delay).
+    expect(await screen.findByText('Clipboard text exceeds the allowed size.')).toBeTruthy();
+  });
+
+  it('keeps the copy-failed error visible until the next retry, unlike the success message', async () => {
+    mockCopyToClipboard.mockRejectedValueOnce(new Error('boom'));
+
+    const entry: BuildHistoryEntry = {
+      tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
+      arch: 'amd64',
+      startedAt: Date.now(),
+      durationMs: 20_000,
+      success: true,
+      sbom: SPDX_SBOM,
+    };
+    mockGetBuildHistory.mockResolvedValue([entry]);
+
+    render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
+
+    const copyButton = await screen.findByRole('button', { name: 'Copy to clipboard' });
+    await fireEvent.click(copyButton);
+    await screen.findByText('boom');
+
+    // No auto-clear timer for a failure — it stays until the button is clicked again,
+    // whereas a successful copy's "Copied" label does auto-clear (existing behavior).
+    await new Promise(r => setTimeout(r, 50));
+    expect(screen.getByText('boom')).toBeTruthy();
+
+    mockCopyToClipboard.mockResolvedValueOnce(undefined);
+    await fireEvent.click(screen.getByRole('button', { name: 'Copy failed' }));
+    await screen.findByRole('button', { name: 'Copied' });
+    expect(screen.queryByText('boom')).toBeNull();
   });
 
   it('falls back to a plain "SBOM" label (no package count) when the sbom text is not parseable JSON', async () => {
