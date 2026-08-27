@@ -72,8 +72,19 @@ command; what follows here is the quick reference.
 [Listr2](https://listr2.kilic.dev)) rather than dumping the full `podman build` log straight
 into your terminal: each step collapses to a spinner + title, with only the last 8 lines of
 `podman build`'s output visible in a scrolling window underneath — closer to how Gradle/npm
-show build progress. This only applies in an interactive terminal; piped or non-TTY output
-(CI logs, `| tee build.log`, etc.) automatically falls back to printing every line in full.
+show build progress. On success the output collapses back down to just a checkmark; on failure
+the real error (e.g. an actual `apt`/build failure line, not just an exit code) is always shown
+in full, regardless of how the progress UI rendered. This only applies in an interactive
+terminal; piped or non-TTY output (CI logs, `| tee build.log`, etc.) automatically falls back to
+printing every line in full.
+
+`build:base` and `build:sim` also print a one-line config summary before the build starts —
+`robot · distro · middleware · engine · base-image · target-arch` — mirroring the extension's
+Image Builder Pipeline summary line. It's plain terminal output printed before the progress UI
+starts, so it stays in your scrollback after the command finishes; this is what actually
+resolved when using `--quickstart`, since that flag hides the individual values it sets. For
+`build:sim`, target arch isn't known until it's inspected from `--base-tag`, so it's surfaced
+via the "Resolving architecture of ..." step's own title instead of the upfront summary line.
 
 ### `build:base` — build the ROS2 base image (Phase 1)
 

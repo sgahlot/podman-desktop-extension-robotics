@@ -103,14 +103,20 @@ export default class BuildBase extends Command {
       );
     }
 
-    if (config.targetArch !== hostTargetArch()) {
-      this.log(
-        `Building for ${config.targetArch} on a ${hostTargetArch()} host — this uses QEMU emulation and will be slower.`,
-      );
-    }
-
     const baseImage = resolveSimulationBaseImage(config.baseImage);
     const contextDir = resolveBundledAssetDir(profile.baseAssetDir);
+
+    // Printed before the Listr progress UI starts, so it's plain terminal output outside
+    // Listr's live-rendered region — it stays in scrollback after the command finishes,
+    // same as the extension's Image Builder Pipeline summary line stays visible on screen.
+    const archNote =
+      config.targetArch === hostTargetArch()
+        ? `${config.targetArch} (host)`
+        : `${config.targetArch} (cross-build, QEMU emulation — will be slower)`;
+    this.log(`Building ${flags.tag}`);
+    this.log(
+      `  ${config.robot} · ${config.distro} · ${config.middleware} · ${config.engine} · ${baseImage.label} · ${archNote}`,
+    );
 
     await runWithProgress([
       { title: 'Checking podman is available', run: () => assertPodmanAvailable() },

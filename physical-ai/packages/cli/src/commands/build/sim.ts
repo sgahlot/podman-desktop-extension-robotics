@@ -96,12 +96,21 @@ export default class BuildSim extends Command {
     const contextDir = resolveBundledAssetDir(profile.assetDir);
     let baseArch = '';
 
+    // Printed before the Listr progress UI starts, so it stays in scrollback after the
+    // command finishes — target arch isn't known yet at this point (it's derived from
+    // --base-tag below), so it's surfaced via that step's own title once resolved instead.
+    this.log(`Building ${flags.tag}`);
+    this.log(
+      `  ${config.robot} · ${config.distro} · ${config.middleware} · ${config.engine} · base: ${flags['base-tag']}`,
+    );
+
     await runWithProgress([
       { title: 'Checking podman is available', run: () => assertPodmanAvailable() },
       {
         title: `Resolving architecture of ${flags['base-tag']}`,
-        run: async () => {
+        run: async (_onLine, setTitle) => {
           baseArch = await getImageArchitecture(flags['base-tag']);
+          setTitle(`Resolved architecture of ${flags['base-tag']}: ${baseArch}`);
         },
       },
       {
