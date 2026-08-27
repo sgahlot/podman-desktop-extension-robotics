@@ -62,6 +62,25 @@ let buildLogsExpanded = true;
 
 let pollTimer: number | null = null;
 let logContainer: HTMLDivElement;
+
+/**
+ * Recognizable signatures of a transient upstream package-mirror failure (apt fetch
+ * 404s, "Unable to fetch some archives", DNS blips) rather than a real config/code
+ * problem — surfaced as a distinct, non-error-colored hint so a mirror desync doesn't
+ * read as "the extension/build is broken." Heuristic and apt-focused (the only package
+ * manager these Containerfiles use today); a genuine miss here just means the user only
+ * sees the raw error, not a regression.
+ */
+const TRANSIENT_MIRROR_PATTERNS = [
+  /\b404\s+Not Found\b/i,
+  /Failed to fetch/i,
+  /Unable to fetch some archives/i,
+  /Temporary failure in name resolution/i,
+];
+function looksLikeTransientMirrorFailure(buildLogs: string[]): boolean {
+  return buildLogs.some(line => TRANSIENT_MIRROR_PATTERNS.some(re => re.test(line)));
+}
+$: transientMirrorIssue = !!buildError && looksLikeTransientMirrorFailure(logs);
 /** Bumps on each image presence check so stale responses are ignored. */
 let imageCheckGen = 0;
 
@@ -417,8 +436,16 @@ $: pushDurationSec =
                 after {buildDurationSec}s{/if}
             </div>
           {:else if buildError}
-            <div class="text-sm p-3 rounded pai-banner-error">
-              Build failed: {buildError}
+            <div class="flex flex-col gap-2">
+              <div class="text-sm p-3 rounded pai-banner-error">
+                Build failed: {buildError}
+              </div>
+              {#if transientMirrorIssue}
+                <div class="text-sm p-3 rounded pai-banner-info">
+                  This looks like a transient upstream package-mirror issue, not a problem with your build — try "Build
+                  again", it usually clears within a few minutes.
+                </div>
+              {/if}
             </div>
           {:else}
             <div class="text-sm pai-text-success">
