@@ -13,6 +13,7 @@ import {
 import {
   resolveSimulationBaseImage,
   defaultBaseImageForDistro,
+  baseImagesForDistro,
 } from '../../../../shared/src/types/SimulationBaseImages';
 import type { SimulationConfig } from '../../../../shared/src/types/SimulationConfig';
 
@@ -86,6 +87,19 @@ export default class BuildBase extends Command {
       this.error(
         `No base image profile for ${formatSimulationConfig(config)}. ` +
           'Supported: humble/turtlebot3/dds/gazebo and jazzy/turtlebot3/dds/gazebo.',
+      );
+    }
+
+    // The extension's Base image dropdown only ever lists presets valid for the selected
+    // distro (via this same baseImagesForDistro filter) — it's structurally impossible to
+    // pick a mismatched pair there. A CLI flag has no such structural constraint, so this
+    // check exists to reject e.g. `--distro humble --base-image jazzy-noble` explicitly
+    // instead of silently building a "humble"-tagged image from a Jazzy upstream image.
+    const availableForDistro = baseImagesForDistro(config.distro);
+    if (!availableForDistro.some(p => p.id === config.baseImage)) {
+      this.error(
+        `--base-image ${config.baseImage} is not available for --distro ${config.distro}. ` +
+          `Available: ${availableForDistro.map(p => p.id).join(', ')}.`,
       );
     }
 

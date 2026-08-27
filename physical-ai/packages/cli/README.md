@@ -92,8 +92,19 @@ physical-ai build:base --tag quay.io/<ns>/ros2-humble-base:sloretz
 | `--base-image` | no | depends on `--distro` | `sloretz` \| `osrf` \| `jazzy` \| `jazzy-noble` |
 | `--target-arch` | no | detected host arch | `amd64` \| `arm64` — always resolves to a concrete value and is always passed to `podman build --platform`, rather than silently deferring to whatever the container runtime picks when unset |
 
-Only `humble/turtlebot3/dds/gazebo` and `jazzy/turtlebot3/dds/gazebo` profiles currently resolve
-to a real build context; other combinations fail with a clear "no profile" error.
+`--robot`/`--distro`/`--middleware`/`--engine` aren't free-form — they're matched as an exact
+4-tuple against a fixed list of "known-good" profiles, each backed by a real bundled Containerfile.
+Only `humble/turtlebot3/dds/gazebo`, `jazzy/turtlebot3/dds/gazebo`, and
+`jazzy/turtlebot3/zenoh/gazebo` currently resolve (the two Jazzy combinations share the same
+Jazzy base assets — middleware is a runtime choice there, not a build-time one). Anything else
+(wrong robot, wrong engine, an unsupported distro+middleware pairing, etc.) fails fast with a
+clear "No base image profile for ..." error instead of attempting a build against a Containerfile
+that doesn't exist.
+
+Also validated: `--base-image` must actually be available for the selected `--distro` (checked
+against the same per-distro filter the extension's Base image dropdown uses) —
+`--distro humble --base-image jazzy-noble` is rejected upfront rather than silently building a
+"humble"-tagged image from the Jazzy upstream image.
 
 #### `--quickstart` — matches the extension's Quick Start button
 
