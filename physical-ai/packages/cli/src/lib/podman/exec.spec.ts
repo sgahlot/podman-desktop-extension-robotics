@@ -45,6 +45,16 @@ describe('runPodman', () => {
       stderrOutput: 'no such container',
     });
   });
+
+  it('includes stderr content in the error message, not just the exit summary', async () => {
+    vi.mocked(execFile).mockImplementation((_file, _args, _options, callback) => {
+      const error = Object.assign(new Error('boom'), { code: 125 });
+      (callback as ExecFileCallback)(error, '', 'no such container');
+      return undefined as never;
+    });
+
+    await expect(runPodman(['stop', 'x'])).rejects.toThrow(/no such container/);
+  });
 });
 
 describe('spawnPodman', () => {
@@ -71,5 +81,17 @@ describe('spawnPodman', () => {
     child.emit('close', 1);
 
     await expect(promise).rejects.toBeInstanceOf(PodmanCliError);
+  });
+
+  it('includes stdout content in the error message — podman build writes the actual failing RUN step output (e.g. an apt error) to stdout, only a generic wrapper to stderr', async () => {
+    const child = fakeChild();
+    vi.mocked(spawn).mockReturnValue(child as never);
+
+    const promise = spawnPodman(['build'], () => {});
+    child.stdout.emit('data', Buffer.from('E: Unable to locate package ros-humble-ros-gz\n'));
+    child.stderr.emit('data', Buffer.from('Error: building at STEP "RUN ...": exit status 100\n'));
+    child.emit('close', 100);
+
+    await expect(promise).rejects.toThrow(/Unable to locate package ros-humble-ros-gz/);
   });
 });

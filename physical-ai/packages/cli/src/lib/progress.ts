@@ -19,7 +19,10 @@ export interface ProgressStep {
 export async function runWithProgress(steps: ProgressStep[]): Promise<void> {
   const tasks: ListrTask<Record<string, never>>[] = steps.map(step => ({
     title: step.title,
-    rendererOptions: { outputBar: step.outputBar ?? 1 },
+    // persistentOutput: without it, Listr2 clears the scrolling output window once a task
+    // finishes — including on failure, which would hide exactly the context (e.g. the real
+    // podman build error) a failed step most needs to leave visible.
+    rendererOptions: { outputBar: step.outputBar ?? 1, persistentOutput: true },
     task: async (_ctx, task) => {
       await step.run(line => {
         task.output = line;
