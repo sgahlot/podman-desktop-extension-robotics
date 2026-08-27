@@ -158,6 +158,31 @@ describe('BuildPushPanel', () => {
     expect(screen.queryByText(/Last build/)).toBeNull();
   });
 
+  it('formats a build duration over a minute as minutes and seconds', async () => {
+    const startedAt = 1_000;
+    mockGetBuildProgress.mockResolvedValue({
+      tag: TAG,
+      status: 'Complete',
+      logs: ['[00:00:01] STEP 1/1', '[19:10:00] Build finished'],
+      currentStep: 1,
+      totalSteps: 1,
+      done: true,
+      startedAt,
+      finishedAt: startedAt + 1_150_200,
+    });
+
+    render(BuildPushPanel, {
+      props: {
+        buildImage,
+        tag: TAG,
+        tagInputId: 'phase1-tag',
+      },
+    });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Build' }));
+    expect(await screen.findByText(/built in 19m 10s/)).toBeTruthy();
+  });
+
   it('shows a transient-mirror hint when the logs contain an apt fetch 404', async () => {
     mockGetBuildProgress.mockResolvedValue({
       tag: TAG,

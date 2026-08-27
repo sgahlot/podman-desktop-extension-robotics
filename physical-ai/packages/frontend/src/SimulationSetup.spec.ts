@@ -176,6 +176,34 @@ describe('SimulationSetup (Image Builder)', () => {
     });
   });
 
+  it('APPENG-6241: base image arch warning checks the target, not the host — amd64-only preset + amd64 target is fine on an arm64 host', async () => {
+    render(SimulationSetup);
+    await waitFor(() => {
+      expect(screen.queryByText('Loading configuration...')).toBeNull();
+    });
+    await fireEvent.click(screen.getByText('Customize'));
+
+    // Default config is humble/sloretz on an arm64 host; osrf is the amd64-only humble preset.
+    await fireEvent.change(screen.getByLabelText('Base image'), { target: { value: 'osrf' } });
+    await fireEvent.click(screen.getByRole('radio', { name: /amd64 \(for OpenShift\)/ }));
+
+    expect(screen.queryByText(/does not support/)).toBeNull();
+  });
+
+  it('APPENG-6241: warns when the amd64-only preset is paired with an arm64 target, even on an amd64 host', async () => {
+    mockGetHostArch.mockResolvedValue('amd64');
+    render(SimulationSetup);
+    await waitFor(() => {
+      expect(screen.queryByText('Loading configuration...')).toBeNull();
+    });
+    await fireEvent.click(screen.getByText('Customize'));
+
+    await fireEvent.change(screen.getByLabelText('Base image'), { target: { value: 'osrf' } });
+    await fireEvent.click(screen.getByRole('radio', { name: /arm64 \(cross-build\)/ }));
+
+    expect(screen.getByText(/does not support arm64/)).toBeTruthy();
+  });
+
   it('Quick Start applies immediately without a confirmation when the current config already matches the preset', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     mockGetSimulationConfig.mockResolvedValue({

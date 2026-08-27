@@ -2,6 +2,7 @@
 import { physicalAiClient } from '../api/client';
 import { onMount, onDestroy } from 'svelte';
 import type { BuildHistoryEntry } from '/@shared/src/types/BuildHistory';
+import { formatDurationSeconds } from './formatDuration';
 
 /** Poll cadence for picking up history written by a build that finished in the
  * background (fire-and-forget on the backend) — overridable for tests. */
@@ -125,7 +126,7 @@ async function copySbom(entry: BuildHistoryEntry): Promise<void> {
 }
 
 function formatDuration(ms: number): string {
-  return `${(ms / 1000).toFixed(1)}s`;
+  return formatDurationSeconds(ms / 1000);
 }
 
 function formatTimestamp(ms: number): string {
