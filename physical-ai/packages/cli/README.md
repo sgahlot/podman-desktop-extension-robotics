@@ -194,11 +194,13 @@ base image locally (it resolves `FROM` against your local podman image store —
 actually be pushed to Quay for this to work):
 
 ```bash
-# Phase 1: base image — tag must match what build:sim expects for the same
-# --distro/--base-image/--namespace (default base-image preset is "sloretz")
-physical-ai build:base --tag quay.io/<ns>/ros2-humble-base:sloretz --namespace <ns>
+# Phase 1: base image. build:base has no --namespace flag — your --tag is used verbatim,
+# so just make sure its namespace/tag match what the build:sim call below expects.
+physical-ai build:base --tag quay.io/<ns>/ros2-humble-base:sloretz
 
-# Phase 2: simulation image, layered on the base image above
+# Phase 2: simulation image, layered on the base image above. --namespace exists ONLY here,
+# because build:sim doesn't take the base image tag directly — it reconstructs the expected
+# reference from --namespace + the resolved profile/base-image preset (default "sloretz").
 physical-ai build:sim --tag quay.io/<ns>/ros2-humble-turtlebot3:sloretz --namespace <ns>
 
 # Launch the SIM image (not the base image), spawn, list, stop
