@@ -34,8 +34,11 @@ export default class SimList extends Command {
       return;
     }
 
+    this.log(`${'ID'.padEnd(12)}  ${'STATE'.padEnd(8)}  ${'NAME'.padEnd(24)}  ${'IMAGE'.padEnd(40)}  PORTS`);
     for (const c of containers) {
-      this.log(`${c.id.slice(0, 12)}  ${c.state.padEnd(8)}  ${c.name.padEnd(24)}  ${c.imageTag}  ${c.ports.join(',')}`);
+      this.log(
+        `${c.id.slice(0, 12)}  ${c.state.padEnd(8)}  ${c.name.padEnd(24)}  ${c.imageTag.padEnd(40)}  ${c.ports.join(',')}`,
+      );
     }
   }
 }

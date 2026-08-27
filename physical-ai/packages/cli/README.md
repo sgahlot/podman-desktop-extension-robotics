@@ -125,6 +125,7 @@ physical-ai build:file --tag localhost/my-image:latest \
 | `--context-dir` | yes | — | Directory containing the Containerfile (the build context) |
 | `--containerfile` | no | `Containerfile` | Name, relative to `--context-dir` |
 | `--platform` | no | — | e.g. `linux/amd64` |
+| `--build-arg` | no | none | `KEY=VALUE`, repeatable — needed for Containerfiles with a required `ARG` (e.g. the sim images' `LOCAL_BASE_IMAGE`, which has no default) |
 
 Unlike the extension's Layer Composer (which accepts pasted Containerfile text and writes it to
 a throwaway temp dir), this takes a real directory already on disk — the natural shape for CLI
@@ -187,20 +188,33 @@ physical-ai sim:stop <container-id>
 
 ## End-to-end example
 
+`sim:launch` needs a **simulation** image (Gazebo + noVNC), not the base image — the base image
+alone has no sim entrypoint. Build both phases with matching tags so `build:sim` can find the
+base image locally (it resolves `FROM` against your local podman image store — nothing needs to
+actually be pushed to Quay for this to work):
+
 ```bash
-# Phase 1: base image
-physical-ai build:base --tag localhost/ros2-humble-base:local
+# Phase 1: base image — tag must match what build:sim expects for the same
+# --distro/--base-image/--namespace (default base-image preset is "sloretz")
+physical-ai build:base --tag quay.io/<ns>/ros2-humble-base:sloretz --namespace <ns>
 
-# Skip Phase 2's Quay dependency for a local smoke test — build straight from the bundled
-# sim context instead:
-physical-ai build:file --tag localhost/ros2-humble-sim:local \
-  --context-dir packages/cli/assets/ros2-humble-turtlebot3
+# Phase 2: simulation image, layered on the base image above
+physical-ai build:sim --tag quay.io/<ns>/ros2-humble-turtlebot3:sloretz --namespace <ns>
 
-# Launch, spawn, list, stop
-physical-ai sim:launch --image localhost/ros2-humble-sim:local
+# Launch the SIM image (not the base image), spawn, list, stop
+physical-ai sim:launch --image quay.io/<ns>/ros2-humble-turtlebot3:sloretz
 physical-ai sim:list
 physical-ai sim:spawn <container-id> --robot robot1 --x 0 --y 0 --yaw 0
 physical-ai sim:stop <container-id>
+```
+
+Alternative for Phase 2 if you'd rather not worry about tag-matching: build the sim image
+directly with `build:file`, passing `LOCAL_BASE_IMAGE` explicitly via `--build-arg`:
+
+```bash
+physical-ai build:file --tag localhost/ros2-humble-sim:local \
+  --context-dir packages/cli/assets/ros2-humble-turtlebot3 \
+  --build-arg LOCAL_BASE_IMAGE=quay.io/<ns>/ros2-humble-base:sloretz
 ```
 
 ## Scope and limitations
@@ -228,9 +242,10 @@ additional command topics (`catalog:*`, `config:*`, `openshift:*`, `ros:*`).
 **"No running Podman connection" / preflight failure** — run `podman info` yourself and resolve
 whatever it reports (Podman machine not started, socket not reachable, etc.) before retrying.
 
-**`build:sim` fails to resolve `LOCAL_BASE_IMAGE`** — see the `build:sim` note above; either push
-a matching base image to the expected Quay namespace/tag, or use `build:file` for a build that
-doesn't depend on a remote base image.
+**`build:sim` fails to resolve `LOCAL_BASE_IMAGE`** — see the `build:sim` note above; either
+build the base image locally under the exact tag `build:sim` expects (`--namespace` +
+`--base-image`/`--distro` determine it), or use `build:file --build-arg
+LOCAL_BASE_IMAGE=<your-base-tag>` instead, which lets you point at any base tag directly.
 
 **A container launched by the extension doesn't show up in `sim:list`, or vice versa** — both
 share the same container label, so this would indicate a real bug — please report it.
