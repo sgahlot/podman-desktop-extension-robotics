@@ -17,6 +17,18 @@ import type { SimulationConfig } from '../../../../shared/src/types/SimulationCo
 export default class BuildBase extends Command {
   static description = 'Build the ROS2 base image (Phase 1) for a simulation profile.';
 
+  static examples = [
+    {
+      command: '<%= config.bin %> build:base --tag quay.io/my-ns/ros2-humble-base:sloretz',
+      description: 'Build the default Humble/TurtleBot3 base image',
+    },
+    {
+      command:
+        '<%= config.bin %> build:base --tag quay.io/my-ns/ros2-jazzy-base:noble --distro jazzy --target-arch arm64',
+      description: 'Cross-build a Jazzy base image for arm64',
+    },
+  ];
+
   static flags = {
     tag: Flags.string({
       required: true,

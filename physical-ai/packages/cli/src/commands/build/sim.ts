@@ -18,6 +18,17 @@ import type { SimulationConfig } from '../../../../shared/src/types/SimulationCo
 export default class BuildSim extends Command {
   static description = 'Build the ROS2 simulation image (Phase 2), layered on a base image.';
 
+  static examples = [
+    {
+      command: '<%= config.bin %> build:sim --tag quay.io/my-ns/ros2-humble-turtlebot3:sloretz',
+      description: 'Build the sim image on top of the matching base image already pushed to Quay',
+    },
+    {
+      command: '<%= config.bin %> build:sim --tag quay.io/my-ns/ros2-jazzy-sim:noble --distro jazzy --namespace my-ns',
+      description: 'Build the Jazzy sim image, resolving the base image under a custom namespace',
+    },
+  ];
+
   static flags = {
     tag: Flags.string({ required: true, description: 'Full image tag to build' }),
     robot: Flags.string({ default: 'turtlebot3', description: 'Robot type' }),

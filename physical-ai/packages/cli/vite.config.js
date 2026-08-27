@@ -5,6 +5,7 @@ const config = {
   root: PACKAGE_ROOT,
   test: {
     globals: true,
+    include: ['src/**/*.spec.ts'],
   },
 };
 

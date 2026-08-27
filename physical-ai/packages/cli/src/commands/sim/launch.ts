@@ -40,6 +40,17 @@ function parseEnvFlag(value: string): [string, string] {
 export default class SimLaunch extends Command {
   static description = 'Launch a simulation container from a built image.';
 
+  static examples = [
+    {
+      command: '<%= config.bin %> sim:launch --image quay.io/my-ns/ros2-humble-turtlebot3:sloretz',
+      description: 'Launch a simulation container, printing its container id',
+    },
+    {
+      command: '<%= config.bin %> sim:launch --image quay.io/my-ns/ros2-jazzy-sim:noble --name my-sim --no-gpu',
+      description: 'Launch with a custom container name and software rendering forced on',
+    },
+  ];
+
   static flags = {
     image: Flags.string({ required: true, description: 'Image tag to launch' }),
     name: Flags.string({ description: 'Container name (default: auto-generated)' }),

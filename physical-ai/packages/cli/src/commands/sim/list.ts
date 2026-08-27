@@ -5,6 +5,17 @@ import { listSimContainers } from '../../lib/podman/containers';
 export default class SimList extends Command {
   static description = 'List simulation containers.';
 
+  static examples = [
+    {
+      command: '<%= config.bin %> sim:list',
+      description: 'List simulation containers as a table',
+    },
+    {
+      command: '<%= config.bin %> sim:list --format json',
+      description: 'List simulation containers as JSON',
+    },
+  ];
+
   static flags = {
     format: Flags.string({ options: ['table', 'json'], default: 'table', description: 'Output format' }),
   };

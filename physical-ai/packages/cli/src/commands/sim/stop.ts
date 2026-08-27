@@ -5,6 +5,13 @@ import { stopContainer } from '../../lib/podman/containers';
 export default class SimStop extends Command {
   static description = 'Stop a running simulation container.';
 
+  static examples = [
+    {
+      command: '<%= config.bin %> sim:stop a1b2c3d4',
+      description: 'Stop the simulation container with this id (or an unambiguous id prefix)',
+    },
+  ];
+
   static args = {
     containerId: Args.string({ required: true, description: 'Container id (or unambiguous prefix)' }),
   };

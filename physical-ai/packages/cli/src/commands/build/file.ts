@@ -11,6 +11,18 @@ import { buildImage } from '../../lib/podman/build';
 export default class BuildFile extends Command {
   static description = 'Build an image from an existing Containerfile in a local directory.';
 
+  static examples = [
+    {
+      command: '<%= config.bin %> build:file --tag localhost/my-image:latest --context-dir ./my-build-context',
+      description: 'Build from a Containerfile in an existing local directory',
+    },
+    {
+      command:
+        '<%= config.bin %> build:file --tag localhost/my-image:amd64 --context-dir ./my-build-context --platform linux/amd64',
+      description: 'Build for a specific target platform',
+    },
+  ];
+
   static flags = {
     tag: Flags.string({ required: true, description: 'Image tag to build' }),
     'context-dir': Flags.string({

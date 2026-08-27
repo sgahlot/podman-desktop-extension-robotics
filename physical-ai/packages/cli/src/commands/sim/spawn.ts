@@ -9,6 +9,13 @@ import { spawnRobot } from '../../lib/podman/spawnRobot';
 export default class SimSpawn extends Command {
   static description = 'Spawn a robot in a running simulation.';
 
+  static examples = [
+    {
+      command: '<%= config.bin %> sim:spawn a1b2c3d4 --robot robot1 --x 0 --y 0 --yaw 0',
+      description: 'Spawn "robot1" at the origin in the given container',
+    },
+  ];
+
   static args = {
     containerId: Args.string({ required: true, description: 'Container id (or unambiguous prefix)' }),
   };
