@@ -3,6 +3,7 @@ import { assertPodmanAvailable } from '../../lib/podman/preflight';
 import { buildImage } from '../../lib/podman/build';
 import { resolveBundledAssetDir } from '../../lib/assets';
 import { runWithProgress } from '../../lib/progress';
+import { hostTargetArch } from '../../lib/hostArch';
 import {
   resolveSimulationProfile,
   formatSimulationConfig,
@@ -45,7 +46,8 @@ export default class BuildBase extends Command {
     }),
     'target-arch': Flags.string({
       options: ['amd64', 'arm64'],
-      description: 'Cross-build target architecture (default: host arch)',
+      default: hostTargetArch(),
+      description: 'Target architecture to build for',
     }),
   };
 
@@ -57,7 +59,7 @@ export default class BuildBase extends Command {
       middleware: flags.middleware,
       engine: flags.engine,
       baseImage: (flags['base-image'] ?? defaultBaseImageForDistro(flags.distro)) as SimulationConfig['baseImage'],
-      targetArch: flags['target-arch'] as SimulationConfig['targetArch'] | undefined,
+      targetArch: flags['target-arch'] as SimulationConfig['targetArch'],
     };
 
     const profile = resolveSimulationProfile(config);

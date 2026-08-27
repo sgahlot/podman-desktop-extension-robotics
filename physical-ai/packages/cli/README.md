@@ -89,7 +89,7 @@ physical-ai build:base --tag quay.io/<ns>/ros2-humble-base:sloretz
 | `--middleware` | no | `dds` | `dds` \| `zenoh` |
 | `--engine` | no | `gazebo` | Simulation engine |
 | `--base-image` | no | depends on `--distro` | `sloretz` \| `osrf` \| `jazzy` \| `jazzy-noble` |
-| `--target-arch` | no | host arch | `amd64` \| `arm64` — cross-build target |
+| `--target-arch` | no | detected host arch | `amd64` \| `arm64` — always resolves to a concrete value and is always passed to `podman build --platform`, rather than silently deferring to whatever the container runtime picks when unset |
 
 Only `humble/turtlebot3/dds/gazebo` and `jazzy/turtlebot3/dds/gazebo` profiles currently resolve
 to a real build context; other combinations fail with a clear "no profile" error.
@@ -109,7 +109,14 @@ physical-ai build:sim --tag quay.io/<ns>/ros2-humble-turtlebot3:sloretz \
 | `--distro` | no | `humble` | `humble` \| `jazzy` |
 | `--middleware` | no | `dds` | `dds` \| `zenoh` |
 | `--engine` | no | `gazebo` | Simulation engine |
-| `--target-arch` | no | host arch | `amd64` \| `arm64` — cross-build target |
+
+There is no `--target-arch` flag here: `build:sim` inspects `--base-tag`'s actual architecture
+via `podman image inspect` and always builds the sim layer for that same architecture. This is
+deliberate — building a sim image for a different arch than its own base wouldn't work, so
+letting the two be specified independently would just be a second place for them to drift out
+of sync (this is also what caused an earlier build failure — see
+[Scope and limitations](#scope-and-limitations) for the actual root cause found while fixing
+this, tracked separately in APPENG-6071).
 
 `--tag` is the tag the **sim** image will be built as — it has no bearing on which base image
 gets used. `--base-tag` is what controls that, and must point at a tag that already exists in
@@ -235,6 +242,13 @@ not full parity with the extension. Explicitly **not yet implemented**:
 
 Later work will port the remaining methods from the extension's `PhysicalAiApi` interface as
 additional command topics (`catalog:*`, `config:*`, `openshift:*`, `ros:*`).
+
+**Known issue — Humble sim image build:** `build:sim --distro humble` can fail with
+`E: Unable to locate package ros-humble-ros-gz` on some Ubuntu/arch combinations (reproduced on
+arm64). This is a package-availability issue in the bundled `ros2-humble-turtlebot3`
+Containerfile itself, not something introduced by this CLI — the extension would hit the same
+failure building this same profile. Tracked under the Humble/Jazzy parity work in APPENG-6071.
+Jazzy sim builds (`--distro jazzy`) are unaffected.
 
 ## Troubleshooting
 
