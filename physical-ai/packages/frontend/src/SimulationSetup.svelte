@@ -433,9 +433,9 @@ function cancelQuickStart() {
               {/each}
             </select>
             <span class="text-xs text-[var(--pd-content-text)] opacity-80">{basePreset.description}</span>
-            {#if !basePreset.architectures.includes(hostArch)}
+            {#if !basePreset.architectures.includes(targetArch)}
               <span class="text-xs pai-text-warning">
-                Warning: this preset does not support {hostArch}. The build may fail or use slow emulation.
+                Warning: this preset does not support {targetArch}. The build may fail or use slow emulation.
               </span>
             {/if}
           </div>
