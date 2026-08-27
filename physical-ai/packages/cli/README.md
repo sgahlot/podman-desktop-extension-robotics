@@ -53,8 +53,8 @@ didn't `npm link`.
 
 ## Commands
 
-Run `physical-ai <command> --help` for the full flag list with descriptions; this is the quick
-reference.
+Run `physical-ai <command> --help` for the full flag list plus worked `EXAMPLES` for that
+command; what follows here is the quick reference.
 
 ### `build:base` — build the ROS2 base image (Phase 1)
 
