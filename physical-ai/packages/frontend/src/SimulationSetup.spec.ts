@@ -18,6 +18,7 @@ const mockGetPushProgress = vi.fn();
 const mockGetImageTags = vi.fn();
 const mockGetImageBuilderLayout = vi.fn();
 const mockSetImageBuilderLayout = vi.fn();
+const mockGetBuildHistory = vi.fn();
 const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
@@ -37,6 +38,7 @@ vi.mock('./api/client', () => ({
     getImageTags: (...args: unknown[]) => mockGetImageTags(...args),
     getImageBuilderLayout: (...args: unknown[]) => mockGetImageBuilderLayout(...args),
     setImageBuilderLayout: (...args: unknown[]) => mockSetImageBuilderLayout(...args),
+    getBuildHistory: (...args: unknown[]) => mockGetBuildHistory(...args),
   },
 }));
 
@@ -64,6 +66,7 @@ describe('SimulationSetup (Image Builder)', () => {
     mockGetPushProgress.mockResolvedValue(undefined);
     mockGetImageBuilderLayout.mockResolvedValue('pipeline');
     mockSetImageBuilderLayout.mockResolvedValue(undefined);
+    mockGetBuildHistory.mockResolvedValue([]);
   });
 
   it('shows the back-to-dashboard link and Quick Links when navigation layout is cards', async () => {
@@ -405,6 +408,65 @@ describe('SimulationSetup (Image Builder)', () => {
       expect(await screen.findByText(/Build the base image \(Step 1\) first/)).toBeTruthy();
       const buildButtons = screen.getAllByRole('button', { name: 'Build' }) as HTMLButtonElement[];
       expect(buildButtons[buildButtons.length - 1].disabled).toBe(true);
+    });
+  });
+
+  describe('Recent Builds', () => {
+    it('renders regardless of layout and fetches history on mount', async () => {
+      mockGetBuildHistory.mockResolvedValue([
+        {
+          tag: 'quay.io/ecosystem-appeng/ros2-jazzy-base:noble',
+          arch: 'amd64',
+          startedAt: Date.now(),
+          durationMs: 5000,
+          success: true,
+        },
+      ]);
+
+      render(SimulationSetup);
+      await waitFor(() => {
+        expect(screen.queryByText('Loading configuration...')).toBeNull();
+      });
+
+      expect(await screen.findByText('Recent Builds')).toBeTruthy();
+      expect(mockGetBuildHistory).toHaveBeenCalled();
+      expect(await screen.findByText('quay.io/ecosystem-appeng/ros2-jazzy-base:noble')).toBeTruthy();
+    });
+
+    it('shown in Layers layout too', async () => {
+      mockGetImageBuilderLayout.mockResolvedValue('layers');
+      render(SimulationSetup);
+      await waitFor(() => {
+        expect(screen.queryByText('Loading configuration...')).toBeNull();
+      });
+
+      expect(await screen.findByText('Recent Builds')).toBeTruthy();
+    });
+
+    it('refetches history after a Step 1 base-image build completes', async () => {
+      mockGetBuildProgress.mockResolvedValue({
+        tag: 'quay.io/ecosystem-appeng/ros2-humble-base:sloretz',
+        status: 'Complete',
+        logs: [],
+        done: true,
+        startedAt: 1000,
+        finishedAt: 2000,
+      });
+      mockBuildBaseImage.mockResolvedValue(undefined);
+
+      render(SimulationSetup);
+      await waitFor(() => {
+        expect(screen.queryByText('Loading configuration...')).toBeNull();
+      });
+      await waitFor(() => expect(mockGetBuildHistory).toHaveBeenCalled());
+      const callsBeforeBuild = mockGetBuildHistory.mock.calls.length;
+
+      const buildButtons = screen.getAllByRole('button', { name: 'Build' });
+      await fireEvent.click(buildButtons[0]);
+
+      await waitFor(() => {
+        expect(mockGetBuildHistory.mock.calls.length).toBeGreaterThan(callsBeforeBuild);
+      });
     });
   });
 });

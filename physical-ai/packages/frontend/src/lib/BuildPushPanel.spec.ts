@@ -158,6 +158,43 @@ describe('BuildPushPanel', () => {
     expect(screen.queryByText(/Last build/)).toBeNull();
   });
 
+  it('shows a transient-mirror hint when the logs contain an apt fetch 404', async () => {
+    mockGetBuildProgress.mockResolvedValue({
+      tag: TAG,
+      status: 'Failed',
+      logs: ['[00:00:01] STEP 1/1', 'E: Failed to fetch http://ports.ubuntu.com/... 404  Not Found [IP: 1.2.3.4 80]'],
+      done: true,
+      error:
+        'building at STEP "RUN apt-get update && apt-get install -y ros-jazzy-desktop": while running runtime: exit status 100',
+    });
+
+    render(BuildPushPanel, {
+      props: { buildImage, tag: TAG, tagInputId: 'phase1-tag' },
+    });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Build' }));
+    expect(await screen.findByText(/Build failed:/)).toBeTruthy();
+    expect(await screen.findByText(/transient upstream package-mirror issue/)).toBeTruthy();
+  });
+
+  it('does not show the transient-mirror hint for an unrelated build failure', async () => {
+    mockGetBuildProgress.mockResolvedValue({
+      tag: TAG,
+      status: 'Failed',
+      logs: ['[00:00:01] STEP 1/1', 'Error: Containerfile syntax error on line 4'],
+      done: true,
+      error: 'building at STEP "RUN bogus": exit status 1',
+    });
+
+    render(BuildPushPanel, {
+      props: { buildImage, tag: TAG, tagInputId: 'phase1-tag' },
+    });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Build' }));
+    expect(await screen.findByText(/Build failed:/)).toBeTruthy();
+    expect(screen.queryByText(/transient upstream package-mirror issue/)).toBeNull();
+  });
+
   it('clears stale build logs/status when the tag prop changes to a different (unbuilt) tag', async () => {
     const startedAt = 1_000;
     mockGetBuildProgress.mockResolvedValue({

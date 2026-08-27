@@ -39,10 +39,16 @@ import {
   PART_OF_LABEL,
   PART_OF_VALUE,
 } from '/@shared/src/openshift/manifests';
-import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join as pathJoin } from 'node:path';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
+import type { BuildHistoryEntry, SbomFormat } from '/@shared/src/types/BuildHistory';
+import {
+  BUILD_HISTORY_LIMIT_DEFAULT,
+  assertBuildHistoryLimit,
+  SBOM_FORMAT_DEFAULT,
+} from '/@shared/src/types/BuildHistory';
 import type {
   TopicInfo,
   TopicDetailInfo,
@@ -74,7 +80,6 @@ import {
   cleanEchoOutput,
   assertPeekTimeoutSeconds,
   PEEK_TIMEOUT_DEFAULT_SEC,
-  PEEK_MAX_BYTES,
 } from '/@shared/src/ros/topicPeek';
 import { appendProgressLog } from './progressLogs';
 
@@ -95,6 +100,18 @@ const NAV2_TF_POLL_ATTEMPTS = 120;
  * Only paid once per fresh Nav2 bringup (the warm path skips the clear entirely).
  */
 const NAV2_COSTMAP_REFILL_MS = 2000;
+
+/** Build history JSON file name, written under ExtensionContext.storagePath. */
+const BUILD_HISTORY_FILE_NAME = 'build-history.json';
+
+/**
+ * Max clipboard payload size. Deliberately much larger than PEEK_MAX_BYTES (64KB, tuned
+ * for a single ROS topic message) — this RPC is also used to copy a full SBOM. A real
+ * ~2,600-package SPDX-JSON SBOM (verbose externalRefs/CPE entries per package) already
+ * exceeded an earlier 8MB guess, so this is set generously rather than re-guessed per
+ * image size — SBOMs only grow as an image gains packages.
+ */
+const CLIPBOARD_MAX_BYTES = 32 * 1024 * 1024;
 
 /**
  * First non-empty string among the arguments, or '' if none.
@@ -399,6 +416,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     buildargs?: { [key: string]: string },
     platform?: string,
     onSettled?: () => void,
+    generateSbom?: boolean,
+    sbomFormat: SbomFormat = SBOM_FORMAT_DEFAULT,
   ): void {
     const podmanConnection = this.#getRunningPodmanConnection();
 
@@ -458,6 +477,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
                 progress.currentStep = progress.totalSteps;
               }
               appendProgressLog(progress.logs, data?.trim() ? data.trim() : 'Build finished');
+              void this.#recordBuildHistory(tag, platform, progress, generateSbom, sbomFormat);
             }
             this.buildAbortControllers.delete(tag);
             this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
@@ -487,6 +507,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
             progress.status = 'Complete';
             progress.done = true;
             progress.finishedAt = Date.now();
+            void this.#recordBuildHistory(tag, platform, progress, generateSbom, sbomFormat);
           }
         }
         this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
@@ -507,6 +528,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
             progress.done = true;
             progress.finishedAt = Date.now();
             progress.error = err instanceof Error ? err.message : String(err);
+            void this.#recordBuildHistory(tag, platform, progress, generateSbom, sbomFormat);
           }
         }
         this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
@@ -543,6 +565,164 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
 
     this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
+  }
+
+  /**
+   * Persist a build-history entry once a build has definitively settled to Complete or
+   * Failed (never called for a Cancelled build — see #runContainerBuild's call sites).
+   * Fire-and-forget from those call sites: never throws, and must not block the
+   * build-progress finalization/cleanup it's invoked alongside.
+   */
+  async #recordBuildHistory(
+    tag: string,
+    platform: string | undefined,
+    progress: BuildProgress,
+    generateSbom: boolean | undefined,
+    sbomFormat: SbomFormat,
+  ): Promise<void> {
+    const success = progress.status === 'Complete' && !progress.error;
+    const startedAt = progress.startedAt ?? Date.now();
+    const finishedAt = progress.finishedAt ?? Date.now();
+
+    try {
+      // Write the build's own outcome immediately — do NOT wait on SBOM generation first.
+      // syft scanning a large image can take tens of seconds even with file catalogers
+      // disabled (still has to walk every file), which previously delayed the entire
+      // Recent Builds entry (tag/duration/success, not just the SBOM) until syft finished,
+      // even though the build itself had already succeeded.
+      const entry: BuildHistoryEntry = {
+        tag,
+        arch: PhysicalAiApiImpl.#archFromPlatform(platform),
+        startedAt,
+        durationMs: Math.max(0, finishedAt - startedAt),
+        success,
+        ...(success ? {} : { errorMessage: progress.error ?? 'Build failed' }),
+      };
+
+      const limit = await this.getBuildHistoryLimit();
+      const history = await this.#readBuildHistory();
+      history.unshift(entry);
+      await this.#writeBuildHistory(history.slice(0, limit));
+    } catch (err) {
+      console.error(`[physical-ai] Failed to record build history for "${tag}" (non-fatal):`, err);
+      return;
+    }
+
+    // Opt-in only, and only after a successful build — a failed build has no image to
+    // scan. Best-effort: an SBOM failure must never fail the build or block history.
+    if (!success || !generateSbom) return;
+    try {
+      const sbom = await this.#generateSbom(tag, sbomFormat);
+      if (!sbom) return;
+      const history = await this.#readBuildHistory();
+      const idx = history.findIndex(e => e.tag === tag && e.startedAt === startedAt);
+      if (idx === -1) return; // entry aged out of the retained limit while the SBOM ran
+      history[idx] = { ...history[idx], sbom, sbomFormat };
+      await this.#writeBuildHistory(history);
+    } catch (err) {
+      console.error(`[physical-ai] Failed to attach SBOM to build history for "${tag}" (non-fatal):`, err);
+    }
+  }
+
+  /**
+   * Run syft against the freshly built image's own filesystem (the binary was just baked
+   * in via COPY --from when the user selected the Hummingbird `syft` tool). Best-effort:
+   * any failure (syft missing, non-zero exit, etc.) is logged and the SBOM is left absent
+   * for this history entry — it must never fail the build.
+   *
+   * `--select-catalogers -file` disables syft's file-integrity catalogers (file-content/
+   * -digest/-executable/-metadata), which by default emit one component/package PER FILE
+   * in the image (a SHA-1/SHA-256 hash manifest) — unrelated to what's actually installed.
+   * Confirmed empirically on a real 2588-package robotics image: this was 115,498 of
+   * 118,086 CycloneDX components (97.8%), taking the SBOM from 40.5MB down to 6.9MB with
+   * zero loss of real package/library data — our use case is "what's installed," not a
+   * file-integrity manifest.
+   */
+  async #generateSbom(tag: string, format: SbomFormat): Promise<string | undefined> {
+    try {
+      const result = await extensionApi.process.exec('podman', [
+        'run',
+        '--rm',
+        tag,
+        'syft',
+        'dir:/',
+        '-o',
+        format,
+        '--select-catalogers',
+        '-file',
+      ]);
+      const sbom = result.stdout?.trim();
+      return sbom || undefined;
+    } catch (err) {
+      console.error(`[physical-ai] SBOM generation for "${tag}" failed (non-fatal):`, err);
+      return undefined;
+    }
+  }
+
+  /** Resolve a build-history arch label from the buildImage `platform` option. */
+  static #archFromPlatform(platform: string | undefined): 'amd64' | 'arm64' {
+    if (platform === 'linux/amd64') return 'amd64';
+    if (platform === 'linux/arm64' || platform === 'linux/armv64') return 'arm64';
+    return process.arch === 'arm64' ? 'arm64' : 'amd64';
+  }
+
+  #buildHistoryFilePath(): string {
+    return pathJoin(this.extensionContext.storagePath, BUILD_HISTORY_FILE_NAME);
+  }
+
+  /** Reads the build history file, defensively returning [] on any missing/corrupt file. */
+  async #readBuildHistory(): Promise<BuildHistoryEntry[]> {
+    try {
+      const content = await readFile(this.#buildHistoryFilePath(), 'utf8');
+      const parsed: unknown = JSON.parse(content);
+      return Array.isArray(parsed) ? (parsed as BuildHistoryEntry[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Write via a temp file + atomic rename, not a direct write to the live path. A direct
+   * write truncates-then-writes in place, so the frontend's 3s history poll (a concurrent
+   * reader, not synchronized with this write at all) can land mid-write and read a
+   * truncated/invalid file — caught by #readBuildHistory's try/catch, which then returns
+   * [] for that one poll tick, flashing "No builds recorded yet" for ~3s (observed live).
+   * rename() is atomic on POSIX filesystems: a concurrent read always sees either the
+   * complete old file or the complete new one, never a partial write.
+   */
+  async #writeBuildHistory(history: BuildHistoryEntry[]): Promise<void> {
+    await mkdir(this.extensionContext.storagePath, { recursive: true });
+    const finalPath = this.#buildHistoryFilePath();
+    const tmpPath = `${finalPath}.tmp-${process.pid}-${Date.now()}`;
+    await writeFile(tmpPath, JSON.stringify(history), 'utf8');
+    await rename(tmpPath, finalPath);
+  }
+
+  /** Recent build results (newest first), persisted across restarts. See BuildHistoryEntry. */
+  async getBuildHistory(): Promise<BuildHistoryEntry[]> {
+    return this.#readBuildHistory();
+  }
+
+  async getBuildHistoryLimit(): Promise<number> {
+    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const raw = config.get<number>('buildHistoryLimit');
+    if (raw === undefined) {
+      return BUILD_HISTORY_LIMIT_DEFAULT;
+    }
+    // Fall back to the built-in default if the setting is somehow out of range, rather
+    // than throwing — mirrors getDefaultSoftwareRenderCpus (Settings JSON-schema min/max
+    // isn't reliably enforced across every Podman Desktop version).
+    try {
+      return assertBuildHistoryLimit(raw);
+    } catch {
+      return BUILD_HISTORY_LIMIT_DEFAULT;
+    }
+  }
+
+  async setBuildHistoryLimit(limit: number): Promise<void> {
+    const safe = assertBuildHistoryLimit(limit);
+    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    await config.update('buildHistoryLimit', safe);
   }
 
   async pullImage(fullImageName: string, tag: string): Promise<void> {
@@ -653,7 +833,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     );
   }
 
-  async buildFromContainerfile(tag: string, containerfile: string, platform?: string): Promise<void> {
+  async buildFromContainerfile(
+    tag: string,
+    containerfile: string,
+    platform?: string,
+    options?: { generateSbom?: boolean; sbomFormat?: SbomFormat },
+  ): Promise<void> {
     if (!containerfile?.trim()) {
       throw new Error('Cannot build: the Containerfile is empty.');
     }
@@ -669,9 +854,18 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
 
     try {
-      this.#runContainerBuild(tag, contextDir, 'Containerfile', undefined, platform, () => {
-        void rm(contextDir, { recursive: true, force: true }).catch(() => {});
-      });
+      this.#runContainerBuild(
+        tag,
+        contextDir,
+        'Containerfile',
+        undefined,
+        platform,
+        () => {
+          void rm(contextDir, { recursive: true, force: true }).catch(() => {});
+        },
+        options?.generateSbom,
+        options?.sbomFormat ?? SBOM_FORMAT_DEFAULT,
+      );
     } catch (err) {
       // buildImage never kicked off (e.g. no running Podman) — remove the context now.
       await rm(contextDir, { recursive: true, force: true }).catch(() => {});
@@ -1169,9 +1363,11 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     if (typeof text !== 'string') {
       throw new Error('Clipboard text must be a string.');
     }
-    // Peek payloads are capped; keep the same bound for clipboard RPC.
-    if (text.length > PEEK_MAX_BYTES + 64) {
-      throw new Error('Clipboard text exceeds the allowed size.');
+    if (text.length > CLIPBOARD_MAX_BYTES) {
+      const mb = (n: number) => (n / (1024 * 1024)).toFixed(1);
+      throw new Error(
+        `Clipboard text exceeds the allowed size (${mb(text.length)}MB > ${mb(CLIPBOARD_MAX_BYTES)}MB limit).`,
+      );
     }
     await extensionApi.env.clipboard.writeText(text);
   }

@@ -7,6 +7,7 @@ import {
   SIM_STOPPED_BROWSER_HINT,
 } from '/@shared/src/types/SimulationContainer';
 import { SPAWN_ENTRYPOINT, GAZEBO_ENTRYPOINT, NAV2_ENTRYPOINT } from '/@shared/src/security/simInput';
+import type { BuildHistoryEntry } from '/@shared/src/types/BuildHistory';
 
 vi.mock('@podman-desktop/api', () => ({
   provider: {
@@ -61,14 +62,17 @@ vi.mock('node:fs/promises', () => ({
   readFile: vi.fn(),
   writeFile: vi.fn(),
   mkdtemp: vi.fn(),
+  mkdir: vi.fn(),
+  rename: vi.fn(),
   rm: vi.fn(),
 }));
 
 import * as extensionApi from '@podman-desktop/api';
-import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
 
 const MOCK_CONTEXT = {
   extensionUri: { fsPath: '/fake/extension/path' },
+  storagePath: '/fake/storage/path',
   subscriptions: [],
 } as unknown as ExtensionContext;
 
@@ -93,6 +97,59 @@ function execArgs(callIndex = 0): string[] {
   const call = vi.mocked(extensionApi.process.exec).mock.calls[callIndex];
   expect(call?.[1]).toBeDefined();
   return call![1] as string[];
+}
+
+/**
+ * Parses the JSON body of the most recent writeFile call for the build-history file.
+ * #writeBuildHistory writes to a temp path (build-history.json.tmp-<pid>-<time>), then
+ * atomically renames it into place — so this matches on the substring, not an exact
+ * filename, and the content is captured from writeFile regardless (rename carries no
+ * content of its own).
+ */
+function lastWrittenBuildHistory(): BuildHistoryEntry[] {
+  const calls = vi.mocked(writeFile).mock.calls.filter(c => String(c[0]).includes('build-history.json'));
+  expect(calls.length).toBeGreaterThan(0);
+  return JSON.parse(calls[calls.length - 1][1] as string) as BuildHistoryEntry[];
+}
+
+/**
+ * Wires readFile/writeFile/rename as a minimal stateful fake filesystem for
+ * build-history.json only — needed for the SBOM two-phase write (record outcome, then
+ * patch in the SBOM once ready), where the patch's own read must see the prior write.
+ * Mirrors the real temp-file + atomic-rename write: content only becomes "readable" once
+ * rename() actually moves it to the final path, not merely once writeFile() lands on the
+ * temp path. The real implementation reads/writes an actual file, so this is purely a
+ * test-mock gap, not production behavior.
+ */
+function mockStatefulBuildHistoryFile(): void {
+  let stored: string | undefined;
+  const pendingByTmpPath = new Map<string, string>();
+  vi.mocked(writeFile).mockImplementation(async (path, content) => {
+    const p = String(path);
+    if (p.includes('build-history.json')) {
+      pendingByTmpPath.set(p, content as string);
+    }
+  });
+  vi.mocked(rename).mockImplementation(async (oldPath, newPath) => {
+    const op = String(oldPath);
+    if (String(newPath).endsWith('build-history.json') && pendingByTmpPath.has(op)) {
+      stored = pendingByTmpPath.get(op);
+      pendingByTmpPath.delete(op);
+    }
+  });
+  vi.mocked(readFile).mockImplementation(async path => {
+    if (String(path).endsWith('build-history.json') && stored !== undefined) {
+      return stored as unknown as Awaited<ReturnType<typeof readFile>>;
+    }
+    throw new Error('ENOENT');
+  });
+}
+
+function mockConfigWithBuildHistoryLimit(limit: unknown): void {
+  vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+    get: vi.fn((key: string) => (key === 'buildHistoryLimit' ? limit : undefined)),
+    update: vi.fn(),
+  } as unknown as extensionApi.Configuration);
 }
 
 describe('PhysicalAiApiImpl', () => {
@@ -483,6 +540,351 @@ describe('PhysicalAiApiImpl', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(rm).toHaveBeenCalledWith('/tmp/physical-ai-layer-build-jkl', { recursive: true, force: true });
+    });
+  });
+
+  describe('build history (APPENG-6226)', () => {
+    beforeEach(() => {
+      vi.mocked(mkdir).mockResolvedValue(undefined);
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
+      vi.mocked(mkdtemp).mockResolvedValue('/tmp/physical-ai-layer-build-hist');
+      vi.mocked(rm).mockResolvedValue(undefined);
+      mockConfigWithBuildHistoryLimit(undefined);
+    });
+
+    it('records a completed base-image build (no sbom — base/sim builds never opt in)', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+
+      await api.buildBaseImage('my-tag:latest', {
+        robot: 'turtlebot3',
+        distro: 'humble',
+        middleware: 'dds',
+        engine: 'gazebo',
+        baseImage: 'sloretz' as const,
+        targetArch: 'amd64',
+      });
+      await vi.runAllTimersAsync();
+
+      const history = lastWrittenBuildHistory();
+      expect(history).toHaveLength(1);
+      expect(history[0]).toEqual(expect.objectContaining({ tag: 'my-tag:latest', arch: 'amd64', success: true }));
+      expect(history[0].sbom).toBeUndefined();
+      expect(history[0].errorMessage).toBeUndefined();
+      // Base-image builds never invoke syft.
+      expect(extensionApi.process.exec).not.toHaveBeenCalledWith('podman', expect.arrayContaining(['syft']));
+    });
+
+    it('records a failed build with an error message', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockRejectedValue(new Error('build failed'));
+
+      await api.buildBaseImage('my-tag:latest', {
+        robot: 'turtlebot3',
+        distro: 'humble',
+        middleware: 'dds',
+        engine: 'gazebo',
+        baseImage: 'sloretz' as const,
+      });
+      await vi.runAllTimersAsync();
+
+      const history = lastWrittenBuildHistory();
+      expect(history[0]).toEqual(
+        expect.objectContaining({ tag: 'my-tag:latest', success: false, errorMessage: 'build failed' }),
+      );
+      expect(history[0].sbom).toBeUndefined();
+    });
+
+    it('does not record a cancelled build', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
+
+      await api.buildBaseImage('my-tag:latest', {
+        robot: 'turtlebot3',
+        distro: 'humble',
+        middleware: 'dds',
+        engine: 'gazebo',
+        baseImage: 'sloretz' as const,
+      });
+      await api.cancelBuild('my-tag:latest');
+      await vi.runAllTimersAsync();
+
+      expect(writeFile).not.toHaveBeenCalledWith(
+        expect.stringContaining('build-history.json'),
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it('buildFromContainerfile with generateSbom:true defaults to cyclonedx-json and records the format', async () => {
+      mockStatefulBuildHistoryFile();
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+      const sbomJson = JSON.stringify({ components: [{ name: 'comp-a' }] });
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: sbomJson,
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
+      await api.buildFromContainerfile('my-layer:latest', 'FROM scratch\n', undefined, { generateSbom: true });
+      await vi.runAllTimersAsync();
+
+      expect(extensionApi.process.exec).toHaveBeenCalledWith('podman', [
+        'run',
+        '--rm',
+        'my-layer:latest',
+        'syft',
+        'dir:/',
+        '-o',
+        'cyclonedx-json',
+        '--select-catalogers',
+        '-file',
+      ]);
+      const history = lastWrittenBuildHistory();
+      expect(history[0].sbom).toBe(sbomJson);
+      expect(history[0].sbomFormat).toBe('cyclonedx-json');
+      expect(history[0].success).toBe(true);
+    });
+
+    it('buildFromContainerfile with an explicit sbomFormat:"spdx-json" runs syft with that format', async () => {
+      mockStatefulBuildHistoryFile();
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+      const sbomJson = JSON.stringify({ packages: [{ name: 'pkg-a' }] });
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: sbomJson,
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
+      await api.buildFromContainerfile('my-layer:latest', 'FROM scratch\n', undefined, {
+        generateSbom: true,
+        sbomFormat: 'spdx-json',
+      });
+      await vi.runAllTimersAsync();
+
+      expect(extensionApi.process.exec).toHaveBeenCalledWith('podman', [
+        'run',
+        '--rm',
+        'my-layer:latest',
+        'syft',
+        'dir:/',
+        '-o',
+        'spdx-json',
+        '--select-catalogers',
+        '-file',
+      ]);
+      const history = lastWrittenBuildHistory();
+      expect(history[0].sbom).toBe(sbomJson);
+      expect(history[0].sbomFormat).toBe('spdx-json');
+    });
+
+    it('SBOM generation failure leaves the sbom field absent without failing the build', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+      vi.mocked(extensionApi.process.exec).mockRejectedValue(new Error('syft: command not found'));
+
+      await api.buildFromContainerfile('my-layer:latest', 'FROM scratch\n', undefined, { generateSbom: true });
+      await vi.runAllTimersAsync();
+
+      const history = lastWrittenBuildHistory();
+      expect(history[0].success).toBe(true);
+      expect(history[0].sbom).toBeUndefined();
+    });
+
+    it('buildFromContainerfile without generateSbom never invokes syft and records no sbom', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+
+      await api.buildFromContainerfile('my-layer:latest', 'FROM scratch\n');
+      await vi.runAllTimersAsync();
+
+      expect(extensionApi.process.exec).not.toHaveBeenCalled();
+      const history = lastWrittenBuildHistory();
+      expect(history[0].sbom).toBeUndefined();
+    });
+
+    it('writes build history via a temp file + atomic rename, not a direct write to the live path', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(rename).mockResolvedValue(undefined);
+
+      await api.buildFromContainerfile('my-layer:latest', 'FROM scratch\n');
+      await vi.runAllTimersAsync();
+
+      const historyWrite = vi.mocked(writeFile).mock.calls.find(c => String(c[0]).includes('build-history.json'));
+      expect(historyWrite).toBeDefined();
+      const tmpPath = String(historyWrite![0]);
+      // The write must NOT land on the live path directly — a concurrent poll reading
+      // build-history.json while this write is in flight would otherwise risk a
+      // truncated/partial read (observed live as a "No builds recorded yet" flash).
+      expect(tmpPath).not.toBe(`${MOCK_CONTEXT.storagePath}/build-history.json`);
+      expect(tmpPath).toContain('build-history.json.tmp-');
+
+      expect(rename).toHaveBeenCalledWith(tmpPath, `${MOCK_CONTEXT.storagePath}/build-history.json`);
+    });
+
+    it('records the build outcome immediately, without waiting for a slow SBOM scan', async () => {
+      mockStatefulBuildHistoryFile();
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+
+      let resolveSyft!: (v: extensionApi.RunResult) => void;
+      vi.mocked(extensionApi.process.exec).mockReturnValue(
+        new Promise(resolve => {
+          resolveSyft = resolve;
+        }),
+      );
+
+      await api.buildFromContainerfile('my-layer:latest', 'FROM scratch\n', undefined, { generateSbom: true });
+      await vi.runAllTimersAsync();
+
+      // The build's own outcome (success/duration) is visible right away — the slow SBOM
+      // scan (still pending) must not have delayed it.
+      const beforeSbom = lastWrittenBuildHistory();
+      expect(beforeSbom[0].success).toBe(true);
+      expect(beforeSbom[0].sbom).toBeUndefined();
+
+      const sbomJson = JSON.stringify({ components: [{ name: 'comp-a' }] });
+      resolveSyft({ stdout: sbomJson, stderr: '', command: 'podman' } as extensionApi.RunResult);
+      await vi.runAllTimersAsync();
+
+      // Once the scan finishes, the same entry is patched in place with the SBOM.
+      const afterSbom = lastWrittenBuildHistory();
+      expect(afterSbom).toHaveLength(1);
+      expect(afterSbom[0].sbom).toBe(sbomJson);
+      expect(afterSbom[0].success).toBe(true);
+    });
+
+    it('resolves arch amd64/arm64 from the platform, defaulting to host arch when unset', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+
+      await api.buildFromContainerfile('t1:latest', 'FROM scratch\n', 'linux/amd64');
+      await vi.runAllTimersAsync();
+      expect(lastWrittenBuildHistory()[0].arch).toBe('amd64');
+
+      vi.mocked(mkdtemp).mockResolvedValue('/tmp/physical-ai-layer-build-hist2');
+      await api.buildFromContainerfile('t2:latest', 'FROM scratch\n', 'linux/arm64');
+      await vi.runAllTimersAsync();
+      expect(lastWrittenBuildHistory()[0].arch).toBe('arm64');
+
+      vi.mocked(mkdtemp).mockResolvedValue('/tmp/physical-ai-layer-build-hist3');
+      await api.buildFromContainerfile('t3:latest', 'FROM scratch\n');
+      await vi.runAllTimersAsync();
+      expect(lastWrittenBuildHistory()[0].arch).toBe(process.arch === 'arm64' ? 'arm64' : 'amd64');
+    });
+
+    it('trims history to the configured limit, dropping the oldest entries', async () => {
+      mockConfigWithBuildHistoryLimit(2);
+      const seeded = JSON.stringify([
+        { tag: 'older:1', arch: 'amd64', startedAt: 1, durationMs: 1, success: true },
+        { tag: 'older:2', arch: 'amd64', startedAt: 2, durationMs: 1, success: true },
+      ]);
+      vi.mocked(readFile).mockResolvedValue(seeded as unknown as Awaited<ReturnType<typeof readFile>>);
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+
+      await api.buildFromContainerfile('newest:latest', 'FROM scratch\n');
+      await vi.runAllTimersAsync();
+
+      const history = lastWrittenBuildHistory();
+      expect(history).toHaveLength(2);
+      expect(history[0].tag).toBe('newest:latest');
+      expect(history.map(h => h.tag)).not.toContain('older:2');
+    });
+  });
+
+  describe('getBuildHistory', () => {
+    it('returns [] when the history file does not exist', async () => {
+      vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
+      expect(await api.getBuildHistory()).toEqual([]);
+    });
+
+    it('returns [] when the history file is corrupt', async () => {
+      vi.mocked(readFile).mockResolvedValue('not json' as unknown as Awaited<ReturnType<typeof readFile>>);
+      expect(await api.getBuildHistory()).toEqual([]);
+    });
+
+    it('returns the parsed history when the file is valid', async () => {
+      const entries = [{ tag: 'a:latest', arch: 'amd64', startedAt: 1, durationMs: 1, success: true }];
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify(entries) as unknown as Awaited<ReturnType<typeof readFile>>);
+      expect(await api.getBuildHistory()).toEqual(entries);
+    });
+  });
+
+  describe('getBuildHistoryLimit / setBuildHistoryLimit', () => {
+    it('returns the default (5) when unset', async () => {
+      mockConfigWithBuildHistoryLimit(undefined);
+      expect(await api.getBuildHistoryLimit()).toBe(5);
+    });
+
+    it('falls back to the default when the stored value is out of range', async () => {
+      mockConfigWithBuildHistoryLimit(99);
+      expect(await api.getBuildHistoryLimit()).toBe(5);
+    });
+
+    it('returns a valid configured limit', async () => {
+      mockConfigWithBuildHistoryLimit(2);
+      expect(await api.getBuildHistoryLimit()).toBe(2);
+    });
+
+    it('rejects a set below the minimum', async () => {
+      const update = vi.fn();
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn(),
+        update,
+      } as unknown as extensionApi.Configuration);
+      await expect(api.setBuildHistoryLimit(0)).rejects.toThrow(/at least 1/);
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a set above the maximum', async () => {
+      const update = vi.fn();
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn(),
+        update,
+      } as unknown as extensionApi.Configuration);
+      await expect(api.setBuildHistoryLimit(6)).rejects.toThrow(/at most 5/);
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('persists a valid limit', async () => {
+      const update = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn(),
+        update,
+      } as unknown as extensionApi.Configuration);
+      await api.setBuildHistoryLimit(3);
+      expect(update).toHaveBeenCalledWith('buildHistoryLimit', 3);
     });
   });
 
@@ -1600,9 +2002,18 @@ describe('PhysicalAiApiImpl', () => {
       expect(extensionApi.env.clipboard.writeText).toHaveBeenCalledWith('linear:\n  x: 0.2\n');
     });
 
-    it('rejects oversized payloads', async () => {
-      await expect(api.copyToClipboard('x'.repeat(70_000))).rejects.toThrow(/exceeds/);
+    it('rejects oversized payloads, reporting both sizes so a size mismatch is diagnosable', async () => {
+      await expect(api.copyToClipboard('x'.repeat(32 * 1024 * 1024 + 1))).rejects.toThrow(
+        /exceeds the allowed size \(32\.0MB > 32\.0MB limit\)/,
+      );
       expect(extensionApi.env.clipboard.writeText).not.toHaveBeenCalled();
+    });
+
+    it('accepts a multi-megabyte SBOM-sized payload', async () => {
+      vi.mocked(extensionApi.env.clipboard.writeText).mockResolvedValue(undefined);
+      const bigSbom = 'x'.repeat(10 * 1024 * 1024);
+      await api.copyToClipboard(bigSbom);
+      expect(extensionApi.env.clipboard.writeText).toHaveBeenCalledWith(bigSbom);
     });
   });
 

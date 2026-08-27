@@ -13,6 +13,7 @@ import {
   type HardenedApp,
   type LayerSelection,
 } from '/@shared/src/types/layerCompatibility';
+import { SBOM_FORMAT_DEFAULT, type SbomFormat } from '/@shared/src/types/BuildHistory';
 import { baseImageTag, simulationImageTag } from '/@shared/src/types/SimulationProfiles';
 import { defaultBaseImageForDistro } from '/@shared/src/types/SimulationBaseImages';
 import type { SimulationConfig, TargetArch } from '/@shared/src/types/SimulationConfig';
@@ -27,6 +28,8 @@ let selection: LayerSelection = {
   sim: 'gazebo-nav2-tb3',
   hummingbirdApps: [],
 };
+
+let sbomFormat: SbomFormat = SBOM_FORMAT_DEFAULT;
 
 let attemptAnyway = false;
 
@@ -222,23 +225,46 @@ onDestroy(() => {
             <div class="flex flex-col gap-1">
               <span class="text-xs text-[var(--pd-content-text)]">Companion images — pulled &amp; run alongside</span>
               {#each HUMMINGBIRD_COMPANION_OPTIONS as o}
-                <label class="flex flex-row items-center gap-2 text-xs text-[var(--pd-content-text)]">
-                  <input type="checkbox" bind:group={selection.hummingbirdApps} value={o.id} />
-                  {o.label}
-                  <span class="pai-text-muted">— {o.note}</span>
+                <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
+                  <input type="checkbox" class="mt-0.5" bind:group={selection.hummingbirdApps} value={o.id} />
+                  <span>{o.label} <span class="pai-text-muted">— {o.note}</span></span>
                 </label>
               {/each}
             </div>
             <div class="flex flex-col gap-1">
               <span class="text-xs text-[var(--pd-content-text)]">Tools to bake in — hardened CLI via COPY --from</span>
               {#each HUMMINGBIRD_TOOL_OPTIONS as o}
-                <label class="flex flex-row items-center gap-2 text-xs text-[var(--pd-content-text)]">
-                  <input type="checkbox" bind:group={selection.hummingbirdApps} value={o.id} />
-                  {o.label}
-                  <span class="pai-text-muted">— {o.note}</span>
+                <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
+                  <input type="checkbox" class="mt-0.5" bind:group={selection.hummingbirdApps} value={o.id} />
+                  <span>{o.label} <span class="pai-text-muted">— {o.note}</span></span>
                 </label>
               {/each}
             </div>
+
+            {#if selectedHbApps.includes('syft')}
+              <div
+                class="flex flex-col gap-1 pl-3 border-l border-[var(--pd-content-card-border)]"
+                role="radiogroup"
+                aria-label="SBOM format">
+                <span class="text-xs text-[var(--pd-content-text)]">SBOM format</span>
+                <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
+                  <input type="radio" class="mt-0.5" bind:group={sbomFormat} value="cyclonedx-json" />
+                  <span
+                    >CycloneDX <span class="pai-text-muted"
+                      >(recommended) — same package data without SPDX's per-package CPE-variant overhead; typically much
+                      smaller, especially for images with many small packages (e.g. ROS/Nav2 stacks)</span
+                    ></span>
+                </label>
+                <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
+                  <input type="radio" class="mt-0.5" bind:group={sbomFormat} value="spdx-json" />
+                  <span
+                    >SPDX <span class="pai-text-muted"
+                      >— includes richer CPE metadata some vulnerability-scanning tools specifically require, but can
+                      run significantly larger for images with many packages</span
+                    ></span>
+                </label>
+              </div>
+            {/if}
           </div>
         {/if}
       </div>
@@ -385,7 +411,11 @@ onDestroy(() => {
         tagInputId="layer-build-tag"
         tag={containerfileTag}
         tagPlaceholder="e.g. quay.io/org/custom-layer:latest"
-        buildImage={t => physicalAiClient.buildFromContainerfile(t, containerfile)}
+        buildImage={t =>
+          physicalAiClient.buildFromContainerfile(t, containerfile, undefined, {
+            generateSbom: selectedHbApps.includes('syft'),
+            sbomFormat,
+          })}
         onBuildComplete={() => {
           void refreshLocalImages();
         }}

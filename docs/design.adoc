@@ -419,7 +419,7 @@ NOTE: Story 6 uses `podman exec` to spawn additional robots into a **single** si
 
 == Configuration Properties
 
-The extension contributes 15 settings under **Settings → Preferences → Physical AI**:
+The extension contributes 16 settings under **Settings → Preferences → Physical AI**:
 
 [cols="2,1,1,2"]
 |===
@@ -440,6 +440,7 @@ The extension contributes 15 settings under **Settings → Preferences → Physi
 | `physical-ai.topicPeekTimeoutSeconds` | number | `5` | Timeout in seconds for Topic Monitor Peek (`ros2 topic echo --once`). Whole number from 1 to 30.
 | `physical-ai.simulationGpuPassthrough` | boolean | `true` | On arm64 Mac, pass `/dev/dri` into simulation containers and use virtio-gpu when available. Disable to force llvmpipe. Ignored on amd64.
 | `physical-ai.defaultSoftwareRenderCpus` | number | `8` | Default guaranteed CPU count (requests == limits) for the software-render OpenShift sim pod. Seeds the Software-render CPUs field on the Simulation → OpenShift tab (1–64); ignored when the cluster-has-a-GPU toggle is on.
+| `physical-ai.buildHistoryLimit` | number | `5` | Number of recent image builds to remember (tag, arch, duration, and SBOM if one was generated via the Layers wizard's `syft` tool). Whole number from 1 to 5 (APPENG-6226).
 |===
 
 == Key Technical Decisions
@@ -499,6 +500,10 @@ The extension contributes 15 settings under **Settings → Preferences → Physi
 | Progress log capping
 | 500-line cap via `appendProgressLog()`
 | Prevents memory bloat from long builds; truncation marker shown
+
+| SBOM format (Layers wizard `syft` tool)
+| CycloneDX-JSON default (user-selectable to SPDX), `syft dir:/ -o <format> --select-catalogers -file`
+| Confirmed empirically on a real 2588-package robotics image (APPENG-6226): SPDX-JSON's `externalRefs` generate many combinatorial CPE vulnerability-matching variants per package (one package alone had 49) — pushed the SBOM to 84MB. CycloneDX-JSON stores one `cpe` field per component instead, ~54% smaller for the same content. Separately, syft's file-integrity catalogers (`file-content`/`-digest`/`-executable`/`-metadata`) add one component *per file* in the image (a SHA-1/SHA-256 hash manifest) unrelated to what's installed — 115,498 of a real 118,086-component CycloneDX SBOM (97.8%) were these file-hash entries; `--select-catalogers -file` drops them with zero loss of real package data (40.5MB → 6.9MB on the same image). Both fixes are independent and compound: format choice fixes SPDX's per-package bloat, the cataloger flag fixes the per-file bloat that affects both formats (SPDX barely, CycloneDX heavily).
 
 | Package manager
 | npm with workspaces
