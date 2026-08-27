@@ -28,6 +28,9 @@ let packageCounts: Record<string, number | undefined> = {};
  * (e.g. a payload over the clipboard RPC's size cap) and silently doing nothing on failure
  * is indistinguishable from the button just not working. */
 let copyFeedback: Record<string, string> = {};
+/** Full error message for the last failed copy, shown as a tooltip on the button — the
+ * button label itself just says "Copy failed", which isn't enough to diagnose why. */
+let copyError: Record<string, string> = {};
 
 function entryKey(entry: BuildHistoryEntry): string {
   return `${entry.tag}-${entry.startedAt}`;
@@ -95,8 +98,10 @@ async function copySbom(entry: BuildHistoryEntry): Promise<void> {
   try {
     await physicalAiClient.copyToClipboard(entry.sbom ?? '');
     copyFeedback = { ...copyFeedback, [key]: 'Copied' };
-  } catch {
+    copyError = { ...copyError, [key]: '' };
+  } catch (err) {
     copyFeedback = { ...copyFeedback, [key]: 'Copy failed' };
+    copyError = { ...copyError, [key]: err instanceof Error ? err.message : String(err) };
   }
   setTimeout(() => {
     copyFeedback = { ...copyFeedback, [key]: '' };
@@ -155,7 +160,11 @@ onDestroy(() => {
                 <button type="button" class="pai-btn pai-btn-sm self-start" on:click={() => toggleSbom(entry)}>
                   {sbomExpanded[key] ? '▼' : '▶'} SBOM{pkgCount !== undefined ? ` (${pkgCount} packages)` : ''}
                 </button>
-                <button type="button" class="pai-btn pai-btn-sm" on:click={() => copySbom(entry)}>
+                <button
+                  type="button"
+                  class="pai-btn pai-btn-sm"
+                  title={copyError[key] || undefined}
+                  on:click={() => copySbom(entry)}>
                   {copyFeedback[key] || 'Copy to clipboard'}
                 </button>
               </div>

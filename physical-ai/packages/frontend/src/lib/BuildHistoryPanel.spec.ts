@@ -144,7 +144,9 @@ describe('BuildHistoryPanel', () => {
 
     const copyButton = await screen.findByRole('button', { name: 'Copy to clipboard' });
     await fireEvent.click(copyButton);
-    expect(await screen.findByRole('button', { name: 'Copy failed' })).toBeTruthy();
+    const failedButton = await screen.findByRole('button', { name: 'Copy failed' });
+    // The button label alone can't say why — the real error is on the tooltip.
+    expect(failedButton.title).toBe('Clipboard text exceeds the allowed size.');
   });
 
   it('falls back to a plain "SBOM" label (no package count) when the sbom text is not parseable JSON', async () => {
