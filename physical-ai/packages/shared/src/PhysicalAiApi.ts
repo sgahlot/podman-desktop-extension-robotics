@@ -1,4 +1,5 @@
 import type { QuayRepository, QuayTag, PullProgress, BuildProgress, PushProgress } from './types/ImageCatalog';
+import type { BuildHistoryEntry } from './types/BuildHistory';
 import type { SimulationConfig } from './types/SimulationConfig';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from './types/SimulationContainer';
 import type { TopicInfo, TopicDetailInfo, TopicPeekResult, TopicSchemaResult } from './types/TopicInfo';
@@ -22,10 +23,24 @@ export abstract class PhysicalAiApi {
   abstract buildBaseImage(tag: string, config: SimulationConfig): Promise<void>;
   abstract buildSimulationImage(tag: string, config: SimulationConfig): Promise<void>;
   /** Build an image from an in-memory Containerfile (layer-composition wizard). The
-   * Containerfile is written to a throwaway build context; no bundled asset dir is used. */
-  abstract buildFromContainerfile(tag: string, containerfile: string, platform?: string): Promise<void>;
+   * Containerfile is written to a throwaway build context; no bundled asset dir is used.
+   * `options.generateSbom` (only meaningful here — the base/sim build paths never set it)
+   * runs `syft` against the built image afterward and records the SBOM in build history. */
+  abstract buildFromContainerfile(
+    tag: string,
+    containerfile: string,
+    platform?: string,
+    options?: { generateSbom?: boolean },
+  ): Promise<void>;
   abstract cancelBuild(tag: string): Promise<void>;
   abstract getBuildProgress(tag: string): Promise<BuildProgress | undefined>;
+  /** Recent build results (tag, arch, duration, success, SBOM if generated), newest first —
+   * up to physical-ai.buildHistoryLimit entries. Persisted across restarts. */
+  abstract getBuildHistory(): Promise<BuildHistoryEntry[]>;
+  /** Number of recent builds retained in history (Preferences: physical-ai.buildHistoryLimit, 1–5). */
+  abstract getBuildHistoryLimit(): Promise<number>;
+  /** Validates and persists the build history limit (1–5). Throws a user-facing error if out of range. */
+  abstract setBuildHistoryLimit(limit: number): Promise<void>;
   abstract pushImage(tag: string): Promise<void>;
   abstract cancelPush(tag: string): Promise<void>;
   abstract getPushProgress(tag: string): Promise<PushProgress | undefined>;

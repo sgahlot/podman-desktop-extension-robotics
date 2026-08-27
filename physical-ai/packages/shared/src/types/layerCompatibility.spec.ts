@@ -260,10 +260,18 @@ describe('Hummingbird app catalog', () => {
     }
   });
 
-  it('every tool option carries a binPath to COPY --from', () => {
+  it('every tool option is a "tool" kind (binPath is optional — falls back to /usr/bin/<id>)', () => {
     for (const o of HUMMINGBIRD_TOOL_OPTIONS) {
       expect(o.kind).toBe('tool');
-      expect(o.binPath && o.binPath.length > 0).toBe(true);
     }
+  });
+
+  it('syft is a tool app with no explicit binPath, relying on the /usr/bin/<id> default', () => {
+    const syft = HUMMINGBIRD_TOOL_OPTIONS.find(o => o.id === 'syft');
+    expect(syft).toBeDefined();
+    expect(syft!.binPath).toBeUndefined();
+
+    const containerfile = generateLayerContainerfile(sel({ hardened: 'hummingbird-app', hummingbirdApps: ['syft'] }));
+    expect(containerfile).toContain('COPY --from=quay.io/hummingbird/syft:latest /usr/bin/syft /usr/local/bin/syft');
   });
 });

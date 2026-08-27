@@ -33,7 +33,8 @@ export type HardenedApp =
   | 'curl'
   | 'jq'
   | 'kubectl'
-  | 'helm';
+  | 'helm'
+  | 'syft';
 
 /**
  * How a Hummingbird hardened app image is consumed:
@@ -167,6 +168,12 @@ export const HUMMINGBIRD_APP_OPTIONS: readonly HummingbirdAppOption[] = [
     note: 'Hardened helm CLI (chart deploys from the image)',
     kind: 'tool',
     binPath: '/usr/bin/helm',
+  },
+  {
+    id: 'syft',
+    label: 'Syft',
+    note: 'Real use case: generates an actual Software Bill of Materials (SBOM) for your built image, shown in Recent Builds after the build completes',
+    kind: 'tool',
   },
 ];
 
