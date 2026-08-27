@@ -24,6 +24,10 @@ let sbomFormatting: Record<string, boolean> = {};
  * expand/collapse toggle is what made expanding feel slow. */
 let sbomFormatted: Record<string, string> = {};
 let packageCounts: Record<string, number | undefined> = {};
+/** Transient "Copied"/"Copy failed" feedback per build, since the copy can genuinely fail
+ * (e.g. a payload over the clipboard RPC's size cap) and silently doing nothing on failure
+ * is indistinguishable from the button just not working. */
+let copyFeedback: Record<string, string> = {};
 
 function entryKey(entry: BuildHistoryEntry): string {
   return `${entry.tag}-${entry.startedAt}`;
@@ -82,12 +86,21 @@ function toggleSbom(entry: BuildHistoryEntry): void {
   }, 0);
 }
 
-async function copySbom(sbom: string): Promise<void> {
+async function copySbom(entry: BuildHistoryEntry): Promise<void> {
+  const key = entryKey(entry);
+  // The extension's own clipboard RPC (extensionApi.env.clipboard), not
+  // navigator.clipboard.writeText — the latter silently no-ops in this webview (no
+  // clipboard permission granted to the sandboxed frame), which is why "Copy to
+  // clipboard" previously did nothing with zero feedback.
   try {
-    await navigator.clipboard.writeText(sbom);
+    await physicalAiClient.copyToClipboard(entry.sbom ?? '');
+    copyFeedback = { ...copyFeedback, [key]: 'Copied' };
   } catch {
-    // best-effort — clipboard may be unavailable in some hosts
+    copyFeedback = { ...copyFeedback, [key]: 'Copy failed' };
   }
+  setTimeout(() => {
+    copyFeedback = { ...copyFeedback, [key]: '' };
+  }, 1500);
 }
 
 function formatDuration(ms: number): string {
@@ -142,8 +155,8 @@ onDestroy(() => {
                 <button type="button" class="pai-btn pai-btn-sm self-start" on:click={() => toggleSbom(entry)}>
                   {sbomExpanded[key] ? '▼' : '▶'} SBOM{pkgCount !== undefined ? ` (${pkgCount} packages)` : ''}
                 </button>
-                <button type="button" class="pai-btn pai-btn-sm" on:click={() => copySbom(entry.sbom ?? '')}>
-                  Copy to clipboard
+                <button type="button" class="pai-btn pai-btn-sm" on:click={() => copySbom(entry)}>
+                  {copyFeedback[key] || 'Copy to clipboard'}
                 </button>
               </div>
               {#if sbomExpanded[key]}

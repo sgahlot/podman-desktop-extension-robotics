@@ -4,10 +4,12 @@ import BuildHistoryPanel from './BuildHistoryPanel.svelte';
 import type { BuildHistoryEntry } from '/@shared/src/types/BuildHistory';
 
 const mockGetBuildHistory = vi.fn();
+const mockCopyToClipboard = vi.fn();
 
 vi.mock('../api/client', () => ({
   physicalAiClient: {
     getBuildHistory: (...args: unknown[]) => mockGetBuildHistory(...args),
+    copyToClipboard: (...args: unknown[]) => mockCopyToClipboard(...args),
   },
 }));
 
@@ -17,6 +19,7 @@ describe('BuildHistoryPanel', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mockGetBuildHistory.mockResolvedValue([]);
+    mockCopyToClipboard.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -81,9 +84,6 @@ describe('BuildHistoryPanel', () => {
   });
 
   it('expands/collapses the SBOM toggle showing a parsed, pretty-printed package count, and copies the raw SBOM to clipboard', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText } });
-
     const entry: BuildHistoryEntry = {
       tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
       arch: 'amd64',
@@ -118,10 +118,33 @@ describe('BuildHistoryPanel', () => {
 
     const copyButton = screen.getByRole('button', { name: 'Copy to clipboard' });
     await fireEvent.click(copyButton);
+    // Copies via the extension's own clipboard RPC (not navigator.clipboard, which
+    // silently no-ops in this webview), and copies the raw SBOM exactly as syft produced
+    // it, not the display-only pretty-print.
     await waitFor(() => {
-      // Copies the raw SBOM exactly as syft produced it, not the display-only pretty-print.
-      expect(writeText).toHaveBeenCalledWith(SPDX_SBOM);
+      expect(mockCopyToClipboard).toHaveBeenCalledWith(SPDX_SBOM);
     });
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeTruthy();
+  });
+
+  it('shows "Copy failed" feedback when the clipboard RPC rejects (e.g. oversized payload)', async () => {
+    mockCopyToClipboard.mockRejectedValue(new Error('Clipboard text exceeds the allowed size.'));
+
+    const entry: BuildHistoryEntry = {
+      tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
+      arch: 'amd64',
+      startedAt: Date.now(),
+      durationMs: 20_000,
+      success: true,
+      sbom: SPDX_SBOM,
+    };
+    mockGetBuildHistory.mockResolvedValue([entry]);
+
+    render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
+
+    const copyButton = await screen.findByRole('button', { name: 'Copy to clipboard' });
+    await fireEvent.click(copyButton);
+    expect(await screen.findByRole('button', { name: 'Copy failed' })).toBeTruthy();
   });
 
   it('falls back to a plain "SBOM" label (no package count) when the sbom text is not parseable JSON', async () => {

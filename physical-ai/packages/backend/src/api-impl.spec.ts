@@ -1867,8 +1867,15 @@ describe('PhysicalAiApiImpl', () => {
     });
 
     it('rejects oversized payloads', async () => {
-      await expect(api.copyToClipboard('x'.repeat(70_000))).rejects.toThrow(/exceeds/);
+      await expect(api.copyToClipboard('x'.repeat(8 * 1024 * 1024 + 1))).rejects.toThrow(/exceeds/);
       expect(extensionApi.env.clipboard.writeText).not.toHaveBeenCalled();
+    });
+
+    it('accepts a multi-megabyte SBOM-sized payload', async () => {
+      vi.mocked(extensionApi.env.clipboard.writeText).mockResolvedValue(undefined);
+      const bigSbom = 'x'.repeat(2 * 1024 * 1024);
+      await api.copyToClipboard(bigSbom);
+      expect(extensionApi.env.clipboard.writeText).toHaveBeenCalledWith(bigSbom);
     });
   });
 

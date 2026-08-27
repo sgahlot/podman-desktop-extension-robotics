@@ -76,7 +76,6 @@ import {
   cleanEchoOutput,
   assertPeekTimeoutSeconds,
   PEEK_TIMEOUT_DEFAULT_SEC,
-  PEEK_MAX_BYTES,
 } from '/@shared/src/ros/topicPeek';
 import { appendProgressLog } from './progressLogs';
 
@@ -100,6 +99,13 @@ const NAV2_COSTMAP_REFILL_MS = 2000;
 
 /** Build history JSON file name, written under ExtensionContext.storagePath. */
 const BUILD_HISTORY_FILE_NAME = 'build-history.json';
+
+/**
+ * Max clipboard payload size. Deliberately much larger than PEEK_MAX_BYTES (64KB, tuned
+ * for a single ROS topic message) — this RPC is also used to copy a full SBOM, which for
+ * a multi-thousand-package image can run into the low megabytes.
+ */
+const CLIPBOARD_MAX_BYTES = 8 * 1024 * 1024;
 
 /**
  * First non-empty string among the arguments, or '' if none.
@@ -1310,8 +1316,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     if (typeof text !== 'string') {
       throw new Error('Clipboard text must be a string.');
     }
-    // Peek payloads are capped; keep the same bound for clipboard RPC.
-    if (text.length > PEEK_MAX_BYTES + 64) {
+    if (text.length > CLIPBOARD_MAX_BYTES) {
       throw new Error('Clipboard text exceeds the allowed size.');
     }
     await extensionApi.env.clipboard.writeText(text);
