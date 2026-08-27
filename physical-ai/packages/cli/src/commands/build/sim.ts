@@ -83,7 +83,7 @@ export default class BuildSim extends Command {
     if (!profile) {
       this.error(
         `No simulation image available for ${formatSimulationConfig(config)}. ` +
-          'Supported: humble/turtlebot3/dds/gazebo and jazzy/turtlebot3/dds/gazebo.',
+          'Supported: humble/turtlebot3/dds/gazebo, jazzy/turtlebot3/dds/gazebo, jazzy/turtlebot3/zenoh/gazebo.',
       );
     }
     if (!profile.assetDir) {

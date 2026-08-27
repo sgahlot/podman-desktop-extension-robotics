@@ -86,7 +86,7 @@ export default class BuildBase extends Command {
     if (!profile) {
       this.error(
         `No base image profile for ${formatSimulationConfig(config)}. ` +
-          'Supported: humble/turtlebot3/dds/gazebo and jazzy/turtlebot3/dds/gazebo.',
+          'Supported: humble/turtlebot3/dds/gazebo, jazzy/turtlebot3/dds/gazebo, jazzy/turtlebot3/zenoh/gazebo.',
       );
     }
 
