@@ -121,8 +121,8 @@ If you only ever build one sim image and never reuse the base, the two-phase spl
 
 | Status | Key | Summary | Description |
 |--------|-----|---------|-------------|
-| 🅿️ | APPENG-5809 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora | **Parked.** Jazzy has no official Fedora packages ([REP 2000](https://reps.openrobotics.org/rep-2000/) platforms are Ubuntu Noble Tier 1, Windows, RHEL 9 Tier 2 — not Fedora). Community COPRs / from-source builds are development-only and a maintenance sink for MVP. Interim Ubuntu (`ros:jazzy-ros-base`) remains correct. Revisit on concrete triggers (below), not vague “when packaging matures.” |
-| 🅿️ | APPENG-5810 | Add rviz2/desktop variant of the base image | **Parked.** rviz2 pulls a full GUI stack (OpenGL, Qt, X11), so desktop images are much larger than `ros-base`. Story 2’s Gazebo + noVNC path (APPENG-5772) is the better ROSCon demo bet, but it is **not identical** to rviz2 (sim viz vs TF/sensor/robot-state debug). Revisit after APPENG-5772 once the demo viz path is proven. |
+| 🟡 | APPENG-5809 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora | **In Progress (parallel worktree).** Un-parked 2026-08-27 to fold in a self-contained Quadlet-sidecar spike (Story 9 item S9-6, independent of OSRA/native packaging) — see the "Update" note below the original research. |
+| 🟡 | APPENG-5810 | Robot debugging visibility (TF/sensor/costmap state) — textual diagnostics first, visual tool later | **In Progress (parallel worktree), retitled 2026-08-27.** Re-scoped away from "ship an rviz2/desktop base-image preset" (didn't actually solve the debugging problem) to textual diagnostics first, a visual tool (custom or Foxglove Studio) only later if needed — see the "Update" note below the original research. |
 
 ##### Research notes (park rationale, Jul 2026)
 
@@ -139,6 +139,18 @@ If you only ever build one sim image and never reuse the base, the two-phase spl
 - **Park decision stands.** Official Docker guidance keeps `desktop` images separate because they pull heavy GUI deps; `osrf/ros:*-desktop*` is in the multi‑GB class vs leaner `ros-base` ([Docker Hub `library/ros`](https://hub.docker.com/_/ros), [osrf/ros desktop tags](https://hub.docker.com/r/osrf/ros/tags)).
 - **Overlap with APPENG-5772 is partial:** browser Gazebo/noVNC covers simulation visualization for the demo; rviz2 remains useful for robot-state / TF / sensor debugging — decide after Story 2 whether a standalone desktop image is still needed.
 - **Extra constraint on Fedora+Jazzy:** community Jazzy COPRs often **do not ship rviz2** (Ogre/Assimp build blockers); see [ros2-rpm known limitations](https://github.com/nickschuetz/ros2-rpm/blob/main/README.md). That makes “Fedora Jazzy + rviz2” doubly hard versus Ubuntu desktop images.
+
+**Update (2026-08-27) — un-parked and re-scoped, not shipping the original ask.** The original
+"base-image preset with rviz2 installed" framing was found not to actually solve anything: without
+noVNC/X11 delivery, an end user of this extension has no way to see the GUI at all (defeating the
+extension's zero-CLI goal), and building a second full noVNC-style GUI stack just to view a
+debugging tool was never validated as needed. Revised plan (see the Jira for full rationale):
+**Phase 1** — surface the same debugging data rviz2 would show (TF tree, costmap, sensor readings)
+as textual/structured output, extending the existing Topic Monitor feature (APPENG-5773) rather
+than building new GUI infrastructure. **Phase 2** (separate future ticket, only if Phase 1 proves
+insufficient) — a visual tool, either a lightweight custom visualizer in the extension or
+**Foxglove Studio** (browser-native, connects over `rosbridge`/`foxglove-bridge`, no X11/Xvfb/noVNC
+needed — a better architectural fit here than streaming an X11 rviz2 window ever was).
 
 **Sources**
 
@@ -369,8 +381,8 @@ A Miro board would be useful for a team kickoff/planning session where people ne
 | 🅿️ | S5-4 | Sub-task | Story 5 | Catalog internalized images in Image Catalog |
 | 🅿️ | S5-5 | Sub-task | Story 5 | Extension: deploy-to-local wizard (Kind / Minikube) |
 | 🅿️ | S5-6 | Sub-task | Story 5 | Extension: deploy-to-OpenShift path |
-| 🅿️ | APPENG-5809 | Sub-task | APPENG-5764 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora |
-| 🅿️ | APPENG-5810 | Sub-task | APPENG-5764 | Add rviz2/desktop variant of the base image |
+| 🟡 | APPENG-5809 | Sub-task | APPENG-5764 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora (+ Quadlet-sidecar spike, S9-6) |
+| 🟡 | APPENG-5810 | Sub-task | APPENG-5764 | Robot debugging visibility (TF/sensor/costmap state) — textual diagnostics first, visual tool later |
 
 ---
 

@@ -111,11 +111,11 @@ packages/shared/src/types/ImageCatalog.ts         # BuildProgress, PushProgress 
 
 | Status | Key | Summary |
 |--------|-----|---------|
-| 🅿️ | APPENG-5809 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora |
-| 🅿️ | APPENG-5810 | Add rviz2/desktop variant of the base image |
+| 🟡 | APPENG-5809 | Migrate ROS2 Jazzy base image from Ubuntu to Fedora (folding in an independent-of-OSRA Quadlet-sidecar spike, Story 9 item S9-6) |
+| 🟡 | APPENG-5810 | Robot debugging visibility (TF/sensor/costmap state) — textual diagnostics first, visual tool later |
 
-- **APPENG-5809 (Parked):** Jazzy has no official Fedora packages ([REP 2000](https://reps.openrobotics.org/rep-2000/) — Ubuntu Noble Tier 1, RHEL 9 Tier 2). COPR/from-source is development-only. Note: official Jazzy RPMs **do** exist for RHEL 9 — a UBI/RHEL base is closer to a Red Hat path than waiting on Fedora. Revisit on concrete triggers (official Fedora binaries, Red Hat–blessed COPR/SIG, or deliberate RHEL/UBI strategy). Full notes + sources: [podman-extension-plan.md](../podman-extension-plan.md#follow-up-tasks-from-appeng-5769-scope-adjustments).
-- **APPENG-5810 (Parked):** rviz2 needs a full GUI stack and a much larger image. Partial overlap with Story 2 noVNC/Gazebo (APPENG-5772) — sim viz ≠ TF/sensor debug. Revisit after APPENG-5772. Community Fedora Jazzy COPRs often omit rviz2 entirely.
+- **APPENG-5809 (In Progress, parallel worktree):** Jazzy has no official Fedora packages ([REP 2000](https://reps.openrobotics.org/rep-2000/) — Ubuntu Noble Tier 1, RHEL 9 Tier 2). COPR/from-source is development-only. Note: official Jazzy RPMs **do** exist for RHEL 9 — a UBI/RHEL base is closer to a Red Hat path than waiting on Fedora. Now includes a self-contained Quadlet-sidecar spike (run the existing ROS2+sim image as a systemd-managed container bound into a bootc host) independent of whether/when official Fedora packaging ships. Full notes + sources: [podman-extension-plan.md](../podman-extension-plan.md#follow-up-tasks-from-appeng-5769-scope-adjustments).
+- **APPENG-5810 (In Progress, parallel worktree; retitled 2026-08-27):** re-scoped away from "ship an rviz2/desktop base-image preset" — that alone doesn't solve anything (no way to view the GUI without the user doing their own X11 setup, defeating the extension's zero-CLI goal). Gazebo+noVNC (APPENG-5772) covers *watching* the simulation; rviz2's actual value is debugging the robot's internal state (TF, costmap, sensor data) when something's wrong, which Gazebo's view doesn't show. Revised plan: textual diagnostics first (extend Topic Monitor), a visual tool (custom or Foxglove Studio) only later if that proves insufficient.
 
 ---
 
