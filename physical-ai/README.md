@@ -51,6 +51,7 @@ Idle noVNC tabs may show Disconnected; reconnect or refresh — the simulation i
 | `packages/backend` | Extension entrypoint, RPC API, bundled container assets (Containerfiles, entrypoints, world files) |
 | `packages/frontend` | Svelte 5 + TailwindCSS webview UI |
 | `packages/shared` | API interface (RPC methods), RPC bridge, shared types (simulation profiles, config, container info) |
+| `packages/cli` | Standalone CLI (`physical-ai`) for build/launch/spawn without Podman Desktop — see [`packages/cli/README.md`](packages/cli/README.md) |
 
 ## Tech Stack
 
