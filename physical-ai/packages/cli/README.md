@@ -16,6 +16,16 @@ exactly what is and isn't implemented today.
 | Node.js (to build the CLI) | ≥ 24.0.0 |
 | Podman | 5.x or 6.x (tested with 6.0.2) — must be installed and running |
 
+> **Why Node ≥24 is a hard floor, not just a version match:** this package is built as
+> CommonJS, but its `listr2` dependency (used for `build:*`'s progress output) ships **ESM
+> only** — no CJS build. Loading it via `require('listr2')` only works because Node added
+> synchronous `require(esm)` support, which became stable (unflagged) in **Node 22.12** and
+> is present in Node 24. If this package's `engines.node` requirement is ever lowered below
+> that, `build:base`/`build:sim`/`build:file` will fail immediately with `ERR_REQUIRE_ESM` for
+> anyone on an older Node — silently, with no earlier warning from `npm install` or
+> `engines` enforcement beyond whatever floor is declared at the time. Keep this in mind
+> before relaxing the Node requirement for this package specifically.
+
 Unlike the extension, this CLI has no notion of Podman Desktop's provider/connection registry —
 every command runs `podman` directly. `podman info` must succeed on your machine before any
 build/launch/spawn command will work; each command checks this up front and fails fast with a
