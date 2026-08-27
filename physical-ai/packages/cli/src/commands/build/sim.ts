@@ -6,7 +6,10 @@ import { resolveBundledAssetDir } from '../../lib/assets';
 import { runWithProgress } from '../../lib/progress';
 import { resolveSimulationProfile, formatSimulationConfig } from '../../../../shared/src/types/SimulationProfiles';
 import { defaultBaseImageForDistro } from '../../../../shared/src/types/SimulationBaseImages';
+import { QUICK_START_PRESET } from '../../lib/quickstart';
 import type { SimulationConfig } from '../../../../shared/src/types/SimulationConfig';
+
+const PROFILE_FLAGS = ['robot', 'distro', 'middleware', 'engine'];
 
 /**
  * CLI port of the extension's `buildSimulationImage` (api-impl.ts).
@@ -37,6 +40,11 @@ export default class BuildSim extends Command {
         '<%= config.bin %> build:sim --tag quay.io/my-ns/ros2-jazzy-sim:test --base-tag quay.io/my-ns/ros2-jazzy-base:test --distro jazzy',
       description: 'Build the Jazzy sim image on top of an already-built local Jazzy base image',
     },
+    {
+      command:
+        '<%= config.bin %> build:sim --quickstart --tag quay.io/my-ns/ros2-jazzy-sim:noble --base-tag quay.io/my-ns/ros2-jazzy-base:noble',
+      description: "Apply the extension's Quick Start preset (TurtleBot3+Jazzy+DDS+Gazebo)",
+    },
   ];
 
   static flags = {
@@ -44,6 +52,11 @@ export default class BuildSim extends Command {
     'base-tag': Flags.string({
       required: true,
       description: 'Tag of an already-built base image to layer this sim image on (must resolve locally via podman)',
+    }),
+    quickstart: Flags.boolean({
+      description:
+        "Apply the extension's Quick Start preset (TurtleBot3+Jazzy+DDS+Gazebo) instead of the profile flags below",
+      exclusive: PROFILE_FLAGS,
     }),
     robot: Flags.string({ default: 'turtlebot3', description: 'Robot type' }),
     distro: Flags.string({ options: ['humble', 'jazzy'], default: 'humble', description: 'ROS distro' }),
@@ -53,15 +66,18 @@ export default class BuildSim extends Command {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(BuildSim);
-    const config: SimulationConfig = {
-      robot: flags.robot,
-      distro: flags.distro,
-      middleware: flags.middleware,
-      engine: flags.engine,
-      // Not user-configurable here — build:sim no longer resolves a base-image preset itself
-      // (--base-tag replaces that); this only fills the SimulationConfig type / error text.
-      baseImage: defaultBaseImageForDistro(flags.distro),
-    };
+    const config: SimulationConfig = flags.quickstart
+      ? { ...QUICK_START_PRESET }
+      : {
+          robot: flags.robot,
+          distro: flags.distro,
+          middleware: flags.middleware,
+          engine: flags.engine,
+          // Not user-configurable here — build:sim no longer resolves a base-image preset
+          // itself (--base-tag replaces that); this only fills the SimulationConfig type /
+          // error text.
+          baseImage: defaultBaseImageForDistro(flags.distro),
+        };
 
     const profile = resolveSimulationProfile(config);
     if (!profile) {

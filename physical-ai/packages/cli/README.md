@@ -84,6 +84,7 @@ physical-ai build:base --tag quay.io/<ns>/ros2-humble-base:sloretz
 | Flag | Required | Default | Notes |
 |---|---|---|---|
 | `--tag` | yes | — | Full image tag to build |
+| `--quickstart` | no | — | `arm64` \| `amd64` — applies the extension's Quick Start preset (below) for this architecture; mutually exclusive with all the profile flags below |
 | `--robot` | no | `turtlebot3` | Robot type |
 | `--distro` | no | `humble` | `humble` \| `jazzy` |
 | `--middleware` | no | `dds` | `dds` \| `zenoh` |
@@ -93,6 +94,23 @@ physical-ai build:base --tag quay.io/<ns>/ros2-humble-base:sloretz
 
 Only `humble/turtlebot3/dds/gazebo` and `jazzy/turtlebot3/dds/gazebo` profiles currently resolve
 to a real build context; other combinations fail with a clear "no profile" error.
+
+#### `--quickstart` — matches the extension's Quick Start button
+
+```bash
+physical-ai build:base --quickstart arm64 --tag quay.io/<ns>/ros2-jazzy-base:noble
+physical-ai build:base --quickstart amd64 --tag quay.io/<ns>/ros2-jazzy-base:noble-amd64
+```
+
+Mirrors the extension's Image Builder "Quick Start" preset exactly: `robot=turtlebot3`,
+`distro=jazzy`, `middleware=dds`, `engine=gazebo`, `base-image=jazzy-noble` (the multi-arch
+"Ubuntu 24.04 Noble" preset). The `<arm64|amd64>` value plays the role of the extension's
+separate "Target" toggle (This machine / amd64 for OpenShift) — in the UI those two controls
+are independent, but for a CLI flag it's more natural to fold "apply the preset" and "for this
+arch" into one switch. Building for a different arch than your host uses QEMU emulation and
+will be slower — a note is printed when that's the case, matching the extension's own info
+banner. `--tag` is never auto-generated or suffixed — you always provide it explicitly, same as
+every other command.
 
 ### `build:sim` — build the simulation image (Phase 2)
 
@@ -105,6 +123,7 @@ physical-ai build:sim --tag quay.io/<ns>/ros2-humble-turtlebot3:sloretz \
 |---|---|---|---|
 | `--tag` | yes | — | Full image tag to build for the sim image |
 | `--base-tag` | yes | — | Tag of an already-built base image to layer this on — must resolve locally via `podman` (i.e. built by `build:base`/`build:file` first, or already pulled) |
+| `--quickstart` | no | — | Boolean — applies the extension's Quick Start preset (same as `build:base --quickstart`, minus the arch, since arch here comes from `--base-tag`); mutually exclusive with `--robot`/`--distro`/`--middleware`/`--engine` |
 | `--robot` | no | `turtlebot3` | Robot type |
 | `--distro` | no | `humble` | `humble` \| `jazzy` |
 | `--middleware` | no | `dds` | `dds` \| `zenoh` |

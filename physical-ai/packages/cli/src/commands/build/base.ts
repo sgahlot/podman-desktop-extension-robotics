@@ -4,6 +4,7 @@ import { buildImage } from '../../lib/podman/build';
 import { resolveBundledAssetDir } from '../../lib/assets';
 import { runWithProgress } from '../../lib/progress';
 import { hostTargetArch } from '../../lib/hostArch';
+import { QUICK_START_PRESET } from '../../lib/quickstart';
 import {
   resolveSimulationProfile,
   formatSimulationConfig,
@@ -14,6 +15,8 @@ import {
   defaultBaseImageForDistro,
 } from '../../../../shared/src/types/SimulationBaseImages';
 import type { SimulationConfig } from '../../../../shared/src/types/SimulationConfig';
+
+const PROFILE_FLAGS = ['robot', 'distro', 'middleware', 'engine', 'base-image', 'target-arch'];
 
 /** CLI port of the extension's `buildBaseImage` (api-impl.ts). */
 export default class BuildBase extends Command {
@@ -29,12 +32,26 @@ export default class BuildBase extends Command {
         '<%= config.bin %> build:base --tag quay.io/my-ns/ros2-jazzy-base:noble --distro jazzy --target-arch arm64',
       description: 'Cross-build a Jazzy base image for arm64',
     },
+    {
+      command: '<%= config.bin %> build:base --quickstart arm64 --tag quay.io/my-ns/ros2-jazzy-base:noble',
+      description: "Apply the extension's Quick Start preset (TurtleBot3+Jazzy+DDS+Gazebo, Ubuntu Noble)",
+    },
+    {
+      command: '<%= config.bin %> build:base --quickstart amd64 --tag quay.io/my-ns/ros2-jazzy-base:noble-amd64',
+      description: 'Same Quick Start preset, cross-built for amd64 (e.g. for OpenShift)',
+    },
   ];
 
   static flags = {
     tag: Flags.string({
       required: true,
       description: 'Full image tag to build, e.g. quay.io/ns/ros2-humble-base:sloretz',
+    }),
+    quickstart: Flags.string({
+      options: ['arm64', 'amd64'],
+      description:
+        "Apply the extension's Quick Start preset (TurtleBot3+Jazzy+DDS+Gazebo, Ubuntu Noble) for this target architecture, instead of the profile flags below",
+      exclusive: PROFILE_FLAGS,
     }),
     robot: Flags.string({ default: 'turtlebot3', description: 'Robot type' }),
     distro: Flags.string({ options: ['humble', 'jazzy'], default: 'humble', description: 'ROS distro' }),
@@ -53,20 +70,28 @@ export default class BuildBase extends Command {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(BuildBase);
-    const config: SimulationConfig = {
-      robot: flags.robot,
-      distro: flags.distro,
-      middleware: flags.middleware,
-      engine: flags.engine,
-      baseImage: (flags['base-image'] ?? defaultBaseImageForDistro(flags.distro)) as SimulationConfig['baseImage'],
-      targetArch: flags['target-arch'] as SimulationConfig['targetArch'],
-    };
+    const config: SimulationConfig = flags.quickstart
+      ? { ...QUICK_START_PRESET, targetArch: flags.quickstart as SimulationConfig['targetArch'] }
+      : {
+          robot: flags.robot,
+          distro: flags.distro,
+          middleware: flags.middleware,
+          engine: flags.engine,
+          baseImage: (flags['base-image'] ?? defaultBaseImageForDistro(flags.distro)) as SimulationConfig['baseImage'],
+          targetArch: flags['target-arch'] as SimulationConfig['targetArch'],
+        };
 
     const profile = resolveSimulationProfile(config);
     if (!profile) {
       this.error(
         `No base image profile for ${formatSimulationConfig(config)}. ` +
           'Supported: humble/turtlebot3/dds/gazebo and jazzy/turtlebot3/dds/gazebo.',
+      );
+    }
+
+    if (config.targetArch !== hostTargetArch()) {
+      this.log(
+        `Building for ${config.targetArch} on a ${hostTargetArch()} host — this uses QEMU emulation and will be slower.`,
       );
     }
 
