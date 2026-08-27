@@ -102,10 +102,12 @@ const BUILD_HISTORY_FILE_NAME = 'build-history.json';
 
 /**
  * Max clipboard payload size. Deliberately much larger than PEEK_MAX_BYTES (64KB, tuned
- * for a single ROS topic message) — this RPC is also used to copy a full SBOM, which for
- * a multi-thousand-package image can run into the low megabytes.
+ * for a single ROS topic message) — this RPC is also used to copy a full SBOM. A real
+ * ~2,600-package SPDX-JSON SBOM (verbose externalRefs/CPE entries per package) already
+ * exceeded an earlier 8MB guess, so this is set generously rather than re-guessed per
+ * image size — SBOMs only grow as an image gains packages.
  */
-const CLIPBOARD_MAX_BYTES = 8 * 1024 * 1024;
+const CLIPBOARD_MAX_BYTES = 32 * 1024 * 1024;
 
 /**
  * First non-empty string among the arguments, or '' if none.
