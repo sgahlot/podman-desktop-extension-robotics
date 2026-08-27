@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import LayerComposer from './LayerComposer.svelte';
 
 // LayerComposer (and the BuildPushPanel it embeds) reach the backend via the RPC client,
@@ -120,6 +120,46 @@ describe('LayerComposer', () => {
     await fireEvent.click(nginxCheckbox as HTMLInputElement);
 
     expect(document.body.textContent).toContain('quay.io/hummingbird/nginx');
+  });
+
+  it('selecting the syft tool passes generateSbom: true to buildFromContainerfile on build', async () => {
+    mockBuildFromContainerfile.mockResolvedValue(undefined);
+    render(LayerComposer);
+    const hardenedSelect = screen.getByLabelText('Hardened app');
+    await fireEvent.change(hardenedSelect, { target: { value: 'hummingbird-app' } });
+
+    const syftCheckbox = screen.getByText('Syft').closest('label')?.querySelector('input[type="checkbox"]');
+    expect(syftCheckbox).toBeTruthy();
+    await fireEvent.click(syftCheckbox as HTMLInputElement);
+
+    const buildButton = screen.getByRole('button', { name: 'Build' });
+    await fireEvent.click(buildButton);
+
+    await waitFor(() => {
+      expect(mockBuildFromContainerfile).toHaveBeenCalledWith(expect.any(String), expect.any(String), undefined, {
+        generateSbom: true,
+      });
+    });
+  });
+
+  it('building without syft selected passes generateSbom: false', async () => {
+    mockBuildFromContainerfile.mockResolvedValue(undefined);
+    render(LayerComposer);
+    const hardenedSelect = screen.getByLabelText('Hardened app');
+    await fireEvent.change(hardenedSelect, { target: { value: 'hummingbird-app' } });
+
+    const cosignCheckbox = screen.getByText('Cosign').closest('label')?.querySelector('input[type="checkbox"]');
+    expect(cosignCheckbox).toBeTruthy();
+    await fireEvent.click(cosignCheckbox as HTMLInputElement);
+
+    const buildButton = screen.getByRole('button', { name: 'Build' });
+    await fireEvent.click(buildButton);
+
+    await waitFor(() => {
+      expect(mockBuildFromContainerfile).toHaveBeenCalledWith(expect.any(String), expect.any(String), undefined, {
+        generateSbom: false,
+      });
+    });
   });
 
   it('selecting a new bootc base (CentOS Stream 10) updates the preview FROM ref', async () => {

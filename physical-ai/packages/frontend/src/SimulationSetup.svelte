@@ -3,6 +3,7 @@ import { physicalAiClient } from './api/client';
 import { onMount, tick } from 'svelte';
 import { router } from 'tinro';
 import BuildPushPanel from './lib/BuildPushPanel.svelte';
+import BuildHistoryPanel from './lib/BuildHistoryPanel.svelte';
 import LayerComposer from './lib/LayerComposer.svelte';
 import QuickLinks from './lib/QuickLinks.svelte';
 import { navigationLayout } from './lib/navigationLayout';
@@ -65,6 +66,7 @@ let showQuickStartConfirm = false;
 
 let layout: 'pipeline' | 'guided' | 'layers' = 'guided';
 let buildChoice: 'base' | 'sim' | 'both' | undefined = undefined;
+let buildHistoryPanel: BuildHistoryPanel;
 
 $: buildBusy = baseBusy || simBusy;
 $: currentConfig = { robot, distro, middleware, engine, baseImage, targetArch } as SimulationConfig;
@@ -544,6 +546,7 @@ function cancelQuickStart() {
                 onBuildComplete={() => {
                   baseImageExists = true;
                   refreshImageExistence(existsCheckKey);
+                  void buildHistoryPanel?.refresh();
                 }}
                 tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-base:noble"
                 tagInputId="baseTag" />
@@ -589,6 +592,7 @@ function cancelQuickStart() {
                 onBuildComplete={() => {
                   simImageExists = true;
                   refreshImageExistence(existsCheckKey);
+                  void buildHistoryPanel?.refresh();
                 }}
                 tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-sim:noble"
                 tagInputId="simTag"
@@ -612,5 +616,9 @@ function cancelQuickStart() {
     {#if layout === 'layers'}
       <LayerComposer />
     {/if}
+
+    <hr class="border-[var(--pd-content-card-border)] my-2" />
+
+    <BuildHistoryPanel bind:this={buildHistoryPanel} />
   {/if}
 </div>

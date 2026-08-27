@@ -385,7 +385,10 @@ onDestroy(() => {
         tagInputId="layer-build-tag"
         tag={containerfileTag}
         tagPlaceholder="e.g. quay.io/org/custom-layer:latest"
-        buildImage={t => physicalAiClient.buildFromContainerfile(t, containerfile)}
+        buildImage={t =>
+          physicalAiClient.buildFromContainerfile(t, containerfile, undefined, {
+            generateSbom: selectedHbApps.includes('syft'),
+          })}
         onBuildComplete={() => {
           void refreshLocalImages();
         }}
