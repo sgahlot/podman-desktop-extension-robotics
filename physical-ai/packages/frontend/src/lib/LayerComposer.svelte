@@ -222,20 +222,18 @@ onDestroy(() => {
             <div class="flex flex-col gap-1">
               <span class="text-xs text-[var(--pd-content-text)]">Companion images — pulled &amp; run alongside</span>
               {#each HUMMINGBIRD_COMPANION_OPTIONS as o}
-                <label class="flex flex-row items-center gap-2 text-xs text-[var(--pd-content-text)]">
-                  <input type="checkbox" bind:group={selection.hummingbirdApps} value={o.id} />
-                  {o.label}
-                  <span class="pai-text-muted">— {o.note}</span>
+                <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
+                  <input type="checkbox" class="mt-0.5" bind:group={selection.hummingbirdApps} value={o.id} />
+                  <span>{o.label} <span class="pai-text-muted">— {o.note}</span></span>
                 </label>
               {/each}
             </div>
             <div class="flex flex-col gap-1">
               <span class="text-xs text-[var(--pd-content-text)]">Tools to bake in — hardened CLI via COPY --from</span>
               {#each HUMMINGBIRD_TOOL_OPTIONS as o}
-                <label class="flex flex-row items-center gap-2 text-xs text-[var(--pd-content-text)]">
-                  <input type="checkbox" bind:group={selection.hummingbirdApps} value={o.id} />
-                  {o.label}
-                  <span class="pai-text-muted">— {o.note}</span>
+                <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
+                  <input type="checkbox" class="mt-0.5" bind:group={selection.hummingbirdApps} value={o.id} />
+                  <span>{o.label} <span class="pai-text-muted">— {o.note}</span></span>
                 </label>
               {/each}
             </div>
