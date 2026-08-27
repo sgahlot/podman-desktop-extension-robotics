@@ -7,7 +7,6 @@ import LayerComposer from './LayerComposer.svelte';
 // whole client so the component mounts; the wizard's own logic (verdict, preview, build
 // mode) is pure and doesn't depend on real backend responses.
 const mockGetDefaultNamespace = vi.fn();
-const mockGetHostArch = vi.fn();
 const mockListLocalImages = vi.fn();
 const mockPullImageByRef = vi.fn();
 const mockGetPullProgress = vi.fn();
@@ -24,7 +23,6 @@ const mockGetPushProgress = vi.fn();
 vi.mock('../api/client', () => ({
   physicalAiClient: {
     getDefaultNamespace: (...args: unknown[]) => mockGetDefaultNamespace(...args),
-    getHostArch: (...args: unknown[]) => mockGetHostArch(...args),
     listLocalImages: (...args: unknown[]) => mockListLocalImages(...args),
     pullImageByRef: (...args: unknown[]) => mockPullImageByRef(...args),
     getPullProgress: (...args: unknown[]) => mockGetPullProgress(...args),
@@ -44,7 +42,6 @@ describe('LayerComposer', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mockGetDefaultNamespace.mockResolvedValue('testns');
-    mockGetHostArch.mockResolvedValue('amd64');
     mockListLocalImages.mockResolvedValue([]);
     mockGetImageTags.mockResolvedValue([]);
     mockGetBuildProgress.mockResolvedValue(undefined);
@@ -209,5 +206,54 @@ describe('LayerComposer', () => {
     await fireEvent.change(baseOsSelect, { target: { value: 'centos-bootc-stream10' } });
 
     expect(document.body.textContent).toContain('quay.io/centos-bootc/centos-bootc:stream10');
+  });
+
+  // APPENG-6241: the Target toggle used to have zero effect in Layers mode — targetArch is
+  // now owned by the parent (SimulationSetup) and passed in as a prop, not fetched locally.
+  // Each test switches Base OS to a non-preset value first (forces the single-panel
+  // "containerfile" build mode) — the default ubuntu-noble/jazzy/gazebo selection is a
+  // "preset" stack, which renders two separate Build buttons/tag inputs (Step 1 + Step 2),
+  // making a bare getByRole('button', { name: 'Build' }) ambiguous.
+  describe('cross-arch target (APPENG-6241)', () => {
+    async function switchToContainerfileMode() {
+      const baseOsSelect = screen.getByLabelText('Base OS');
+      await fireEvent.change(baseOsSelect, { target: { value: 'centos-bootc-stream9' } });
+    }
+
+    it('tags the build with the target arch suffix and shows a cross-build note when it differs from the host', async () => {
+      render(LayerComposer, { props: { targetArch: 'amd64', hostArch: 'arm64' } });
+      await switchToContainerfileMode();
+
+      const tagInput = screen.getByLabelText('Image tag') as HTMLInputElement;
+      expect(tagInput.value).toContain('-amd64');
+      expect(document.body.textContent).toContain('cross-building via QEMU on this arm64 host');
+    });
+
+    it('does not show a cross-build note when the target matches the host, and the tag has no suffix', async () => {
+      render(LayerComposer, { props: { targetArch: 'arm64', hostArch: 'arm64' } });
+      await switchToContainerfileMode();
+
+      const tagInput = screen.getByLabelText('Image tag') as HTMLInputElement;
+      expect(tagInput.value).not.toContain('-amd64');
+      expect(document.body.textContent).not.toContain('cross-building via QEMU');
+    });
+
+    it('passes the real platform (not undefined) to buildFromContainerfile when targeting amd64', async () => {
+      mockBuildFromContainerfile.mockResolvedValue(undefined);
+      render(LayerComposer, { props: { targetArch: 'amd64', hostArch: 'arm64' } });
+      await switchToContainerfileMode();
+
+      const attemptAnyway = screen.getByLabelText(/Attempt anyway/);
+      await fireEvent.click(attemptAnyway);
+      const buildButton = screen.getByRole('button', { name: 'Build' });
+      await fireEvent.click(buildButton);
+
+      await waitFor(() => {
+        expect(mockBuildFromContainerfile).toHaveBeenCalledWith(expect.any(String), expect.any(String), 'linux/amd64', {
+          generateSbom: false,
+          sbomFormat: 'cyclonedx-json',
+        });
+      });
+    });
   });
 });

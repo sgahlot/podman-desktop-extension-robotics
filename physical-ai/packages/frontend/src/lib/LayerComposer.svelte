@@ -14,7 +14,12 @@ import {
   type LayerSelection,
 } from '/@shared/src/types/layerCompatibility';
 import { SBOM_FORMAT_DEFAULT, type SbomFormat } from '/@shared/src/types/BuildHistory';
-import { baseImageTag, simulationImageTag } from '/@shared/src/types/SimulationProfiles';
+import {
+  baseImageTag,
+  simulationImageTag,
+  platformForArch,
+  archTagSuffix,
+} from '/@shared/src/types/SimulationProfiles';
 import { defaultBaseImageForDistro } from '/@shared/src/types/SimulationBaseImages';
 import type { SimulationConfig, TargetArch } from '/@shared/src/types/SimulationConfig';
 import { physicalAiClient } from '../api/client';
@@ -33,9 +38,15 @@ let sbomFormat: SbomFormat = SBOM_FORMAT_DEFAULT;
 
 let attemptAnyway = false;
 
+// Target arch is owned by the parent (SimulationSetup's Target toggle) — the single
+// source of truth shared across all three layouts (APPENG-6241: this used to be a
+// LayerComposer-local hostArch fetch with no way to select a different target at all,
+// so the Target toggle silently did nothing in Layers mode).
+export let targetArch: TargetArch;
+export let hostArch: TargetArch;
+
 // Environment loaded once on mount.
 let ns = '';
-let hostArch: TargetArch = 'amd64';
 let localImages: string[] = [];
 
 $: result = evaluateStack(selection);
@@ -87,13 +98,13 @@ $: presetConfig = {
   middleware: 'dds',
   engine: 'gazebo',
   baseImage: defaultBaseImageForDistro(presetDistro),
-  targetArch: hostArch,
+  targetArch,
 } as SimulationConfig;
 $: presetBaseTag = ns ? (baseImageTag(ns, presetConfig) ?? '') : '';
 $: presetSimTag = ns ? (simulationImageTag(ns, presetConfig) ?? '') : '';
 $: wantsSim = selection.sim !== 'none';
 $: baseImageExists = !!presetBaseTag && localImages.includes(presetBaseTag);
-$: containerfileTag = `${ns ? `quay.io/${ns}/` : ''}pai-layer-${selection.baseOs}:latest`;
+$: containerfileTag = `${ns ? `quay.io/${ns}/` : ''}pai-layer-${selection.baseOs}:latest${archTagSuffix(targetArch)}`;
 
 // --- Images this stack pulls -----------------------------------------------------
 // The generic Base OS ref (BASE_OS_IMAGE_REF) is only what the *generated Containerfile*
@@ -167,12 +178,6 @@ onMount(async () => {
     ns = await physicalAiClient.getDefaultNamespace();
   } catch {
     // leave ns empty — the build tag falls back to an unqualified name
-  }
-  try {
-    const arch = await physicalAiClient.getHostArch();
-    hostArch = arch === 'arm64' ? 'arm64' : 'amd64';
-  } catch {
-    // keep the amd64 default
   }
   await refreshLocalImages();
 });
@@ -407,12 +412,19 @@ onDestroy(() => {
         Builds directly from the generated Containerfile above. It will either produce a plain image or fail for real at
         the step the verdict predicts.
       </p>
+      <p class="text-xs pai-text-muted">
+        Target: <span class="font-mono">{targetArch}</span>{#if targetArch !== hostArch}
+          <span>
+            (cross-building via QEMU on this {hostArch} host — expect a slower build; image tagged
+            <span class="font-mono">-{targetArch}</span>)</span>
+        {/if}
+      </p>
       <BuildPushPanel
         tagInputId="layer-build-tag"
         tag={containerfileTag}
         tagPlaceholder="e.g. quay.io/org/custom-layer:latest"
         buildImage={t =>
-          physicalAiClient.buildFromContainerfile(t, containerfile, undefined, {
+          physicalAiClient.buildFromContainerfile(t, containerfile, platformForArch(targetArch), {
             generateSbom: selectedHbApps.includes('syft'),
             sbomFormat,
           })}

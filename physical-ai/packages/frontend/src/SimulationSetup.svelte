@@ -614,7 +614,7 @@ function cancelQuickStart() {
     {/if}
 
     {#if layout === 'layers'}
-      <LayerComposer />
+      <LayerComposer targetArch={targetArch} hostArch={hostArch} />
     {/if}
 
     <hr class="border-[var(--pd-content-card-border)] my-2" />
