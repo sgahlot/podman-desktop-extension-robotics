@@ -1866,8 +1866,10 @@ describe('PhysicalAiApiImpl', () => {
       expect(extensionApi.env.clipboard.writeText).toHaveBeenCalledWith('linear:\n  x: 0.2\n');
     });
 
-    it('rejects oversized payloads', async () => {
-      await expect(api.copyToClipboard('x'.repeat(32 * 1024 * 1024 + 1))).rejects.toThrow(/exceeds/);
+    it('rejects oversized payloads, reporting both sizes so a size mismatch is diagnosable', async () => {
+      await expect(api.copyToClipboard('x'.repeat(32 * 1024 * 1024 + 1))).rejects.toThrow(
+        /exceeds the allowed size \(32\.0MB > 32\.0MB limit\)/,
+      );
       expect(extensionApi.env.clipboard.writeText).not.toHaveBeenCalled();
     });
 

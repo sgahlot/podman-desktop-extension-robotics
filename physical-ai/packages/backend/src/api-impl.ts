@@ -1319,7 +1319,10 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       throw new Error('Clipboard text must be a string.');
     }
     if (text.length > CLIPBOARD_MAX_BYTES) {
-      throw new Error('Clipboard text exceeds the allowed size.');
+      const mb = (n: number) => (n / (1024 * 1024)).toFixed(1);
+      throw new Error(
+        `Clipboard text exceeds the allowed size (${mb(text.length)}MB > ${mb(CLIPBOARD_MAX_BYTES)}MB limit).`,
+      );
     }
     await extensionApi.env.clipboard.writeText(text);
   }
