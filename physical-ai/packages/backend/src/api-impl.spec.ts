@@ -1849,6 +1849,213 @@ describe('PhysicalAiApiImpl', () => {
     });
   });
 
+  describe('getTfTreeStatus', () => {
+    const CONTAINER_ID = 'abc123def456';
+    const TF_AVAILABLE = `At time 41024.4
+- Translation: [-2.085, -0.571, 0.000]
+- Rotation: in Quaternion (xyzw) [0.000, 0.000, 0.014, 1.000]
+`;
+    const TF_UNAVAILABLE = `[INFO] [tf2_echo]: Waiting for transform map ->  odom: Invalid frame ID "map" passed to canTransform argument target_frame - frame does not exist
+`;
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as unknown as extensionApi.ContainerInfo[]);
+    });
+
+    it('reports all four curated frame pairs, each independently parsed', async () => {
+      vi.mocked(extensionApi.process.exec)
+        .mockResolvedValueOnce({ stdout: TF_AVAILABLE, stderr: '', command: 'podman' } as extensionApi.RunResult)
+        .mockResolvedValueOnce({ stdout: TF_UNAVAILABLE, stderr: '', command: 'podman' } as extensionApi.RunResult)
+        .mockResolvedValueOnce({ stdout: TF_AVAILABLE, stderr: '', command: 'podman' } as extensionApi.RunResult)
+        .mockResolvedValueOnce({ stdout: TF_AVAILABLE, stderr: '', command: 'podman' } as extensionApi.RunResult);
+
+      const result = await api.getTfTreeStatus(CONTAINER_ID, 'robot_1');
+      expect(result.robotNamespace).toBe('robot_1');
+      expect(result.frames).toHaveLength(4);
+      expect(result.frames[0]).toMatchObject({ parentFrame: 'map', childFrame: 'odom', available: true });
+      expect(result.frames[0].translation).toEqual({ x: -2.085, y: -0.571, z: 0 });
+      expect(result.frames[1]).toMatchObject({ parentFrame: 'odom', childFrame: 'base_footprint', available: false });
+      expect(result.frames[1].error).toMatch(/invalid frame id/i);
+      expect(result.frames[2]).toMatchObject({ parentFrame: 'base_footprint', childFrame: 'base_link' });
+      expect(result.frames[3]).toMatchObject({ parentFrame: 'base_link', childFrame: 'base_scan' });
+      expect(result.capturedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    });
+
+    it('passes the timeout, frame names, and robot name as positional bash args, never interpolated into the script', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: TF_AVAILABLE,
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
+      await api.getTfTreeStatus(CONTAINER_ID, 'robot_1');
+      const args = execArgs(0);
+      const script = args.find((arg: string) => arg.includes('tf2_echo'));
+      expect(script).toContain('"$2" "$3"');
+      expect(script).toContain('/$4/tf');
+      expect(script).not.toContain('robot_1');
+      expect(args).toContain('3');
+      expect(args).toContain('map');
+      expect(args).toContain('odom');
+      expect(args).toContain('robot_1');
+    });
+
+    it('rejects an invalid robot name before exec', async () => {
+      await expect(api.getTfTreeStatus(CONTAINER_ID, 'robot; rm -rf /')).rejects.toThrow(/Invalid robot name/);
+      expect(extensionApi.process.exec).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-simulation containers', async () => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        { Id: CONTAINER_ID, Image: 'docker.io/library/nginx:latest', Labels: {} },
+      ] as unknown as extensionApi.ContainerInfo[]);
+
+      await expect(api.getTfTreeStatus(CONTAINER_ID, 'robot_1')).rejects.toThrow(
+        'Not a Physical AI simulation container',
+      );
+    });
+  });
+
+  describe('getCostmapSummary', () => {
+    const CONTAINER_ID = 'abc123def456';
+    const LOCAL_COSTMAP_ECHO = `info:
+  resolution: 0.05
+  width: 2
+  height: 2
+  origin:
+    position:
+      x: 1.0
+      y: 2.0
+data: [0, 100, -1, 0]
+`;
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as unknown as extensionApi.ContainerInfo[]);
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue(5),
+        update: vi.fn(),
+      } as unknown as extensionApi.Configuration);
+    });
+
+    it('summarizes both local and global costmaps independently', async () => {
+      vi.mocked(extensionApi.process.exec)
+        .mockResolvedValueOnce({
+          stdout: LOCAL_COSTMAP_ECHO,
+          stderr: '',
+          command: 'podman',
+        } as extensionApi.RunResult)
+        .mockRejectedValueOnce({ exitCode: 124, stdout: '', stderr: 'timeout' });
+
+      const result = await api.getCostmapSummary(CONTAINER_ID, 'robot_1');
+      expect(result.local).toMatchObject({
+        topic: '/robot_1/local_costmap/costmap',
+        widthCells: 2,
+        heightCells: 2,
+        occupiedCells: 1,
+        freeCells: 2,
+        unknownCells: 1,
+        totalCells: 4,
+      });
+      expect(result.global).toMatchObject({
+        topic: '/robot_1/global_costmap/costmap',
+        timedOut: true,
+      });
+      expect(result.global?.error).toMatch(/No message/);
+
+      const localArgs = execArgs(0);
+      expect(localArgs).toContain('/robot_1/local_costmap/costmap');
+      const script = localArgs.find((arg: string) => arg.includes('topic echo'));
+      expect(script).toContain('--full-length --flow-style');
+      expect(script).not.toContain('--qos-reliability');
+    });
+
+    it('rejects an invalid robot name before exec', async () => {
+      await expect(api.getCostmapSummary(CONTAINER_ID, 'robot; rm -rf /')).rejects.toThrow(/Invalid robot name/);
+      expect(extensionApi.process.exec).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-simulation containers', async () => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        { Id: CONTAINER_ID, Image: 'docker.io/library/nginx:latest', Labels: {} },
+      ] as unknown as extensionApi.ContainerInfo[]);
+
+      await expect(api.getCostmapSummary(CONTAINER_ID, 'robot_1')).rejects.toThrow(
+        'Not a Physical AI simulation container',
+      );
+    });
+  });
+
+  describe('getLaserScanSummary', () => {
+    const CONTAINER_ID = 'abc123def456';
+    const SCAN_ECHO = `angle_min: 0.0
+angle_max: 6.28
+angle_increment: 0.017
+range_min: 0.1
+range_max: 20.0
+ranges: [0.3, 0.5, .inf, .nan]
+`;
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as unknown as extensionApi.ContainerInfo[]);
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue(5),
+        update: vi.fn(),
+      } as unknown as extensionApi.Configuration);
+    });
+
+    it('summarizes ranges, keeping the best_effort/volatile QoS override plus full-length/flow-style', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: SCAN_ECHO,
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
+      const result = await api.getLaserScanSummary(CONTAINER_ID, 'robot_1');
+      expect(result.topic).toBe('/robot_1/scan');
+      expect(result.finiteCount).toBe(2);
+      expect(result.infCount).toBe(1);
+      expect(result.nanCount).toBe(1);
+      expect(result.totalCount).toBe(4);
+      expect(result.minRange).toBe(0.3);
+      expect(result.maxRange).toBe(0.5);
+
+      const args = execArgs(0);
+      const script = args.find((arg: string) => arg.includes('topic echo'));
+      expect(script).toContain('--qos-reliability best_effort');
+      expect(script).toContain('--full-length --flow-style');
+      expect(args).toContain('/robot_1/scan');
+    });
+
+    it('reports a timeout when the scan topic is idle', async () => {
+      vi.mocked(extensionApi.process.exec).mockRejectedValue({ exitCode: 124, stdout: '', stderr: 'timeout' });
+
+      const result = await api.getLaserScanSummary(CONTAINER_ID, 'robot_1');
+      expect(result.timedOut).toBe(true);
+      expect(result.error).toMatch(/No message|idle/i);
+    });
+
+    it('rejects an invalid robot name before exec', async () => {
+      await expect(api.getLaserScanSummary(CONTAINER_ID, 'robot; rm -rf /')).rejects.toThrow(/Invalid robot name/);
+      expect(extensionApi.process.exec).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-simulation containers', async () => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        { Id: CONTAINER_ID, Image: 'docker.io/library/nginx:latest', Labels: {} },
+      ] as unknown as extensionApi.ContainerInfo[]);
+
+      await expect(api.getLaserScanSummary(CONTAINER_ID, 'robot_1')).rejects.toThrow(
+        'Not a Physical AI simulation container',
+      );
+    });
+  });
+
   describe('getTopicPeekTimeoutSeconds / setTopicPeekTimeoutSeconds', () => {
     it('returns default when unset', async () => {
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({

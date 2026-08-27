@@ -4,6 +4,7 @@ import type { SimulationConfig } from './types/SimulationConfig';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from './types/SimulationContainer';
 import type { TopicInfo, TopicDetailInfo, TopicPeekResult, TopicSchemaResult } from './types/TopicInfo';
 import type { NavigationGoalResult, Nav2WarmStatus } from './types/NavigationGoalResult';
+import type { TfTreeResult, CostmapSummaryResult, LaserScanSummary } from './types/RobotDiagnostics';
 import type {
   OpenShiftDeployConfig,
   OpenShiftDeployResult,
@@ -91,6 +92,14 @@ export abstract class PhysicalAiApi {
   abstract despawnRobot(containerId: string, robotName: string): Promise<void>;
   /** Nav2 pre-warm state for a spawned robot (local sim), for an honest "warming…" indicator. */
   abstract getRobotWarmStatus(containerId: string, robotName: string): Promise<Nav2WarmStatus>;
+
+  // --- Robot diagnostics (APPENG-5810): one-shot textual TF/costmap/sensor snapshots ---
+  /** Curated TF chain (map→odom→base_footprint→base_link→base_scan) via tf2_echo. */
+  abstract getTfTreeStatus(containerId: string, robotName: string): Promise<TfTreeResult>;
+  /** Local + global Nav2 OccupancyGrid summaries (cell counts, not raw grids). */
+  abstract getCostmapSummary(containerId: string, robotName: string): Promise<CostmapSummaryResult>;
+  /** LaserScan summary (angle/range bounds, min/max/mean of finite ranges). */
+  abstract getLaserScanSummary(containerId: string, robotName: string): Promise<LaserScanSummary>;
 
   // --- OpenShift deployment (APPENG-5777) ---
   /** Current Kubernetes/OpenShift context from the kubeconfig, or undefined if none. */

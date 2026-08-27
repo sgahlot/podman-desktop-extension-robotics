@@ -81,6 +81,18 @@ import {
   assertPeekTimeoutSeconds,
   PEEK_TIMEOUT_DEFAULT_SEC,
 } from '/@shared/src/ros/topicPeek';
+import {
+  TF_FRAME_PAIRS,
+  parseTfEchoOutput,
+  parseOccupancyGridEcho,
+  parseLaserScanEcho,
+} from '/@shared/src/ros/robotDiagnostics';
+import type {
+  TfTreeResult,
+  CostmapSummaryResult,
+  OccupancyGridSummary,
+  LaserScanSummary,
+} from '/@shared/src/types/RobotDiagnostics';
 import { appendProgressLog } from './progressLogs';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
@@ -92,6 +104,15 @@ const PROGRESS_RETENTION_MS = 30_000;
  * well before this. Pre-warm runs in the background, so a long wait is invisible.
  */
 const NAV2_TF_POLL_ATTEMPTS = 120;
+
+/**
+ * Fixed per-pair timeout for the curated TF chain (getTfTreeStatus), deliberately short and
+ * NOT the user-configurable peek timeout (topicPeekTimeoutSeconds) — up to TF_FRAME_PAIRS.length
+ * pairs run concurrently per refresh, so a long per-pair wait would multiply badly for a UI
+ * action the user expects to be quick. Matches #hasMapBaseLinkTf's existing 5s precedent, minus
+ * a little slack since this is a manual "Refresh diagnostics" click, not a startup poll.
+ */
+const TF_DIAGNOSTIC_TIMEOUT_SEC = 3;
 
 /**
  * Settle after clearing the Nav2 costmaps on a cold start, so they refill from
@@ -1599,6 +1620,217 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       [robotName],
     );
     return /Translation:/i.test(tf.stdout);
+  }
+
+  /**
+   * Curated TF chain snapshot (map→odom→base_footprint→base_link→base_scan), one tf2_echo
+   * per pair run concurrently — same one-shot/no-streaming shape as peekRosTopic, extended
+   * from the single-pair precedent in #hasMapBaseLinkTf to the full chain. Never throws for
+   * an unavailable pair (idle Nav2/AMCL, or the topic simply isn't up yet); that pair's
+   * `available` is just false.
+   */
+  async getTfTreeStatus(containerId: string, robotName: string): Promise<TfTreeResult> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    const safeRobot = assertRobotName(robotName);
+    const distro = await this.#detectRosDistro(id);
+    const target = { kind: 'podman', id } as const;
+    const capturedAt = new Date().toISOString();
+
+    const frames = await Promise.all(
+      TF_FRAME_PAIRS.map(async ([parentFrame, childFrame]) => {
+        const result = await this.#execRosBash(
+          target,
+          distro,
+          'timeout "$1" ros2 run tf2_ros tf2_echo "$2" "$3" --ros-args -p use_sim_time:=true ' +
+            '-r /tf:=/$4/tf -r /tf_static:=/$4/tf_static 2>&1',
+          [String(TF_DIAGNOSTIC_TIMEOUT_SEC), parentFrame, childFrame, safeRobot],
+        );
+        const parsed = parseTfEchoOutput(result.stdout);
+        return {
+          parentFrame,
+          childFrame,
+          available: parsed.available,
+          translation: parsed.translation,
+          rotationQuaternion: parsed.rotationQuaternion,
+          error: parsed.error,
+        };
+      }),
+    );
+
+    return { robotNamespace: safeRobot, frames, capturedAt };
+  }
+
+  /**
+   * Local + global Nav2 costmap summaries (cell counts, not raw grids — a global costmap can
+   * be 100k+ cells). Runs both peeks concurrently; one idle costmap (e.g. before Navigate has
+   * run) never blanks the other. Uses default QoS (no --qos-reliability/--qos-durability
+   * override) — verified live against a running Nav2 bringup that costmap topics are readable
+   * with defaults, and forcing best_effort/volatile risks mismatching Nav2's actual publisher
+   * QoS (transient_local/reliable is common for costmap layers).
+   */
+  async getCostmapSummary(containerId: string, robotName: string): Promise<CostmapSummaryResult> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    const safeRobot = assertRobotName(robotName);
+    const distro = await this.#detectRosDistro(id);
+    const target = { kind: 'podman', id } as const;
+
+    const [local, global] = await Promise.all([
+      this.#peekOccupancyGrid(target, distro, `/${safeRobot}/local_costmap/costmap`),
+      this.#peekOccupancyGrid(target, distro, `/${safeRobot}/global_costmap/costmap`),
+    ]);
+
+    return { local, global };
+  }
+
+  /**
+   * Peeks one `nav_msgs/OccupancyGrid` topic and summarizes cell counts. Deliberately does
+   * NOT route through cleanEchoOutput() — its 64KB truncation (tuned for a single peeked
+   * message) would cut off a global costmap's `data:` array well before the end (verified
+   * live: a 384x384 global costmap's flow-style data array alone is ~590KB), corrupting the
+   * occupied/free/unknown counts. `--full-length --flow-style` on the echo itself keeps the
+   * array complete AND on a single compact line instead of one line per cell.
+   */
+  async #peekOccupancyGrid(
+    target: ExecTarget,
+    distro: SupportedRosDistro,
+    topic: string,
+  ): Promise<OccupancyGridSummary> {
+    const capturedAt = new Date().toISOString();
+    const zero = (extra: Partial<OccupancyGridSummary>): OccupancyGridSummary => ({
+      topic,
+      widthCells: 0,
+      heightCells: 0,
+      resolutionMeters: 0,
+      originX: 0,
+      originY: 0,
+      occupiedCells: 0,
+      freeCells: 0,
+      unknownCells: 0,
+      totalCells: 0,
+      capturedAt,
+      ...extra,
+    });
+
+    let timeoutSec: number;
+    try {
+      timeoutSec = await this.getTopicPeekTimeoutSeconds();
+    } catch (e) {
+      return zero({ error: e instanceof Error ? e.message : String(e) });
+    }
+
+    const result = await this.#execRosBash(
+      target,
+      distro,
+      'timeout "$1" ros2 topic echo --once --full-length --flow-style "$2" 2>&1',
+      [String(timeoutSec), topic],
+    );
+    const stdout = (result.stdout ?? '').trim();
+    const stderr = (result.stderr ?? '').trim();
+    const timedOut = result.exitCode === 124 || /timeout/i.test(stderr) || (result.exitCode !== 0 && !stdout);
+
+    const parsed = stdout ? parseOccupancyGridEcho(stdout) : undefined;
+    if (parsed) {
+      return {
+        topic,
+        widthCells: parsed.width,
+        heightCells: parsed.height,
+        resolutionMeters: parsed.resolution,
+        originX: parsed.originX,
+        originY: parsed.originY,
+        occupiedCells: parsed.occupied,
+        freeCells: parsed.free,
+        unknownCells: parsed.unknown,
+        totalCells: parsed.total,
+        capturedAt,
+      };
+    }
+
+    if (timedOut) {
+      return zero({
+        timedOut: true,
+        error: `No message on ${topic} within ${timeoutSec}s. The costmap may not be publishing yet — try after Navigate has run.`,
+      });
+    }
+
+    return zero({ error: stderr || `Failed to peek ${topic} (exit ${result.exitCode})` });
+  }
+
+  /**
+   * LaserScan summary (angle/range bounds, min/max/mean of finite ranges, inf/nan counts).
+   * Keeps peekRosTopic's best_effort/volatile QoS override — LaserScan is a normal
+   * best-effort sensor stream, unlike the costmap. Adds --full-length --flow-style for the
+   * same reason as #peekOccupancyGrid: the TB3 LDS publishes 360+ ranges, over the default
+   * 128-element truncation (verified live).
+   */
+  async getLaserScanSummary(containerId: string, robotName: string): Promise<LaserScanSummary> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    const safeRobot = assertRobotName(robotName);
+    const distro = await this.#detectRosDistro(id);
+    const target = { kind: 'podman', id } as const;
+    const topic = `/${safeRobot}/scan`;
+    const capturedAt = new Date().toISOString();
+
+    let timeoutSec: number;
+    const zero = (extra: Partial<LaserScanSummary>): LaserScanSummary => ({
+      topic,
+      angleMinRad: 0,
+      angleMaxRad: 0,
+      angleIncrementRad: 0,
+      rangeMinMeters: 0,
+      rangeMaxMeters: 0,
+      finiteCount: 0,
+      infCount: 0,
+      nanCount: 0,
+      totalCount: 0,
+      capturedAt,
+      ...extra,
+    });
+
+    try {
+      timeoutSec = await this.getTopicPeekTimeoutSeconds();
+    } catch (e) {
+      return zero({ error: e instanceof Error ? e.message : String(e) });
+    }
+
+    const result = await this.#execRosBash(
+      target,
+      distro,
+      'timeout "$1" ros2 topic echo --once --qos-reliability best_effort --qos-durability volatile ' +
+        '--full-length --flow-style "$2" 2>&1',
+      [String(timeoutSec), topic],
+    );
+    const stdout = (result.stdout ?? '').trim();
+    const stderr = (result.stderr ?? '').trim();
+    const timedOut = result.exitCode === 124 || /timeout/i.test(stderr) || (result.exitCode !== 0 && !stdout);
+
+    const parsed = stdout ? parseLaserScanEcho(stdout) : undefined;
+    if (parsed) {
+      return {
+        topic,
+        angleMinRad: parsed.angleMin,
+        angleMaxRad: parsed.angleMax,
+        angleIncrementRad: parsed.angleIncrement,
+        rangeMinMeters: parsed.rangeMin,
+        rangeMaxMeters: parsed.rangeMax,
+        minRange: parsed.min,
+        maxRange: parsed.max,
+        meanRange: parsed.mean,
+        finiteCount: parsed.finiteCount,
+        infCount: parsed.infCount,
+        nanCount: parsed.nanCount,
+        totalCount: parsed.totalCount,
+        capturedAt,
+      };
+    }
+
+    if (timedOut) {
+      return zero({
+        timedOut: true,
+        error: `No message on ${topic} within ${timeoutSec}s. The topic may be idle — try one with active publishers.`,
+      });
+    }
+
+    return zero({ error: stderr || `Failed to peek ${topic} (exit ${result.exitCode})` });
   }
 
   async #isNav2BringupRunning(target: ExecTarget, robotName: string, distro: SupportedRosDistro): Promise<boolean> {
