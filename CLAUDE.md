@@ -35,6 +35,13 @@
   `npm run format:check`, and `npm test` (all packages) — fix pre-existing errors
   encountered along the way too, even if unrelated to the branch's own feature scope,
   rather than letting them keep sitting on `main`
+- **Commit/push freely on feature branches, no approval needed:** on any branch other than
+  `main`, commit and push as soon as work reaches a safe/working state — do not wait for the
+  user to test or explicitly say "go ahead" first. **`main` is the only branch that requires
+  the user's own testing before anything is committed or pushed to it** (see the
+  Merge-to-main rule below — the whole branch gets tested before it merges into `main`,
+  which is what makes committing freely on the branch itself safe). If you're ever unsure
+  whether you're "on main," check with `git branch --show-current` before assuming either way.
 - **Merge-to-main before Closed:** never transition a sub-task to **Closed** until its branch
   is merged to `main`. Required sequence: user-tested → merge the branch to `main` with a
   **merge commit** (`--no-ff`, so the branch's commit SHAs stay reachable from `main` and every
