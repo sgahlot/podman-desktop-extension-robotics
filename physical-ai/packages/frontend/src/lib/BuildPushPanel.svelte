@@ -15,6 +15,7 @@
 <script lang="ts">
 import { physicalAiClient } from '../api/client';
 import { onMount, onDestroy } from 'svelte';
+import { formatDurationSeconds } from './formatDuration';
 
 /** Called to start a build for the current tag (fire-and-forget; progress via polling). */
 export let buildImage: (tag: string) => Promise<void>;
@@ -433,7 +434,7 @@ $: pushDurationSec =
           {#if buildCancelled}
             <div class="text-sm p-3 rounded pai-banner-warning">
               Build cancelled{#if buildDurationSec !== undefined}
-                after {buildDurationSec}s{/if}
+                after {formatDurationSeconds(buildDurationSec)}{/if}
             </div>
           {:else if buildError}
             <div class="flex flex-col gap-2">
@@ -451,7 +452,7 @@ $: pushDurationSec =
             <div class="text-sm pai-text-success">
               Image built successfully: <span class="font-mono">{inputValue}</span>
               {#if buildDurationSec !== undefined}
-                <span class="text-xs pai-text-muted">(built in {buildDurationSec}s)</span>
+                <span class="text-xs pai-text-muted">(built in {formatDurationSeconds(buildDurationSec)})</span>
               {/if}
             </div>
           {/if}
@@ -488,7 +489,7 @@ $: pushDurationSec =
           {#if pushCancelled}
             <div class="text-sm p-3 rounded pai-banner-warning">
               Push cancelled{#if pushDurationSec !== undefined}
-                after {pushDurationSec}s{/if}
+                after {formatDurationSeconds(pushDurationSec)}{/if}
             </div>
             <button on:click={startPush} class="pai-btn pai-btn-sm"> Retry push </button>
           {:else if pushError}
@@ -500,7 +501,7 @@ $: pushDurationSec =
             <div class="text-sm pai-text-success">
               Image pushed successfully to registry
               {#if pushDurationSec !== undefined}
-                <span class="text-xs pai-text-muted">(pushed in {pushDurationSec}s)</span>
+                <span class="text-xs pai-text-muted">(pushed in {formatDurationSeconds(pushDurationSec)})</span>
               {/if}
               {#if pushDigest}
                 <div class="text-xs mt-1 pai-text-muted">

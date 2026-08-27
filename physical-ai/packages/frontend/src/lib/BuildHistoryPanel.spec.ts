@@ -50,6 +50,21 @@ describe('BuildHistoryPanel', () => {
     expect(screen.getByText('✅')).toBeTruthy();
   });
 
+  it('formats a duration over a minute as minutes and seconds', async () => {
+    const entry: BuildHistoryEntry = {
+      tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64',
+      arch: 'amd64',
+      startedAt: Date.now(),
+      durationMs: 1_150_200,
+      success: true,
+    };
+    mockGetBuildHistory.mockResolvedValue([entry]);
+
+    render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
+
+    expect(await screen.findByText('19m 10s')).toBeTruthy();
+  });
+
   it('renders a failed entry with its error message', async () => {
     const entry: BuildHistoryEntry = {
       tag: 'quay.io/ns/pai-layer-fedora-bootc-42:latest',
