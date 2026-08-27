@@ -80,7 +80,7 @@ describe('BuildHistoryPanel', () => {
     expect(screen.queryByText(/SBOM/)).toBeNull();
   });
 
-  it('expands/collapses the SBOM toggle showing a parsed package count, and copies to clipboard', async () => {
+  it('expands/collapses the SBOM toggle showing a parsed, pretty-printed package count, and copies the raw SBOM to clipboard', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
 
@@ -97,17 +97,29 @@ describe('BuildHistoryPanel', () => {
     render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
 
     const toggle = await screen.findByRole('button', { name: /SBOM \(2 packages\)/ });
-    expect(screen.queryByText(SPDX_SBOM)).toBeNull();
+    expect(screen.queryByText(/pkg-a/)).toBeNull();
 
     await fireEvent.click(toggle);
-    expect(screen.getByText(SPDX_SBOM)).toBeTruthy();
+    // Pretty-printing is deferred a tick so the "Formatting..." placeholder can paint first.
+    expect(screen.getByText(/Formatting SBOM/)).toBeTruthy();
+    // testing-library normalizes whitespace when matching text content, so match against
+    // the same normalized form rather than the raw (indented, multi-line) pretty string.
+    // eslint-disable-next-line no-null/no-null -- JSON.stringify's replacer arg requires null
+    const prettyNormalized = JSON.stringify(JSON.parse(SPDX_SBOM), null, 2).replace(/\s+/g, ' ').trim();
+    expect(await screen.findByText(prettyNormalized)).toBeTruthy();
 
     await fireEvent.click(toggle);
-    expect(screen.queryByText(SPDX_SBOM)).toBeNull();
+    expect(screen.queryByText(prettyNormalized)).toBeNull();
+
+    // Re-expanding reuses the cached formatted text — no "Formatting..." flash the 2nd time.
+    await fireEvent.click(toggle);
+    expect(screen.queryByText(/Formatting SBOM/)).toBeNull();
+    expect(screen.getByText(prettyNormalized)).toBeTruthy();
 
     const copyButton = screen.getByRole('button', { name: 'Copy to clipboard' });
     await fireEvent.click(copyButton);
     await waitFor(() => {
+      // Copies the raw SBOM exactly as syft produced it, not the display-only pretty-print.
       expect(writeText).toHaveBeenCalledWith(SPDX_SBOM);
     });
   });
@@ -127,7 +139,7 @@ describe('BuildHistoryPanel', () => {
 
     const toggle = await screen.findByRole('button', { name: '▶ SBOM' });
     await fireEvent.click(toggle);
-    expect(screen.getByText('not valid json')).toBeTruthy();
+    expect(await screen.findByText('not valid json')).toBeTruthy();
   });
 
   it('re-fetches history on the configured poll interval', async () => {

@@ -8,8 +8,26 @@ import type { BuildHistoryEntry } from '/@shared/src/types/BuildHistory';
 export let pollIntervalMs = 3000;
 
 let history: BuildHistoryEntry[] = [];
-let sbomExpanded: Record<number, boolean> = {};
 let pollTimer: number | null = null;
+
+/**
+ * Per-build UI/derived state, keyed by the same stable `${tag}-${startedAt}` string used
+ * as the {#each} key — NOT array index. History is re-fetched wholesale on every poll, so
+ * a new build prepended to the list would shift every later entry's index; keying expand/
+ * format state by index would silently show the wrong entry's SBOM after a poll tick.
+ */
+let sbomExpanded: Record<string, boolean> = {};
+let sbomFormatting: Record<string, boolean> = {};
+/** Pretty-printed (indented) SBOM text, computed once per build and cached — an SBOM can
+ * be several thousand packages, so re-parsing/re-formatting it on every 3s poll tick (the
+ * naive approach) would waste real CPU even while collapsed, and redoing it on every
+ * expand/collapse toggle is what made expanding feel slow. */
+let sbomFormatted: Record<string, string> = {};
+let packageCounts: Record<string, number | undefined> = {};
+
+function entryKey(entry: BuildHistoryEntry): string {
+  return `${entry.tag}-${entry.startedAt}`;
+}
 
 export async function refresh(): Promise<void> {
   try {
@@ -19,18 +37,49 @@ export async function refresh(): Promise<void> {
   }
 }
 
-function toggleSbom(index: number): void {
-  sbomExpanded = { ...sbomExpanded, [index]: !sbomExpanded[index] };
-}
-
 /** Package count from an SPDX-JSON SBOM, or undefined if the shape doesn't match. */
-function packageCount(sbom: string): number | undefined {
+function parsePackageCount(sbom: string): number | undefined {
   try {
     const parsed = JSON.parse(sbom) as { packages?: unknown[] };
     return Array.isArray(parsed.packages) ? parsed.packages.length : undefined;
   } catch {
     return undefined;
   }
+}
+
+// Compute the package count once per build the first time it's seen, not on every poll —
+// cheap for a small SBOM, but a large one (thousands of packages) parsed every 3s adds up.
+$: for (const entry of history) {
+  if (entry.sbom) {
+    const key = entryKey(entry);
+    if (!(key in packageCounts)) {
+      packageCounts = { ...packageCounts, [key]: parsePackageCount(entry.sbom) };
+    }
+  }
+}
+
+function toggleSbom(entry: BuildHistoryEntry): void {
+  const key = entryKey(entry);
+  const wasExpanded = !!sbomExpanded[key];
+  sbomExpanded = { ...sbomExpanded, [key]: !wasExpanded };
+  if (wasExpanded || key in sbomFormatted || !entry.sbom) {
+    return;
+  }
+  // Defer the actual (synchronous, potentially slow for a large SBOM) pretty-print past
+  // this click's render so the "Formatting..." placeholder paints first instead of the
+  // click appearing to hang.
+  sbomFormatting = { ...sbomFormatting, [key]: true };
+  const sbom = entry.sbom;
+  setTimeout(() => {
+    let pretty = sbom;
+    try {
+      pretty = JSON.stringify(JSON.parse(sbom), null, 2);
+    } catch {
+      // not JSON (or an unexpected shape) — show the raw text as-is
+    }
+    sbomFormatted = { ...sbomFormatted, [key]: pretty };
+    sbomFormatting = { ...sbomFormatting, [key]: false };
+  }, 0);
 }
 
 async function copySbom(sbom: string): Promise<void> {
@@ -70,8 +119,9 @@ onDestroy(() => {
     <p class="text-xs pai-text-muted">No builds recorded yet.</p>
   {:else}
     <div class="flex flex-col gap-2">
-      {#each history as entry, i (`${entry.tag}-${entry.startedAt}`)}
-        {@const pkgCount = entry.sbom ? packageCount(entry.sbom) : undefined}
+      {#each history as entry (entryKey(entry))}
+        {@const key = entryKey(entry)}
+        {@const pkgCount = packageCounts[key]}
         <div
           class="rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3 flex flex-col gap-1">
           <div class="flex flex-row items-center gap-2 flex-wrap">
@@ -89,19 +139,25 @@ onDestroy(() => {
           {#if entry.sbom}
             <div class="flex flex-col gap-1">
               <div class="flex flex-row items-center gap-2">
-                <button type="button" class="pai-btn pai-btn-sm self-start" on:click={() => toggleSbom(i)}>
-                  {sbomExpanded[i] ? '▼' : '▶'} SBOM{pkgCount !== undefined ? ` (${pkgCount} packages)` : ''}
+                <button type="button" class="pai-btn pai-btn-sm self-start" on:click={() => toggleSbom(entry)}>
+                  {sbomExpanded[key] ? '▼' : '▶'} SBOM{pkgCount !== undefined ? ` (${pkgCount} packages)` : ''}
                 </button>
                 <button type="button" class="pai-btn pai-btn-sm" on:click={() => copySbom(entry.sbom ?? '')}>
                   Copy to clipboard
                 </button>
               </div>
-              {#if sbomExpanded[i]}
-                <div
-                  class="rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] font-mono text-xs text-[var(--pd-content-text)]"
-                  style="max-height: 300px; overflow-y: auto; padding: 8px; white-space: pre-wrap; word-break: break-all;">
-                  {entry.sbom}
-                </div>
+              {#if sbomExpanded[key]}
+                {#if sbomFormatting[key]}
+                  <p class="text-xs pai-text-muted p-2">
+                    Formatting SBOM… large SBOMs (thousands of packages) can take a moment.
+                  </p>
+                {:else}
+                  <div
+                    class="rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] font-mono text-xs text-[var(--pd-content-text)]"
+                    style="max-height: 300px; overflow: auto; padding: 8px; white-space: pre;">
+                    {sbomFormatted[key] ?? entry.sbom}
+                  </div>
+                {/if}
               {/if}
             </div>
           {/if}
