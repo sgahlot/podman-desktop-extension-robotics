@@ -35,7 +35,8 @@
   },
   "dependencies": {
     "@oclif/core": "^4",
-    "@oclif/plugin-help": "^6"
+    "@oclif/plugin-help": "^6",
+    "listr2": "^11.0.1"
   },
   "devDependencies": {
     "@oclif/test": "^4",

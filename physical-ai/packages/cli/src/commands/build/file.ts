@@ -1,6 +1,7 @@
 import { Command, Flags } from '@oclif/core';
 import { assertPodmanAvailable } from '../../lib/podman/preflight';
 import { buildImage } from '../../lib/podman/build';
+import { runWithProgress } from '../../lib/progress';
 
 /**
  * CLI port of the extension's `buildFromContainerfile`. Unlike the extension (which accepts
@@ -38,16 +39,25 @@ export default class BuildFile extends Command {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(BuildFile);
-    await assertPodmanAvailable();
-    await buildImage(
+
+    await runWithProgress([
+      { title: 'Checking podman is available', run: () => assertPodmanAvailable() },
       {
-        contextDir: flags['context-dir'],
-        containerFile: flags.containerfile,
-        tag: flags.tag,
-        platform: flags.platform,
+        title: `Building ${flags.tag}`,
+        outputBar: 8,
+        run: onLine =>
+          buildImage(
+            {
+              contextDir: flags['context-dir'],
+              containerFile: flags.containerfile,
+              tag: flags.tag,
+              platform: flags.platform,
+            },
+            onLine,
+          ),
       },
-      line => this.log(line),
-    );
+    ]);
+
     this.log(`Built ${flags.tag}`);
   }
 }

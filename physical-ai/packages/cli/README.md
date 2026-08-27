@@ -56,6 +56,15 @@ didn't `npm link`.
 Run `physical-ai <command> --help` for the full flag list plus worked `EXAMPLES` for that
 command; what follows here is the quick reference.
 
+### Build output
+
+`build:base`, `build:sim`, and `build:file` run as a small task list (via
+[Listr2](https://listr2.kilic.dev)) rather than dumping the full `podman build` log straight
+into your terminal: each step collapses to a spinner + title, with only the last 8 lines of
+`podman build`'s output visible in a scrolling window underneath — closer to how Gradle/npm
+show build progress. This only applies in an interactive terminal; piped or non-TTY output
+(CI logs, `| tee build.log`, etc.) automatically falls back to printing every line in full.
+
 ### `build:base` — build the ROS2 base image (Phase 1)
 
 ```bash

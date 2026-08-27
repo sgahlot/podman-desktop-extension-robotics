@@ -2,6 +2,7 @@ import { Command, Flags } from '@oclif/core';
 import { assertPodmanAvailable } from '../../lib/podman/preflight';
 import { buildImage } from '../../lib/podman/build';
 import { resolveBundledAssetDir } from '../../lib/assets';
+import { runWithProgress } from '../../lib/progress';
 import {
   resolveSimulationProfile,
   formatSimulationConfig,
@@ -74,21 +75,28 @@ export default class BuildSim extends Command {
       );
     }
 
-    await assertPodmanAvailable();
     const baseImage = resolveSimulationBaseImage(config.baseImage);
     const localBaseTag = `quay.io/${flags.namespace}/${profile.baseImageName}:${baseImage.imageTag}${archTagSuffix(config.targetArch)}`;
     const contextDir = resolveBundledAssetDir(profile.assetDir);
 
-    await buildImage(
+    await runWithProgress([
+      { title: 'Checking podman is available', run: () => assertPodmanAvailable() },
       {
-        contextDir,
-        containerFile: 'Containerfile',
-        tag: flags.tag,
-        buildArgs: { LOCAL_BASE_IMAGE: localBaseTag },
-        platform: platformForArch(config.targetArch),
+        title: `Building ${flags.tag}`,
+        outputBar: 8,
+        run: onLine =>
+          buildImage(
+            {
+              contextDir,
+              containerFile: 'Containerfile',
+              tag: flags.tag,
+              buildArgs: { LOCAL_BASE_IMAGE: localBaseTag },
+              platform: platformForArch(config.targetArch),
+            },
+            onLine,
+          ),
       },
-      line => this.log(line),
-    );
+    ]);
 
     this.log(`Built ${flags.tag}`);
   }
