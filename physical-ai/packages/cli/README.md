@@ -240,6 +240,17 @@ Note: the extension's Nav2 pre-warm side effect for Jazzy images is **not** port
 physical-ai sim:stop <container-id>
 ```
 
+### `sim:remove` — stop (if running) and remove a simulation container
+
+```bash
+physical-ai sim:remove <container-id>
+```
+
+CLI port of the extension's "Stop & remove" button (`deleteSimulation`) — works on both running
+and already-exited containers as one action, via `podman rm -f`. This is the only way to clean
+up an exited container currently — `sim:list` keeps showing exited containers indefinitely
+otherwise, since `sim:stop` only stops, it doesn't remove.
+
 ### `sim:open` — open a running simulation in your browser
 
 ```bash
@@ -272,12 +283,13 @@ physical-ai build:base --tag quay.io/<ns>/ros2-humble-base:local
 physical-ai build:sim --tag quay.io/<ns>/ros2-humble-turtlebot3:local \
   --base-tag quay.io/<ns>/ros2-humble-base:local
 
-# Launch the SIM image (not the base image), open it, spawn, list, stop
+# Launch the SIM image (not the base image), open it, spawn, list, clean up
 physical-ai sim:launch --image quay.io/<ns>/ros2-humble-turtlebot3:local
 physical-ai sim:open <container-id>
 physical-ai sim:list
 physical-ai sim:spawn <container-id> --robot robot1 --x 0 --y 0 --yaw 0
-physical-ai sim:stop <container-id>
+physical-ai sim:stop <container-id>      # stop only, still shows in sim:list
+physical-ai sim:remove <container-id>    # stop (if needed) + remove in one step
 ```
 
 `build:file --build-arg` (see above) covers the same case if you'd rather build from a
@@ -303,12 +315,6 @@ not full parity with the extension. Explicitly **not yet implemented**:
 
 Later work will port the remaining methods from the extension's `PhysicalAiApi` interface as
 additional command topics (`catalog:*`, `config:*`, `openshift:*`, `ros:*`).
-
-**Next step — `sim:remove` (delete):** the extension's "Stop & remove" button (`deleteSimulation`)
-works on both running and exited containers as one combined action, but there's no CLI
-equivalent yet — `sim:list` will keep showing exited containers indefinitely until they're
-removed manually (`podman rm <id>`). A `sim:remove` command (stop-if-running, then `podman rm`)
-is the natural next addition here.
 
 **Known issue — Humble sim image build:** `build:sim --distro humble` can fail with
 `E: Unable to locate package ros-humble-ros-gz` on some Ubuntu/arch combinations (reproduced on
