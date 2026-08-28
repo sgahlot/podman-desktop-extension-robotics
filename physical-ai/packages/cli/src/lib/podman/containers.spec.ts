@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./exec', () => ({ runPodman: vi.fn() }));
 
 import { runPodman } from './exec';
-import { listSimContainers, resolveSimContainer, stopContainer } from './containers';
+import { listSimContainers, resolveSimContainer, stopContainer, hostPortForPrivate } from './containers';
 
 beforeEach(() => {
   vi.mocked(runPodman).mockReset();
@@ -65,7 +65,18 @@ describe('resolveSimContainer', () => {
     await expect(resolveSimContainer('abcdef012345')).resolves.toEqual({
       id: 'abcdef012345abcdef012345',
       image: 'quay.io/ns/ros2-jazzy-sim:noble',
+      ports: ['6080:6080/tcp'],
     });
+  });
+});
+
+describe('hostPortForPrivate', () => {
+  it('finds the host port mapped to a given container-private port', () => {
+    expect(hostPortForPrivate(['16080:6080/tcp', '8080:8080/tcp'], 6080)).toBe(16080);
+  });
+
+  it('falls back to the private port itself when no mapping is found', () => {
+    expect(hostPortForPrivate(['8080:8080/tcp'], 6080)).toBe(6080);
   });
 });
 

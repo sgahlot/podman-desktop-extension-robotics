@@ -11,7 +11,7 @@ describe('spawnRobot', () => {
   beforeEach(() => {
     vi.mocked(resolveSimContainer)
       .mockReset()
-      .mockResolvedValue({ id: 'abcdef012345abcdef012345', image: 'quay.io/ns/ros2-jazzy-sim:noble' });
+      .mockResolvedValue({ id: 'abcdef012345abcdef012345', image: 'quay.io/ns/ros2-jazzy-sim:noble', ports: [] });
     vi.mocked(runPodman).mockReset().mockResolvedValue({ stdout: '', stderr: '' });
   });
 

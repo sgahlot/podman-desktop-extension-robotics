@@ -240,6 +240,25 @@ Note: the extension's Nav2 pre-warm side effect for Jazzy images is **not** port
 physical-ai sim:stop <container-id>
 ```
 
+### `sim:open` — open a running simulation in your browser
+
+```bash
+physical-ai sim:open <container-id>
+physical-ai sim:open <container-id> --port 8080
+```
+
+| Arg/Flag | Required | Default | Notes |
+|---|---|---|---|
+| `CONTAINER_ID` (positional) | yes | — | Container id or unambiguous prefix |
+| `--port` | no | `6080` | `6080` (noVNC viewer) \| `8080` (plain landing page) |
+
+Reuses `simulationBrowserUrl` from `packages/shared/src/security/simInput.ts` unmodified — the
+exact same URL (noVNC autoconnect/reconnect query string) the extension's "Open in Browser"
+button builds — and resolves the host port from the container's actual port mapping the same
+way the extension does, so a `--port` override on `sim:launch` still opens correctly. Prints the
+URL before attempting to launch a browser, so you always have it to open manually if launching
+fails (e.g. no `xdg-open` on a headless machine) — that failure is silent, not an error.
+
 ## End-to-end example
 
 `sim:launch` needs a **simulation** image (Gazebo + noVNC), not the base image — the base image
@@ -253,8 +272,9 @@ physical-ai build:base --tag quay.io/<ns>/ros2-humble-base:local
 physical-ai build:sim --tag quay.io/<ns>/ros2-humble-turtlebot3:local \
   --base-tag quay.io/<ns>/ros2-humble-base:local
 
-# Launch the SIM image (not the base image), spawn, list, stop
+# Launch the SIM image (not the base image), open it, spawn, list, stop
 physical-ai sim:launch --image quay.io/<ns>/ros2-humble-turtlebot3:local
+physical-ai sim:open <container-id>
 physical-ai sim:list
 physical-ai sim:spawn <container-id> --robot robot1 --x 0 --y 0 --yaw 0
 physical-ai sim:stop <container-id>
@@ -277,12 +297,18 @@ not full parity with the extension. Explicitly **not yet implemented**:
 - Host-preference config get/set (default namespace, catalog view mode, GPU-passthrough default,
   etc.) — this CLI uses explicit flags with sensible defaults instead of a config file
 - Image-builder layer-composition wizard parity (SBOM options on `build:file`)
-- `deleteSimulation`, `openSimulationInBrowser`, `openUrlInBrowser`
+- `openUrlInBrowser` (generic arbitrary-URL open — `sim:open` covers the simulation-specific case)
 - Build cancellation / progress polling — a CLI invocation is a single foreground process;
   `Ctrl+C` is the cancel mechanism
 
 Later work will port the remaining methods from the extension's `PhysicalAiApi` interface as
 additional command topics (`catalog:*`, `config:*`, `openshift:*`, `ros:*`).
+
+**Next step — `sim:remove` (delete):** the extension's "Stop & remove" button (`deleteSimulation`)
+works on both running and exited containers as one combined action, but there's no CLI
+equivalent yet — `sim:list` will keep showing exited containers indefinitely until they're
+removed manually (`podman rm <id>`). A `sim:remove` command (stop-if-running, then `podman rm`)
+is the natural next addition here.
 
 **Known issue — Humble sim image build:** `build:sim --distro humble` can fail with
 `E: Unable to locate package ros-humble-ros-gz` on some Ubuntu/arch combinations (reproduced on
