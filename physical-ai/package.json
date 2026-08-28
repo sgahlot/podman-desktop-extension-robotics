@@ -10,9 +10,9 @@
     "npm": ">=11.0.0"
   },
   "scripts": {
-    "clean": "rm -rf packages/backend/dist packages/backend/media",
-    "build": "concurrently \"npm run -w packages/frontend build\" \"npm run -w packages/backend build\"",
-    "watch": "concurrently \"npm run -w packages/frontend watch\" \"npm run -w packages/backend watch\"",
+    "clean": "rm -rf packages/backend/dist packages/backend/media packages/cli/dist packages/cli/assets",
+    "build": "concurrently \"npm run -w packages/frontend build\" \"npm run -w packages/backend build\" \"npm run -w packages/cli build\"",
+    "watch": "concurrently \"npm run -w packages/frontend watch\" \"npm run -w packages/backend watch\" \"npm run -w packages/cli watch\"",
     "format:check": "prettier --check \"**/src/**/*.{ts,svelte}\"",
     "format:fix": "prettier --write \"**/src/**/*.{ts,svelte}\"",
     "lint:check": "eslint . --ext js,ts,tsx",
@@ -21,12 +21,14 @@
     "test:backend": "vitest run -r packages/backend --passWithNoTests --coverage",
     "test:frontend": "vitest -c packages/frontend/vite.config.js run packages/frontend --passWithNoTests --coverage",
     "test:shared": "vitest run -r packages/shared --passWithNoTests --coverage",
+    "test:cli": "vitest run -r packages/cli --passWithNoTests --coverage",
     "test:scripts": "bash packages/backend/assets/ros2-jazzy-sim/test/entrypoint-security.test.sh",
-    "test": "npm run test:backend && npm run test:shared && npm run test:frontend && npm run test:scripts",
+    "test": "npm run test:backend && npm run test:shared && npm run test:frontend && npm run test:cli && npm run test:scripts",
     "typecheck:shared": "tsc --noEmit --project packages/shared",
     "typecheck:frontend": "tsc --noEmit --project packages/frontend",
     "typecheck:backend": "tsc --noEmit --project packages/backend",
-    "typecheck": "npm run typecheck:shared && npm run typecheck:frontend && npm run typecheck:backend"
+    "typecheck:cli": "tsc --noEmit --project packages/cli",
+    "typecheck": "npm run typecheck:shared && npm run typecheck:frontend && npm run typecheck:backend && npm run typecheck:cli"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.1.0",
