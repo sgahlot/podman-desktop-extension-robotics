@@ -50,3 +50,14 @@
   commit link → then transition to Closed. Use **Review** (transition id 41) for
   code-complete-but-untested; In Progress until testing starts. Only merged branches are safe to
   delete.
+- **If this checkout is a git worktree sibling (not `main/`), give its Podman Desktop
+  extension a unique identity before it's ever loaded into PD.** Every worktree's
+  `packages/backend/package.json` starts with the same `name`/`displayName`
+  (`physical-ai`/`Physical AI`) — loading two worktrees under the same identity at once
+  leaves Podman Desktop's extension host in a stuck "Starting" state that a plain
+  Stop/Start can't recover from (only a full PD quit+relaunch clears it). Fix, once per
+  worktree, immediately after creating it: edit `packages/backend/package.json`'s `name`
+  to `physical-ai-appeng<NNNN>` and `displayName` to `Physical AI (APPENG-<NNNN>)`, then run
+  `git update-index --skip-worktree packages/backend/package.json` so git never shows it as
+  modified. This is mandatory setup, not an optional nice-to-have — do it before reporting
+  the worktree as ready to load in PD.
