@@ -6,6 +6,7 @@ import { DEFAULT_GPU_TOLERATION } from '/@shared/src/openshift/manifests';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import type { OpenShiftContext, OpenShiftDeployResult, OpenShiftWorkload } from '/@shared/src/types/OpenShiftDeploy';
 import RobotControls, { type RobotEntry } from './RobotControls.svelte';
+import { reconcileAdd, pruneStale } from './lib/robotReconcile';
 
 let loading = true;
 let context: OpenShiftContext | undefined = undefined;
@@ -94,24 +95,20 @@ let robotsByWorkload: Record<string, RobotEntry[]> = {};
  * fresh instead of being skipped forever. */
 let reconciledWorkloads = new Set<string>();
 /** Consecutive-miss counters for prune debouncing (APPENG-6149), keyed by
- * `${workloadName}::${robotName}`. `listSpawnedRobotsInOpenShift` never throws — it
- * returns `[]` both for a genuinely empty world AND for a transient oc/exec failure — so a
- * single empty poll can't be trusted to mean "this robot is really gone". Requiring the
- * same robot to be confirmed missing across PRUNE_MISS_THRESHOLD consecutive polls before
- * removing it keeps one blip from wiping an actively-driven robot's nav state. */
+ * `${workloadName}::${robotName}` since one map is shared across every workload —
+ * see `pruneStale`'s `keyOf` in `lib/robotReconcile.ts` for the prune/grace-period
+ * algorithm itself. */
 let missingStreaks = new Map<string, number>();
-const PRUNE_MISS_THRESHOLD = 2;
 /** Wall-clock time each freshly-spawned robot was first tracked, keyed the same way — set
  * once, never refreshed, and only for spawnRobot (ADD-reconciled robots are already proven
  * alive at add time, so they need no grace at all). A robot with `warmStatus === 'warming'`
- * is skipped entirely below rather than using this — pollWarmStatus and the backend's own
+ * is skipped entirely rather than using this — pollWarmStatus and the backend's own
  * bounded pre-warm timeout already own resolving that state precisely. This grace period
  * exists only for the case that signal doesn't cover: Humble spawns, which have no `warming`
  * phase at all, still take a moment for their ROS nodes to register after a Gazebo spawn
  * (the same raw latency the backend's own pre-warm pose-poll accounts for — up to 30 attempts
  * at 1s intervals, #prewarmNav2). */
 let trackedSince = new Map<string, number>();
-const PRUNE_GRACE_PERIOD_MS = 30_000;
 let warmTimer: ReturnType<typeof setInterval> | null = null;
 
 $: config = {
@@ -431,8 +428,10 @@ async function refreshWorkloads(opts?: { silent?: boolean }) {
  * Reconciles a ready workload's robot list against what's actually running in the pod
  * (S8-17) — spawn/warm state otherwise lives only in frontend memory, so a page reload
  * or extension restart forgets robots spawned earlier even though they're still
- * running. Only ever appends missing entries — never removes/overwrites ones already
- * tracked, so it can't clobber live navStatus/navTarget state.
+ * running. Delegates the add-missing-only logic to `reconcileAdd` (shared with the
+ * local Simulation tab, APPENG-6250). No trackedSince entry needed — a reconciled robot
+ * was, by definition, just confirmed alive (it's in `names`), so it's immediately
+ * eligible for normal prune debounce with no startup grace required.
  */
 async function reconcileRobots(w: OpenShiftWorkload) {
   let names: string[];
@@ -441,23 +440,7 @@ async function reconcileRobots(w: OpenShiftWorkload) {
   } catch {
     return;
   }
-  const existing = new Set((robotsByWorkload[w.name] ?? []).map(r => r.name));
-  const missing = names.filter(n => !existing.has(n));
-  if (missing.length === 0) return;
-  // No trackedSince entry needed — a reconciled robot was, by definition, just confirmed
-  // alive (it's in `names`), so it's immediately eligible for normal prune debounce with
-  // no startup grace required.
-  robotsByWorkload[w.name] = [
-    ...(robotsByWorkload[w.name] ?? []),
-    // x/y aren't recoverable from `ros2 node list` alone, so they're omitted — the row
-    // shows just the robot name rather than a meaningless "(?, ?)".
-    ...missing.map(n => ({
-      name: n,
-      navStatus: 'idle' as const,
-      navTarget: { x: '0', y: '0' },
-      navReached: null,
-    })),
-  ];
+  robotsByWorkload[w.name] = reconcileAdd(robotsByWorkload[w.name] ?? [], names);
   robotsByWorkload = robotsByWorkload;
 }
 
@@ -483,7 +466,8 @@ function clearMissingStreaksForWorkload(wname: string) {
  * Only ever checks robots whose existing phase actually warrants it: a `'warming'` robot
  * is skipped (its own state machine already owns resolving that), an unconfirmed robot
  * still within its startup grace period is skipped, and only a robot confirmed missing
- * across PRUNE_MISS_THRESHOLD consecutive polls is actually removed.
+ * across PRUNE_MISS_THRESHOLD consecutive polls is actually removed — see `pruneStale`
+ * (shared with the local Simulation tab, APPENG-6250) for that algorithm.
  */
 async function pruneStaleRobots() {
   let changed = false;
@@ -501,40 +485,9 @@ async function pruneStaleRobots() {
     } catch {
       continue;
     }
-    const liveNames = new Set(live);
-    const now = Date.now();
-    const keep: RobotEntry[] = [];
-    for (const robot of tracked) {
-      const key = `${w.name}::${robot.name}`;
-      if (robot.warmStatus === 'warming') {
-        // Still initializing — its own state machine will resolve to 'ready'/'failed';
-        // don't count this tick's absence against it.
-        keep.push(robot);
-        continue;
-      }
-      if (liveNames.has(robot.name)) {
-        missingStreaks.delete(key);
-        keep.push(robot);
-        continue;
-      }
-      const since = trackedSince.get(key);
-      if (since !== undefined && now - since < PRUNE_GRACE_PERIOD_MS) {
-        // Still within its startup grace window (Humble spawn, no warmStatus signal) —
-        // not suspicious yet.
-        keep.push(robot);
-        continue;
-      }
-      const streak = (missingStreaks.get(key) ?? 0) + 1;
-      if (streak >= PRUNE_MISS_THRESHOLD) {
-        missingStreaks.delete(key);
-        trackedSince.delete(key);
-      } else {
-        missingStreaks.set(key, streak);
-        keep.push(robot);
-      }
-    }
-    if (keep.length !== tracked.length) {
-      robotsByWorkload[w.name] = keep;
+    const kept = pruneStale({ tracked, liveNames: live, missingStreaks, trackedSince, keyOf: n => `${w.name}::${n}` });
+    if (kept !== tracked) {
+      robotsByWorkload[w.name] = kept;
       changed = true;
     }
   }
