@@ -91,7 +91,10 @@ onMount(() => {
   </p>
 
   {#if loading}
-    <div class="text-sm text-[var(--pd-content-text)]">Loading...</div>
+    <div class="flex flex-1 flex-col items-center justify-center gap-2 min-h-[200px]">
+      <span class="inline-block w-3 h-3 rounded-full bg-current pai-text-accent animate-pulse"></span>
+      <span class="text-sm pai-text-muted">Loading…</span>
+    </div>
   {:else if !target}
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-lg">
       <p class="text-sm text-[var(--pd-content-text)]">

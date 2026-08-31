@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import RobotDiagnosticsPanel from './RobotDiagnosticsPanel.svelte';
 import type { TopicInfo } from '/@shared/src/types/TopicInfo';
 import type { DiagnosticsTarget } from './RobotDiagnosticsPanel.types';
+import { __resetRobotDiagnosticsCacheForTests } from './robotDiagnosticsCache';
 
 const mockGetTfTreeStatus = vi.fn();
 const mockGetCostmapSummary = vi.fn();
@@ -108,6 +109,7 @@ const LASER_RESULT = {
 describe('RobotDiagnosticsPanel', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    __resetRobotDiagnosticsCacheForTests();
     mockGetTfTreeStatus.mockResolvedValue(TF_RESULT);
     mockGetCostmapSummary.mockResolvedValue(COSTMAP_RESULT);
     mockGetLaserScanSummary.mockResolvedValue(LASER_RESULT);
@@ -175,6 +177,23 @@ describe('RobotDiagnosticsPanel', () => {
     expect(screen.getByText('odom → base_footprint')).toBeTruthy();
     expect(screen.getAllByText('available').length).toBe(3);
     expect(screen.getByText('missing')).toBeTruthy();
+  });
+
+  it('remembers the last snapshot across remounts (e.g. navigating away and back) without refetching', async () => {
+    const { unmount } = render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh diagnostics' }));
+    expect(await screen.findByText(/Laser scan looks normal/)).toBeTruthy();
+    unmount();
+
+    vi.mocked(mockGetTfTreeStatus).mockClear();
+    vi.mocked(mockGetCostmapSummary).mockClear();
+    vi.mocked(mockGetLaserScanSummary).mockClear();
+
+    render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
+    expect(screen.getByText(/Laser scan looks normal/)).toBeTruthy();
+    expect(mockGetTfTreeStatus).not.toHaveBeenCalled();
+    expect(mockGetCostmapSummary).not.toHaveBeenCalled();
+    expect(mockGetLaserScanSummary).not.toHaveBeenCalled();
   });
 
   it('does not blank the other cards when one RPC rejects (allSettled behavior)', async () => {

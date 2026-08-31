@@ -1896,7 +1896,7 @@ describe('PhysicalAiApiImpl', () => {
       expect(script).toContain('"$2" "$3"');
       expect(script).toContain('/$4/tf');
       expect(script).not.toContain('robot_1');
-      expect(args).toContain('3');
+      expect(args).toContain('5');
       expect(args).toContain('map');
       expect(args).toContain('odom');
       expect(args).toContain('robot_1');

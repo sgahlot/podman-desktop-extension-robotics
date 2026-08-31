@@ -10,6 +10,7 @@ import {
   type VerdictLevel,
 } from '/@shared/src/ros/robotDiagnosticsVerdict';
 import type { DiagnosticsTarget } from './RobotDiagnosticsPanel.types';
+import { getCachedDiagnostics, setCachedDiagnostics } from './robotDiagnosticsCache';
 
 export let target: DiagnosticsTarget;
 /** Pre-selects a robot on arrival (deep link from Simulation's Diagnose button), without
@@ -83,7 +84,6 @@ onMount(() => {
 let lastTargetKey = targetKey(target);
 $: if (targetKey(target) !== lastTargetKey) {
   lastTargetKey = targetKey(target);
-  clearResults();
   fetchSpawnedRobots();
 }
 
@@ -94,6 +94,31 @@ function clearResults(): void {
   costmapError = '';
   laserResult = null;
   laserError = '';
+}
+
+/**
+ * Rehydrates from the last "Refresh diagnostics" result for this target+robot (if any) whenever
+ * the selected robot or target changes — e.g. navigating away from and back to this page, or
+ * switching robots — instead of showing a blank "no snapshot yet" state again. Read-only: never
+ * fetches, so it doesn't touch the always-manual-refresh invariant.
+ */
+let lastHydratedKey = '';
+$: {
+  const key = robotName ? `${targetKey(target)}::${robotName}` : '';
+  if (key !== lastHydratedKey) {
+    lastHydratedKey = key;
+    const cached = robotName ? getCachedDiagnostics(targetKey(target), robotName) : undefined;
+    if (cached) {
+      tfResult = cached.tfResult;
+      tfError = cached.tfError;
+      costmapResult = cached.costmapResult;
+      costmapError = cached.costmapError;
+      laserResult = cached.laserResult;
+      laserError = cached.laserError;
+    } else {
+      clearResults();
+    }
+  }
 }
 
 function formatCapturedAt(iso: string): string {
@@ -194,6 +219,14 @@ async function refreshDiagnostics(): Promise<void> {
     laserError = errorMessage(laserSettled.reason);
   }
 
+  setCachedDiagnostics(snapshotKey, targetRobot, {
+    tfResult,
+    tfError,
+    costmapResult,
+    costmapError,
+    laserResult,
+    laserError,
+  });
   refreshing = false;
 }
 </script>

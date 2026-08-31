@@ -107,14 +107,16 @@ const PROGRESS_RETENTION_MS = 30_000;
 const NAV2_TF_POLL_ATTEMPTS = 120;
 
 /**
- * Fixed per-pair timeout for the curated TF chain (getTfTreeStatus), deliberately short and
- * NOT the user-configurable peek timeout (topicPeekTimeoutSeconds) — TF_FRAME_PAIRS.length
- * pairs run sequentially per refresh (see #tfTreeStatusFor), so a long per-pair wait would
- * multiply badly for a UI action the user expects to be reasonably quick. Matches
- * #hasMapBaseLinkTf's existing 5s precedent, minus a little slack since this is a manual
- * "Refresh diagnostics" click, not a startup poll.
+ * Fixed per-pair timeout for the curated TF chain (getTfTreeStatus), NOT the user-configurable
+ * peek timeout (topicPeekTimeoutSeconds) — TF_FRAME_PAIRS.length pairs run sequentially per
+ * refresh (see #tfTreeStatusFor). Matches #hasMapBaseLinkTf's existing 5s precedent exactly:
+ * a shorter window (previously 3s) produced false "missing" reports for static-only pairs
+ * (e.g. base_link->base_scan, published once via /tf_static with transient-local QoS) when
+ * DDS discovery between the fresh tf2_echo listener and robot_state_publisher took longer
+ * than the window under load — verified live, the transform was fine when retried in
+ * isolation. A false "missing" is worse than a slower refresh for a diagnostics tool.
  */
-const TF_DIAGNOSTIC_TIMEOUT_SEC = 3;
+const TF_DIAGNOSTIC_TIMEOUT_SEC = 5;
 
 /**
  * Settle after clearing the Nav2 costmaps on a cold start, so they refill from
