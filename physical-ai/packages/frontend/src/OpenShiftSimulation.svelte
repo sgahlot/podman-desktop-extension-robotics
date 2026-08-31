@@ -9,6 +9,7 @@ import type { OpenShiftContext, OpenShiftDeployResult, OpenShiftWorkload } from 
 import RobotControls, { type RobotEntry } from './RobotControls.svelte';
 import { reconcileAdd, pruneStale } from './lib/robotReconcile';
 import { openShiftDiagnosticsHref } from './lib/diagnosticsLink';
+import { lastOpenShiftSelection } from './lib/simSelection';
 
 let loading = true;
 let context: OpenShiftContext | undefined = undefined;
@@ -124,6 +125,11 @@ $: config = {
   middleware,
 };
 $: canDeploy = !!context && !!name && !!namespace && !!image && !deploying && loggedIn;
+/** Keep the shared last-used-OpenShift-target store in sync — covers every mutation
+ * path (onMount's seedNamespaceFromContext, onContextChange, manual namespace edits)
+ * for free, so Diagnostics.svelte can default to the same context/namespace instead of
+ * re-deriving or prompting for one independently. */
+$: if (selectedContext && namespace) lastOpenShiftSelection.set({ context: selectedContext, namespace });
 /** Suggestions matching the current free-text `namespace` (S8-21), case-insensitive
  * substring match, with system/default namespaces dropped first unless
  * `showSystemProjects` is on. Empty text shows the full (filtered) list, still

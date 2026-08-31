@@ -1,6 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
 import DeployOpenShift from './OpenShiftSimulation.svelte';
+import { lastOpenShiftSelection } from './lib/simSelection';
 
 const mockGetOpenShiftContext = vi.fn();
 const mockListKubeContexts = vi.fn();
@@ -59,6 +60,7 @@ const READY_WORKLOAD = {
 describe('OpenShiftSimulation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    lastOpenShiftSelection.set(undefined);
     // The real OpenShiftContext carries the context's namespace (via the
     // kubeconfigContextNamespace helper); the component seeds its namespace from it,
     // and refreshWorkloads() no-ops without one — so the mock must provide it.
@@ -324,6 +326,34 @@ describe('OpenShiftSimulation', () => {
     await waitFor(() => expect(select.value).toBe('ctx'));
     expect(screen.getByText('https://api.cluster.example.com:6443')).toBeTruthy();
     expect(screen.getByText('https://api.other-cluster.example.com:6443')).toBeTruthy();
+  });
+
+  it('keeps lastOpenShiftSelection in sync with the resolved context/namespace (APPENG-5810)', async () => {
+    render(DeployOpenShift);
+    await waitFor(() => {
+      let stored: { context: string; namespace: string } | undefined = undefined;
+      lastOpenShiftSelection.subscribe(v => (stored = v))();
+      expect(stored).toEqual({ context: 'ctx', namespace: 'sgahlot-pd-extn' });
+    });
+  });
+
+  it('updates lastOpenShiftSelection when the Cluster/namespace changes (APPENG-5810)', async () => {
+    mockListKubeContexts.mockResolvedValue([
+      { name: 'ctx', namespace: 'sgahlot-pd-extn' },
+      { name: 'other-ctx', namespace: 'other-ns' },
+    ]);
+
+    render(DeployOpenShift);
+    const select = (await screen.findByLabelText('Cluster URL')) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('ctx'));
+
+    await fireEvent.change(select, { target: { value: 'other-ctx' } });
+
+    await waitFor(() => {
+      let stored: { context: string; namespace: string } | undefined = undefined;
+      lastOpenShiftSelection.subscribe(v => (stored = v))();
+      expect(stored).toEqual({ context: 'other-ctx', namespace: 'other-ns' });
+    });
   });
 
   it('switching the Cluster picker re-checks login and re-targets the workload list (S8-10)', async () => {
