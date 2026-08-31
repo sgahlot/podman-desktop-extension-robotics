@@ -1,12 +1,14 @@
 <script lang="ts">
 import { physicalAiClient } from './api/client';
 import { onMount, onDestroy } from 'svelte';
+import { router } from 'tinro';
 import { simulationImageTag } from '/@shared/src/types/SimulationProfiles';
 import { DEFAULT_GPU_TOLERATION } from '/@shared/src/openshift/manifests';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import type { OpenShiftContext, OpenShiftDeployResult, OpenShiftWorkload } from '/@shared/src/types/OpenShiftDeploy';
 import RobotControls, { type RobotEntry } from './RobotControls.svelte';
 import { reconcileAdd, pruneStale } from './lib/robotReconcile';
+import { openShiftDiagnosticsHref } from './lib/diagnosticsLink';
 
 let loading = true;
 let context: OpenShiftContext | undefined = undefined;
@@ -887,6 +889,15 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
                     onSpawn={form => spawnRobot(w, form)}
                     onNavigate={i => navigateRobot(w, i)}
                     onRemove={i => removeRobot(w, i)}
+                    onDiagnose={i =>
+                      router.goto(
+                        openShiftDiagnosticsHref(
+                          w.namespace,
+                          w.name,
+                          (robotsByWorkload[w.name] ?? [])[i].name,
+                          selectedContext || undefined,
+                        ),
+                      )}
                     disabled={!loggedIn}
                     idPrefix={`oc-${w.name}`} />
                 </div>

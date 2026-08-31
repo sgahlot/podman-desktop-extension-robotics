@@ -2,11 +2,16 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import RobotDiagnosticsPanel from './RobotDiagnosticsPanel.svelte';
 import type { TopicInfo } from '/@shared/src/types/TopicInfo';
+import type { DiagnosticsTarget } from './RobotDiagnosticsPanel.types';
 
 const mockGetTfTreeStatus = vi.fn();
 const mockGetCostmapSummary = vi.fn();
 const mockGetLaserScanSummary = vi.fn();
 const mockListSpawnedRobotsInSimulation = vi.fn();
+const mockGetTfTreeStatusInOpenShift = vi.fn();
+const mockGetCostmapSummaryInOpenShift = vi.fn();
+const mockGetLaserScanSummaryInOpenShift = vi.fn();
+const mockListSpawnedRobotsInOpenShift = vi.fn();
 
 vi.mock('../api/client', () => ({
   physicalAiClient: {
@@ -14,6 +19,10 @@ vi.mock('../api/client', () => ({
     getCostmapSummary: (...args: unknown[]) => mockGetCostmapSummary(...args),
     getLaserScanSummary: (...args: unknown[]) => mockGetLaserScanSummary(...args),
     listSpawnedRobotsInSimulation: (...args: unknown[]) => mockListSpawnedRobotsInSimulation(...args),
+    getTfTreeStatusInOpenShift: (...args: unknown[]) => mockGetTfTreeStatusInOpenShift(...args),
+    getCostmapSummaryInOpenShift: (...args: unknown[]) => mockGetCostmapSummaryInOpenShift(...args),
+    getLaserScanSummaryInOpenShift: (...args: unknown[]) => mockGetLaserScanSummaryInOpenShift(...args),
+    listSpawnedRobotsInOpenShift: (...args: unknown[]) => mockListSpawnedRobotsInOpenShift(...args),
   },
 }));
 
@@ -22,6 +31,14 @@ const SCAN_TOPICS: TopicInfo[] = [
   { name: '/robot_1/tf', type: 'tf2_msgs/msg/TFMessage', publishers: 1, subscribers: 1 },
   { name: '/robot_2/scan', type: 'sensor_msgs/msg/LaserScan', publishers: 1, subscribers: 0 },
 ];
+
+function podmanTarget(topics: TopicInfo[] = []): DiagnosticsTarget {
+  return { kind: 'podman', containerId: 'c1', topics };
+}
+
+function ocTarget(context?: string): DiagnosticsTarget {
+  return { kind: 'oc', namespace: 'ns1', workload: 'ros2-jazzy-sim', context };
+}
 
 const TF_RESULT = {
   robotNamespace: 'robot_1',
@@ -95,17 +112,21 @@ describe('RobotDiagnosticsPanel', () => {
     mockGetCostmapSummary.mockResolvedValue(COSTMAP_RESULT);
     mockGetLaserScanSummary.mockResolvedValue(LASER_RESULT);
     mockListSpawnedRobotsInSimulation.mockResolvedValue([]);
+    mockGetTfTreeStatusInOpenShift.mockResolvedValue(TF_RESULT);
+    mockGetCostmapSummaryInOpenShift.mockResolvedValue(COSTMAP_RESULT);
+    mockGetLaserScanSummaryInOpenShift.mockResolvedValue(LASER_RESULT);
+    mockListSpawnedRobotsInOpenShift.mockResolvedValue([]);
   });
 
   it('shows an empty state and no robot picker when no robot is detected', async () => {
-    render(RobotDiagnosticsPanel, { containerId: 'c1', topics: [] });
+    render(RobotDiagnosticsPanel, { props: { target: podmanTarget([]) } });
     await waitFor(() => expect(mockListSpawnedRobotsInSimulation).toHaveBeenCalledWith('c1'));
     expect(screen.getByText(/No robot detected yet/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Refresh diagnostics' })).toBeNull();
   });
 
   it('derives robot options from topics and auto-selects the first', () => {
-    render(RobotDiagnosticsPanel, { containerId: 'c1', topics: SCAN_TOPICS });
+    render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
     const select = screen.getByLabelText('Robot') as HTMLSelectElement;
     expect([...select.options].map(o => o.value)).toEqual(['robot_1', 'robot_2']);
     expect(select.value).toBe('robot_1');
@@ -115,14 +136,23 @@ describe('RobotDiagnosticsPanel', () => {
     // Reproduces the bug: right after spawn, Nav2 hasn't brought up scan/tf/costmap topics
     // yet (topics is empty/incomplete), but `ros2 node list` already sees the robot's nodes.
     mockListSpawnedRobotsInSimulation.mockResolvedValue(['robot_1']);
-    render(RobotDiagnosticsPanel, { containerId: 'c1', topics: [] });
+    render(RobotDiagnosticsPanel, { props: { target: podmanTarget([]) } });
 
     const select = await screen.findByLabelText('Robot');
     expect((select as HTMLSelectElement).value).toBe('robot_1');
   });
 
+  it('pre-selects initialRobotName immediately, independent of any fetch completing', () => {
+    mockListSpawnedRobotsInSimulation.mockReturnValue(new Promise(() => {})); // never resolves
+    render(RobotDiagnosticsPanel, { props: { target: podmanTarget([]), initialRobotName: 'robot_9' } });
+
+    const select = screen.getByLabelText('Robot') as HTMLSelectElement;
+    expect([...select.options].map(o => o.value)).toEqual(['robot_9']);
+    expect(select.value).toBe('robot_9');
+  });
+
   it('fetches all three diagnostics for the selected robot on Refresh and renders all three cards', async () => {
-    render(RobotDiagnosticsPanel, { containerId: 'c1', topics: SCAN_TOPICS });
+    render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
 
     // No auto-fetch on mount/robot-selection — diagnostics are manual-refresh only, never polled.
     expect(mockGetTfTreeStatus).not.toHaveBeenCalled();
@@ -135,26 +165,26 @@ describe('RobotDiagnosticsPanel', () => {
     expect(mockGetCostmapSummary).toHaveBeenCalledWith('c1', 'robot_1');
     expect(mockGetLaserScanSummary).toHaveBeenCalledWith('c1', 'robot_1');
 
-    expect(await screen.findByText('map → odom')).toBeTruthy();
+    // Verdict headlines render above the (collapsed) raw details.
+    expect(await screen.findByText(/odom.*base_footprint is missing/)).toBeTruthy();
+    expect(screen.getByText(/Global map not available yet/)).toBeTruthy();
+    expect(screen.getByText(/Laser scan looks normal/)).toBeTruthy();
+
+    await fireEvent.click(screen.getAllByText('Details')[0]);
+    expect(screen.getByText('map → odom')).toBeTruthy();
     expect(screen.getByText('odom → base_footprint')).toBeTruthy();
     expect(screen.getAllByText('available').length).toBe(3);
     expect(screen.getByText('missing')).toBeTruthy();
-
-    expect(screen.getByText(/60×60 cells/)).toBeTruthy();
-    expect(screen.getByText(/No message on \/robot_1\/global_costmap\/costmap/)).toBeTruthy();
-
-    expect(screen.getByText('/robot_1/scan')).toBeTruthy();
-    expect(screen.getByText(/358 finite, 2 inf, 0 nan/)).toBeTruthy();
   });
 
   it('does not blank the other cards when one RPC rejects (allSettled behavior)', async () => {
     mockGetCostmapSummary.mockRejectedValue(new Error('costmap exec failed'));
 
-    render(RobotDiagnosticsPanel, { containerId: 'c1', topics: SCAN_TOPICS });
+    render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
     await fireEvent.click(screen.getByRole('button', { name: 'Refresh diagnostics' }));
 
-    expect(await screen.findByText('map → odom')).toBeTruthy();
-    expect(screen.getByText('/robot_1/scan')).toBeTruthy();
+    expect(await screen.findByText(/odom.*base_footprint is missing/)).toBeTruthy();
+    expect(screen.getByText(/Laser scan looks normal/)).toBeTruthy();
     expect(screen.getByText('costmap exec failed')).toBeTruthy();
   });
 
@@ -166,7 +196,7 @@ describe('RobotDiagnosticsPanel', () => {
       }),
     );
 
-    render(RobotDiagnosticsPanel, { containerId: 'c1', topics: SCAN_TOPICS });
+    render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
     const button = screen.getByRole('button', { name: 'Refresh diagnostics' }) as HTMLButtonElement;
     await fireEvent.click(button);
 
@@ -175,5 +205,27 @@ describe('RobotDiagnosticsPanel', () => {
     resolveTf(TF_RESULT);
     await screen.findByRole('button', { name: 'Refresh diagnostics' });
     expect((screen.getByRole('button', { name: 'Refresh diagnostics' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  describe('OpenShift target', () => {
+    it('fetches the robot list and diagnostics via the *InOpenShift RPCs', async () => {
+      mockListSpawnedRobotsInOpenShift.mockResolvedValue(['robot_1']);
+      render(RobotDiagnosticsPanel, { props: { target: ocTarget('my-context') } });
+
+      await waitFor(() =>
+        expect(mockListSpawnedRobotsInOpenShift).toHaveBeenCalledWith('ns1', 'ros2-jazzy-sim', 'my-context'),
+      );
+      const select = await screen.findByLabelText('Robot');
+      expect((select as HTMLSelectElement).value).toBe('robot_1');
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Refresh diagnostics' }));
+
+      expect(mockGetTfTreeStatusInOpenShift).toHaveBeenCalledWith('ns1', 'ros2-jazzy-sim', 'robot_1', 'my-context');
+      expect(mockGetCostmapSummaryInOpenShift).toHaveBeenCalledWith('ns1', 'ros2-jazzy-sim', 'robot_1', 'my-context');
+      expect(mockGetLaserScanSummaryInOpenShift).toHaveBeenCalledWith('ns1', 'ros2-jazzy-sim', 'robot_1', 'my-context');
+      expect(mockGetTfTreeStatus).not.toHaveBeenCalled();
+
+      expect(await screen.findByText(/odom.*base_footprint is missing/)).toBeTruthy();
+    });
   });
 });

@@ -13,10 +13,7 @@ import type {
 import { parseEchoYamlTree, shortMessageType, PEEK_TIMEOUT_DEFAULT_SEC } from '/@shared/src/ros/topicPeek';
 import MessageTree from './lib/MessageTree.svelte';
 import QuickLinks from './lib/QuickLinks.svelte';
-import RobotDiagnosticsPanel from './lib/RobotDiagnosticsPanel.svelte';
 import { navigationLayout } from './lib/navigationLayout';
-
-let activeTab: 'topics' | 'diagnostics' = 'topics';
 
 let containers: SimContainerInfo[] = [];
 let selectedContainerId = '';
@@ -281,243 +278,218 @@ onDestroy(() => {
       </button>
     </div>
 
-    <div class="flex flex-row gap-1 border-b border-[var(--pd-content-card-border)] shrink-0">
-      <button
-        type="button"
-        role="tab"
-        aria-selected={activeTab === 'topics'}
-        class="px-5 py-2 text-sm pai-tab {activeTab === 'topics' ? 'pai-tab-active' : ''}"
-        on:click={() => (activeTab = 'topics')}>
-        Topics
-      </button>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={activeTab === 'diagnostics'}
-        class="px-5 py-2 text-sm pai-tab {activeTab === 'diagnostics' ? 'pai-tab-active' : ''}"
-        on:click={() => (activeTab = 'diagnostics')}>
-        Diagnostics
-      </button>
-    </div>
+    {#if error}
+      <div class="p-3 rounded text-sm pai-banner-error max-w-lg">{error}</div>
+    {/if}
 
-    {#if activeTab === 'diagnostics'}
-      <RobotDiagnosticsPanel containerId={selectedContainerId} topics={topics} />
-    {:else}
-      {#if error}
-        <div class="p-3 rounded text-sm pai-banner-error max-w-lg">{error}</div>
-      {/if}
+    {#if topics.length === 0 && !loading && !error}
+      <div class="text-sm text-[var(--pd-content-text)]">
+        No topics detected yet. The simulation may still be starting up — topics appear once ROS2 nodes are active.
+      </div>
+    {:else if topics.length > 0}
+      <div class="text-xs pai-text-muted">
+        {topics.length} active topics — more can appear as ROS2 nodes finish starting (e.g. Nav2 bring-up can take up to ~90s)
+      </div>
 
-      {#if topics.length === 0 && !loading && !error}
-        <div class="text-sm text-[var(--pd-content-text)]">
-          No topics detected yet. The simulation may still be starting up — topics appear once ROS2 nodes are active.
-        </div>
-      {:else if topics.length > 0}
-        <div class="text-xs pai-text-muted">
-          {topics.length} active topics — more can appear as ROS2 nodes finish starting (e.g. Nav2 bring-up can take up to
-          ~90s)
-        </div>
-
-        <div
-          class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] overflow-x-auto">
-          <table class="w-full text-xs table-fixed">
-            <thead>
-              <tr class="text-left text-[var(--pd-content-text)] border-b border-[var(--pd-content-card-border)]">
-                <th class="p-3 pr-4 w-[40%]">Topic</th>
-                <th class="p-3 pr-4 w-[40%]">Message Type</th>
-                <th class="p-3 pr-4 text-right w-[10%]">Pubs</th>
-                <th class="p-3 text-right w-[10%]">Subs</th>
+      <div
+        class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] overflow-x-auto">
+        <table class="w-full text-xs table-fixed">
+          <thead>
+            <tr class="text-left text-[var(--pd-content-text)] border-b border-[var(--pd-content-card-border)]">
+              <th class="p-3 pr-4 w-[40%]">Topic</th>
+              <th class="p-3 pr-4 w-[40%]">Message Type</th>
+              <th class="p-3 pr-4 text-right w-[10%]">Pubs</th>
+              <th class="p-3 text-right w-[10%]">Subs</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each topics as topic}
+              <tr
+                class="border-b border-[var(--pd-content-card-border)] cursor-pointer hover:bg-[var(--pd-content-bg)] transition-colors"
+                on:click={() => toggleTopicDetail(topic.name)}>
+                <td class="p-3 pr-4 font-mono font-medium text-[var(--pd-content-header)] break-all">
+                  <span class="inline-block w-4 text-center text-[var(--pd-content-text)]"
+                    >{expandedTopic === topic.name ? '▼' : '▶'}</span>
+                  {topic.name}
+                  <span
+                    class="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-sans font-normal pai-text-muted border border-[var(--pd-content-card-border)]"
+                    title={topic.type}>{shortMessageType(topic.type)}</span>
+                </td>
+                <td class="p-3 pr-4 font-mono text-[var(--pd-content-text)] break-all">{topic.type}</td>
+                <td class="p-3 pr-4 text-right text-[var(--pd-content-text)]">{topic.publishers}</td>
+                <td class="p-3 text-right text-[var(--pd-content-text)]">{topic.subscribers}</td>
               </tr>
-            </thead>
-            <tbody>
-              {#each topics as topic}
-                <tr
-                  class="border-b border-[var(--pd-content-card-border)] cursor-pointer hover:bg-[var(--pd-content-bg)] transition-colors"
-                  on:click={() => toggleTopicDetail(topic.name)}>
-                  <td class="p-3 pr-4 font-mono font-medium text-[var(--pd-content-header)] break-all">
-                    <span class="inline-block w-4 text-center text-[var(--pd-content-text)]"
-                      >{expandedTopic === topic.name ? '▼' : '▶'}</span>
-                    {topic.name}
-                    <span
-                      class="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-sans font-normal pai-text-muted border border-[var(--pd-content-card-border)]"
-                      title={topic.type}>{shortMessageType(topic.type)}</span>
-                  </td>
-                  <td class="p-3 pr-4 font-mono text-[var(--pd-content-text)] break-all">{topic.type}</td>
-                  <td class="p-3 pr-4 text-right text-[var(--pd-content-text)]">{topic.publishers}</td>
-                  <td class="p-3 text-right text-[var(--pd-content-text)]">{topic.subscribers}</td>
-                </tr>
-                {#if expandedTopic === topic.name}
-                  <tr class="border-b border-[var(--pd-content-card-border)]">
-                    <td colspan="4" class="p-4 pl-6 sm:pl-10 bg-[var(--pd-content-bg)]">
-                      {#if loadingDetail}
-                        <span class="text-xs text-[var(--pd-content-text)]">Loading detail...</span>
-                      {:else if detailError}
-                        <span class="text-xs pai-text-error">{detailError}</span>
-                      {:else if topicDetail}
-                        <div class="flex flex-col gap-4 min-w-0 max-w-full">
-                          <!-- Soft topology: two columns (topic already in header); long names wrap -->
-                          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
-                            <div
-                              class="min-w-0 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3">
-                              <div class="text-xs font-medium text-[var(--pd-content-header)] mb-2">
-                                Publishers ({topicDetail.publishers.length})
-                              </div>
-                              {#if topicDetail.publishers.length === 0}
-                                <span class="text-xs text-[var(--pd-content-text)]">None</span>
-                              {:else}
-                                {#each topicDetail.publishers as pub}
-                                  <div
-                                    class="text-xs font-mono text-[var(--pd-content-text)] break-all py-0.5"
-                                    title={nodePath(pub)}>
-                                    {nodePath(pub)}
-                                  </div>
-                                {/each}
-                              {/if}
+              {#if expandedTopic === topic.name}
+                <tr class="border-b border-[var(--pd-content-card-border)]">
+                  <td colspan="4" class="p-4 pl-6 sm:pl-10 bg-[var(--pd-content-bg)]">
+                    {#if loadingDetail}
+                      <span class="text-xs text-[var(--pd-content-text)]">Loading detail...</span>
+                    {:else if detailError}
+                      <span class="text-xs pai-text-error">{detailError}</span>
+                    {:else if topicDetail}
+                      <div class="flex flex-col gap-4 min-w-0 max-w-full">
+                        <!-- Soft topology: two columns (topic already in header); long names wrap -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
+                          <div
+                            class="min-w-0 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3">
+                            <div class="text-xs font-medium text-[var(--pd-content-header)] mb-2">
+                              Publishers ({topicDetail.publishers.length})
                             </div>
-                            <div
-                              class="min-w-0 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3">
-                              <div class="text-xs font-medium text-[var(--pd-content-header)] mb-2">
-                                Subscribers ({topicDetail.subscribers.length})
-                              </div>
-                              {#if topicDetail.subscribers.length === 0}
-                                <span class="text-xs text-[var(--pd-content-text)]">None</span>
-                              {:else}
-                                {#each topicDetail.subscribers as sub}
-                                  <div
-                                    class="text-xs font-mono text-[var(--pd-content-text)] break-all py-0.5"
-                                    title={nodePath(sub)}>
-                                    {nodePath(sub)}
-                                  </div>
-                                {/each}
-                              {/if}
-                            </div>
-                          </div>
-                          <div class="text-[10px] pai-text-muted font-mono break-all">
-                            Flow: publishers → {topicDetail.topicName} → subscribers
-                          </div>
-
-                          <!-- Schema -->
-                          <div class="pt-2 border-t border-[var(--pd-content-card-border)] min-w-0">
-                            <button
-                              type="button"
-                              class="text-xs pai-link"
-                              on:click|stopPropagation={() => (showSchema = !showSchema)}>
-                              {showSchema ? 'Hide message schema' : 'Show message schema'}
-                            </button>
-                            {#if showSchema}
-                              <div class="mt-2 min-w-0">
-                                {#if loadingSchema}
-                                  <span class="text-xs text-[var(--pd-content-text)]">Loading schema...</span>
-                                {:else if schemaError && !schema?.schema}
-                                  <span class="text-xs pai-text-error">{schemaError}</span>
-                                {:else if schema?.schema}
-                                  <pre
-                                    class="rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] font-mono text-xs text-[var(--pd-content-text)] p-2 overflow-auto max-h-40 whitespace-pre-wrap break-all">{schema.schema}</pre>
-                                {/if}
-                              </div>
-                            {/if}
-                          </div>
-
-                          <!-- Peek inspector -->
-                          <div class="flex flex-col gap-2 pt-2 border-t border-[var(--pd-content-card-border)] min-w-0">
-                            <div class="flex flex-row items-center gap-2 flex-wrap">
-                              <button
-                                type="button"
-                                class="pai-btn pai-btn-primary text-xs"
-                                disabled={peeking}
-                                on:click={e => peekTopic(topic.name, e)}>
-                                {peeking ? 'Peeking...' : 'Peek'}
-                              </button>
-                              <span class="text-xs pai-text-muted">
-                                One live message (cleaned echo, {peekTimeoutSec}s timeout — Preferences → Physical AI)
-                              </span>
-                            </div>
-
-                            {#if peekError}
-                              <div class="text-xs {peekTimedOut ? 'pai-text-muted' : 'pai-text-error'}">
-                                {peekError}
-                              </div>
-                            {/if}
-
-                            {#if peekResult?.message}
-                              <div
-                                class="rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3 flex flex-col gap-2 min-w-0"
-                                role="region"
-                                aria-label="Peek message">
-                                <div class="flex flex-row flex-wrap items-start justify-between gap-2 min-w-0">
-                                  <div
-                                    class="text-xs text-[var(--pd-content-text)] flex flex-col gap-0.5 min-w-0 flex-1">
-                                    <div class="break-all">
-                                      <span class="pai-text-muted">Topic:</span>
-                                      <span class="font-mono ml-1">{peekResult.topicName}</span>
-                                    </div>
-                                    <div class="break-all">
-                                      <span class="pai-text-muted">Type:</span>
-                                      <span class="font-mono ml-1">{topicDetail.type}</span>
-                                    </div>
-                                    <div>
-                                      <span class="pai-text-muted">Captured:</span>
-                                      <span class="ml-1">{formatCapturedAt(peekResult.capturedAt)}</span>
-                                    </div>
-                                    {#if peekResult.messageStamp}
-                                      <div class="break-all">
-                                        <span class="pai-text-muted">Msg stamp:</span>
-                                        <span class="font-mono ml-1">{peekResult.messageStamp}</span>
-                                        <span class="pai-text-muted ml-1">(ROS/sim time in message — not /clock)</span>
-                                      </div>
-                                    {/if}
-                                    {#if peekResult.truncated}
-                                      <div class="pai-text-muted">Message truncated for display.</div>
-                                    {/if}
-                                  </div>
-                                  <div class="flex flex-row items-center gap-2 shrink-0">
-                                    {#if peekTreeUsable}
-                                      <div
-                                        class="inline-flex rounded border border-[var(--pd-content-card-border)] overflow-hidden">
-                                        <button
-                                          type="button"
-                                          class="px-2 py-1 text-xs {peekView === 'tree'
-                                            ? 'bg-[var(--pd-content-bg)] text-[var(--pd-content-header)]'
-                                            : 'text-[var(--pd-content-text)]'}"
-                                          on:click={() => (peekView = 'tree')}>Tree</button>
-                                        <button
-                                          type="button"
-                                          class="px-2 py-1 text-xs border-l border-[var(--pd-content-card-border)] {peekView ===
-                                          'raw'
-                                            ? 'bg-[var(--pd-content-bg)] text-[var(--pd-content-header)]'
-                                            : 'text-[var(--pd-content-text)]'}"
-                                          on:click={() => (peekView = 'raw')}>Raw</button>
-                                      </div>
-                                    {/if}
-                                    <button type="button" class="pai-btn text-xs" on:click={copyPeek}
-                                      >{copyFeedback || 'Copy'}</button>
-                                  </div>
+                            {#if topicDetail.publishers.length === 0}
+                              <span class="text-xs text-[var(--pd-content-text)]">None</span>
+                            {:else}
+                              {#each topicDetail.publishers as pub}
+                                <div
+                                  class="text-xs font-mono text-[var(--pd-content-text)] break-all py-0.5"
+                                  title={nodePath(pub)}>
+                                  {nodePath(pub)}
                                 </div>
-
-                                {#if peekView === 'tree' && peekTreeUsable}
-                                  <div class="overflow-auto max-h-64 min-w-0">
-                                    <MessageTree nodes={peekTree} />
-                                  </div>
-                                {:else}
-                                  <pre
-                                    class="font-mono text-xs text-[var(--pd-content-text)] overflow-auto max-h-64 whitespace-pre-wrap break-all m-0">{peekResult.message}</pre>
-                                {/if}
-                              </div>
+                              {/each}
+                            {/if}
+                          </div>
+                          <div
+                            class="min-w-0 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3">
+                            <div class="text-xs font-medium text-[var(--pd-content-header)] mb-2">
+                              Subscribers ({topicDetail.subscribers.length})
+                            </div>
+                            {#if topicDetail.subscribers.length === 0}
+                              <span class="text-xs text-[var(--pd-content-text)]">None</span>
+                            {:else}
+                              {#each topicDetail.subscribers as sub}
+                                <div
+                                  class="text-xs font-mono text-[var(--pd-content-text)] break-all py-0.5"
+                                  title={nodePath(sub)}>
+                                  {nodePath(sub)}
+                                </div>
+                              {/each}
                             {/if}
                           </div>
                         </div>
-                      {/if}
-                    </td>
-                  </tr>
-                {/if}
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      {/if}
+                        <div class="text-[10px] pai-text-muted font-mono break-all">
+                          Flow: publishers → {topicDetail.topicName} → subscribers
+                        </div>
 
-      {#if loading}
-        <div class="text-sm text-[var(--pd-content-text)]">Loading topics...</div>
-      {/if}
+                        <!-- Schema -->
+                        <div class="pt-2 border-t border-[var(--pd-content-card-border)] min-w-0">
+                          <button
+                            type="button"
+                            class="text-xs pai-link"
+                            on:click|stopPropagation={() => (showSchema = !showSchema)}>
+                            {showSchema ? 'Hide message schema' : 'Show message schema'}
+                          </button>
+                          {#if showSchema}
+                            <div class="mt-2 min-w-0">
+                              {#if loadingSchema}
+                                <span class="text-xs text-[var(--pd-content-text)]">Loading schema...</span>
+                              {:else if schemaError && !schema?.schema}
+                                <span class="text-xs pai-text-error">{schemaError}</span>
+                              {:else if schema?.schema}
+                                <pre
+                                  class="rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] font-mono text-xs text-[var(--pd-content-text)] p-2 overflow-auto max-h-40 whitespace-pre-wrap break-all">{schema.schema}</pre>
+                              {/if}
+                            </div>
+                          {/if}
+                        </div>
+
+                        <!-- Peek inspector -->
+                        <div class="flex flex-col gap-2 pt-2 border-t border-[var(--pd-content-card-border)] min-w-0">
+                          <div class="flex flex-row items-center gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              class="pai-btn pai-btn-primary text-xs"
+                              disabled={peeking}
+                              on:click={e => peekTopic(topic.name, e)}>
+                              {peeking ? 'Peeking...' : 'Peek'}
+                            </button>
+                            <span class="text-xs pai-text-muted">
+                              One live message (cleaned echo, {peekTimeoutSec}s timeout — Preferences → Physical AI)
+                            </span>
+                          </div>
+
+                          {#if peekError}
+                            <div class="text-xs {peekTimedOut ? 'pai-text-muted' : 'pai-text-error'}">
+                              {peekError}
+                            </div>
+                          {/if}
+
+                          {#if peekResult?.message}
+                            <div
+                              class="rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3 flex flex-col gap-2 min-w-0"
+                              role="region"
+                              aria-label="Peek message">
+                              <div class="flex flex-row flex-wrap items-start justify-between gap-2 min-w-0">
+                                <div class="text-xs text-[var(--pd-content-text)] flex flex-col gap-0.5 min-w-0 flex-1">
+                                  <div class="break-all">
+                                    <span class="pai-text-muted">Topic:</span>
+                                    <span class="font-mono ml-1">{peekResult.topicName}</span>
+                                  </div>
+                                  <div class="break-all">
+                                    <span class="pai-text-muted">Type:</span>
+                                    <span class="font-mono ml-1">{topicDetail.type}</span>
+                                  </div>
+                                  <div>
+                                    <span class="pai-text-muted">Captured:</span>
+                                    <span class="ml-1">{formatCapturedAt(peekResult.capturedAt)}</span>
+                                  </div>
+                                  {#if peekResult.messageStamp}
+                                    <div class="break-all">
+                                      <span class="pai-text-muted">Msg stamp:</span>
+                                      <span class="font-mono ml-1">{peekResult.messageStamp}</span>
+                                      <span class="pai-text-muted ml-1">(ROS/sim time in message — not /clock)</span>
+                                    </div>
+                                  {/if}
+                                  {#if peekResult.truncated}
+                                    <div class="pai-text-muted">Message truncated for display.</div>
+                                  {/if}
+                                </div>
+                                <div class="flex flex-row items-center gap-2 shrink-0">
+                                  {#if peekTreeUsable}
+                                    <div
+                                      class="inline-flex rounded border border-[var(--pd-content-card-border)] overflow-hidden">
+                                      <button
+                                        type="button"
+                                        class="px-2 py-1 text-xs {peekView === 'tree'
+                                          ? 'bg-[var(--pd-content-bg)] text-[var(--pd-content-header)]'
+                                          : 'text-[var(--pd-content-text)]'}"
+                                        on:click={() => (peekView = 'tree')}>Tree</button>
+                                      <button
+                                        type="button"
+                                        class="px-2 py-1 text-xs border-l border-[var(--pd-content-card-border)] {peekView ===
+                                        'raw'
+                                          ? 'bg-[var(--pd-content-bg)] text-[var(--pd-content-header)]'
+                                          : 'text-[var(--pd-content-text)]'}"
+                                        on:click={() => (peekView = 'raw')}>Raw</button>
+                                    </div>
+                                  {/if}
+                                  <button type="button" class="pai-btn text-xs" on:click={copyPeek}
+                                    >{copyFeedback || 'Copy'}</button>
+                                </div>
+                              </div>
+
+                              {#if peekView === 'tree' && peekTreeUsable}
+                                <div class="overflow-auto max-h-64 min-w-0">
+                                  <MessageTree nodes={peekTree} />
+                                </div>
+                              {:else}
+                                <pre
+                                  class="font-mono text-xs text-[var(--pd-content-text)] overflow-auto max-h-64 whitespace-pre-wrap break-all m-0">{peekResult.message}</pre>
+                              {/if}
+                            </div>
+                          {/if}
+                        </div>
+                      </div>
+                    {/if}
+                  </td>
+                </tr>
+              {/if}
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
+
+    {#if loading}
+      <div class="text-sm text-[var(--pd-content-text)]">Loading topics...</div>
     {/if}
   {/if}
 </div>

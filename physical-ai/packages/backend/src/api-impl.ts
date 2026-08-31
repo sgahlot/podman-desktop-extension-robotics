@@ -108,10 +108,11 @@ const NAV2_TF_POLL_ATTEMPTS = 120;
 
 /**
  * Fixed per-pair timeout for the curated TF chain (getTfTreeStatus), deliberately short and
- * NOT the user-configurable peek timeout (topicPeekTimeoutSeconds) — up to TF_FRAME_PAIRS.length
- * pairs run concurrently per refresh, so a long per-pair wait would multiply badly for a UI
- * action the user expects to be quick. Matches #hasMapBaseLinkTf's existing 5s precedent, minus
- * a little slack since this is a manual "Refresh diagnostics" click, not a startup poll.
+ * NOT the user-configurable peek timeout (topicPeekTimeoutSeconds) — TF_FRAME_PAIRS.length
+ * pairs run sequentially per refresh (see #tfTreeStatusFor), so a long per-pair wait would
+ * multiply badly for a UI action the user expects to be reasonably quick. Matches
+ * #hasMapBaseLinkTf's existing 5s precedent, minus a little slack since this is a manual
+ * "Refresh diagnostics" click, not a startup poll.
  */
 const TF_DIAGNOSTIC_TIMEOUT_SEC = 3;
 
@@ -1646,61 +1647,73 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   /**
    * Curated TF chain snapshot (map→odom→base_footprint→base_link→base_scan), one tf2_echo
-   * per pair run concurrently — same one-shot/no-streaming shape as peekRosTopic, extended
-   * from the single-pair precedent in #hasMapBaseLinkTf to the full chain. Never throws for
-   * an unavailable pair (idle Nav2/AMCL, or the topic simply isn't up yet); that pair's
-   * `available` is just false.
+   * per pair run sequentially — same one-shot/no-streaming shape as peekRosTopic, extended
+   * from the single-pair precedent in #hasMapBaseLinkTf to the full chain. Sequential (not
+   * concurrent) deliberately trades wall-clock time (up to ~4 * TF_DIAGNOSTIC_TIMEOUT_SEC in
+   * the worst case) for a much lower peak CPU/DDS-participant spike, since this is a one-shot
+   * diagnostic snapshot rather than a latency-sensitive path. Never throws for an unavailable
+   * pair (idle Nav2/AMCL, or the topic simply isn't up yet); that pair's `available` is just
+   * false.
    */
   async getTfTreeStatus(containerId: string, robotName: string): Promise<TfTreeResult> {
     const { id } = await this.#resolveSimulationContainer(containerId);
     const safeRobot = assertRobotName(robotName);
     const distro = await this.#detectRosDistro(id);
     const target = { kind: 'podman', id } as const;
+    return this.#tfTreeStatusFor(target, distro, safeRobot);
+  }
+
+  async #tfTreeStatusFor(target: ExecTarget, distro: SupportedRosDistro, safeRobot: string): Promise<TfTreeResult> {
     const capturedAt = new Date().toISOString();
 
-    const frames = await Promise.all(
-      TF_FRAME_PAIRS.map(async ([parentFrame, childFrame]) => {
-        const result = await this.#execRosBash(
-          target,
-          distro,
-          'timeout "$1" ros2 run tf2_ros tf2_echo "$2" "$3" --ros-args -p use_sim_time:=true ' +
-            '-r /tf:=/$4/tf -r /tf_static:=/$4/tf_static 2>&1',
-          [String(TF_DIAGNOSTIC_TIMEOUT_SEC), parentFrame, childFrame, safeRobot],
-        );
-        const parsed = parseTfEchoOutput(result.stdout);
-        return {
-          parentFrame,
-          childFrame,
-          available: parsed.available,
-          translation: parsed.translation,
-          rotationQuaternion: parsed.rotationQuaternion,
-          error: parsed.error,
-        };
-      }),
-    );
+    const frames: TfTreeResult['frames'] = [];
+    for (const [parentFrame, childFrame] of TF_FRAME_PAIRS) {
+      const result = await this.#execRosBash(
+        target,
+        distro,
+        'timeout "$1" ros2 run tf2_ros tf2_echo "$2" "$3" --ros-args -p use_sim_time:=true ' +
+          '-r /tf:=/$4/tf -r /tf_static:=/$4/tf_static 2>&1',
+        [String(TF_DIAGNOSTIC_TIMEOUT_SEC), parentFrame, childFrame, safeRobot],
+      );
+      const parsed = parseTfEchoOutput(result.stdout);
+      frames.push({
+        parentFrame,
+        childFrame,
+        available: parsed.available,
+        translation: parsed.translation,
+        rotationQuaternion: parsed.rotationQuaternion,
+        error: parsed.error,
+      });
+    }
 
     return { robotNamespace: safeRobot, frames, capturedAt };
   }
 
   /**
    * Local + global Nav2 costmap summaries (cell counts, not raw grids — a global costmap can
-   * be 100k+ cells). Runs both peeks concurrently; one idle costmap (e.g. before Navigate has
-   * run) never blanks the other. Uses default QoS (no --qos-reliability/--qos-durability
-   * override) — verified live against a running Nav2 bringup that costmap topics are readable
-   * with defaults, and forcing best_effort/volatile risks mismatching Nav2's actual publisher
-   * QoS (transient_local/reliable is common for costmap layers).
+   * be 100k+ cells). Runs both peeks sequentially (local then global) — one idle costmap
+   * (e.g. before Navigate has run) never blanks the other, and the sequencing trades a bit of
+   * wall-clock time for a lower peak CPU spike, matching getTfTreeStatus. Uses default QoS (no
+   * --qos-reliability/--qos-durability override) — verified live against a running Nav2
+   * bringup that costmap topics are readable with defaults, and forcing best_effort/volatile
+   * risks mismatching Nav2's actual publisher QoS (transient_local/reliable is common for
+   * costmap layers).
    */
   async getCostmapSummary(containerId: string, robotName: string): Promise<CostmapSummaryResult> {
     const { id } = await this.#resolveSimulationContainer(containerId);
     const safeRobot = assertRobotName(robotName);
     const distro = await this.#detectRosDistro(id);
     const target = { kind: 'podman', id } as const;
+    return this.#costmapSummaryFor(target, distro, safeRobot);
+  }
 
-    const [local, global] = await Promise.all([
-      this.#peekOccupancyGrid(target, distro, `/${safeRobot}/local_costmap/costmap`),
-      this.#peekOccupancyGrid(target, distro, `/${safeRobot}/global_costmap/costmap`),
-    ]);
-
+  async #costmapSummaryFor(
+    target: ExecTarget,
+    distro: SupportedRosDistro,
+    safeRobot: string,
+  ): Promise<CostmapSummaryResult> {
+    const local = await this.#peekOccupancyGrid(target, distro, `/${safeRobot}/local_costmap/costmap`);
+    const global = await this.#peekOccupancyGrid(target, distro, `/${safeRobot}/global_costmap/costmap`);
     return { local, global };
   }
 
@@ -1789,6 +1802,14 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const safeRobot = assertRobotName(robotName);
     const distro = await this.#detectRosDistro(id);
     const target = { kind: 'podman', id } as const;
+    return this.#laserScanSummaryFor(target, distro, safeRobot);
+  }
+
+  async #laserScanSummaryFor(
+    target: ExecTarget,
+    distro: SupportedRosDistro,
+    safeRobot: string,
+  ): Promise<LaserScanSummary> {
     const topic = `/${safeRobot}/scan`;
     const capturedAt = new Date().toISOString();
 
@@ -2505,6 +2526,57 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     } catch {
       return [];
     }
+  }
+
+  /** OpenShift counterpart of getTfTreeStatus — see #tfTreeStatusFor for the shared logic. */
+  async getTfTreeStatusInOpenShift(
+    namespace: string,
+    name: string,
+    robotName: string,
+    context?: string,
+  ): Promise<TfTreeResult> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeRobot = assertRobotName(robotName);
+    const image = await this.#openShiftDeploymentImage(ns, safeName, context);
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    const target = { kind: 'oc', pod, namespace: ns, context } as const;
+    return this.#tfTreeStatusFor(target, distro, safeRobot);
+  }
+
+  /** OpenShift counterpart of getCostmapSummary — see #costmapSummaryFor for the shared logic. */
+  async getCostmapSummaryInOpenShift(
+    namespace: string,
+    name: string,
+    robotName: string,
+    context?: string,
+  ): Promise<CostmapSummaryResult> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeRobot = assertRobotName(robotName);
+    const image = await this.#openShiftDeploymentImage(ns, safeName, context);
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    const target = { kind: 'oc', pod, namespace: ns, context } as const;
+    return this.#costmapSummaryFor(target, distro, safeRobot);
+  }
+
+  /** OpenShift counterpart of getLaserScanSummary — see #laserScanSummaryFor for the shared logic. */
+  async getLaserScanSummaryInOpenShift(
+    namespace: string,
+    name: string,
+    robotName: string,
+    context?: string,
+  ): Promise<LaserScanSummary> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeRobot = assertRobotName(robotName);
+    const image = await this.#openShiftDeploymentImage(ns, safeName, context);
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    const target = { kind: 'oc', pod, namespace: ns, context } as const;
+    return this.#laserScanSummaryFor(target, distro, safeRobot);
   }
 
   /** Name of a Running pod for the deployment (selected by the `app=<name>` label). */

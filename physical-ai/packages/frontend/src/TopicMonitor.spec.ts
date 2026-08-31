@@ -283,30 +283,4 @@ describe('TopicMonitor', () => {
     expect(await screen.findByText(/No message on \/idle/)).toBeTruthy();
     expect(screen.getByText(/active publishers/)).toBeTruthy();
   });
-
-  it('renders a Topics/Diagnostics tab strip and mounts the diagnostics panel on switch', async () => {
-    mockListSimulationContainers.mockResolvedValue([
-      { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
-    ]);
-    mockListRosTopics.mockResolvedValue([
-      { name: '/robot_1/scan', type: 'sensor_msgs/msg/LaserScan', publishers: 1, subscribers: 0 },
-    ]);
-
-    render(TopicMonitor);
-    await screen.findByText('/robot_1/scan');
-
-    expect(screen.getByText('Topics')).toBeTruthy();
-    expect(screen.getByText('Diagnostics')).toBeTruthy();
-
-    await fireEvent.click(screen.getByText('Diagnostics'));
-
-    // The topics table is gone and the diagnostics panel (derived robotName option "robot_1"
-    // from the polled /robot_1/scan topic) is mounted in its place.
-    expect(await screen.findByRole('button', { name: 'Refresh diagnostics' })).toBeTruthy();
-    expect(screen.queryByText('/robot_1/scan')).toBeNull();
-
-    await fireEvent.click(screen.getByText('Topics'));
-    expect(await screen.findByText('/robot_1/scan')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Refresh diagnostics' })).toBeNull();
-  });
 });

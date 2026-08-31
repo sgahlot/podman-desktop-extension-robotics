@@ -19,6 +19,10 @@ export let onSpawn: (form: { name: string; x: string; y: string; yaw: string }) 
 export let onNavigate: (index: number) => Promise<void>;
 /** Do the despawn API call for robots[index] and remove it from `robots`. Throws on failure. */
 export let onRemove: (index: number) => Promise<void>;
+/** Navigate to the Diagnostics page for robots[index]. Omitted entirely hides the button — a
+ * Podman Desktop webview panel doesn't offer a meaningful "open in new tab" affordance, so
+ * this is a callback (like onSpawn/onNavigate/onRemove) rather than an anchor. */
+export let onDiagnose: ((index: number) => void) | undefined = undefined;
 export let disabled = false;
 export let spawnLabel = 'Spawn';
 export let idPrefix = 'rc';
@@ -233,6 +237,11 @@ async function remove(index: number) {
             class="pai-btn pai-btn-danger text-xs">
             {removing[robot.name] ? 'Removing…' : 'Remove'}
           </button>
+          {#if onDiagnose}
+            <!-- Always visible, even while warming/failed — that's often exactly when it's
+                 most useful to jump to diagnostics. -->
+            <button on:click={() => onDiagnose?.(i)} class="pai-btn text-xs"> Diagnose </button>
+          {/if}
         </div>
       {/each}
     </div>

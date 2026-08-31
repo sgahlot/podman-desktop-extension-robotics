@@ -3515,6 +3515,251 @@ ranges: [0.3, 0.5, .inf, .nan]
       });
     });
 
+    describe('getTfTreeStatusInOpenShift', () => {
+      const NS = 'sgahlot-pd-extn';
+      const NAME = 'ros2-jazzy-sim';
+      const POD = 'ros2-jazzy-sim-abc-123';
+      const TF_AVAILABLE = `At time 41024.4
+- Translation: [-2.085, -0.571, 0.000]
+- Rotation: in Quaternion (xyzw) [0.000, 0.000, 0.014, 1.000]
+`;
+
+      function mockOc(image = 'quay.io/ns/ros2-jazzy-sim:noble-amd64') {
+        vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+          const raw = args as string[];
+          const a = raw[0] === '--context' ? raw.slice(2) : raw;
+          if (a[0] === 'get' && a[1] === 'deployment') {
+            return { stdout: image, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          if (a[0] === 'get' && a[1] === 'pods') {
+            return { stdout: POD, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          return { stdout: TF_AVAILABLE, stderr: '', command: 'oc' } as extensionApi.RunResult;
+        });
+      }
+
+      it('resolves image+pod then runs the curated TF chain sequentially over oc exec', async () => {
+        mockOc();
+        const result = await api.getTfTreeStatusInOpenShift(NS, NAME, 'robot_1');
+        expect(result.robotNamespace).toBe('robot_1');
+        expect(result.frames).toHaveLength(4);
+        expect(result.frames.every(f => f.available)).toBe(true);
+
+        const calls = vi.mocked(extensionApi.process.exec).mock.calls;
+        const tfCall = calls.find(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes('tf2_echo')));
+        expect(tfCall).toBeDefined();
+        expect((tfCall![1] as string[]).slice(0, 5)).toEqual(['exec', '-n', NS, POD, '--']);
+      });
+
+      it('passes --context to every oc invocation when provided', async () => {
+        mockOc();
+        await api.getTfTreeStatusInOpenShift(NS, NAME, 'robot_1', 'other-context');
+        const calls = vi.mocked(extensionApi.process.exec).mock.calls;
+        expect(calls.length).toBeGreaterThan(0);
+        for (const call of calls) {
+          expect((call[1] as string[]).slice(0, 2)).toEqual(['--context', 'other-context']);
+        }
+      });
+
+      it('rejects an injectable robot name before touching the cluster', async () => {
+        await expect(api.getTfTreeStatusInOpenShift(NS, NAME, 'robot;id')).rejects.toThrow(/Invalid robot name/);
+        expect(extensionApi.process.exec).not.toHaveBeenCalled();
+      });
+
+      it('propagates a pod-resolution failure', async () => {
+        vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+          const a = args as string[];
+          if (a[0] === 'get' && a[1] === 'deployment') {
+            return {
+              stdout: 'quay.io/ns/ros2-jazzy-sim:noble-amd64',
+              stderr: '',
+              command: 'oc',
+            } as extensionApi.RunResult;
+          }
+          if (a[0] === 'get' && a[1] === 'pods') {
+            return { stdout: '', stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          return { stdout: '', stderr: '', command: 'oc' } as extensionApi.RunResult;
+        });
+        await expect(api.getTfTreeStatusInOpenShift(NS, NAME, 'robot_1')).rejects.toThrow(/No running pod/);
+      });
+    });
+
+    describe('getCostmapSummaryInOpenShift', () => {
+      const NS = 'sgahlot-pd-extn';
+      const NAME = 'ros2-jazzy-sim';
+      const POD = 'ros2-jazzy-sim-abc-123';
+      const LOCAL_COSTMAP_ECHO = `info:
+  resolution: 0.05
+  width: 2
+  height: 2
+  origin:
+    position:
+      x: 1.0
+      y: 2.0
+data: [0, 100, -1, 0]
+`;
+
+      function mockOc(image = 'quay.io/ns/ros2-jazzy-sim:noble-amd64') {
+        vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+          get: vi.fn().mockReturnValue(5),
+          update: vi.fn(),
+        } as unknown as extensionApi.Configuration);
+        vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+          const raw = args as string[];
+          const a = raw[0] === '--context' ? raw.slice(2) : raw;
+          if (a[0] === 'get' && a[1] === 'deployment') {
+            return { stdout: image, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          if (a[0] === 'get' && a[1] === 'pods') {
+            return { stdout: POD, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          const joined = raw.join(' ');
+          if (joined.includes('local_costmap')) {
+            return { stdout: LOCAL_COSTMAP_ECHO, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          throw { exitCode: 124, stdout: '', stderr: 'timeout' };
+        });
+      }
+
+      it('summarizes local+global costmaps sequentially over oc exec', async () => {
+        mockOc();
+        const result = await api.getCostmapSummaryInOpenShift(NS, NAME, 'robot_1');
+        expect(result.local).toMatchObject({
+          topic: '/robot_1/local_costmap/costmap',
+          widthCells: 2,
+          heightCells: 2,
+        });
+        expect(result.global).toMatchObject({ topic: '/robot_1/global_costmap/costmap', timedOut: true });
+
+        const calls = vi.mocked(extensionApi.process.exec).mock.calls;
+        const localCall = calls.find(c =>
+          (c[1] as string[]).some(a => typeof a === 'string' && a.includes('/robot_1/local_costmap/costmap')),
+        );
+        expect((localCall![1] as string[]).slice(0, 5)).toEqual(['exec', '-n', NS, POD, '--']);
+      });
+
+      it('passes --context to every oc invocation when provided', async () => {
+        mockOc();
+        await api.getCostmapSummaryInOpenShift(NS, NAME, 'robot_1', 'other-context');
+        const calls = vi.mocked(extensionApi.process.exec).mock.calls;
+        expect(calls.length).toBeGreaterThan(0);
+        for (const call of calls) {
+          expect((call[1] as string[]).slice(0, 2)).toEqual(['--context', 'other-context']);
+        }
+      });
+
+      it('rejects an injectable robot name before touching the cluster', async () => {
+        await expect(api.getCostmapSummaryInOpenShift(NS, NAME, 'robot;id')).rejects.toThrow(/Invalid robot name/);
+        expect(extensionApi.process.exec).not.toHaveBeenCalled();
+      });
+
+      it('propagates a pod-resolution failure', async () => {
+        vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+          get: vi.fn().mockReturnValue(5),
+          update: vi.fn(),
+        } as unknown as extensionApi.Configuration);
+        vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+          const a = args as string[];
+          if (a[0] === 'get' && a[1] === 'deployment') {
+            return {
+              stdout: 'quay.io/ns/ros2-jazzy-sim:noble-amd64',
+              stderr: '',
+              command: 'oc',
+            } as extensionApi.RunResult;
+          }
+          if (a[0] === 'get' && a[1] === 'pods') {
+            return { stdout: '', stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          return { stdout: '', stderr: '', command: 'oc' } as extensionApi.RunResult;
+        });
+        await expect(api.getCostmapSummaryInOpenShift(NS, NAME, 'robot_1')).rejects.toThrow(/No running pod/);
+      });
+    });
+
+    describe('getLaserScanSummaryInOpenShift', () => {
+      const NS = 'sgahlot-pd-extn';
+      const NAME = 'ros2-jazzy-sim';
+      const POD = 'ros2-jazzy-sim-abc-123';
+      const SCAN_ECHO = `angle_min: 0.0
+angle_max: 6.28
+angle_increment: 0.017
+range_min: 0.1
+range_max: 20.0
+ranges: [0.3, 0.5, .inf, .nan]
+`;
+
+      function mockOc(image = 'quay.io/ns/ros2-jazzy-sim:noble-amd64') {
+        vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+          get: vi.fn().mockReturnValue(5),
+          update: vi.fn(),
+        } as unknown as extensionApi.Configuration);
+        vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+          const raw = args as string[];
+          const a = raw[0] === '--context' ? raw.slice(2) : raw;
+          if (a[0] === 'get' && a[1] === 'deployment') {
+            return { stdout: image, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          if (a[0] === 'get' && a[1] === 'pods') {
+            return { stdout: POD, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          return { stdout: SCAN_ECHO, stderr: '', command: 'oc' } as extensionApi.RunResult;
+        });
+      }
+
+      it('summarizes ranges over oc exec', async () => {
+        mockOc();
+        const result = await api.getLaserScanSummaryInOpenShift(NS, NAME, 'robot_1');
+        expect(result.topic).toBe('/robot_1/scan');
+        expect(result.finiteCount).toBe(2);
+        expect(result.infCount).toBe(1);
+        expect(result.nanCount).toBe(1);
+
+        const calls = vi.mocked(extensionApi.process.exec).mock.calls;
+        const scanCall = calls.find(c =>
+          (c[1] as string[]).some(a => typeof a === 'string' && a.includes('/robot_1/scan')),
+        );
+        expect((scanCall![1] as string[]).slice(0, 5)).toEqual(['exec', '-n', NS, POD, '--']);
+      });
+
+      it('passes --context to every oc invocation when provided', async () => {
+        mockOc();
+        await api.getLaserScanSummaryInOpenShift(NS, NAME, 'robot_1', 'other-context');
+        const calls = vi.mocked(extensionApi.process.exec).mock.calls;
+        expect(calls.length).toBeGreaterThan(0);
+        for (const call of calls) {
+          expect((call[1] as string[]).slice(0, 2)).toEqual(['--context', 'other-context']);
+        }
+      });
+
+      it('rejects an injectable robot name before touching the cluster', async () => {
+        await expect(api.getLaserScanSummaryInOpenShift(NS, NAME, 'robot;id')).rejects.toThrow(/Invalid robot name/);
+        expect(extensionApi.process.exec).not.toHaveBeenCalled();
+      });
+
+      it('propagates a pod-resolution failure', async () => {
+        vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+          get: vi.fn().mockReturnValue(5),
+          update: vi.fn(),
+        } as unknown as extensionApi.Configuration);
+        vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+          const a = args as string[];
+          if (a[0] === 'get' && a[1] === 'deployment') {
+            return {
+              stdout: 'quay.io/ns/ros2-jazzy-sim:noble-amd64',
+              stderr: '',
+              command: 'oc',
+            } as extensionApi.RunResult;
+          }
+          if (a[0] === 'get' && a[1] === 'pods') {
+            return { stdout: '', stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          return { stdout: '', stderr: '', command: 'oc' } as extensionApi.RunResult;
+        });
+        await expect(api.getLaserScanSummaryInOpenShift(NS, NAME, 'robot_1')).rejects.toThrow(/No running pod/);
+      });
+    });
+
     describe('listSpawnedRobotsInSimulation', () => {
       const CONTAINER_ID = 'abc123def456';
 

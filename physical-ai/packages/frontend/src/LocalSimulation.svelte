@@ -7,6 +7,7 @@ import { SIM_STOPPED_BROWSER_HINT } from '/@shared/src/types/SimulationContainer
 import { isSimLaunchImageRef } from '/@shared/src/security/simImageTrust';
 import RobotControls, { type RobotEntry } from './RobotControls.svelte';
 import { reconcileAdd, pruneStale } from './lib/robotReconcile';
+import { localDiagnosticsHref } from './lib/diagnosticsLink';
 
 let localSimImages: string[] = [];
 let selectedImage = '';
@@ -271,6 +272,13 @@ async function removeRobot(index: number) {
   trackedSince.delete(robot.name);
   spawnedRobots = spawnedRobots.filter((_, i) => i !== index);
 }
+
+function diagnoseRobot(index: number): void {
+  if (!runningContainer) return;
+  const robot = spawnedRobots[index];
+  if (!robot) return;
+  router.goto(localDiagnosticsHref(runningContainer.id, robot.name));
+}
 </script>
 
 <div class="flex flex-col gap-4">
@@ -383,6 +391,7 @@ async function removeRobot(index: number) {
         onSpawn={spawnRobot}
         onNavigate={navigateRobot}
         onRemove={removeRobot}
+        onDiagnose={diagnoseRobot}
         spawnLabel="Add TurtleBot3"
         idPrefix="local" />
     </div>

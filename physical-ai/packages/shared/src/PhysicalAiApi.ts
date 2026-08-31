@@ -156,4 +156,27 @@ export abstract class PhysicalAiApi {
   /** Robots actually running in the deployment's pod, via `ros2 node list` (S8-17) — used
    * to reconcile the UI's robot list after a reload/restart forgets in-memory spawn state. */
   abstract listSpawnedRobotsInOpenShift(namespace: string, name: string, context?: string): Promise<string[]>;
+
+  // --- Robot diagnostics, OpenShift parity (APPENG-5810 follow-up) ---
+  /** Curated TF chain for a robot in a deployed pod — see getTfTreeStatus. */
+  abstract getTfTreeStatusInOpenShift(
+    namespace: string,
+    name: string,
+    robotName: string,
+    context?: string,
+  ): Promise<TfTreeResult>;
+  /** Local + global Nav2 costmap summaries for a robot in a deployed pod — see getCostmapSummary. */
+  abstract getCostmapSummaryInOpenShift(
+    namespace: string,
+    name: string,
+    robotName: string,
+    context?: string,
+  ): Promise<CostmapSummaryResult>;
+  /** LaserScan summary for a robot in a deployed pod — see getLaserScanSummary. */
+  abstract getLaserScanSummaryInOpenShift(
+    namespace: string,
+    name: string,
+    robotName: string,
+    context?: string,
+  ): Promise<LaserScanSummary>;
 }

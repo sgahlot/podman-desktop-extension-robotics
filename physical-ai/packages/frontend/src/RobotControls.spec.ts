@@ -131,4 +131,26 @@ describe('RobotControls', () => {
     });
     expect(screen.getByRole('button', { name: 'Add TurtleBot3' })).toBeTruthy();
   });
+
+  it('hides the Diagnose button when onDiagnose is not supplied', () => {
+    render(RobotControls, { robots: [robot('robot_1')], onSpawn: vi.fn(), onNavigate: vi.fn(), onRemove: vi.fn() });
+    expect(screen.queryByRole('button', { name: 'Diagnose' })).toBeNull();
+  });
+
+  it('calls onDiagnose with the robot index, even while warming', async () => {
+    const onDiagnose = vi.fn();
+    render(RobotControls, {
+      robots: [robot('robot_1'), robot('robot_2', { warmStatus: 'warming' })],
+      onSpawn: vi.fn(),
+      onNavigate: vi.fn(),
+      onRemove: vi.fn(),
+      onDiagnose,
+    });
+
+    const diagnoseButtons = screen.getAllByRole('button', { name: 'Diagnose' });
+    expect(diagnoseButtons).toHaveLength(2);
+
+    await fireEvent.click(diagnoseButtons[1]);
+    expect(onDiagnose).toHaveBeenCalledWith(1);
+  });
 });
