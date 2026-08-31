@@ -19,7 +19,11 @@
 - Team members may use any Node version manager (fnm, nvm, brew, etc.) — the project has no dependency on a specific one
 
 ## Workflow Rules
-- Always reference the Jira key (e.g., APPENG-5768) when working on a task
+- Always reference the Jira key (e.g., APPENG-5768) when working on a task. **If not told
+  which ticket to work on, infer it from the current branch name** — worktree branches are
+  named `feature/APPENG-<NNNN>-<slug>`, so `git branch --show-current` gives you the key
+  without having to ask. Read the ticket via the Atlassian tools, transition it to **In
+  Progress** if it isn't already, then proceed with analysis and implementation.
 - Check the plan doc for context on what each story/sub-task requires
 - Ask questions before starting a new task if the scope or approach is unclear
 - Keep this rules doc updated as decisions are made
@@ -50,14 +54,26 @@
   commit link → then transition to Closed. Use **Review** (transition id 41) for
   code-complete-but-untested; In Progress until testing starts. Only merged branches are safe to
   delete.
-- **If this checkout is a git worktree sibling (not `main/`), give its Podman Desktop
-  extension a unique identity before it's ever loaded into PD.** Every worktree's
-  `packages/backend/package.json` starts with the same `name`/`displayName`
-  (`physical-ai`/`Physical AI`) — loading two worktrees under the same identity at once
-  leaves Podman Desktop's extension host in a stuck "Starting" state that a plain
-  Stop/Start can't recover from (only a full PD quit+relaunch clears it). Fix, once per
-  worktree, immediately after creating it: edit `packages/backend/package.json`'s `name`
-  to `physical-ai-appeng<NNNN>` and `displayName` to `Physical AI (APPENG-<NNNN>)`, then run
-  `git update-index --skip-worktree packages/backend/package.json` so git never shows it as
-  modified. This is mandatory setup, not an optional nice-to-have — do it before reporting
-  the worktree as ready to load in PD.
+- **If this checkout is a git worktree sibling (not `main/`) and `physical-ai/node_modules`
+  doesn't exist yet, it's a brand-new worktree — do this one-time setup before anything
+  else, in order:**
+  1. Copy `node_modules` from `../main/physical-ai/node_modules` into this worktree's
+     `physical-ai/node_modules` (npm workspace symlinks are relative, so this is safe
+     across sibling worktrees at the same depth) — much faster than a from-scratch
+     install — then run `npm install` once to reconcile any branch-specific dependency
+     drift.
+  2. Symlink `.internal` in from `main/`: `ln -s ../main/.internal .internal` (run from the
+     worktree root). `.internal/` is private and git-ignored, and lives ONLY in `main/` —
+     never copy or regenerate it elsewhere. The symlink is invisible to git under the same
+     ignore pattern.
+  3. **Give this worktree's Podman Desktop extension a unique identity before it's ever
+     loaded into PD.** Every worktree's `packages/backend/package.json` starts with the
+     same `name`/`displayName` (`physical-ai`/`Physical AI`) — loading two worktrees under
+     the same identity at once leaves Podman Desktop's extension host in a stuck "Starting"
+     state that a plain Stop/Start can't recover from (only a full PD quit+relaunch clears
+     it). Edit `packages/backend/package.json`'s `name` to `physical-ai-appeng<NNNN>` and
+     `displayName` to `Physical AI (APPENG-<NNNN>)`, then run
+     `git update-index --skip-worktree packages/backend/package.json` so git never shows it
+     as modified.
+  4. Confirm with `npm run typecheck` before reporting the worktree ready or starting
+     ticket work.
