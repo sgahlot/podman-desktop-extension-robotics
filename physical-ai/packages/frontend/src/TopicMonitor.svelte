@@ -281,20 +281,20 @@ onDestroy(() => {
       </button>
     </div>
 
-    <div class="inline-flex rounded border border-[var(--pd-content-card-border)] overflow-hidden self-start">
+    <div class="flex flex-row gap-1 border-b border-[var(--pd-content-card-border)] shrink-0">
       <button
         type="button"
-        class="px-3 py-1.5 text-sm {activeTab === 'topics'
-          ? 'bg-[var(--pd-content-bg)] text-[var(--pd-content-header)]'
-          : 'text-[var(--pd-content-text)]'}"
+        role="tab"
+        aria-selected={activeTab === 'topics'}
+        class="px-5 py-2 text-sm pai-tab {activeTab === 'topics' ? 'pai-tab-active' : ''}"
         on:click={() => (activeTab = 'topics')}>
         Topics
       </button>
       <button
         type="button"
-        class="px-3 py-1.5 text-sm border-l border-[var(--pd-content-card-border)] {activeTab === 'diagnostics'
-          ? 'bg-[var(--pd-content-bg)] text-[var(--pd-content-header)]'
-          : 'text-[var(--pd-content-text)]'}"
+        role="tab"
+        aria-selected={activeTab === 'diagnostics'}
+        class="px-5 py-2 text-sm pai-tab {activeTab === 'diagnostics' ? 'pai-tab-active' : ''}"
         on:click={() => (activeTab = 'diagnostics')}>
         Diagnostics
       </button>
