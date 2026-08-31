@@ -1,17 +1,19 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import RobotDiagnosticsPanel from './RobotDiagnosticsPanel.svelte';
 import type { TopicInfo } from '/@shared/src/types/TopicInfo';
 
 const mockGetTfTreeStatus = vi.fn();
 const mockGetCostmapSummary = vi.fn();
 const mockGetLaserScanSummary = vi.fn();
+const mockListSpawnedRobotsInSimulation = vi.fn();
 
 vi.mock('../api/client', () => ({
   physicalAiClient: {
     getTfTreeStatus: (...args: unknown[]) => mockGetTfTreeStatus(...args),
     getCostmapSummary: (...args: unknown[]) => mockGetCostmapSummary(...args),
     getLaserScanSummary: (...args: unknown[]) => mockGetLaserScanSummary(...args),
+    listSpawnedRobotsInSimulation: (...args: unknown[]) => mockListSpawnedRobotsInSimulation(...args),
   },
 }));
 
@@ -92,11 +94,13 @@ describe('RobotDiagnosticsPanel', () => {
     mockGetTfTreeStatus.mockResolvedValue(TF_RESULT);
     mockGetCostmapSummary.mockResolvedValue(COSTMAP_RESULT);
     mockGetLaserScanSummary.mockResolvedValue(LASER_RESULT);
+    mockListSpawnedRobotsInSimulation.mockResolvedValue([]);
   });
 
-  it('shows an empty state and no robot picker when no robot namespace is derivable', () => {
+  it('shows an empty state and no robot picker when no robot is detected', async () => {
     render(RobotDiagnosticsPanel, { containerId: 'c1', topics: [] });
-    expect(screen.getByText(/No robot namespace detected yet/)).toBeTruthy();
+    await waitFor(() => expect(mockListSpawnedRobotsInSimulation).toHaveBeenCalledWith('c1'));
+    expect(screen.getByText(/No robot detected yet/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Refresh diagnostics' })).toBeNull();
   });
 
@@ -105,6 +109,16 @@ describe('RobotDiagnosticsPanel', () => {
     const select = screen.getByLabelText('Robot') as HTMLSelectElement;
     expect([...select.options].map(o => o.value)).toEqual(['robot_1', 'robot_2']);
     expect(select.value).toBe('robot_1');
+  });
+
+  it('detects a robot via the node-list probe even before its topics (scan/tf/costmaps) appear', async () => {
+    // Reproduces the bug: right after spawn, Nav2 hasn't brought up scan/tf/costmap topics
+    // yet (topics is empty/incomplete), but `ros2 node list` already sees the robot's nodes.
+    mockListSpawnedRobotsInSimulation.mockResolvedValue(['robot_1']);
+    render(RobotDiagnosticsPanel, { containerId: 'c1', topics: [] });
+
+    const select = await screen.findByLabelText('Robot');
+    expect((select as HTMLSelectElement).value).toBe('robot_1');
   });
 
   it('fetches all three diagnostics for the selected robot on Refresh and renders all three cards', async () => {

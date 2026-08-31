@@ -312,7 +312,10 @@ onDestroy(() => {
           No topics detected yet. The simulation may still be starting up — topics appear once ROS2 nodes are active.
         </div>
       {:else if topics.length > 0}
-        <div class="text-xs pai-text-muted">{topics.length} active topics</div>
+        <div class="text-xs pai-text-muted">
+          {topics.length} active topics — more can appear as ROS2 nodes finish starting (e.g. Nav2 bring-up can take up to
+          ~90s)
+        </div>
 
         <div
           class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] overflow-x-auto">

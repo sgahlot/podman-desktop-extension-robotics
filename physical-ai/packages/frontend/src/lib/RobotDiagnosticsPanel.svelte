@@ -1,4 +1,5 @@
 <script lang="ts">
+import { onMount, onDestroy } from 'svelte';
 import { physicalAiClient } from '../api/client';
 import type { TopicInfo } from '/@shared/src/types/TopicInfo';
 import type { TfTreeResult, CostmapSummaryResult, LaserScanSummary } from '/@shared/src/types/RobotDiagnostics';
@@ -17,7 +18,14 @@ let costmapError = '';
 let laserResult: LaserScanSummary | null = null;
 let laserError = '';
 
-$: robotOptions = deriveRobotNamespaces(topics);
+// `ros2 node list` (same signal APPENG-6250 uses to reconcile the Simulation page's robot
+// state) registers a spawned robot's nodes almost immediately — well before Nav2 finishes
+// bringing up the topics (scan/tf/costmaps) deriveRobotNamespaces looks for, which can take
+// 40-90s under software rendering. Union both so the picker isn't empty for that whole window.
+let spawnedRobotNames: string[] = [];
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+$: robotOptions = Array.from(new Set([...spawnedRobotNames, ...deriveRobotNamespaces(topics)])).sort();
 
 $: if (robotOptions.length > 0 && !robotOptions.includes(robotName)) {
   robotName = robotOptions[0];
@@ -26,10 +34,32 @@ $: if (robotOptions.length === 0 && robotName) {
   robotName = '';
 }
 
+async function fetchSpawnedRobots(): Promise<void> {
+  if (!containerId) {
+    spawnedRobotNames = [];
+    return;
+  }
+  try {
+    spawnedRobotNames = await physicalAiClient.listSpawnedRobotsInSimulation(containerId);
+  } catch {
+    // Fail-soft: keep the last-known list rather than blanking the picker on a transient RPC hiccup.
+  }
+}
+
+onMount(() => {
+  fetchSpawnedRobots();
+  pollTimer = setInterval(fetchSpawnedRobots, 5000);
+});
+
+onDestroy(() => {
+  if (pollTimer) clearInterval(pollTimer);
+});
+
 let lastContainerId = containerId;
 $: if (containerId !== lastContainerId) {
   lastContainerId = containerId;
   clearResults();
+  fetchSpawnedRobots();
 }
 
 function clearResults(): void {
@@ -111,8 +141,7 @@ async function refreshDiagnostics(): Promise<void> {
 <div class="flex flex-col gap-4 min-w-0">
   {#if robotOptions.length === 0}
     <div class="text-sm text-[var(--pd-content-text)]">
-      No robot namespace detected yet. Spawn a robot in Simulation, then come back once its topics (<code>scan</code>,
-      <code>tf</code>, <code>local_costmap/costmap</code>) appear.
+      No robot detected yet. Spawn a robot in Simulation — it should appear here within a few seconds.
     </div>
   {:else}
     <div class="flex flex-row items-end gap-3 flex-wrap">
@@ -131,6 +160,10 @@ async function refreshDiagnostics(): Promise<void> {
         {refreshing ? 'Refreshing...' : 'Refresh diagnostics'}
       </button>
       <span class="text-xs pai-text-muted">One-shot snapshot, not live — click Refresh to re-capture.</span>
+    </div>
+    <div class="text-xs pai-text-muted">
+      A newly-spawned robot can show "missing"/timed-out cards for up to ~90s while Nav2 finishes starting — that's
+      expected, not an error. Click Refresh again once it's warmed up.
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 min-w-0">

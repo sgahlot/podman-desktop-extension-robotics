@@ -86,7 +86,7 @@ describe('TopicMonitor', () => {
     expect(screen.getByText('/robot_1/cmd_vel')).toBeTruthy();
     expect(screen.getByText('geometry_msgs/msg/Twist')).toBeTruthy();
     expect(screen.getByText('Twist')).toBeTruthy();
-    expect(screen.getByText('2 active topics')).toBeTruthy();
+    expect(screen.getByText(/2 active topics/)).toBeTruthy();
   });
 
   it('shows column headers', async () => {
