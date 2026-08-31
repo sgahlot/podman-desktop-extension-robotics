@@ -2,6 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Native <select> arrows render too faint/small to read as "this is a dropdown" at a glance —
+ * replace with a clearer, consistently-sized chevron across every select in the app. The
+ * !important on padding-right/background-image is deliberate: this is a single global reset
+ * meant to win over each select's own Tailwind px-* utility, not something to repeat per element. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M6 8l4 4 4-4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  background-size: 1rem;
+  padding-right: 2rem !important;
+}
+
 /*
  * Physical AI theme tokens.
  * Prefer Podman Desktop --pd-* variables so light/dark themes stay consistent.

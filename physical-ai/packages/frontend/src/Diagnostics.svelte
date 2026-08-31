@@ -15,159 +15,134 @@ import { lastOpenShiftSelection } from './lib/simSelection';
 /**
  * Deep-link query params (see lib/diagnosticsLink.ts): `target=local&containerId=...&robot=...`
  * or `target=oc&namespace=...&workload=...&robot=...&context=...`. Both remain fully supported
- * as a way to arrive pre-selected on a specific simulation (the Diagnose buttons on both
- * Simulation pages use them) — this page also has its own "Simulation" picker covering every
- * running local container and (namespace/context permitting) OpenShift workload, so a user can
- * browse and switch freely instead of needing a fresh deep link for every target.
+ * as a way to arrive pre-selected on a specific simulation — the Diagnose buttons on both
+ * Simulation pages use them. `target` also picks which tab opens by default.
  */
 export let query: Record<string, string> = {};
 
-interface SimOption {
-  key: string;
-  label: string;
+let activeTab: 'local' | 'oc' = query.target === 'oc' ? 'oc' : 'local';
+
+function switchTab(tab: 'local' | 'oc'): void {
+  activeTab = tab;
+  if (tab === 'oc') void activateOcTab();
 }
 
-interface ExtraTarget {
-  key: string;
-  label: string;
-  target: DiagnosticsTarget;
-}
+// --- Local tab ---
 
-let loading = true;
-let refreshing = false;
-
+let localLoading = true;
+let localRefreshing = false;
 let containers: SimContainerInfo[] = [];
-let workloads: OpenShiftWorkload[] = [];
-/** Namespace/context an OpenShift workload list was actually fetched for — resolved via
- * resolveOpenShiftNamespace() or the manual switcher below, never guessed at render time. */
-let ocNamespace = '';
-let ocContext: string | undefined = undefined;
-/** A deep-linked oc target that doesn't fall inside the auto-resolved namespace/context (e.g. a
- * link to a different namespace than the one this session last used) — added to the option list
- * directly instead of requiring rediscovery, per the deep-link backward-compat contract. */
-let extraTarget: ExtraTarget | null = null;
-
-let selectedKey = '';
+let selectedContainerId = '';
 let staleContainerNote = '';
 
-/** Topics for the *selected* podman option only (see ensureTopicsLoaded) — fetching them for
- * every discovered container up front would be wasted work for options the user never picks. */
+/** Topics for the *selected* container only (see ensureTopicsLoaded) — fetching them for every
+ * discovered container up front would be wasted work for containers the user never picks. */
 let selectedTopics: TopicInfo[] = [];
-let topicsLoadedForKey = '';
+let topicsLoadedForContainerId = '';
 
-let switcherOpen = false;
-let switcherContexts: { name: string; clusterUrl?: string; namespace?: string }[] = [];
-let switcherContext = '';
-let switcherNamespace = '';
-let switcherProjects: string[] = [];
-let switcherNamespaceMenuOpen = false;
-let switcherBlurTimeout: ReturnType<typeof setTimeout> | undefined;
-let switcherBusy = false;
-let switcherError = '';
+/**
+ * Rebuilds the local container list and re-picks a selection. `preferId` (set on Refresh) keeps
+ * the current selection when it still exists instead of snapping back to the deep-link/first-
+ * container default.
+ */
+async function runLocalDiscovery(preferId: string | undefined): Promise<void> {
+  let allContainers: SimContainerInfo[] = [];
+  try {
+    allContainers = await physicalAiClient.listSimulationContainers();
+  } catch {
+    // Fail-soft: treated the same as no containers running.
+  }
+  containers = allContainers.filter(c => c.state === 'running');
 
-function podmanKey(id: string): string {
-  return `podman:${id}`;
+  const containerNotFound = !!(
+    query.target !== 'oc' &&
+    query.containerId &&
+    !containers.some(c => c.id === query.containerId)
+  );
+
+  if (preferId && containers.some(c => c.id === preferId)) {
+    selectedContainerId = preferId;
+  } else if (query.target !== 'oc' && query.containerId && containers.some(c => c.id === query.containerId)) {
+    selectedContainerId = query.containerId;
+  } else {
+    selectedContainerId = containers[0]?.id ?? '';
+  }
+
+  staleContainerNote =
+    containerNotFound && selectedContainerId
+      ? "This link's container is no longer running — showing the current simulation instead."
+      : '';
 }
 
-function ocKey(namespace: string, workload: string, context: string | undefined): string {
-  return `oc:${namespace}/${workload}/${context ?? ''}`;
+async function refreshLocal(): Promise<void> {
+  localRefreshing = true;
+  await runLocalDiscovery(selectedContainerId);
+  localRefreshing = false;
 }
 
-function buildOptions(
-  containers: SimContainerInfo[],
-  workloads: OpenShiftWorkload[],
-  ocNamespace: string,
-  ocContext: string | undefined,
-  extra: ExtraTarget | null,
-): SimOption[] {
-  const options: SimOption[] = [
-    ...containers.map(c => ({ key: podmanKey(c.id), label: `Local — ${c.name} — ${c.imageTag}` })),
-    ...workloads.map(w => ({
-      key: ocKey(ocNamespace, w.name, ocContext),
-      label: `OpenShift — ${ocNamespace}/${w.name}${w.ready ? '' : ' (starting…)'}`,
-    })),
-  ];
-  if (extra && !options.some(o => o.key === extra.key)) {
-    options.push({ key: extra.key, label: extra.label });
+async function ensureTopicsLoaded(containerId: string): Promise<void> {
+  let topics: TopicInfo[] = [];
+  try {
+    topics = await physicalAiClient.listRosTopics(containerId);
+  } catch {
+    // Fail-soft: RobotDiagnosticsPanel's node-list probe still finds spawned robots.
   }
-  return options;
+  if (selectedContainerId !== containerId) return; // stale response — selection moved on
+  selectedTopics = topics;
 }
 
-function buildTargetsByKey(
-  containers: SimContainerInfo[],
-  workloads: OpenShiftWorkload[],
-  ocNamespace: string,
-  ocContext: string | undefined,
-  extra: ExtraTarget | null,
-): Map<string, DiagnosticsTarget> {
-  const map = new Map<string, DiagnosticsTarget>();
-  for (const c of containers) {
-    map.set(podmanKey(c.id), { kind: 'podman', containerId: c.id, topics: [] });
-  }
-  for (const w of workloads) {
-    map.set(ocKey(ocNamespace, w.name, ocContext), {
-      kind: 'oc',
-      namespace: ocNamespace,
-      workload: w.name,
-      context: ocContext,
-    });
-  }
-  if (extra && !map.has(extra.key)) {
-    map.set(extra.key, extra.target);
-  }
-  return map;
-}
-
-/** Builds the deep-linked oc target directly from the query (no RPC needed), unless it's already
- * covered by the auto-discovered namespace/context's own workload list. */
-function computeExtraTarget(
-  workloads: OpenShiftWorkload[],
-  ocNamespace: string,
-  ocContext: string | undefined,
-): ExtraTarget | null {
-  if (query.target === 'oc' && query.namespace && query.workload) {
-    const context = query.context || undefined;
-    const alreadyListed =
-      query.namespace === ocNamespace && context === ocContext && workloads.some(w => w.name === query.workload);
-    if (!alreadyListed) {
-      return {
-        key: ocKey(query.namespace, query.workload, context),
-        label: `OpenShift — ${query.namespace}/${query.workload}`,
-        target: { kind: 'oc', namespace: query.namespace, workload: query.workload, context },
-      };
+$: {
+  if (selectedContainerId) {
+    if (topicsLoadedForContainerId !== selectedContainerId) {
+      topicsLoadedForContainerId = selectedContainerId;
+      selectedTopics = [];
+      void ensureTopicsLoaded(selectedContainerId);
     }
+  } else if (topicsLoadedForContainerId) {
+    topicsLoadedForContainerId = '';
+    selectedTopics = [];
   }
-  return null;
 }
 
-/** Default-selection priority: keep the current selection if it still resolves (Refresh) → the
- * deep-link query params → first local container → first OpenShift workload → none. */
-function pickDefaultKey(map: Map<string, DiagnosticsTarget>, preferKey: string | undefined): string {
-  if (preferKey && map.has(preferKey)) return preferKey;
+$: localTarget = (
+  selectedContainerId ? { kind: 'podman', containerId: selectedContainerId, topics: selectedTopics } : null
+) as DiagnosticsTarget | null;
 
-  if (query.target === 'oc' && query.namespace && query.workload) {
-    const key = ocKey(query.namespace, query.workload, query.context || undefined);
-    if (map.has(key)) return key;
-  }
+// --- OpenShift tab ---
 
-  if (query.containerId && map.has(podmanKey(query.containerId))) {
-    return podmanKey(query.containerId);
-  }
+/** Whether the OpenShift tab's data has been (or is being) loaded at least once — gates the
+ * fallback-resolution + RPCs behind first activation, so a local-only user never pays for them. */
+let ocActivated = false;
+let ocLoading = true;
 
-  for (const [key, t] of map) {
-    if (t.kind === 'podman') return key;
-  }
-  for (const [key, t] of map) {
-    if (t.kind === 'oc') return key;
-  }
-  return '';
-}
+let ocContexts: { name: string; clusterUrl?: string; namespace?: string }[] = [];
+let ocContext = '';
+let ocNamespace = '';
+let workloads: OpenShiftWorkload[] = [];
+let selectedWorkloadName = '';
+
+let ocListBusy = false;
+let ocListError = '';
+let ocEmptyMessage = '';
+
+let ocProjects: string[] = [];
+let ocNamespaceMenuOpen = false;
+let ocNamespaceBlurTimeout: ReturnType<typeof setTimeout> | undefined;
+
+$: filteredOcProjects = ocProjects.filter(p => !ocNamespace || p.toLowerCase().includes(ocNamespace.toLowerCase()));
+$: ocNamespaceMenuVisible = ocNamespaceMenuOpen && filteredOcProjects.length > 0;
+
+$: ocTarget = (
+  ocNamespace && selectedWorkloadName
+    ? { kind: 'oc', namespace: ocNamespace, workload: selectedWorkloadName, context: ocContext || undefined }
+    : null
+) as DiagnosticsTarget | null;
 
 /**
  * Resolves an OpenShift namespace/context to try, in order: (a) the last one used on the
  * Simulation page (lastOpenShiftSelection); (b) the current kube context, if it's bound to a
- * real (non-'default') namespace; (c) the configured default namespace setting; (d) none — no
- * OpenShift options are shown until the user picks one via the switcher below.
+ * real (non-'default') namespace; (c) the configured default namespace setting; (d) none — the
+ * Cluster/Namespace fields stay editable and empty until the user lists manually.
  */
 async function resolveOpenShiftNamespace(): Promise<{ namespace: string; context?: string } | null> {
   const stored = get(lastOpenShiftSelection);
@@ -187,195 +162,140 @@ async function resolveOpenShiftNamespace(): Promise<{ namespace: string; context
     const fallback = await physicalAiClient.getDefaultOpenShiftNamespace();
     if (fallback) return { namespace: fallback, context: context?.context };
   } catch {
-    // Fail soft — no OpenShift entries by default; the switcher is still available.
+    // Fail soft — the Cluster/Namespace fields are still available for a manual list.
   }
 
   return null;
 }
 
 /**
- * Rebuilds the whole simulation list — local containers plus, namespace permitting, OpenShift
- * workloads — and re-picks a selection. `preferKey` (set on Refresh) keeps the current selection
- * when it still exists instead of snapping back to the default priority chain.
+ * Fetches workloads for the current ocNamespace/ocContext. `explicit` (set for a deep-linked
+ * workload) is force-selected regardless of what the list contains — and, if the list doesn't
+ * happen to include it, added synthetically so the picker still shows it — matching the
+ * deep-link precedence contract: an explicit link always wins over discovery.
  */
-async function runDiscovery(preferKey: string | undefined): Promise<void> {
-  let allContainers: SimContainerInfo[] = [];
+async function fetchOcWorkloads(explicit?: string): Promise<void> {
+  ocListBusy = true;
+  ocListError = '';
+  ocEmptyMessage = '';
   try {
-    allContainers = await physicalAiClient.listSimulationContainers();
-  } catch {
-    // Fail-soft: treated the same as no containers running.
-  }
-  containers = allContainers.filter(c => c.state === 'running');
-
-  const resolvedOc = await resolveOpenShiftNamespace();
-  ocNamespace = resolvedOc?.namespace ?? '';
-  ocContext = resolvedOc?.context;
-  if (ocNamespace) {
-    try {
-      workloads = await physicalAiClient.listOpenShiftDeployments(ocNamespace, ocContext);
-    } catch {
-      workloads = [];
-    }
-  } else {
+    workloads = await physicalAiClient.listOpenShiftDeployments(ocNamespace, ocContext || undefined);
+  } catch (e) {
     workloads = [];
+    ocListError = e instanceof Error ? e.message : 'Failed to list deployments';
   }
 
-  extraTarget = computeExtraTarget(workloads, ocNamespace, ocContext);
-  const map = buildTargetsByKey(containers, workloads, ocNamespace, ocContext, extraTarget);
-
-  const containerNotFound = !!(
-    query.containerId &&
-    query.target !== 'oc' &&
-    !containers.some(c => c.id === query.containerId)
-  );
-
-  selectedKey = pickDefaultKey(map, preferKey);
-  staleContainerNote =
-    containerNotFound && selectedKey
-      ? "This link's container is no longer running — showing the current simulation instead."
-      : '';
-}
-
-async function refresh(): Promise<void> {
-  refreshing = true;
-  await runDiscovery(selectedKey);
-  refreshing = false;
-}
-
-onMount(async () => {
-  await runDiscovery(undefined);
-  loading = false;
-});
-
-$: options = buildOptions(containers, workloads, ocNamespace, ocContext, extraTarget);
-$: targetsByKey = buildTargetsByKey(containers, workloads, ocNamespace, ocContext, extraTarget);
-
-async function ensureTopicsLoaded(key: string, containerId: string): Promise<void> {
-  let topics: TopicInfo[] = [];
-  try {
-    topics = await physicalAiClient.listRosTopics(containerId);
-  } catch {
-    // Fail-soft: RobotDiagnosticsPanel's node-list probe still finds spawned robots.
-  }
-  if (selectedKey !== key) return; // stale response — selection moved on
-  selectedTopics = topics;
-}
-
-$: {
-  const opt = targetsByKey.get(selectedKey);
-  if (opt?.kind === 'podman') {
-    if (topicsLoadedForKey !== selectedKey) {
-      topicsLoadedForKey = selectedKey;
-      selectedTopics = [];
-      void ensureTopicsLoaded(selectedKey, opt.containerId);
+  if (explicit) {
+    if (!workloads.some(w => w.name === explicit)) {
+      workloads = [
+        { name: explicit, namespace: ocNamespace, replicas: 0, readyReplicas: 0, ready: false },
+        ...workloads,
+      ];
     }
-  } else if (topicsLoadedForKey) {
-    topicsLoadedForKey = '';
-    selectedTopics = [];
+    selectedWorkloadName = explicit;
+  } else if (workloads.some(w => w.name === selectedWorkloadName)) {
+    // keep the current selection (e.g. re-listing the same namespace)
+  } else if (workloads.length > 0) {
+    selectedWorkloadName = workloads[0].name;
+  } else {
+    selectedWorkloadName = '';
+    if (!ocListError) ocEmptyMessage = `No simulations found in "${ocNamespace}".`;
   }
+
+  ocListBusy = false;
 }
 
-$: target = ((): DiagnosticsTarget | null => {
-  const opt = targetsByKey.get(selectedKey);
-  if (!opt) return null;
-  return opt.kind === 'podman' ? { ...opt, topics: selectedTopics } : opt;
-})();
-
-$: filteredSwitcherProjects = switcherProjects.filter(
-  p => !switcherNamespace || p.toLowerCase().includes(switcherNamespace.toLowerCase()),
-);
-$: switcherNamespaceMenuVisible = switcherNamespaceMenuOpen && filteredSwitcherProjects.length > 0;
-
-async function refreshSwitcherProjects(): Promise<void> {
+async function refreshOcProjects(): Promise<void> {
   try {
-    switcherProjects = await physicalAiClient.listOpenShiftProjects(switcherContext || undefined);
+    ocProjects = await physicalAiClient.listOpenShiftProjects(ocContext || undefined);
   } catch {
-    switcherProjects = [];
+    ocProjects = [];
   }
 }
 
-/** Opens the namespace/cluster switcher, seeded from whatever namespace/context is already
- * resolved (if any) so overriding it is a small edit rather than starting from scratch. */
-async function toggleSwitcher(): Promise<void> {
-  if (switcherOpen) {
-    switcherOpen = false;
-    return;
-  }
-  switcherOpen = true;
-  switcherError = '';
-  switcherContext = ocContext ?? switcherContext;
-  switcherNamespace = ocNamespace || switcherNamespace;
+/**
+ * First-activation load for the OpenShift tab: populates the Cluster dropdown, then either
+ * builds the deep-linked target directly (skipping auto-resolution entirely) or resolves a
+ * namespace/context via the fallback chain and lists its workloads.
+ */
+async function activateOcTab(): Promise<void> {
+  if (ocActivated) return;
+  ocActivated = true;
+  ocLoading = true;
+
   try {
-    switcherContexts = await physicalAiClient.listKubeContexts();
+    ocContexts = await physicalAiClient.listKubeContexts();
   } catch {
-    switcherContexts = [];
+    ocContexts = [];
   }
-  if (!switcherContext && switcherContexts.length > 0) switcherContext = switcherContexts[0].name;
-  await refreshSwitcherProjects();
+
+  if (query.target === 'oc' && query.namespace && query.workload) {
+    ocNamespace = query.namespace;
+    ocContext = query.context || '';
+    await fetchOcWorkloads(query.workload);
+  } else {
+    const resolved = await resolveOpenShiftNamespace();
+    ocNamespace = resolved?.namespace ?? '';
+    ocContext = resolved?.context ?? (ocContexts.length > 0 ? ocContexts[0].name : '');
+    if (ocNamespace) {
+      await fetchOcWorkloads();
+    }
+  }
+
+  await refreshOcProjects();
+  ocLoading = false;
 }
 
-async function onSwitcherContextChange(): Promise<void> {
-  await refreshSwitcherProjects();
+async function onOcContextChange(): Promise<void> {
+  // The namespace/workload picked under the previous cluster almost certainly doesn't exist on
+  // this one — clear them so the panel doesn't probe a stale (new context, old namespace/workload)
+  // combination against it before the user re-lists.
+  workloads = [];
+  selectedWorkloadName = '';
+  ocEmptyMessage = '';
+  ocListError = '';
+  await refreshOcProjects();
 }
 
-function handleSwitcherNamespaceFocus(): void {
-  if (switcherBlurTimeout) clearTimeout(switcherBlurTimeout);
-  switcherNamespaceMenuOpen = true;
+/** Explicit "List simulations" action (not fired on every keystroke) for manually entered
+ * Cluster/Namespace values. Writes the choice into lastOpenShiftSelection on success, same as
+ * the Simulation page, so the two pages stay in sync. */
+async function listOcSimulations(): Promise<void> {
+  if (!ocNamespace) return;
+  await fetchOcWorkloads();
+  if (!ocListError && ocContext) {
+    lastOpenShiftSelection.set({ context: ocContext, namespace: ocNamespace });
+  }
 }
 
-function handleSwitcherNamespaceInput(): void {
-  switcherNamespaceMenuOpen = true;
+function handleOcNamespaceFocus(): void {
+  if (ocNamespaceBlurTimeout) clearTimeout(ocNamespaceBlurTimeout);
+  ocNamespaceMenuOpen = true;
 }
 
-function handleSwitcherNamespaceBlur(): void {
-  switcherBlurTimeout = setTimeout(() => {
-    switcherNamespaceMenuOpen = false;
+function handleOcNamespaceInput(): void {
+  ocNamespaceMenuOpen = true;
+}
+
+function handleOcNamespaceBlur(): void {
+  ocNamespaceBlurTimeout = setTimeout(() => {
+    ocNamespaceMenuOpen = false;
   }, 150);
 }
 
-function selectSwitcherProject(project: string): void {
-  switcherNamespace = project;
-  switcherNamespaceMenuOpen = false;
+function selectOcProject(project: string): void {
+  ocNamespace = project;
+  ocNamespaceMenuOpen = false;
 }
 
-/** Re-lists workloads for the chosen namespace/context, merges them into the unified option
- * list, and writes the choice into lastOpenShiftSelection so the Simulation page picks it up too. */
-async function applySwitcher(): Promise<void> {
-  if (!switcherNamespace) return;
-  switcherBusy = true;
-  switcherError = '';
-  try {
-    const nextWorkloads = await physicalAiClient.listOpenShiftDeployments(
-      switcherNamespace,
-      switcherContext || undefined,
-    );
-    workloads = nextWorkloads;
-    ocNamespace = switcherNamespace;
-    ocContext = switcherContext || undefined;
-    if (switcherContext) {
-      lastOpenShiftSelection.set({ context: switcherContext, namespace: switcherNamespace });
-    }
-    extraTarget = computeExtraTarget(workloads, ocNamespace, ocContext);
-    if (workloads.length > 0) {
-      selectedKey = ocKey(ocNamespace, workloads[0].name, ocContext);
-      switcherOpen = false;
-    } else {
-      // Nothing to select in this namespace — reconcile selectedKey (it may have pointed at a
-      // workload from the previous namespace that's no longer in the rebuilt list) instead of
-      // leaving it stranded on a stale key, and keep the switcher open so the message is visible.
-      const map = buildTargetsByKey(containers, workloads, ocNamespace, ocContext, extraTarget);
-      selectedKey = pickDefaultKey(map, undefined);
-      switcherError = `No simulations found in "${ocNamespace}".`;
-    }
-  } catch (e) {
-    switcherError = e instanceof Error ? e.message : 'Failed to list deployments';
-  } finally {
-    switcherBusy = false;
-  }
-}
+onMount(async () => {
+  await runLocalDiscovery(undefined);
+  localLoading = false;
+  if (activeTab === 'oc') await activateOcTab();
+});
 
 onDestroy(() => {
-  if (switcherBlurTimeout) clearTimeout(switcherBlurTimeout);
+  if (ocNamespaceBlurTimeout) clearTimeout(ocNamespaceBlurTimeout);
 });
 </script>
 
@@ -391,49 +311,77 @@ onDestroy(() => {
     Plain-language TF/costmap/sensor snapshots for a running robot — one-shot, click Refresh to re-capture.
   </p>
 
-  {#if loading}
-    <div class="flex flex-1 flex-col items-center justify-center gap-2 min-h-[200px]">
-      <span class="inline-block w-3 h-3 rounded-full bg-current pai-text-accent animate-pulse"></span>
-      <span class="text-sm pai-text-muted">Loading…</span>
-    </div>
-  {:else}
-    <div class="flex flex-row items-end gap-3 flex-wrap">
-      {#if options.length > 0}
-        <div class="flex flex-col gap-1">
-          <label for="simulationSelect" class="text-xs text-[var(--pd-content-text)]">Simulation</label>
-          <select
-            id="simulationSelect"
-            bind:value={selectedKey}
-            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]">
-            {#each options as opt}
-              <option value={opt.key}>{opt.label}</option>
-            {/each}
-          </select>
-        </div>
+  <div class="flex flex-row gap-1 border-b border-[var(--pd-content-card-border)]">
+    <button
+      role="tab"
+      aria-selected={activeTab === 'local'}
+      on:click={() => switchTab('local')}
+      class="px-5 py-2 text-sm pai-tab {activeTab === 'local' ? 'pai-tab-active' : ''}">
+      Local
+    </button>
+    <button
+      role="tab"
+      aria-selected={activeTab === 'oc'}
+      on:click={() => switchTab('oc')}
+      class="px-5 py-2 text-sm pai-tab {activeTab === 'oc' ? 'pai-tab-active' : ''}">
+      OpenShift
+    </button>
+  </div>
+
+  {#if activeTab === 'local'}
+    {#if localLoading}
+      <div class="flex flex-1 flex-col items-center justify-center gap-2 min-h-[200px]">
+        <span class="inline-block w-3 h-3 rounded-full bg-current pai-text-accent animate-pulse"></span>
+        <span class="text-sm pai-text-muted">Loading…</span>
+      </div>
+    {:else}
+      <div class="flex flex-row items-end gap-3 flex-wrap">
+        {#if containers.length > 0}
+          <div class="flex flex-col gap-1">
+            <label for="simulationSelect" class="text-xs text-[var(--pd-content-text)]">Simulation</label>
+            <select
+              id="simulationSelect"
+              bind:value={selectedContainerId}
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]">
+              {#each containers as c}
+                <option value={c.id}>{c.name} — {c.imageTag}</option>
+              {/each}
+            </select>
+          </div>
+        {/if}
+        <button on:click={refreshLocal} disabled={localRefreshing} class="pai-btn pai-btn-primary">
+          {localRefreshing ? 'Refreshing…' : 'Refresh'}
+        </button>
+      </div>
+
+      {#if staleContainerNote}
+        <div class="text-xs pai-text-muted">{staleContainerNote}</div>
       {/if}
-      <button on:click={refresh} disabled={refreshing} class="pai-btn pai-btn-primary">
-        {refreshing ? 'Refreshing…' : 'Refresh'}
-      </button>
-      <button type="button" on:click={toggleSwitcher} class="pai-link text-xs">
-        {workloads.length > 0 ? 'Switch cluster/namespace' : 'Show OpenShift simulations…'}
-      </button>
-    </div>
 
-    {#if staleContainerNote}
-      <div class="text-xs pai-text-muted">{staleContainerNote}</div>
+      {#if !localTarget}
+        <div
+          class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-lg">
+          <p class="text-sm text-[var(--pd-content-text)]">
+            No simulation is running.
+            <button on:click={() => router.goto('/simulation')} class="pai-link">Launch one</button>
+            to view diagnostics.
+          </p>
+        </div>
+      {:else}
+        <RobotDiagnosticsPanel target={localTarget} initialRobotName={query.robot || undefined} />
+      {/if}
     {/if}
-
-    {#if switcherOpen}
-      <div
-        class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-lg flex flex-col gap-3">
+  {:else}
+    <div class="flex flex-col gap-3">
+      <div class="flex flex-row items-end gap-3 flex-wrap">
         <div class="flex flex-col gap-1">
           <label for="diag-oc-context" class="text-xs text-[var(--pd-content-text)]">Cluster</label>
           <select
             id="diag-oc-context"
-            bind:value={switcherContext}
-            on:change={onSwitcherContextChange}
-            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono">
-            {#each switcherContexts as ctx}
+            bind:value={ocContext}
+            on:change={onOcContextChange}
+            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] font-mono">
+            {#each ocContexts as ctx}
               <option value={ctx.name}>{ctx.clusterUrl ?? ctx.name}</option>
             {/each}
           </select>
@@ -444,28 +392,28 @@ onDestroy(() => {
             <input
               id="diag-oc-namespace"
               role="combobox"
-              aria-expanded={switcherNamespaceMenuVisible}
+              aria-expanded={ocNamespaceMenuVisible}
               aria-controls="diag-oc-namespace-listbox"
               aria-autocomplete="list"
-              bind:value={switcherNamespace}
-              on:focus={handleSwitcherNamespaceFocus}
-              on:input={handleSwitcherNamespaceInput}
-              on:blur={handleSwitcherNamespaceBlur}
+              bind:value={ocNamespace}
+              on:focus={handleOcNamespaceFocus}
+              on:input={handleOcNamespaceInput}
+              on:blur={handleOcNamespaceBlur}
               autocomplete="off"
               placeholder="e.g. my-project"
-              class="w-full px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
-            {#if switcherNamespaceMenuVisible}
+              class="w-full px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] font-mono" />
+            {#if ocNamespaceMenuVisible}
               <ul
                 id="diag-oc-namespace-listbox"
                 role="listbox"
                 class="absolute top-full left-0 right-0 z-50 mt-1 max-h-60 overflow-y-auto rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] shadow-lg">
-                {#each filteredSwitcherProjects as project (project)}
+                {#each filteredOcProjects as project (project)}
                   <!-- svelte-ignore a11y_click_events_have_key_events -->
                   <li
                     role="option"
-                    aria-selected={project === switcherNamespace}
+                    aria-selected={project === ocNamespace}
                     on:mousedown|preventDefault
-                    on:click={() => selectSwitcherProject(project)}
+                    on:click={() => selectOcProject(project)}
                     class="px-3 py-1.5 text-sm font-mono cursor-pointer text-[var(--pd-content-text)] hover:bg-[var(--pd-content-card-border)]">
                     {project}
                   </li>
@@ -474,32 +422,45 @@ onDestroy(() => {
             {/if}
           </div>
         </div>
-        <div class="flex flex-row items-center gap-3">
-          <button
-            type="button"
-            on:click={applySwitcher}
-            disabled={switcherBusy || !switcherNamespace}
-            class="pai-btn pai-btn-primary text-sm">
-            {switcherBusy ? 'Loading…' : 'Use this namespace'}
-          </button>
-          <button type="button" on:click={() => (switcherOpen = false)} class="pai-btn text-sm">Cancel</button>
-        </div>
-        {#if switcherError}
-          <span class="text-sm pai-text-error">{switcherError}</span>
-        {/if}
+        <button
+          type="button"
+          on:click={listOcSimulations}
+          disabled={ocListBusy || !ocNamespace}
+          class="pai-btn pai-btn-primary">
+          {ocListBusy ? 'Loading…' : 'List simulations'}
+        </button>
       </div>
-    {/if}
 
-    {#if !target}
-      <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-lg">
-        <p class="text-sm text-[var(--pd-content-text)]">
-          No simulation is running.
-          <button on:click={() => router.goto('/simulation')} class="pai-link">Launch one</button>
-          to view diagnostics.
-        </p>
-      </div>
-    {:else}
-      <RobotDiagnosticsPanel target={target} initialRobotName={query.robot || undefined} />
-    {/if}
+      {#if ocListError}
+        <span class="text-sm pai-text-error">{ocListError}</span>
+      {/if}
+
+      {#if ocLoading}
+        <div class="flex flex-1 flex-col items-center justify-center gap-2 min-h-[200px]">
+          <span class="inline-block w-3 h-3 rounded-full bg-current pai-text-accent animate-pulse"></span>
+          <span class="text-sm pai-text-muted">Loading…</span>
+        </div>
+      {:else}
+        {#if workloads.length > 1}
+          <div class="flex flex-col gap-1 max-w-xs">
+            <label for="diag-oc-workload" class="text-xs text-[var(--pd-content-text)]">Simulation</label>
+            <select
+              id="diag-oc-workload"
+              bind:value={selectedWorkloadName}
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]">
+              {#each workloads as w}
+                <option value={w.name}>{w.name}{w.ready ? '' : ' (starting…)'}</option>
+              {/each}
+            </select>
+          </div>
+        {/if}
+
+        {#if ocEmptyMessage}
+          <p class="text-sm pai-text-muted">{ocEmptyMessage}</p>
+        {:else if ocTarget}
+          <RobotDiagnosticsPanel target={ocTarget} initialRobotName={query.robot || undefined} />
+        {/if}
+      {/if}
+    </div>
   {/if}
 </div>
