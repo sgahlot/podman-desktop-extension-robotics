@@ -67,13 +67,22 @@
      never copy or regenerate it elsewhere. The symlink is invisible to git under the same
      ignore pattern.
   3. **Give this worktree's Podman Desktop extension a unique identity before it's ever
-     loaded into PD.** Every worktree's `packages/backend/package.json` starts with the
-     same `name`/`displayName` (`physical-ai`/`Physical AI`) — loading two worktrees under
-     the same identity at once leaves Podman Desktop's extension host in a stuck "Starting"
-     state that a plain Stop/Start can't recover from (only a full PD quit+relaunch clears
-     it). Edit `packages/backend/package.json`'s `name` to `physical-ai-appeng<NNNN>` and
-     `displayName` to `Physical AI (APPENG-<NNNN>)`, then run
-     `git update-index --skip-worktree packages/backend/package.json` so git never shows it
-     as modified.
-  4. Confirm with `npm run typecheck` before reporting the worktree ready or starting
+     loaded into PD:** run `scripts/apply-worktree-identity.sh <NNNN>` from this worktree's
+     root (e.g. `scripts/apply-worktree-identity.sh 6250`). A name/displayName-only suffix
+     is NOT enough — the extension's command id (`physical-ai.open`) and all
+     `physical-ai.*` configuration keys are also hardcoded and shared across every
+     worktree by default; two worktrees loaded at once under the same command/config
+     namespace collide in Podman Desktop's extension host and leave **both** stuck at
+     "Starting" with no Stop/Start recovery (only a full PD quit+relaunch clears it —
+     confirmed to happen even when only the top-level name/displayName were suffixed).
+     The script namespaces name, displayName, command id, and config namespace together,
+     rebuilds the backend, and marks every file it touches `skip-worktree` (local-only,
+     never committed).
+  4. **Before running the zero-errors gate or merging, run
+     `scripts/apply-worktree-identity.sh restore` first**, then re-apply the suffix
+     afterward if you want to keep testing in PD. The suffixed strings live in real
+     source files now (`extension.ts`, `api-impl.ts`), and `extension.spec.ts`/
+     `api-impl.spec.ts` assert the literal un-suffixed values — leaving the suffix applied
+     makes 3 backend tests look like a regression when they aren't.
+  5. Confirm with `npm run typecheck` before reporting the worktree ready or starting
      ticket work.
