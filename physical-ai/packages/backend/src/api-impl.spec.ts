@@ -1973,6 +1973,25 @@ data: [0, 100, -1, 0]
       expect(script).not.toContain('--qos-reliability');
     });
 
+    it('treats a topic that has never been published (exit 1, not the timeout wrapper) as "not available yet"', async () => {
+      // Verified live: ros2 topic echo against a topic nobody has ever advertised (e.g. right
+      // after spawn, before Nav2 exists) fails fast with exit 1 and this message on stdout
+      // (merged from the script's own stderr via 2>&1) instead of blocking until timeout (124).
+      const NEVER_PUBLISHED = `WARNING: topic [/robot_1/local_costmap/costmap] does not appear to be published yet
+Could not determine the type for the passed topic
+`;
+      vi.mocked(extensionApi.process.exec).mockRejectedValue({
+        exitCode: 1,
+        stdout: NEVER_PUBLISHED,
+        stderr: '',
+      });
+
+      const result = await api.getCostmapSummary(CONTAINER_ID, 'robot_1');
+      expect(result.local).toMatchObject({ timedOut: true });
+      expect(result.local?.error).toMatch(/may not be publishing yet/);
+      expect(result.global).toMatchObject({ timedOut: true });
+    });
+
     it('rejects an invalid robot name before exec', async () => {
       await expect(api.getCostmapSummary(CONTAINER_ID, 'robot; rm -rf /')).rejects.toThrow(/Invalid robot name/);
       expect(extensionApi.process.exec).not.toHaveBeenCalled();
@@ -2034,6 +2053,19 @@ ranges: [0.3, 0.5, .inf, .nan]
 
     it('reports a timeout when the scan topic is idle', async () => {
       vi.mocked(extensionApi.process.exec).mockRejectedValue({ exitCode: 124, stdout: '', stderr: 'timeout' });
+
+      const result = await api.getLaserScanSummary(CONTAINER_ID, 'robot_1');
+      expect(result.timedOut).toBe(true);
+      expect(result.error).toMatch(/No message|idle/i);
+    });
+
+    it('treats a scan topic that has never been published (exit 1) as "not available yet" too', async () => {
+      vi.mocked(extensionApi.process.exec).mockRejectedValue({
+        exitCode: 1,
+        stdout:
+          'WARNING: topic [/robot_1/scan] does not appear to be published yet\nCould not determine the type for the passed topic\n',
+        stderr: '',
+      });
 
       const result = await api.getLaserScanSummary(CONTAINER_ID, 'robot_1');
       expect(result.timedOut).toBe(true);

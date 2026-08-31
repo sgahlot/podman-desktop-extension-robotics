@@ -1763,7 +1763,6 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     );
     const stdout = (result.stdout ?? '').trim();
     const stderr = (result.stderr ?? '').trim();
-    const timedOut = result.exitCode === 124 || /timeout/i.test(stderr) || (result.exitCode !== 0 && !stdout);
 
     const parsed = stdout ? parseOccupancyGridEcho(stdout) : undefined;
     if (parsed) {
@@ -1782,7 +1781,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       };
     }
 
-    if (timedOut) {
+    // Any non-zero exit here means "not available yet", not just a literal timeout (124): the
+    // script redirects the ros2 process's stderr into its own stdout (`2>&1`), so a topic that
+    // has never been published at all (e.g. right after spawn, before Nav2 exists) fails fast
+    // with exit 1 and a "does not appear to be published yet / could not determine the type"
+    // message on stdout — verified live — rather than blocking until the timeout wrapper kills
+    // it at 124. Both cases mean the same thing to the user: come back once Nav2 has started.
+    if (result.exitCode !== 0) {
       return zero({
         timedOut: true,
         error: `No message on ${topic} within ${timeoutSec}s. The costmap may not be publishing yet — try after Navigate has run.`,
@@ -1846,7 +1851,6 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     );
     const stdout = (result.stdout ?? '').trim();
     const stderr = (result.stderr ?? '').trim();
-    const timedOut = result.exitCode === 124 || /timeout/i.test(stderr) || (result.exitCode !== 0 && !stdout);
 
     const parsed = stdout ? parseLaserScanEcho(stdout) : undefined;
     if (parsed) {
@@ -1868,7 +1872,10 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       };
     }
 
-    if (timedOut) {
+    // See the equivalent comment in #peekOccupancyGrid: a topic with no publisher at all fails
+    // fast with a non-124 exit code and a "not published yet" message merged into stdout via the
+    // script's own `2>&1`, not via the timeout wrapper — treat any non-zero exit the same way.
+    if (result.exitCode !== 0) {
       return zero({
         timedOut: true,
         error: `No message on ${topic} within ${timeoutSec}s. The topic may be idle — try one with active publishers.`,
