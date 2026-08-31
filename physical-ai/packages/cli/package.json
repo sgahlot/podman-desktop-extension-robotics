@@ -1,0 +1,50 @@
+{
+  "name": "physical-ai-cli",
+  "version": "0.1.0",
+  "description": "CLI for Physical AI robotics development, for use without Podman Desktop",
+  "private": true,
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "bin": {
+    "physical-ai": "./bin/run.cjs"
+  },
+  "main": "./dist/cli/src/index.js",
+  "types": "./dist/cli/src/index.d.ts",
+  "files": [
+    "/bin",
+    "/dist",
+    "/assets",
+    "/oclif.manifest.json"
+  ],
+  "oclif": {
+    "bin": "physical-ai",
+    "dirname": "physical-ai",
+    "commands": "./dist/cli/src/commands",
+    "topicSeparator": ":",
+    "plugins": [
+      "@oclif/plugin-help"
+    ]
+  },
+  "scripts": {
+    "build": "node scripts/copy-assets.mjs && tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json -w",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest watch --coverage"
+  },
+  "dependencies": {
+    "@oclif/core": "^4",
+    "@oclif/plugin-help": "^6",
+    "listr2": "^11.0.1"
+  },
+  "devDependencies": {
+    "@oclif/test": "^4",
+    "@types/node": "^20",
+    "@vitest/coverage-v8": "^4.1.0",
+    "oclif": "^4",
+    "typescript": "5.5.4",
+    "vite": "8.0.16",
+    "vitest": "^4.1.0"
+  }
+}

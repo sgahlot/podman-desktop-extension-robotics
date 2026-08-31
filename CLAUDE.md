@@ -19,7 +19,11 @@
 - Team members may use any Node version manager (fnm, nvm, brew, etc.) — the project has no dependency on a specific one
 
 ## Workflow Rules
-- Always reference the Jira key (e.g., APPENG-5768) when working on a task
+- Always reference the Jira key (e.g., APPENG-5768) when working on a task. **If not told
+  which ticket to work on, infer it from the current branch name** — worktree branches are
+  named `feature/APPENG-<NNNN>-<slug>`, so `git branch --show-current` gives you the key
+  without having to ask. Read the ticket via the Atlassian tools, transition it to **In
+  Progress** if it isn't already, then proceed with analysis and implementation.
 - Check the plan doc for context on what each story/sub-task requires
 - Ask questions before starting a new task if the scope or approach is unclear
 - Keep this rules doc updated as decisions are made
@@ -50,3 +54,35 @@
   commit link → then transition to Closed. Use **Review** (transition id 41) for
   code-complete-but-untested; In Progress until testing starts. Only merged branches are safe to
   delete.
+- **If this checkout is a git worktree sibling (not `main/`) and `physical-ai/node_modules`
+  doesn't exist yet, it's a brand-new worktree — do this one-time setup before anything
+  else, in order:**
+  1. Copy `node_modules` from `../main/physical-ai/node_modules` into this worktree's
+     `physical-ai/node_modules` (npm workspace symlinks are relative, so this is safe
+     across sibling worktrees at the same depth) — much faster than a from-scratch
+     install — then run `npm install` once to reconcile any branch-specific dependency
+     drift.
+  2. Symlink `.internal` in from `main/`: `ln -s ../main/.internal .internal` (run from the
+     worktree root). `.internal/` is private and git-ignored, and lives ONLY in `main/` —
+     never copy or regenerate it elsewhere. The symlink is invisible to git under the same
+     ignore pattern.
+  3. **Give this worktree's Podman Desktop extension a unique identity before it's ever
+     loaded into PD:** run `scripts/apply-worktree-identity.sh <NNNN>` from this worktree's
+     root (e.g. `scripts/apply-worktree-identity.sh 6250`). A name/displayName-only suffix
+     is NOT enough — the extension's command id (`physical-ai.open`) and all
+     `physical-ai.*` configuration keys are also hardcoded and shared across every
+     worktree by default; two worktrees loaded at once under the same command/config
+     namespace collide in Podman Desktop's extension host and leave **both** stuck at
+     "Starting" with no Stop/Start recovery (only a full PD quit+relaunch clears it —
+     confirmed to happen even when only the top-level name/displayName were suffixed).
+     The script namespaces name, displayName, command id, and config namespace together,
+     rebuilds the backend, and marks every file it touches `skip-worktree` (local-only,
+     never committed).
+  4. **Before running the zero-errors gate or merging, run
+     `scripts/apply-worktree-identity.sh restore` first**, then re-apply the suffix
+     afterward if you want to keep testing in PD. The suffixed strings live in real
+     source files now (`extension.ts`, `api-impl.ts`), and `extension.spec.ts`/
+     `api-impl.spec.ts` assert the literal un-suffixed values — leaving the suffix applied
+     makes 3 backend tests look like a regression when they aren't.
+  5. Confirm with `npm run typecheck` before reporting the worktree ready or starting
+     ticket work.

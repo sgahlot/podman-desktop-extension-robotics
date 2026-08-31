@@ -6,6 +6,7 @@ import type { SimContainerInfo } from '/@shared/src/types/SimulationContainer';
 import { SIM_STOPPED_BROWSER_HINT } from '/@shared/src/types/SimulationContainer';
 import { isSimLaunchImageRef } from '/@shared/src/security/simImageTrust';
 import RobotControls, { type RobotEntry } from './RobotControls.svelte';
+import { reconcileAdd, pruneStale } from './lib/robotReconcile';
 
 let localSimImages: string[] = [];
 let selectedImage = '';
@@ -20,9 +21,26 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 let simImageAllowlist = '';
 
 let spawnedRobots: RobotEntry[] = [];
+/** Whether the running container's robots have been reconciled against `ros2 node list`
+ * (APPENG-6250, mirrors OpenShift's `reconciledWorkloads`) — probed at most once per
+ * running container, so a page reload/extension restart picks up robots spawned in a
+ * prior session without re-probing (or duplicating) on every poll tick. Reset whenever
+ * no container is running (see below), so a later launch reconciles fresh. */
+let reconciled = false;
+/** Consecutive-miss counters for prune debouncing (APPENG-6149/6250) — see `pruneStale`
+ * in `lib/robotReconcile.ts` for the prune/grace-period algorithm shared with the
+ * OpenShift tab. Only one container runs locally at a time, so robot name alone is a
+ * sufficient map key (no workload-name prefix needed). */
+let missingStreaks = new Map<string, number>();
+let trackedSince = new Map<string, number>();
 
 $: runningContainer = containers.find(c => c.state === 'running');
 $: hasRunning = !!runningContainer;
+$: if (!hasRunning && reconciled) {
+  reconciled = false;
+  missingStreaks = new Map();
+  trackedSince = new Map();
+}
 
 /** Host port mapped to container private port (e.g. 6080 noVNC). */
 function hostPortForPrivate(container: SimContainerInfo | undefined, privatePort: number): number {
@@ -65,10 +83,11 @@ async function pollContainers() {
 
 onMount(() => {
   loadImages();
-  pollContainers();
+  pollContainers().then(reconcileRobots);
   pollTimer = setInterval(() => {
-    pollContainers();
+    pollContainers().then(reconcileRobots);
     pollWarmStatus();
+    pruneStaleRobots();
   }, 3000);
 });
 
@@ -132,6 +151,8 @@ async function openInBrowser() {
 
 async function spawnRobot(form: { name: string; x: string; y: string; yaw: string }) {
   if (!runningContainer) throw new Error('No running simulation');
+  missingStreaks.delete(form.name);
+  trackedSince.set(form.name, Date.now());
   await physicalAiClient.execInSimulation(runningContainer.id, [
     '/entrypoint-spawn-robot.sh',
     form.name,
@@ -152,6 +173,47 @@ async function spawnRobot(form: { name: string; x: string; y: string; yaw: strin
       warmStatus: runningContainer?.imageTag?.includes('jazzy') ? 'warming' : undefined,
     },
   ];
+}
+
+/**
+ * Reconciles the running container's robot list against what's actually running
+ * (APPENG-6250) — spawn/warm state otherwise lives only in frontend memory, so a page
+ * reload or extension restart forgets robots spawned earlier even though the container
+ * keeps running. Only ever appends missing entries (`reconcileAdd`, shared with the
+ * OpenShift tab) — never removes/overwrites ones already tracked.
+ */
+async function reconcileRobots() {
+  if (!runningContainer || reconciled) return;
+  reconciled = true;
+  let names: string[];
+  try {
+    names = await physicalAiClient.listSpawnedRobotsInSimulation(runningContainer.id);
+  } catch {
+    return;
+  }
+  spawnedRobots = reconcileAdd(spawnedRobots, names);
+}
+
+/**
+ * Removes tracked robots that no longer actually exist in the running container
+ * (APPENG-6250, mirrors APPENG-6149) — e.g. a crash resets the world to empty, but a
+ * robot spawned before the crash would otherwise sit in `spawnedRobots` forever, failing
+ * every subsequent action against a robot that's gone. Delegates the warming-skip /
+ * grace-period / miss-threshold debounce to `pruneStale` (shared with the OpenShift tab).
+ */
+async function pruneStaleRobots() {
+  if (!runningContainer || spawnedRobots.length === 0) return;
+  // A 'warming' robot's liveness is already being resolved by pollWarmStatus (and the
+  // backend's own bounded pre-warm timeout) — skip the exec call entirely if there's
+  // nothing else here that actually needs checking this tick.
+  if (spawnedRobots.every(r => r.warmStatus === 'warming')) return;
+  let live: string[];
+  try {
+    live = await physicalAiClient.listSpawnedRobotsInSimulation(runningContainer.id);
+  } catch {
+    return;
+  }
+  spawnedRobots = pruneStale({ tracked: spawnedRobots, liveNames: live, missingStreaks, trackedSince, keyOf: n => n });
 }
 
 /** Poll Nav2 pre-warm state for robots still warming, so the badge tracks reality. */
@@ -205,6 +267,8 @@ async function removeRobot(index: number) {
   const robot = spawnedRobots[index];
   if (!robot) return;
   await physicalAiClient.despawnRobot(runningContainer.id, robot.name);
+  missingStreaks.delete(robot.name);
+  trackedSince.delete(robot.name);
   spawnedRobots = spawnedRobots.filter((_, i) => i !== index);
 }
 </script>
