@@ -81,6 +81,7 @@ import {
   assertPeekTimeoutSeconds,
   PEEK_TIMEOUT_DEFAULT_SEC,
 } from '/@shared/src/ros/topicPeek';
+import { parseSpawnedRobotNames } from '/@shared/src/ros/robotNodeList';
 import { appendProgressLog } from './progressLogs';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
@@ -1184,6 +1185,27 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     await extensionApi.env.openExternal(extensionApi.Uri.parse(url));
   }
 
+  /**
+   * Robots actually running in the local sim container, reconciled via `ros2 node list`
+   * (APPENG-6250) — the local counterpart of `listSpawnedRobotsInOpenShift`, sharing its
+   * parsing logic (`parseSpawnedRobotNames`) since only the exec transport differs.
+   * Returns [] (never throws) on any resolution/exec failure, matching listRosTopics.
+   */
+  async listSpawnedRobotsInSimulation(containerId: string): Promise<string[]> {
+    try {
+      const { id } = await this.#resolveSimulationContainer(containerId);
+      const distro = await this.#detectRosDistro(id);
+      const target = { kind: 'podman', id } as const;
+      const result = await this.#execRosBash(target, distro, 'ros2 node list');
+      if (result.exitCode !== 0 || !result.stdout.trim()) {
+        return [];
+      }
+      return parseSpawnedRobotNames(result.stdout);
+    } catch {
+      return [];
+    }
+  }
+
   async listRosTopics(containerId: string): Promise<TopicInfo[]> {
     const { id } = await this.#resolveSimulationContainer(containerId);
     const distro = await this.#detectRosDistro(id);
@@ -2247,16 +2269,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       if (result.exitCode !== 0 || !result.stdout.trim()) {
         return [];
       }
-      // A node under a robot namespace looks like /robot_1/some_node; bare top-level
-      // nodes (e.g. /some_node) aren't under any robot and are filtered out. Robot
-      // names aren't restricted to `robot_N` (see ROBOT_NAME_RE), so match generically
-      // on "has at least one namespace segment before further path".
-      const names = new Set<string>();
-      for (const line of result.stdout.trim().split('\n')) {
-        const match = line.trim().match(/^\/([^/]+)\/.+/);
-        if (match) names.add(match[1]);
-      }
-      return [...names].sort();
+      return parseSpawnedRobotNames(result.stdout);
     } catch {
       return [];
     }

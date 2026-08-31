@@ -3308,6 +3308,71 @@ describe('PhysicalAiApiImpl', () => {
       });
     });
 
+    describe('listSpawnedRobotsInSimulation', () => {
+      const CONTAINER_ID = 'abc123def456';
+
+      beforeEach(() => {
+        vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+          simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+        ] as unknown as extensionApi.ContainerInfo[]);
+      });
+
+      it('extracts unique robot names from namespaced nodes', async () => {
+        vi.mocked(extensionApi.process.exec).mockResolvedValue({
+          stdout:
+            '/robot_1/robot_state_publisher\n/robot_1/amcl\n/robot_2/robot_state_publisher\n/some_top_level_node\n',
+          stderr: '',
+          command: 'podman',
+        } as extensionApi.RunResult);
+        expect(await api.listSpawnedRobotsInSimulation(CONTAINER_ID)).toEqual(['robot_1', 'robot_2']);
+      });
+
+      it('returns an empty array when no robots are running', async () => {
+        vi.mocked(extensionApi.process.exec).mockResolvedValue({
+          stdout: '/some_top_level_node\n/another_node\n',
+          stderr: '',
+          command: 'podman',
+        } as extensionApi.RunResult);
+        expect(await api.listSpawnedRobotsInSimulation(CONTAINER_ID)).toEqual([]);
+      });
+
+      it('returns an empty array for blank output', async () => {
+        vi.mocked(extensionApi.process.exec).mockResolvedValue({
+          stdout: '',
+          stderr: '',
+          command: 'podman',
+        } as extensionApi.RunResult);
+        expect(await api.listSpawnedRobotsInSimulation(CONTAINER_ID)).toEqual([]);
+      });
+
+      it('returns an empty array (never throws) on exec failure', async () => {
+        vi.mocked(extensionApi.process.exec).mockRejectedValue({ exitCode: 1, stdout: '', stderr: 'boom' });
+        await expect(api.listSpawnedRobotsInSimulation(CONTAINER_ID)).resolves.toEqual([]);
+      });
+
+      it('dedupes multiple nodes under the same robot namespace', async () => {
+        vi.mocked(extensionApi.process.exec).mockResolvedValue({
+          stdout: '/robot_1/a\n/robot_1/b\n/robot_1/c\n',
+          stderr: '',
+          command: 'podman',
+        } as extensionApi.RunResult);
+        expect(await api.listSpawnedRobotsInSimulation(CONTAINER_ID)).toEqual(['robot_1']);
+      });
+
+      it('execs `ros2 node list` attached in the container via podman exec', async () => {
+        vi.mocked(extensionApi.process.exec).mockResolvedValue({
+          stdout: '/robot_1/a\n',
+          stderr: '',
+          command: 'podman',
+        } as extensionApi.RunResult);
+        await api.listSpawnedRobotsInSimulation(CONTAINER_ID);
+        const args = execArgs();
+        expect(args[0]).toBe('exec');
+        expect(args[1]).toBe(CONTAINER_ID);
+        expect(args.join(' ')).toContain('ros2 node list');
+      });
+    });
+
     describe('getRobotWarmStatusInOpenShift', () => {
       const NS = 'sgahlot-pd-extn';
       const NAME = 'ros2-jazzy-sim';

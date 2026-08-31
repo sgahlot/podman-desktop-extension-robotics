@@ -91,6 +91,10 @@ export abstract class PhysicalAiApi {
   abstract despawnRobot(containerId: string, robotName: string): Promise<void>;
   /** Nav2 pre-warm state for a spawned robot (local sim), for an honest "warming…" indicator. */
   abstract getRobotWarmStatus(containerId: string, robotName: string): Promise<Nav2WarmStatus>;
+  /** Robots actually running in the local sim container, via `ros2 node list` — used
+   * to reconcile the UI's robot list after a reload/restart forgets in-memory spawn
+   * state (APPENG-6250). */
+  abstract listSpawnedRobotsInSimulation(containerId: string): Promise<string[]>;
 
   // --- OpenShift deployment (APPENG-5777) ---
   /** Current Kubernetes/OpenShift context from the kubeconfig, or undefined if none. */
