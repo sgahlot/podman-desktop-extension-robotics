@@ -76,6 +76,12 @@ let gpuToleration = DEFAULT_GPU_TOLERATION;
  * in the deployed pod's env (see manifests.ts); anything else keeps the DDS default.
  */
 let middleware = 'dds';
+/**
+ * Hummingbird nginx companion sidecar (APPENG-6227), off by default. Adds a second
+ * container (`quay.io/hummingbird/nginx`) to the pod reverse-proxying noVNC, to
+ * demonstrate the Hummingbird companion-image pattern live in this deployment.
+ */
+let useHummingbirdSidecar = false;
 
 let previewYaml = '';
 let previewBusy = false;
@@ -126,6 +132,7 @@ $: config = {
   gpuToleration: useGpu ? gpuToleration : undefined,
   context: selectedContext || undefined,
   middleware,
+  useHummingbirdSidecar,
 };
 $: canDeploy = !!context && !!name && !!namespace && !!image && !deploying && loggedIn;
 /** Keep the shared last-used-OpenShift-target store in sync — covers every mutation
@@ -765,6 +772,17 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
           </span>
         </div>
       {/if}
+
+      <div class="flex flex-col gap-1">
+        <label class="flex flex-row items-center gap-2 text-sm text-[var(--pd-content-text)]">
+          <input type="checkbox" bind:checked={useHummingbirdSidecar} disabled={deploying} />
+          Hummingbird nginx sidecar
+        </label>
+        <span class="text-xs pai-text-muted">
+          Adds a Hummingbird (<span class="font-mono">quay.io/hummingbird/nginx</span>) companion container to the pod,
+          reverse-proxying noVNC through it — demonstrates the Hummingbird companion pattern live in this deployment.
+        </span>
+      </div>
 
       <div class="flex flex-col gap-1">
         <label for="dep-cpu" class="text-xs text-[var(--pd-content-text)]">Software-render CPUs</label>

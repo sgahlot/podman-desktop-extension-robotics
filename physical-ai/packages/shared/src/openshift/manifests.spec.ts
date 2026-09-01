@@ -8,6 +8,8 @@ import {
   toYaml,
   manifestsToYaml,
   NOVNC_CONTAINER_PORT,
+  HUMMINGBIRD_NGINX_IMAGE,
+  HUMMINGBIRD_NGINX_CONTAINER_PORT,
   PART_OF_LABEL,
   PART_OF_VALUE,
 } from './manifests';
@@ -32,8 +34,31 @@ interface DeploymentManifest {
     };
   };
 }
+// Looser shape covering both the sim container and the Hummingbird nginx
+// sidecar container, for the sidecar-specific tests below.
+interface SidecarDeploymentManifest {
+  spec: {
+    template: {
+      spec: {
+        containers: {
+          name: string;
+          image: string;
+          ports: { containerPort: number }[];
+          readinessProbe: { tcpSocket: { port: number } };
+          volumeMounts?: { name: string; mountPath: string; subPath: string }[];
+        }[];
+        volumes?: { name: string; configMap: { name: string } }[];
+      };
+    };
+  };
+}
 interface ServiceManifest {
-  spec: { ports: { port: number }[] };
+  spec: { ports: { port: number; targetPort: number }[] };
+}
+interface ConfigMapManifest {
+  kind: string;
+  metadata: { name: string; namespace: string };
+  data: Record<string, string>;
 }
 interface RouteManifest {
   spec: {
@@ -249,6 +274,84 @@ describe('buildOpenShiftManifests', () => {
     expect(() => buildOpenShiftManifests({ ...config, name: 'BAD' })).toThrow();
     expect(() => buildOpenShiftManifests({ ...config, namespace: 'BAD NS' })).toThrow();
     expect(() => buildOpenShiftManifests({ ...config, image: 'evil; rm -rf /' })).toThrow();
+  });
+});
+
+describe('buildOpenShiftManifests — Hummingbird nginx sidecar (APPENG-6227)', () => {
+  const config: OpenShiftDeployConfig = {
+    name: 'ros2-jazzy-sim',
+    namespace: 'sgahlot-pd-extn',
+    image: 'quay.io/ecosystem-appeng/ros2-jazzy-sim:noble-amd64',
+  };
+
+  it('adds no ConfigMap and keeps a single container when disabled (default)', () => {
+    const manifests = buildOpenShiftManifests(config);
+    expect(manifests.map(m => m.kind)).toEqual(['Deployment', 'Service', 'Route']);
+    const [deployment, service] = manifests;
+    expect((deployment as unknown as SidecarDeploymentManifest).spec.template.spec.containers).toHaveLength(1);
+    expect((service as unknown as ServiceManifest).spec.ports[0].targetPort).toBe(NOVNC_CONTAINER_PORT);
+  });
+
+  it('adds no ConfigMap when useHummingbirdSidecar is explicitly false', () => {
+    const manifests = buildOpenShiftManifests({ ...config, useHummingbirdSidecar: false });
+    expect(manifests.map(m => m.kind)).toEqual(['Deployment', 'Service', 'Route']);
+  });
+
+  it('prepends a ConfigMap and adds the nginx container when enabled', () => {
+    const manifests = buildOpenShiftManifests({ ...config, useHummingbirdSidecar: true });
+    expect(manifests.map(m => m.kind)).toEqual(['ConfigMap', 'Deployment', 'Service', 'Route']);
+
+    const [configMap, deployment, service, route] = manifests;
+
+    const cm = configMap as unknown as ConfigMapManifest;
+    expect(cm.metadata.name).toBe(`${config.name}-hummingbird-nginx-conf`);
+    expect(cm.metadata.namespace).toBe(config.namespace);
+    expect(cm.data['default.conf']).toContain(`proxy_pass http://localhost:${NOVNC_CONTAINER_PORT};`);
+    expect(cm.data['default.conf']).toContain('proxy_set_header Upgrade $http_upgrade;');
+    expect(cm.data['default.conf']).toContain('proxy_set_header Connection "upgrade";');
+    expect(cm.data['default.conf']).toContain(`listen ${HUMMINGBIRD_NGINX_CONTAINER_PORT};`);
+
+    const depSpec = (deployment as unknown as SidecarDeploymentManifest).spec.template.spec;
+    expect(depSpec.containers).toHaveLength(2);
+    expect(depSpec.containers.map(c => c.name)).toEqual(['sim', 'hummingbird-nginx']);
+    const nginxContainer = depSpec.containers[1];
+    expect(nginxContainer.image).toBe(HUMMINGBIRD_NGINX_IMAGE);
+    expect(nginxContainer.ports[0].containerPort).toBe(HUMMINGBIRD_NGINX_CONTAINER_PORT);
+    expect(nginxContainer.readinessProbe.tcpSocket.port).toBe(HUMMINGBIRD_NGINX_CONTAINER_PORT);
+    expect(nginxContainer.volumeMounts).toEqual([
+      { name: 'hummingbird-nginx-conf', mountPath: '/etc/nginx/conf.d/default.conf', subPath: 'default.conf' },
+    ]);
+    expect(depSpec.volumes).toEqual([
+      { name: 'hummingbird-nginx-conf', configMap: { name: `${config.name}-hummingbird-nginx-conf` } },
+    ]);
+
+    expect((service as unknown as ServiceManifest).spec.ports[0].port).toBe(NOVNC_CONTAINER_PORT);
+    expect((service as unknown as ServiceManifest).spec.ports[0].targetPort).toBe(HUMMINGBIRD_NGINX_CONTAINER_PORT);
+
+    expect((route as unknown as RouteManifest).spec.port.targetPort).toBe('novnc');
+  });
+
+  it('composes correctly alongside GPU + zenoh middleware', () => {
+    const manifests = buildOpenShiftManifests({
+      ...config,
+      useHummingbirdSidecar: true,
+      useGpu: true,
+      middleware: 'zenoh',
+    });
+    expect(manifests.map(m => m.kind)).toEqual(['ConfigMap', 'Deployment', 'Service', 'Route']);
+
+    const [, deployment, service] = manifests;
+    const depSpec = (deployment as unknown as SidecarDeploymentManifest).spec.template.spec;
+    expect(depSpec.containers).toHaveLength(2);
+    expect(depSpec.containers.map(c => c.name)).toEqual(['sim', 'hummingbird-nginx']);
+
+    const simContainer = (deployment as unknown as DeploymentManifest).spec.template.spec.containers[0];
+    const env = Object.fromEntries(simContainer.env.map(e => [e.name, e.value]));
+    expect(env.PHYSICAL_AI_USE_GPU).toBe('1');
+    expect(env.RMW_IMPLEMENTATION).toBe('rmw_zenoh_cpp');
+    expect(simContainer.resources.limits['nvidia.com/gpu']).toBe('1');
+
+    expect((service as unknown as ServiceManifest).spec.ports[0].targetPort).toBe(HUMMINGBIRD_NGINX_CONTAINER_PORT);
   });
 });
 

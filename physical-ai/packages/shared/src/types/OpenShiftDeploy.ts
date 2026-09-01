@@ -49,6 +49,14 @@ export interface OpenShiftDeployConfig {
    * the sim. Undefined/anything else keeps today's DDS default.
    */
   middleware?: string;
+  /**
+   * When true (APPENG-6227), adds a Hummingbird nginx companion container
+   * (`quay.io/hummingbird/nginx`) to the pod as a reverse proxy in front of noVNC —
+   * demonstrating the Hummingbird companion-image pattern live in this deployment.
+   * Default/undefined = off: the Service reaches the sim container's noVNC port
+   * directly, unchanged from today's behavior.
+   */
+  useHummingbirdSidecar?: boolean;
 }
 
 export interface OpenShiftDeployResult {

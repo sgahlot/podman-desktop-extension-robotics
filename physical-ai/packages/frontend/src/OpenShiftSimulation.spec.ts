@@ -200,6 +200,39 @@ describe('OpenShiftSimulation', () => {
     });
   });
 
+  it('deploys with the Hummingbird nginx sidecar off by default', async () => {
+    mockDeployToOpenShift.mockResolvedValue({
+      name: 'ros2-jazzy-sim',
+      namespace: 'sgahlot-pd-extn',
+      applied: ['Deployment', 'Service', 'Route'],
+      message: 'Deployed',
+    });
+    render(DeployOpenShift);
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
+
+    await waitFor(() => {
+      expect(mockDeployToOpenShift).toHaveBeenCalledWith(expect.objectContaining({ useHummingbirdSidecar: false }));
+    });
+  });
+
+  it('passes useHummingbirdSidecar true when the Hummingbird sidecar checkbox is ticked', async () => {
+    mockDeployToOpenShift.mockResolvedValue({
+      name: 'ros2-jazzy-sim',
+      namespace: 'sgahlot-pd-extn',
+      applied: ['ConfigMap', 'Deployment', 'Service', 'Route'],
+      message: 'Deployed',
+    });
+    render(DeployOpenShift);
+
+    await fireEvent.click(await screen.findByRole('checkbox', { name: /Hummingbird nginx sidecar/ }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+
+    await waitFor(() => {
+      expect(mockDeployToOpenShift).toHaveBeenCalledWith(expect.objectContaining({ useHummingbirdSidecar: true }));
+    });
+  });
+
   it('seeds middleware from the sim config (zenoh) and passes it through to deployToOpenShift', async () => {
     mockGetSimulationConfig.mockResolvedValue({
       robot: 'turtlebot3',
