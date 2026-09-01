@@ -4,22 +4,24 @@ import BuildHistoryPanel from './BuildHistoryPanel.svelte';
 import type { BuildHistoryEntry } from '/@shared/src/types/BuildHistory';
 
 const mockGetBuildHistory = vi.fn();
+const mockGetBuildHistorySbom = vi.fn();
 const mockCopyToClipboard = vi.fn();
 
 vi.mock('../api/client', () => ({
   physicalAiClient: {
     getBuildHistory: (...args: unknown[]) => mockGetBuildHistory(...args),
+    getBuildHistorySbom: (...args: unknown[]) => mockGetBuildHistorySbom(...args),
     copyToClipboard: (...args: unknown[]) => mockCopyToClipboard(...args),
   },
 }));
 
 const SPDX_SBOM = JSON.stringify({ packages: [{ name: 'pkg-a' }, { name: 'pkg-b' }] });
-const CYCLONEDX_SBOM = JSON.stringify({ components: [{ name: 'comp-a' }, { name: 'comp-b' }, { name: 'comp-c' }] });
 
 describe('BuildHistoryPanel', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mockGetBuildHistory.mockResolvedValue([]);
+    mockGetBuildHistorySbom.mockResolvedValue(undefined);
     mockCopyToClipboard.mockResolvedValue(undefined);
   });
 
@@ -99,33 +101,37 @@ describe('BuildHistoryPanel', () => {
     expect(screen.queryByText(/SBOM/)).toBeNull();
   });
 
-  it('labels a CycloneDX SBOM by its component count, not "packages"', async () => {
+  it('labels a CycloneDX SBOM by its component count from sbomPackageCount, without fetching the SBOM', async () => {
     const entry: BuildHistoryEntry = {
       tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
       arch: 'amd64',
       startedAt: Date.now(),
       durationMs: 20_000,
       success: true,
-      sbom: CYCLONEDX_SBOM,
       sbomFormat: 'cyclonedx-json',
+      sbomPackageCount: 3,
     };
     mockGetBuildHistory.mockResolvedValue([entry]);
 
     render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
 
     expect(await screen.findByRole('button', { name: /SBOM \(3 components\)/ })).toBeTruthy();
+    // The count came from the polled entry's own field — no on-demand fetch needed yet.
+    expect(mockGetBuildHistorySbom).not.toHaveBeenCalled();
   });
 
-  it('expands/collapses the SBOM toggle showing a parsed, pretty-printed package count, and copies the raw SBOM to clipboard', async () => {
+  it('fetches the SBOM on demand when expanded, showing a parsed, pretty-printed count, and copies the raw SBOM to clipboard', async () => {
     const entry: BuildHistoryEntry = {
       tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
       arch: 'amd64',
       startedAt: Date.now(),
       durationMs: 20_000,
       success: true,
-      sbom: SPDX_SBOM,
+      sbomFormat: 'spdx-json',
+      sbomPackageCount: 2,
     };
     mockGetBuildHistory.mockResolvedValue([entry]);
+    mockGetBuildHistorySbom.mockResolvedValue(SPDX_SBOM);
 
     render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
 
@@ -133,35 +139,85 @@ describe('BuildHistoryPanel', () => {
     expect(screen.queryByText(/pkg-a/)).toBeNull();
 
     await fireEvent.click(toggle);
-    // Pretty-printing is deferred a tick so the "Formatting..." placeholder can paint first.
-    expect(screen.getByText(/Formatting SBOM/)).toBeTruthy();
     // testing-library normalizes whitespace when matching text content, so match against
     // the same normalized form rather than the raw (indented, multi-line) pretty string.
     // eslint-disable-next-line no-null/no-null -- JSON.stringify's replacer arg requires null
     const prettyNormalized = JSON.stringify(JSON.parse(SPDX_SBOM), null, 2).replace(/\s+/g, ' ').trim();
     expect(await screen.findByText(prettyNormalized)).toBeTruthy();
+    expect(mockGetBuildHistorySbom).toHaveBeenCalledWith(entry.tag, entry.startedAt);
 
     await fireEvent.click(toggle);
     expect(screen.queryByText(prettyNormalized)).toBeNull();
 
-    // Re-expanding reuses the cached formatted text — no "Formatting..." flash the 2nd time.
+    // Re-expanding reuses the cached fetch/formatted text — no second RPC call.
     await fireEvent.click(toggle);
-    expect(screen.queryByText(/Formatting SBOM/)).toBeNull();
     expect(screen.getByText(prettyNormalized)).toBeTruthy();
+    expect(mockGetBuildHistorySbom).toHaveBeenCalledTimes(1);
 
     const copyButton = screen.getByRole('button', { name: 'Copy to clipboard' });
     await fireEvent.click(copyButton);
     // Copies via the extension's own clipboard RPC (not navigator.clipboard, which
     // silently no-ops in this webview), and copies the raw SBOM exactly as syft produced
-    // it, not the display-only pretty-print.
+    // it, not the display-only pretty-print. Reuses the already-fetched text.
     await waitFor(() => {
       expect(mockCopyToClipboard).toHaveBeenCalledWith(SPDX_SBOM);
     });
     expect(await screen.findByRole('button', { name: 'Copied' })).toBeTruthy();
+    expect(mockGetBuildHistorySbom).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows transient "Fetching SBOM..." then "Formatting SBOM..." placeholders while expanding', async () => {
+    let resolveFetch!: (sbom: string) => void;
+    mockGetBuildHistorySbom.mockImplementation(
+      () =>
+        new Promise<string>(resolve => {
+          resolveFetch = resolve;
+        }),
+    );
+    const entry: BuildHistoryEntry = {
+      tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
+      arch: 'amd64',
+      startedAt: Date.now(),
+      durationMs: 20_000,
+      success: true,
+      sbomFormat: 'spdx-json',
+      sbomPackageCount: 2,
+    };
+    mockGetBuildHistory.mockResolvedValue([entry]);
+
+    render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
+    const toggle = await screen.findByRole('button', { name: /SBOM \(2 packages\)/ });
+    await fireEvent.click(toggle);
+
+    expect(await screen.findByText('Fetching SBOM…')).toBeTruthy();
+    resolveFetch(SPDX_SBOM);
+    // Once the fetch resolves, pretty-printing is deferred a tick so this placeholder paints.
+    expect(await screen.findByText(/Formatting SBOM/)).toBeTruthy();
+  });
+
+  it('shows an inline error when the on-demand SBOM fetch fails', async () => {
+    mockGetBuildHistorySbom.mockRejectedValue(new Error('history file unreadable'));
+    const entry: BuildHistoryEntry = {
+      tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
+      arch: 'amd64',
+      startedAt: Date.now(),
+      durationMs: 20_000,
+      success: true,
+      sbomFormat: 'spdx-json',
+      sbomPackageCount: 2,
+    };
+    mockGetBuildHistory.mockResolvedValue([entry]);
+
+    render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
+    const toggle = await screen.findByRole('button', { name: /SBOM \(2 packages\)/ });
+    await fireEvent.click(toggle);
+
+    expect(await screen.findByText('history file unreadable')).toBeTruthy();
   });
 
   it('shows "Copy failed" feedback when the clipboard RPC rejects (e.g. oversized payload)', async () => {
     mockCopyToClipboard.mockRejectedValue(new Error('Clipboard text exceeds the allowed size.'));
+    mockGetBuildHistorySbom.mockResolvedValue(SPDX_SBOM);
 
     const entry: BuildHistoryEntry = {
       tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
@@ -169,7 +225,8 @@ describe('BuildHistoryPanel', () => {
       startedAt: Date.now(),
       durationMs: 20_000,
       success: true,
-      sbom: SPDX_SBOM,
+      sbomFormat: 'spdx-json',
+      sbomPackageCount: 2,
     };
     mockGetBuildHistory.mockResolvedValue([entry]);
 
@@ -184,6 +241,7 @@ describe('BuildHistoryPanel', () => {
 
   it('keeps the copy-failed error visible until the next retry, unlike the success message', async () => {
     mockCopyToClipboard.mockRejectedValueOnce(new Error('boom'));
+    mockGetBuildHistorySbom.mockResolvedValue(SPDX_SBOM);
 
     const entry: BuildHistoryEntry = {
       tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
@@ -191,7 +249,8 @@ describe('BuildHistoryPanel', () => {
       startedAt: Date.now(),
       durationMs: 20_000,
       success: true,
-      sbom: SPDX_SBOM,
+      sbomFormat: 'spdx-json',
+      sbomPackageCount: 2,
     };
     mockGetBuildHistory.mockResolvedValue([entry]);
 
@@ -212,22 +271,28 @@ describe('BuildHistoryPanel', () => {
     expect(screen.queryByText('boom')).toBeNull();
   });
 
-  it('falls back to a plain "SBOM" label (no package count) when the sbom text is not parseable JSON', async () => {
+  it('falls back to a plain "SBOM" label (no package count) when the fetched sbom text is not parseable JSON', async () => {
+    // Simulates a legacy entry recorded before sbomFormat existed — the backend backfills
+    // sbomFormat to spdx-json for these so the toggle still shows (APPENG-6265), but no
+    // sbomPackageCount was ever computed for it.
     const entry: BuildHistoryEntry = {
       tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
       arch: 'amd64',
       startedAt: Date.now(),
       durationMs: 20_000,
       success: true,
-      sbom: 'not valid json',
+      sbomFormat: 'spdx-json',
     };
     mockGetBuildHistory.mockResolvedValue([entry]);
+    mockGetBuildHistorySbom.mockResolvedValue('not valid json');
 
     render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
 
     const toggle = await screen.findByRole('button', { name: '▶ SBOM' });
     await fireEvent.click(toggle);
     expect(await screen.findByText('not valid json')).toBeTruthy();
+    // Still no count after fetching — the text genuinely isn't parseable JSON.
+    expect(screen.getByRole('button', { name: '▼ SBOM' })).toBeTruthy();
   });
 
   it('re-fetches history on the configured poll interval', async () => {

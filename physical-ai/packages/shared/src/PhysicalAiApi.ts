@@ -37,9 +37,15 @@ export abstract class PhysicalAiApi {
   ): Promise<void>;
   abstract cancelBuild(tag: string): Promise<void>;
   abstract getBuildProgress(tag: string): Promise<BuildProgress | undefined>;
-  /** Recent build results (tag, arch, duration, success, SBOM if generated), newest first —
-   * up to physical-ai.buildHistoryLimit entries. Persisted across restarts. */
+  /** Recent build results (tag, arch, duration, success, sbomPackageCount if generated),
+   * newest first — up to physical-ai.buildHistoryLimit entries. Persisted across restarts.
+   * Never includes the SBOM text itself (which can run tens of MB) — this is polled every
+   * few seconds by the UI, so it must stay cheap regardless of SBOM size; fetch a specific
+   * entry's SBOM on demand via getBuildHistorySbom (APPENG-6265). */
   abstract getBuildHistory(): Promise<BuildHistoryEntry[]>;
+  /** Full SBOM text for one build history entry, identified by tag + startedAt (its stable
+   * key). Undefined if the entry has aged out of history or has no recorded SBOM. */
+  abstract getBuildHistorySbom(tag: string, startedAt: number): Promise<string | undefined>;
   /** Number of recent builds retained in history (Preferences: physical-ai.buildHistoryLimit, 1–5). */
   abstract getBuildHistoryLimit(): Promise<number>;
   /** Validates and persists the build history limit (1–5). Throws a user-facing error if out of range. */

@@ -656,6 +656,7 @@ describe('PhysicalAiApiImpl', () => {
       const history = lastWrittenBuildHistory();
       expect(history[0].sbom).toBe(sbomJson);
       expect(history[0].sbomFormat).toBe('cyclonedx-json');
+      expect(history[0].sbomPackageCount).toBe(1);
       expect(history[0].success).toBe(true);
     });
 
@@ -838,6 +839,63 @@ describe('PhysicalAiApiImpl', () => {
       const entries = [{ tag: 'a:latest', arch: 'amd64', startedAt: 1, durationMs: 1, success: true }];
       vi.mocked(readFile).mockResolvedValue(JSON.stringify(entries) as unknown as Awaited<ReturnType<typeof readFile>>);
       expect(await api.getBuildHistory()).toEqual(entries);
+    });
+
+    it('strips the sbom text from the polled list but keeps sbomPackageCount (APPENG-6265)', async () => {
+      mockStatefulBuildHistoryFile();
+      vi.mocked(mkdir).mockResolvedValue(undefined);
+      vi.mocked(mkdtemp).mockResolvedValue('/tmp/physical-ai-layer-build-6265a');
+      vi.mocked(rm).mockResolvedValue(undefined);
+      mockConfigWithBuildHistoryLimit(undefined);
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+      const sbomJson = JSON.stringify({ components: [{ name: 'comp-a' }, { name: 'comp-b' }] });
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: sbomJson,
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
+      await api.buildFromContainerfile('my-layer:latest', 'FROM scratch\n', undefined, { generateSbom: true });
+      await vi.runAllTimersAsync();
+
+      const list = await api.getBuildHistory();
+      expect(list[0].sbom).toBeUndefined();
+      expect(list[0].sbomPackageCount).toBe(2);
+      expect(list[0].sbomFormat).toBe('cyclonedx-json');
+    });
+  });
+
+  describe('getBuildHistorySbom', () => {
+    it('returns the full SBOM text for a matching entry, on demand', async () => {
+      mockStatefulBuildHistoryFile();
+      vi.mocked(mkdir).mockResolvedValue(undefined);
+      vi.mocked(mkdtemp).mockResolvedValue('/tmp/physical-ai-layer-build-6265b');
+      vi.mocked(rm).mockResolvedValue(undefined);
+      mockConfigWithBuildHistoryLimit(undefined);
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+      const sbomJson = JSON.stringify({ components: [{ name: 'comp-a' }] });
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: sbomJson,
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
+      await api.buildFromContainerfile('my-layer:latest', 'FROM scratch\n', undefined, { generateSbom: true });
+      await vi.runAllTimersAsync();
+
+      const [entry] = await api.getBuildHistory();
+      expect(await api.getBuildHistorySbom(entry.tag, entry.startedAt)).toBe(sbomJson);
+    });
+
+    it('returns undefined when no entry matches', async () => {
+      vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
+      expect(await api.getBuildHistorySbom('missing:tag', 123)).toBeUndefined();
     });
   });
 
