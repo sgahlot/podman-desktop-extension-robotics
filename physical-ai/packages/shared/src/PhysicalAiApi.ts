@@ -130,14 +130,6 @@ export abstract class PhysicalAiApi {
   abstract listOpenShiftDeployments(namespace: string, context?: string): Promise<OpenShiftWorkload[]>;
   /** Delete the Deployment/Service/Route for a named workload. */
   abstract deleteOpenShiftDeployment(namespace: string, name: string, context?: string): Promise<void>;
-  /**
-   * HEAD-requests a URL and returns its `server` response header — used to verify the
-   * Hummingbird nginx sidecar (APPENG-6227) is actually fronting a Route's traffic, done
-   * server-side since a webview can't make this cross-origin request itself. Skips TLS
-   * verification: dev/test OpenShift clusters commonly terminate Routes with a self-signed
-   * ingress CA, and this only reads a header for display, nothing sensitive.
-   */
-  abstract checkRouteServerHeader(url: string): Promise<{ server?: string; error?: string }>;
   /** Spawn a TurtleBot3 into a deployed simulation pod (mirrors the local spawn). */
   abstract spawnRobotInOpenShift(
     namespace: string,

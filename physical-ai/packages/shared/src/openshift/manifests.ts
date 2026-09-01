@@ -23,6 +23,13 @@ export const HUMMINGBIRD_NGINX_IMAGE = 'quay.io/hummingbird/nginx:latest';
  */
 export const HUMMINGBIRD_NGINX_CONTAINER_PORT = 9080;
 
+/**
+ * Container name for the Hummingbird nginx sidecar — also used by listOpenShiftDeployments()
+ * to detect whether a live Deployment has the sidecar, since the Deployment's own container
+ * list is the source of truth (no separate "did the user check the box" state to keep in sync).
+ */
+export const HUMMINGBIRD_NGINX_CONTAINER_NAME = 'hummingbird-nginx';
+
 /** Label marking resources this extension manages, used for list/delete. */
 export const PART_OF_LABEL = 'app.kubernetes.io/part-of';
 export const PART_OF_VALUE = 'physical-ai';
@@ -250,7 +257,7 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
     : undefined;
 
   const hummingbirdContainer = {
-    name: 'hummingbird-nginx',
+    name: HUMMINGBIRD_NGINX_CONTAINER_NAME,
     image: HUMMINGBIRD_NGINX_IMAGE,
     imagePullPolicy: 'Always',
     ports: [{ name: 'hummingbird', containerPort: HUMMINGBIRD_NGINX_CONTAINER_PORT }],

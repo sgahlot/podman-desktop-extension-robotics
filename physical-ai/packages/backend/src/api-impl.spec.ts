@@ -1,6 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { ExtensionContext } from '@podman-desktop/api';
-import * as https from 'node:https';
 import { PhysicalAiApiImpl } from './api-impl';
 import {
   SIM_CONTAINER_LABEL,
@@ -66,10 +65,6 @@ vi.mock('node:fs/promises', () => ({
   mkdir: vi.fn(),
   rename: vi.fn(),
   rm: vi.fn(),
-}));
-
-vi.mock('node:https', () => ({
-  request: vi.fn(),
 }));
 
 import * as extensionApi from '@podman-desktop/api';
@@ -3298,9 +3293,44 @@ ranges: [0.3, 0.5, .inf, .nan]
           ready: true,
           image: CONFIG.image,
           routeUrl: 'https://host.apps.example.com',
+          hasHummingbirdSidecar: false,
         });
         const listArgs = vi.mocked(extensionApi.process.exec).mock.calls[0][1] as string[];
         expect(listArgs).toContain('app.kubernetes.io/part-of=physical-ai');
+      });
+
+      it('detects the Hummingbird nginx sidecar from the live Deployment container list (APPENG-6227)', async () => {
+        // Read live from the cluster's own Deployment spec rather than remembered client
+        // state, so it's correct regardless of when/how the workload was deployed.
+        vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+          const a = args as string[];
+          if (a[0] === 'get' && a[1] === 'deployment') {
+            return {
+              stdout: JSON.stringify({
+                items: [
+                  {
+                    metadata: { name: 'ros2-jazzy-sim' },
+                    spec: {
+                      replicas: 1,
+                      template: {
+                        spec: {
+                          containers: [{ name: 'sim', image: CONFIG.image }, { name: 'hummingbird-nginx' }],
+                        },
+                      },
+                    },
+                    status: { readyReplicas: 1 },
+                  },
+                ],
+              }),
+              stderr: '',
+              command: 'oc',
+            } as extensionApi.RunResult;
+          }
+          return { stdout: 'host.apps.example.com', stderr: '', command: 'oc' } as extensionApi.RunResult;
+        });
+
+        const [w] = await api.listOpenShiftDeployments('sgahlot-pd-extn');
+        expect(w.hasHummingbirdSidecar).toBe(true);
       });
 
       it('reports not-ready when readyReplicas is below replicas', async () => {
@@ -3386,62 +3416,6 @@ ranges: [0.3, 0.5, .inf, .nan]
           'sgahlot-pd-extn',
           '--ignore-not-found',
         ]);
-      });
-    });
-
-    describe('checkRouteServerHeader', () => {
-      type MockReqHandler = (...args: unknown[]) => void;
-
-      /** Simulates https.request for the success path: invokes the callback with a fake response. */
-      function mockHttpsResponse(headers: Record<string, string>): void {
-        vi.mocked(https.request).mockImplementation((_url, _opts, callback) => {
-          const req = { on: vi.fn().mockReturnThis(), end: vi.fn(), destroy: vi.fn() };
-          (callback as (res: unknown) => void)({ headers, resume: vi.fn() });
-          return req as unknown as ReturnType<typeof https.request>;
-        });
-      }
-
-      /** Simulates https.request failing: captures the 'error' handler and invokes it. */
-      function mockHttpsError(err: Error): void {
-        vi.mocked(https.request).mockImplementation(() => {
-          const handlers: Record<string, MockReqHandler> = {};
-          const req = {
-            on: vi.fn((event: string, handler: MockReqHandler) => {
-              handlers[event] = handler;
-              return req;
-            }),
-            end: vi.fn(),
-            destroy: vi.fn(),
-          };
-          queueMicrotask(() => handlers.error(err));
-          return req as unknown as ReturnType<typeof https.request>;
-        });
-      }
-
-      it('returns the server header on success', async () => {
-        mockHttpsResponse({ server: 'nginx/1.30.4' });
-        const result = await api.checkRouteServerHeader('https://route.example.com');
-        expect(result).toEqual({ server: 'nginx/1.30.4' });
-      });
-
-      it('returns an undefined server when the header is absent (e.g. websockify directly)', async () => {
-        mockHttpsResponse({});
-        const result = await api.checkRouteServerHeader('https://route.example.com');
-        expect(result).toEqual({ server: undefined });
-      });
-
-      it('returns an error message when the request fails', async () => {
-        mockHttpsError(new Error('connect ECONNREFUSED'));
-        const result = await api.checkRouteServerHeader('https://route.example.com');
-        expect(result.server).toBeUndefined();
-        expect(result.error).toMatch(/ECONNREFUSED/);
-      });
-
-      it('skips TLS verification for self-signed dev-cluster Routes', async () => {
-        mockHttpsResponse({ server: 'nginx/1.30.4' });
-        await api.checkRouteServerHeader('https://route.example.com');
-        const opts = vi.mocked(https.request).mock.calls[0][1] as { rejectUnauthorized?: boolean };
-        expect(opts.rejectUnauthorized).toBe(false);
       });
     });
 

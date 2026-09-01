@@ -96,4 +96,11 @@ export interface OpenShiftWorkload {
   ready: boolean;
   routeUrl?: string;
   image?: string;
+  /**
+   * Whether this Deployment's pod currently has the Hummingbird nginx sidecar container
+   * (APPENG-6227) — read live from the Deployment's own container list, not remembered
+   * from whatever the deploy form's checkbox was set to at deploy time, so it stays
+   * correct across extension restarts and reflects the cluster's actual current state.
+   */
+  hasHummingbirdSidecar: boolean;
 }

@@ -1,6 +1,5 @@
 import type { ExtensionContext } from '@podman-desktop/api';
 import * as extensionApi from '@podman-desktop/api';
-import * as https from 'node:https';
 import type { PhysicalAiApi } from '/@shared/src/PhysicalAiApi';
 import type {
   QuayRepository,
@@ -39,6 +38,7 @@ import {
   DEFAULT_SW_RENDER_CPU,
   PART_OF_LABEL,
   PART_OF_VALUE,
+  HUMMINGBIRD_NGINX_CONTAINER_NAME,
 } from '/@shared/src/openshift/manifests';
 import { readFile, writeFile, mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -2421,14 +2421,19 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     for (const raw of items) {
       const d = raw as {
         metadata?: { name?: string };
-        spec?: { replicas?: number; template?: { spec?: { containers?: Array<{ image?: string }> } } };
+        spec?: {
+          replicas?: number;
+          template?: { spec?: { containers?: Array<{ name?: string; image?: string }> } };
+        };
         status?: { readyReplicas?: number };
       };
       const name = d.metadata?.name;
       if (!name) continue;
       const replicas = d.spec?.replicas ?? 0;
       const readyReplicas = d.status?.readyReplicas ?? 0;
-      const image = d.spec?.template?.spec?.containers?.[0]?.image;
+      const containers = d.spec?.template?.spec?.containers ?? [];
+      const image = containers[0]?.image;
+      const hasHummingbirdSidecar = containers.some(c => c.name === HUMMINGBIRD_NGINX_CONTAINER_NAME);
       const routeUrl = await this.#readRouteUrl(ns, name, context);
       workloads.push({
         name,
@@ -2438,6 +2443,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         ready: replicas > 0 && readyReplicas >= replicas,
         image,
         routeUrl,
+        hasHummingbirdSidecar,
       });
     }
     return workloads;
@@ -2463,38 +2469,6 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       ]);
     } catch (err: unknown) {
       throw new Error(this.#ocErrorMessage(err, `delete ${safeName} in ${ns}`));
-    }
-  }
-
-  async checkRouteServerHeader(url: string): Promise<{ server?: string; error?: string }> {
-    try {
-      const server = await new Promise<string | undefined>((resolve, reject) => {
-        const req = https.request(
-          url,
-          {
-            method: 'HEAD',
-            // Dev/test OpenShift clusters commonly terminate Routes with a self-signed
-            // ingress CA; this only reads a header for display (APPENG-6227's live-verify
-            // hint), so skip verification the same way testing this manually needed `curl -k`.
-            rejectUnauthorized: false,
-            timeout: 5000,
-          },
-          res => {
-            const header = res.headers.server;
-            resolve(typeof header === 'string' ? header : undefined);
-            res.resume();
-          },
-        );
-        req.on('error', reject);
-        req.on('timeout', () => {
-          req.destroy();
-          reject(new Error('Request timed out'));
-        });
-        req.end();
-      });
-      return { server };
-    } catch (err: unknown) {
-      return { error: err instanceof Error ? err.message : String(err) };
     }
   }
 

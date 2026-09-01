@@ -93,12 +93,12 @@ let deployError = '';
 let deployResult: OpenShiftDeployResult | null = null;
 /** Name the current deployResult refers to, so we can drop the panel when it's deleted. */
 let deployedName = '';
-/** Feedback for the "copy verify command" button (APPENG-6227), cleared on a timer like BuildHistoryPanel's copy buttons. */
-let curlCopyFeedback = '';
-/** Live "Verify sidecar" check state (APPENG-6227) — reset to 'idle' on every new deploy. */
-let sidecarCheckState: 'idle' | 'checking' | 'verified' | 'not-verified' | 'error' = 'idle';
-let sidecarCheckServer = '';
-let sidecarCheckError = '';
+/**
+ * Feedback for each workload's "copy curl command" button (APPENG-6227), keyed by workload
+ * name since the persistent "Deployed simulations" list can show several at once — mirrors
+ * BuildHistoryPanel's per-entry copy feedback pattern.
+ */
+let curlCopyFeedback: Record<string, string> = {};
 
 let workloads: OpenShiftWorkload[] = [];
 let listBusy = false;
@@ -376,40 +376,19 @@ async function openRoute(url: string | undefined) {
 
 /**
  * Copies a `curl -I <route>` command that shows `server: nginx/...` in the response —
- * live proof the Hummingbird nginx sidecar (APPENG-6227) is fronting traffic, useful for
- * demoing the companion pattern. Uses the extension's clipboard RPC, not
- * navigator.clipboard.writeText, which silently no-ops in this webview (see BuildHistoryPanel).
+ * proof the Hummingbird nginx sidecar (APPENG-6227) is fronting traffic, for the user to
+ * run themselves. Uses the extension's clipboard RPC, not navigator.clipboard.writeText,
+ * which silently no-ops in this webview (see BuildHistoryPanel).
  */
-async function copyCurlCommand(url: string): Promise<void> {
+async function copyCurlCommand(workloadName: string, url: string): Promise<void> {
   try {
     await physicalAiClient.copyToClipboard(`curl -I ${url}`);
-    curlCopyFeedback = 'Copied';
-    setTimeout(() => (curlCopyFeedback = ''), 1500);
+    curlCopyFeedback = { ...curlCopyFeedback, [workloadName]: 'Copied' };
+    setTimeout(() => {
+      curlCopyFeedback = { ...curlCopyFeedback, [workloadName]: '' };
+    }, 1500);
   } catch {
-    curlCopyFeedback = 'Copy failed';
-  }
-}
-
-/**
- * Live "Verify" check (APPENG-6227): HEAD-requests the route via the backend (a webview
- * can't make this cross-origin request itself) and checks the `server` response header,
- * so the Hummingbird companion pattern can be demonstrated with a click instead of a
- * terminal — the copyable curl command above stays as the manual fallback.
- */
-async function verifySidecarProxy(url: string): Promise<void> {
-  sidecarCheckState = 'checking';
-  sidecarCheckServer = '';
-  sidecarCheckError = '';
-  const { server, error } = await physicalAiClient.checkRouteServerHeader(url);
-  if (error) {
-    sidecarCheckState = 'error';
-    sidecarCheckError = error;
-  } else if (server && /nginx/i.test(server)) {
-    sidecarCheckState = 'verified';
-    sidecarCheckServer = server;
-  } else {
-    sidecarCheckState = 'not-verified';
-    sidecarCheckServer = server ?? '';
+    curlCopyFeedback = { ...curlCopyFeedback, [workloadName]: 'Copy failed' };
   }
 }
 
@@ -432,10 +411,6 @@ async function deploy() {
   deploying = true;
   deployError = '';
   deployResult = null;
-  // Stale results from a previous deploy shouldn't linger under a new one (APPENG-6227).
-  sidecarCheckState = 'idle';
-  sidecarCheckServer = '';
-  sidecarCheckError = '';
   try {
     deployResult = await physicalAiClient.deployToOpenShift(config);
     deployedName = name;
@@ -895,42 +870,6 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
             {/if}
           </div>
           <div class="text-xs opacity-80">Applied: {deployResult.applied.join(', ')}</div>
-          {#if deployResult.routeUrl && deployResult.applied.includes('ConfigMap')}
-            <!-- ConfigMap in "applied" means the Hummingbird nginx sidecar was deployed
-                 (APPENG-6227) — offer a one-click verify command for the live demo. -->
-            <div class="flex flex-col gap-1 pt-1">
-              <div class="flex flex-row items-center gap-2">
-                <span class="text-xs opacity-80">Verify the Hummingbird sidecar is fronting traffic:</span>
-                <button
-                  on:click={() => verifySidecarProxy(deployResult?.routeUrl ?? '')}
-                  disabled={sidecarCheckState === 'checking'}
-                  class="pai-btn pai-btn-sm text-xs">
-                  {sidecarCheckState === 'checking' ? 'Checking…' : 'Verify'}
-                </button>
-                <button
-                  on:click={() => copyCurlCommand(deployResult?.routeUrl ?? '')}
-                  class="pai-btn pai-btn-sm text-xs">
-                  {curlCopyFeedback || 'Copy curl'}
-                </button>
-              </div>
-              {#if sidecarCheckState === 'verified'}
-                <div class="text-xs pai-text-success">
-                  ✓ Verified — response header <span class="font-mono">server: {sidecarCheckServer}</span>
-                </div>
-              {:else if sidecarCheckState === 'not-verified'}
-                <div class="text-xs pai-text-warning">
-                  Not verified — response header was
-                  <span class="font-mono">server: {sidecarCheckServer || '(none)'}</span>, expected nginx.
-                </div>
-              {:else if sidecarCheckState === 'error'}
-                <div class="text-xs pai-text-error">Verify failed: {sidecarCheckError}</div>
-              {/if}
-              <pre
-                class="text-xs font-mono p-2 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] overflow-auto whitespace-pre">curl -I {deployResult.routeUrl}</pre>
-              <span class="text-xs opacity-80"
-                >Or run this yourself — look for <span class="font-mono">server: nginx</span> in the response headers.</span>
-            </div>
-          {/if}
         </div>
       {/if}
     </div>
@@ -1004,6 +943,18 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
                 <span class="text-xs pai-text-muted">Route admitted; waiting for the pod to be ready…</span>
               {:else}
                 <span class="text-xs pai-text-muted">Route not admitted yet.</span>
+              {/if}
+
+              {#if w.hasHummingbirdSidecar && w.routeUrl}
+                <!-- Read live from the Deployment's own container list (APPENG-6227), not
+                     remembered from whatever the deploy form checkbox was set to — so this
+                     shows up correctly even for a workload deployed in an earlier session. -->
+                <div class="flex flex-row items-center gap-2">
+                  <span class="text-xs opacity-80">Verify the Hummingbird sidecar is fronting traffic:</span>
+                  <button on:click={() => copyCurlCommand(w.name, w.routeUrl ?? '')} class="pai-btn pai-btn-sm text-xs">
+                    {curlCopyFeedback[w.name] || 'Copy curl -I command'}
+                  </button>
+                </div>
               {/if}
 
               <!-- In-cluster robot spawn + Nav2 -->
