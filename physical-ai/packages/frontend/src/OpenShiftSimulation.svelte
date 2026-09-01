@@ -953,8 +953,8 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
                   <div class="text-xs font-medium text-[var(--pd-content-header)]">Verify the Hummingbird sidecar</div>
                   <div class="text-xs pai-text-muted">
                     Run this in a terminal, then check the response headers for
-                    <span class="font-mono">server: nginx</span> — that confirms the Hummingbird nginx sidecar (not noVNC
-                    directly) is fronting traffic.
+                    <span class="font-mono font-bold text-[var(--pd-content-header)]">server: nginx</span> — that confirms
+                    the Hummingbird nginx sidecar (not noVNC directly) is fronting traffic.
                   </div>
                   <div class="flex flex-row items-center gap-2">
                     <pre
