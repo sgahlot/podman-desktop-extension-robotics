@@ -30,7 +30,8 @@
 - [S10-12 — Telemetry & richer metrics (OTEL / Prometheus)](#s10-12)
 - [S10-13 — Hybrid topology: local robot + in-cluster simulation & inference](#s10-13)
 - [S10-14 — Local Hummingbird nginx sidecar (Podman multi-container)](#s10-14)
-- [S10-15 — Hummingbird showcase expansion: registry-path audit & additional tools](#s10-15)
+- [S10-15 — Hummingbird registry-path audit (quay.io → registry.access.redhat.com)](#s10-15)
+- [S10-16 — Hummingbird showcase: syft external-scan pattern + cosign bundled-tool demo](#s10-16)
 - [Tracking: where each item currently lives](#tracking)
 
 ## Method
@@ -483,52 +484,60 @@ forking it per deployment target.
 
 <a id="s10-15"></a>
 
-## S10-15 — Hummingbird showcase expansion: registry-path audit & additional tools
+## S10-15 — Hummingbird registry-path audit (`quay.io` → `registry.access.redhat.com`)
 
-**Ask:** (1) audit whether other `quay.io/hummingbird/*` references in the extension should
+**Ask:** audit whether other `quay.io/hummingbird/*` references in the extension should
 move to the public `registry.access.redhat.com/hi/*` path, the way APPENG-6227 did for the
-OpenShift nginx sidecar; (2) research what else could be bundled to further showcase the
-Hummingbird pattern, and whether Red Hat's own guidance prefers sidecar/companion-style use
-over baking a tool's binary into another image (or vice versa).
+OpenShift nginx sidecar.
 
-**Findings — `quay.io` vs `registry.access.redhat.com` (2026-09-01):**
+**Findings (2026-09-01):**
 - For `nginx`: confirmed identical image content from both registries (matching
   Entrypoint/CMD/User/labels/source repo — same Konflux CI pipeline, same
   `gitlab.com/redhat/hummingbird/containers` source), and `registry.access.redhat.com/hi/nginx:latest`
   pulls with **zero authentication** (`podman pull`, no gate) — this is what APPENG-6227
   switched to for the OpenShift sidecar.
 - The Layers wizard's `hummingbirdImageRef()` (`packages/shared/src/types/layerCompatibility.ts:88-90`)
-  still hardcodes `quay.io/hummingbird/${app}:latest` for **every** Hummingbird tool/companion
-  option (`jq`, `kubectl`, `helm`, `cosign`, `curl`, `nginx`, `syft`, etc.) — none of the
-  others have been switched. Very likely equivalent to nginx's case (same pipeline/source),
-  but **do not assume** — verify each with a live unauthenticated pull before switching, the
-  same way nginx was verified, since not every Hummingbird app is guaranteed to exist under
-  the same tag on `registry.access.redhat.com` yet.
-- **The SBOM/Syft case is not a simple one-line swap.** The Layers wizard's "Syft" tool
-  bakes syft's binary into the user's *own* built image
-  (`COPY --from=quay.io/hummingbird/syft:latest`, `layerCompatibility.ts:172-177`), and the
-  actual SBOM-generation backend (`packages/backend/src/api-impl.ts:667-686`) then runs
-  `podman run --rm <built-image-tag> syft dir:/ -o <format> --select-catalogers -file` — i.e.
-  it execs the *baked-in* binary from inside the user's own image; no dedicated syft image is
-  pulled/run at scan time. Two options of very different size:
-  - **Small:** just repoint the `COPY --from` source to `registry.access.redhat.com/hi/syft:latest`,
-    keeping today's architecture unchanged.
-  - **Larger:** adopt Red Hat's own documented pattern instead —
-    `podman run --rm registry.access.redhat.com/hi/syft:latest <target-image-ref> --output <format>`,
-    syft as its own external container scanning *any* image (built or pulled) from the
-    outside. This would decouple SBOM generation entirely from the Layers wizard's "did you
-    check the Syft box" gate — arguably a better design — but is a genuine redesign of
-    `#generateSbom`, its gating in `buildFromContainerfile`, and several tests.
+  still hardcodes `quay.io/hummingbird/${app}:latest` for every other tool/companion option.
+- **Verification pass completed (2026-09-01, via `skopeo inspect --override-arch amd64
+  --override-os linux`, unauthenticated):** `cosign`, `jq`, `kubectl`, `helm`, and `curl` all
+  confirmed to resolve to the **identical image digest** on both registries — same
+  equivalence already established for nginx. No blockers found; this is a pure path swap for
+  all five.
+- `syft` is deliberately **out of scope here** — its registry path is handled together with a
+  bigger architecture change; see [S10-16](#s10-16).
 
-**Findings — Red Hat's documented bundling guidance (sidecar vs. tool-copy vs. base-image):**
+**Effort:** small — verification is done; remaining work is the code swap + updating any
+tests/fixtures referencing the old `quay.io` path.
+
+**Status:** filed as [APPENG-6263](https://redhat.atlassian.net/browse/APPENG-6263) under
+Story APPENG-6225.
+
+---
+
+<a id="s10-16"></a>
+
+## S10-16 — Hummingbird showcase: syft external-scan pattern + cosign bundled-tool demo
+
+**Ask (raised 2026-09-01):** (1) is a separate external/"sidecar"-style container the right
+approach for `syft`, or is it fine to keep it bundled into the final image as today? (2) Red
+Hat treats both patterns as equally valid (see Findings below) — given that, is it still worth
+switching? (3) if `syft` does move to the external pattern, should another Hummingbird tool
+take its place as the demoed "bundled into your image" example, so both patterns still have a
+live showcase — not just an available checkbox — the way SBOM generation demos `syft` today?
+
+**Decision (2026-09-01):** yes to all three — move `syft` to the external/on-demand scan
+pattern, and add `cosign` as the new demoed "bundled" example.
+
+**Findings — Red Hat's documented bundling guidance (sidecar/external vs. tool-copy vs.
+base-image):**
 - Both patterns our own code already distinguishes (`companion` = run as its own container;
   `tool` = binary copied in) are **explicitly documented and treated as equally valid** by
   Red Hat — not one recommended over the other. The "Build and deploy secure minimal
   containers with Red Hat Hardened Images" guide names two workflows: *"running containerized
-  tools"* (standalone execution — our companion/sidecar analog) and *"building custom
-  application images"* (multi-stage `COPY --from`, our tool analog — with a `-builder` →
-  `core-runtime` two-stage example). Red Hat's only prescriptive steer found was
-  Hardened-Images-vs-UBI production suitability, not sidecar-vs-tool.
+  tools"* (standalone/external execution — our companion analog, and what `syft` is moving
+  to) and *"building custom application images"* (multi-stage `COPY --from`, our tool analog —
+  with a `-builder` → `core-runtime` two-stage example). Red Hat's only prescriptive steer
+  found was Hardened-Images-vs-UBI production suitability, not external-vs-tool.
   > **Caveat:** docs.redhat.com blocked direct fetch (HTTP 403) on the primary pages during
   > this research; the above is reconstructed from search-indexed snippets, not a confirmed
   > verbatim quote — verify against the live page (or its PDF) before quoting externally.
@@ -542,19 +551,57 @@ over baking a tool's binary into another image (or vice versa).
   (`cosign verify --key ... registry.access.redhat.com/hi/<image>:<tag>`), distinct from the
   unrelated RHTAS Cosign image on Red Hat's main Ecosystem Catalog — don't conflate the two.
 
-**Showcase ideas surfaced (not yet scoped or sized):**
-- A **"Verify Build"** action in the extension — run `cosign verify` against the deployed
-  Hummingbird sidecar image (or the user's own built image, if based on a Hardened Image) and
-  show the result. Demonstrates the security/provenance angle distinct from the SBOM feature
-  already shipped.
-- Redesigning SBOM generation to run syft externally against *any* image (built or pulled)
-  rather than gating it behind the Layers wizard's "Syft" checkbox (see the "larger" option
-  above).
-- A Hardened-Images-as-base-image example (`-builder` → minimal-runtime multi-stage pattern)
-  in the Layers wizard — distinct from today's tool-binary-copy pattern.
+**Findings — why `syft` moves and why `cosign` is the right replacement (2026-09-01, verified
+in code + registry, not assumed):**
+- Today, `syft`'s binary is baked into the user's own built image
+  (`COPY --from=quay.io/hummingbird/syft:latest`, `layerCompatibility.ts:172-177`), and the
+  SBOM backend (`packages/backend/src/api-impl.ts:667-686`) execs it from inside that image
+  (`podman run --rm <built-image-tag> syft dir:/ -o <format> ...`) — gated entirely behind the
+  Layers wizard's "Syft" checkbox. Moving to Red Hat's own documented external pattern —
+  `podman run --rm registry.access.redhat.com/hi/syft:latest <target-image-ref> --output
+  <format>` — decouples SBOM generation from that gate and lets it scan *any* image, built or
+  pulled.
+- Checked every other currently-bundled ("tool") Hummingbird option — `cosign`, `curl`, `jq`,
+  `kubectl`, `helm` — for actual runtime orchestration in the extension: **zero** are invoked
+  anywhere in `packages/backend/src/api-impl.ts`, and only the Layers wizard's checkbox list
+  references them in `packages/frontend/src` (confirmed via `rg`, no hits beyond that). `syft`
+  is the *only* bundled tool with a live demo today — the "show its use to the user" gap is
+  real for all five, not just hypothetical.
+- `cosign` is the strongest replacement:
+  - Already independently surfaced as a showcase idea in this doc before this decision was
+    made — a "run `cosign verify` and show the result" flow directly parallels SBOM's
+    "generate and show" pattern.
+  - Strong narrative fit: SBOM answers "what's inside this image," cosign answers "is this
+    image genuine" — together a complete supply-chain story, distinct from what's already
+    shipped.
+  - Confirmed via `skopeo inspect --override-arch amd64 --override-os linux` (unauthenticated):
+    `quay.io/hummingbird/cosign:latest` and `registry.access.redhat.com/hi/cosign:latest`
+    resolve to the identical digest `sha256:bd7bcc7cff2bb80087d66b44d361e2e98ec01aff8f8c17ea988fd7c331f457e8`
+    — so the new demo can be built directly on the public, unauthenticated
+    `registry.access.redhat.com` path from day one.
+  - Ruled out: `curl`/`jq` are too generic for a compelling demo; `kubectl`/`helm` duplicate
+    cluster-ops capability the extension already implements natively via `oc`.
 
-**Effort:** research/analysis only so far, no implementation. Each idea above needs its own
-sizing before committing.
+**Scope:**
+1. Redesign SBOM generation to run `syft` externally against the target image ref (Red Hat's
+   documented pattern above) instead of execing a baked-in binary — a genuine architecture
+   change touching `generateSbom`, its gating in `buildFromContainerfile`, and several tests.
+2. Add a new "Verify Build" action using `cosign`, keeping the *bundled* pattern alive: bake
+   it in via `COPY --from=registry.access.redhat.com/hi/cosign:latest` (mirrors `syft`'s *old*
+   architecture), then run `podman run <built-image-tag> cosign verify --key ...
+   <target-image-ref>` using the bundled binary to verify a Hummingbird base/companion image's
+   signature, surfacing the result in the UI via APPENG-6226's existing SBOM-result display
+   patterns (pretty-print, copy-to-clipboard).
+
+**Effort:** medium–large — two coupled but separable pieces; the `syft` redesign is a real
+architecture change, the `cosign` demo mostly reuses APPENG-6226's UI patterns.
+
+**Status:** filed as [APPENG-6264](https://redhat.atlassian.net/browse/APPENG-6264) under
+Story APPENG-6225.
+
+**Showcase ideas surfaced (parking lot, not yet scoped or sized):**
+- A Hardened-Images-as-base-image example (`-builder` → minimal-runtime multi-stage pattern)
+  in the Layers wizard — distinct from today's tool-binary-copy pattern. Not sized; no Jira yet.
 
 ---
 
@@ -581,4 +628,5 @@ under an existing Story, a direct small commit, or a dedicated new doc.
 | S10-12 | Telemetry & richer metrics (OTEL/Prometheus) | Feature (2 threads: usage telemetry + runtime metrics) | This doc |
 | S10-13 | Hybrid local robot + in-cluster sim/inference | Feature (research/spike; 2 large pieces) | This doc |
 | S10-14 | Local Hummingbird nginx sidecar (Podman multi-container) | Feature | Filed as [APPENG-6262](https://redhat.atlassian.net/browse/APPENG-6262) under APPENG-6225 |
-| S10-15 | Hummingbird showcase expansion: registry-path audit & tools | Research | This doc |
+| S10-15 | Hummingbird registry-path audit (quay.io → registry.access.redhat.com) | Research/audit | Filed as [APPENG-6263](https://redhat.atlassian.net/browse/APPENG-6263) under APPENG-6225 |
+| S10-16 | Hummingbird showcase: syft external-scan + cosign bundled-tool demo | Feature | Filed as [APPENG-6264](https://redhat.atlassian.net/browse/APPENG-6264) under APPENG-6225 |
