@@ -17,6 +17,8 @@ const mockGetDefaultNamespace = vi.fn();
 const mockGetDefaultOpenShiftNamespace = vi.fn();
 const mockCheckOpenShiftLogin = vi.fn();
 const mockListOpenShiftProjects = vi.fn();
+const mockListLocalImages = vi.fn();
+const mockGetSimulationImageAllowlist = vi.fn();
 const mockGetSimulationConfig = vi.fn();
 const mockGetDefaultSoftwareRenderCpus = vi.fn();
 const mockListOpenShiftDeployments = vi.fn();
@@ -38,6 +40,8 @@ vi.mock('./api/client', () => ({
     getDefaultOpenShiftNamespace: (...args: unknown[]) => mockGetDefaultOpenShiftNamespace(...args),
     checkOpenShiftLogin: (...args: unknown[]) => mockCheckOpenShiftLogin(...args),
     listOpenShiftProjects: (...args: unknown[]) => mockListOpenShiftProjects(...args),
+    listLocalImages: (...args: unknown[]) => mockListLocalImages(...args),
+    getSimulationImageAllowlist: (...args: unknown[]) => mockGetSimulationImageAllowlist(...args),
     getSimulationConfig: (...args: unknown[]) => mockGetSimulationConfig(...args),
     getDefaultSoftwareRenderCpus: (...args: unknown[]) => mockGetDefaultSoftwareRenderCpus(...args),
     generateOpenShiftManifests: vi.fn(),
@@ -85,6 +89,8 @@ describe('OpenShiftSimulation', () => {
     mockGetDefaultOpenShiftNamespace.mockResolvedValue('');
     mockCheckOpenShiftLogin.mockResolvedValue({ loggedIn: true });
     mockListOpenShiftProjects.mockResolvedValue([]);
+    mockListLocalImages.mockResolvedValue([]);
+    mockGetSimulationImageAllowlist.mockResolvedValue('');
     mockGetDefaultSoftwareRenderCpus.mockResolvedValue(8);
     // Keep the default image (avoids exercising simulationImageTag here).
     mockGetSimulationConfig.mockRejectedValue(new Error('no config'));
@@ -129,6 +135,70 @@ describe('OpenShiftSimulation', () => {
     await screen.findByText('ros2-jazzy-sim');
     expect(screen.queryByRole('button', { name: /Open https:\/\/host\.apps\.example\.com/ })).toBeNull();
     expect(screen.getByText(/waiting for the pod to be ready/i)).toBeTruthy();
+  });
+
+  describe('Image picker (APPENG-6259)', () => {
+    it('suggests only local images matching the sim allowlist AND tagged -amd64', async () => {
+      mockListLocalImages.mockResolvedValue([
+        'quay.io/ns/ros2-jazzy-sim:noble-amd64', // matches allowlist + amd64
+        'quay.io/ns/ros2-jazzy-sim:noble', // matches allowlist, but no -amd64 (host-native)
+        'quay.io/ns/ros2-humble-sim:noble-amd64', // matches allowlist + amd64
+        'docker.io/library/nginx:latest-amd64', // amd64, but not an allowlisted sim image
+      ]);
+      render(DeployOpenShift);
+
+      const input = await screen.findByLabelText('Image (amd64, cluster-pullable)');
+      await fireEvent.focus(input);
+
+      expect(await screen.findByRole('option', { name: 'quay.io/ns/ros2-jazzy-sim:noble-amd64' })).toBeTruthy();
+      expect(screen.getByRole('option', { name: 'quay.io/ns/ros2-humble-sim:noble-amd64' })).toBeTruthy();
+      expect(screen.queryByRole('option', { name: 'quay.io/ns/ros2-jazzy-sim:noble' })).toBeNull();
+      expect(screen.queryByRole('option', { name: 'docker.io/library/nginx:latest-amd64' })).toBeNull();
+    });
+
+    it('picking a suggestion fills the Image field and closes the menu', async () => {
+      mockListLocalImages.mockResolvedValue(['quay.io/ns/ros2-jazzy-sim:noble-amd64']);
+      render(DeployOpenShift);
+
+      const input = (await screen.findByLabelText('Image (amd64, cluster-pullable)')) as HTMLInputElement;
+      await fireEvent.focus(input);
+      const option = await screen.findByRole('option', { name: 'quay.io/ns/ros2-jazzy-sim:noble-amd64' });
+      await fireEvent.mouseDown(option);
+      await fireEvent.click(option);
+
+      expect(input.value).toBe('quay.io/ns/ros2-jazzy-sim:noble-amd64');
+      expect(screen.queryByRole('listbox', { name: '' })).toBeNull();
+    });
+
+    it('still accepts free-text values not in the suggestion list', async () => {
+      mockListLocalImages.mockResolvedValue(['quay.io/ns/ros2-jazzy-sim:noble-amd64']);
+      mockDeployToOpenShift.mockResolvedValue({
+        name: 'ros2-jazzy-sim',
+        namespace: 'sgahlot-pd-extn',
+        applied: ['Deployment', 'Service', 'Route'],
+        message: 'Deployed',
+      });
+      render(DeployOpenShift);
+
+      const input = (await screen.findByLabelText('Image (amd64, cluster-pullable)')) as HTMLInputElement;
+      await fireEvent.input(input, { target: { value: 'quay.io/custom/my-image:tag-amd64' } });
+
+      await fireEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
+      await waitFor(() => {
+        expect(mockDeployToOpenShift).toHaveBeenCalledWith(
+          expect.objectContaining({ image: 'quay.io/custom/my-image:tag-amd64' }),
+        );
+      });
+    });
+
+    it('degrades to plain free-text with a placeholder hint when no local amd64 images are found', async () => {
+      mockListLocalImages.mockResolvedValue([]);
+      render(DeployOpenShift);
+
+      await screen.findByLabelText('Image (amd64, cluster-pullable)');
+      expect(screen.getByText(/e\.g\. quay\.io/)).toBeTruthy();
+      expect(screen.queryByText(/Click to browse local amd64 images/)).toBeNull();
+    });
   });
 
   it('deploys with software rendering by default (useGpu false)', async () => {

@@ -3,6 +3,7 @@ import { physicalAiClient } from './api/client';
 import { onMount, onDestroy } from 'svelte';
 import { router } from 'tinro';
 import { simulationImageTag } from '/@shared/src/types/SimulationProfiles';
+import { isSimLaunchImageRef } from '/@shared/src/security/simImageTrust';
 import { DEFAULT_GPU_TOLERATION } from '/@shared/src/openshift/manifests';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import type { OpenShiftContext, OpenShiftDeployResult, OpenShiftWorkload } from '/@shared/src/types/OpenShiftDeploy';
@@ -57,6 +58,25 @@ let selectedContext = '';
 let loggedIn = true;
 let loginMessage = '';
 let image = 'quay.io/ecosystem-appeng/ros2-jazzy-sim:noble-amd64';
+/** Local images matching the simulation allowlist AND tagged `-amd64` (the suffix Image
+ * Builder applies whenever a build targets amd64, see archTagSuffix) — the natural
+ * candidates for an OpenShift deploy, which always needs an amd64, cluster-pullable image.
+ * Empty when listing fails or none match; the Image field still works as free text then,
+ * mirroring the Project/namespace combobox's degrade-to-free-text behavior. */
+let localAmd64Images: string[] = [];
+let simImageAllowlist = '';
+/** Custom combobox state for the Image field (APPENG-6259), mirroring the Project/
+ * namespace combobox above — see its comment for why a custom menu instead of a native
+ * `<input list>`/`<datalist>`. */
+let imageMenuOpen = false;
+let imageHighlight = -1;
+let imageBlurTimeout: ReturnType<typeof setTimeout> | undefined;
+/** True once the user has typed since the menu last opened. Before that, focusing shows
+ * the full candidate list rather than filtering by the current value — the field starts
+ * pre-filled with a specific seeded tag (see onMount), which wouldn't substring-match any
+ * other candidate, so filtering by it immediately would show zero suggestions on first
+ * focus and defeat the whole point of the picker. */
+let imageFilterActive = false;
 let useGpu = false;
 /**
  * Guaranteed CPU count for the software-render pod; dial to your node sizes.
@@ -160,6 +180,16 @@ $: namespaceMenuVisible = namespaceMenuOpen && filteredProjects.length > 0;
 $: {
   filteredProjects;
   namespaceHighlight = -1;
+}
+/** Suggestions for the Image field (APPENG-6259) — the full candidate list until the user
+ * types, then filtered by case-insensitive substring match (see imageFilterActive). */
+$: filteredImages = imageFilterActive
+  ? localAmd64Images.filter(t => !image || t.toLowerCase().includes(image.toLowerCase()))
+  : localAmd64Images;
+$: imageMenuVisible = imageMenuOpen && filteredImages.length > 0;
+$: {
+  filteredImages;
+  imageHighlight = -1;
 }
 
 /**
@@ -272,6 +302,65 @@ function handleNamespaceKeydown(e: KeyboardEvent) {
   }
 }
 
+/** Refresh the Image combobox's suggestions (APPENG-6259). Fails soft to [] — the field
+ * still accepts free text if listing fails, exactly like the Project/namespace combobox. */
+async function refreshLocalAmd64Images() {
+  try {
+    simImageAllowlist = await physicalAiClient.getSimulationImageAllowlist();
+    const all = await physicalAiClient.listLocalImages();
+    localAmd64Images = all.filter(t => isSimLaunchImageRef(t, simImageAllowlist || null) && t.endsWith('-amd64'));
+  } catch {
+    localAmd64Images = [];
+  }
+}
+
+function handleImageFocus() {
+  if (imageBlurTimeout) clearTimeout(imageBlurTimeout);
+  imageFilterActive = false;
+  imageMenuOpen = true;
+}
+
+function handleImageInput() {
+  imageFilterActive = true;
+  imageMenuOpen = true;
+}
+
+function handleImageBlur() {
+  imageBlurTimeout = setTimeout(() => {
+    imageMenuOpen = false;
+  }, 150);
+}
+
+function selectImage(img: string) {
+  image = img;
+  imageMenuOpen = false;
+}
+
+function handleImageKeydown(e: KeyboardEvent) {
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (!imageMenuVisible) {
+      imageMenuOpen = true;
+      return;
+    }
+    imageHighlight = Math.min(imageHighlight + 1, filteredImages.length - 1);
+  } else if (e.key === 'ArrowUp') {
+    if (!imageMenuVisible) return;
+    e.preventDefault();
+    imageHighlight = Math.max(imageHighlight - 1, 0);
+  } else if (e.key === 'Enter') {
+    if (imageMenuVisible && imageHighlight >= 0) {
+      e.preventDefault();
+      selectImage(filteredImages[imageHighlight]);
+    } else {
+      imageMenuOpen = false;
+    }
+  } else if (e.key === 'Escape') {
+    imageMenuOpen = false;
+    imageHighlight = -1;
+  }
+}
+
 /** Re-seed namespace/login status and refresh the workload list + project suggestions
  * for the cluster the user just picked from the Cluster dropdown (S8-10). */
 async function onContextChange() {
@@ -297,6 +386,7 @@ onMount(async () => {
   }
   await refreshLoginStatus();
   await refreshProjects();
+  await refreshLocalAmd64Images();
   // Seed the CPU field from the configurable default (still editable per deploy).
   try {
     cpu = await physicalAiClient.getDefaultSoftwareRenderCpus();
@@ -328,6 +418,7 @@ onMount(async () => {
 onDestroy(() => {
   if (warmTimer) clearInterval(warmTimer);
   if (namespaceBlurTimeout) clearTimeout(namespaceBlurTimeout);
+  if (imageBlurTimeout) clearTimeout(imageBlurTimeout);
 });
 
 /** Poll Nav2 pre-warm state for robots still warming across all deployments. */
@@ -730,12 +821,56 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
 
       <div class="flex flex-col gap-1">
         <label for="dep-image" class="text-xs text-[var(--pd-content-text)]">Image (amd64, cluster-pullable)</label>
-        <input
-          id="dep-image"
-          bind:value={image}
-          disabled={deploying}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
-        <span class="text-xs pai-text-muted">e.g. quay.io/&lt;ns&gt;/ros2-jazzy-sim:noble-amd64</span>
+        <!-- Custom filtered combobox (APPENG-6259), mirroring the Project/namespace field
+             above — see its comment for why a custom menu instead of a native
+             <input list>/<datalist>. Suggests local images already built/pushed as amd64
+             (Image Builder/Image Catalog track these); still accepts any free-text value. -->
+        <div class="relative">
+          <input
+            id="dep-image"
+            role="combobox"
+            aria-expanded={imageMenuVisible}
+            aria-controls="dep-image-listbox"
+            aria-autocomplete="list"
+            aria-activedescendant={imageHighlight >= 0 ? `dep-image-option-${imageHighlight}` : undefined}
+            bind:value={image}
+            on:focus={handleImageFocus}
+            on:input={handleImageInput}
+            on:keydown={handleImageKeydown}
+            on:blur={handleImageBlur}
+            disabled={deploying}
+            autocomplete="off"
+            class="w-full px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
+          {#if imageMenuVisible}
+            <ul
+              id="dep-image-listbox"
+              role="listbox"
+              class="absolute top-full left-0 right-0 z-50 mt-1 max-h-60 overflow-y-auto rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] shadow-lg">
+              {#each filteredImages as img, i (img)}
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <li
+                  id={`dep-image-option-${i}`}
+                  role="option"
+                  aria-selected={i === imageHighlight}
+                  on:mousedown|preventDefault
+                  on:click={() => selectImage(img)}
+                  class="px-3 py-1.5 text-sm font-mono cursor-pointer text-[var(--pd-content-text)] {i ===
+                  imageHighlight
+                    ? 'bg-[var(--pd-content-card-border)]'
+                    : ''}">
+                  {img}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+        {#if localAmd64Images.length > 0}
+          <span class="text-xs pai-text-muted">
+            Click to browse local amd64 images, or type to filter — any value is allowed.
+          </span>
+        {:else}
+          <span class="text-xs pai-text-muted">e.g. quay.io/&lt;ns&gt;/ros2-jazzy-sim:noble-amd64</span>
+        {/if}
       </div>
 
       <div class="flex flex-col gap-1">
