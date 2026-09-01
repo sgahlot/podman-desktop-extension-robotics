@@ -532,17 +532,20 @@ pattern, and add `cosign` as the new demoed "bundled" example.
 base-image):**
 - Both patterns our own code already distinguishes (`companion` = run as its own container;
   `tool` = binary copied in) are **explicitly documented and treated as equally valid** by
-  Red Hat — not one recommended over the other. The "Build and deploy secure minimal
-  containers with Red Hat Hardened Images" guide names two workflows: *"running containerized
-  tools"* (standalone/external execution — our companion analog, and what `syft` is moving
-  to) and *"building custom application images"* (multi-stage `COPY --from`, our tool analog —
-  with a `-builder` → `core-runtime` two-stage example). Red Hat's only prescriptive steer
-  found was Hardened-Images-vs-UBI production suitability, not external-vs-tool.
-  > **Caveat:** docs.redhat.com blocked direct fetch (HTTP 403) on the primary pages during
-  > this research; the above is reconstructed from search-indexed snippets, not a confirmed
-  > verbatim quote — verify against the live page (or its PDF) before quoting externally.
-- Catalog survey (images.redhat.com is a JS SPA that couldn't be directly fetched/rendered;
-  findings below are from indexed snippets only, not a rendered page): confirmed categories
+  Red Hat — not one recommended over the other. The
+  ["Build and deploy secure minimal containers with Red Hat Hardened Images"](https://docs.redhat.com/en/documentation/red_hat_hardened_images/1-latest/html/build_and_deploy_secure_minimal_containers_with_red_hat_hardened_images/index)
+  guide names two workflows: *"running containerized tools"* (standalone/external execution —
+  our companion analog, and what `syft` is moving to) and *"building custom application
+  images"* (multi-stage `COPY --from`, our tool analog — with a `-builder` → `core-runtime`
+  two-stage example). Red Hat's only prescriptive steer found was Hardened-Images-vs-UBI
+  production suitability, not external-vs-tool.
+  > **Caveat:** docs.redhat.com blocked direct fetch (HTTP 403) on this page both times it was
+  > tried (initial research and again on 2026-09-01 re-check); the above is reconstructed from
+  > search-indexed snippets, not a confirmed verbatim quote — verify against the live page (or
+  > its PDF) before quoting externally.
+- Catalog survey ([images.redhat.com](https://images.redhat.com/) is a JS SPA that couldn't be
+  directly fetched/rendered; findings below are from indexed snippets only, not a rendered
+  page): confirmed categories
   beyond nginx/syft — Python, Node.js, Go, Java, .NET runtimes; PostgreSQL, Valkey; HAProxy;
   curl; `-builder`/`core-runtime` base-image variants. "Over 45 images spanning 150+ variants"
   per Red Hat's own announcement. **No robotics/ROS images exist or are expected.** cosign
