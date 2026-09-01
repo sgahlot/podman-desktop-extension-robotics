@@ -29,9 +29,9 @@ let costmapResult: CostmapSummaryResult | null = null;
 let costmapError = '';
 let laserResult: LaserScanSummary | null = null;
 let laserError = '';
-/** True when the currently-shown results came from robotDiagnosticsCache (a remembered
- * snapshot from an earlier "Refresh diagnostics"), false once a fresh refresh completes —
- * drives the "remembered snapshot" banner so older data is never mistaken for current. */
+/** True when the currently-shown results came from robotDiagnosticsCache (the last snapshot
+ * from an earlier "Refresh diagnostics"), false once a fresh refresh completes — drives the
+ * "last known snapshot" banner so older data is never mistaken for current. */
 let isCachedSnapshot = false;
 
 // `ros2 node list` (same signal APPENG-6250 uses to reconcile the Simulation page's robot
@@ -41,6 +41,10 @@ let isCachedSnapshot = false;
 // empty for that whole window, and a deep-linked robot is selectable immediately regardless
 // of whether either fetch has completed yet.
 let spawnedRobotNames: string[] = [];
+/** True while fetchSpawnedRobots()'s initial/target-change fetch is in flight — an OpenShift
+ * target execs over the network (oc exec against a real cluster) and can take a few seconds,
+ * long enough that "No robot detected yet" looked identical to "still checking" without this. */
+let checkingRobots = false;
 
 $: robotOptions = Array.from(
   new Set([
@@ -65,6 +69,7 @@ function targetKey(t: DiagnosticsTarget): string {
 }
 
 async function fetchSpawnedRobots(): Promise<void> {
+  checkingRobots = true;
   try {
     if (target.kind === 'podman') {
       if (!target.containerId) {
@@ -81,6 +86,8 @@ async function fetchSpawnedRobots(): Promise<void> {
     }
   } catch {
     // Fail-soft: keep the last-known list rather than blanking the picker on a transient RPC hiccup.
+  } finally {
+    checkingRobots = false;
   }
 }
 
@@ -244,10 +251,15 @@ async function refreshDiagnostics(): Promise<void> {
 <div class="flex flex-col gap-4 min-w-0">
   {#if robotOptions.length === 0}
     <div class="flex flex-row items-center gap-3 flex-wrap">
-      <span class="text-sm text-[var(--pd-content-text)]">
-        No robot detected yet. Spawn one in Simulation, or click Check again.
-      </span>
-      <button on:click={fetchSpawnedRobots} class="pai-btn text-xs">Check again</button>
+      {#if checkingRobots}
+        <span class="inline-block w-2 h-2 rounded-full bg-current pai-text-accent animate-pulse"></span>
+        <span class="text-sm pai-text-muted">Checking for robots…</span>
+      {:else}
+        <span class="text-sm text-[var(--pd-content-text)]">
+          No robot detected yet. Spawn one in Simulation, or click Check again.
+        </span>
+        <button on:click={fetchSpawnedRobots} class="pai-btn text-xs">Check again</button>
+      {/if}
     </div>
   {:else}
     <div class="flex flex-row items-end gap-3 flex-wrap">
@@ -274,7 +286,7 @@ async function refreshDiagnostics(): Promise<void> {
 
     {#if isCachedSnapshot}
       <div class="text-sm p-3 rounded pai-banner-info">
-        Showing a remembered snapshot from earlier — click Refresh diagnostics to get current data.
+        Last known snapshot — click Refresh diagnostics for current data.
       </div>
     {/if}
 

@@ -130,6 +130,23 @@ describe('RobotDiagnosticsPanel', () => {
     expect(screen.queryByRole('button', { name: 'Refresh diagnostics' })).toBeNull();
   });
 
+  it('shows a "Checking for robots" state while the initial fetch is in flight, not a false negative', async () => {
+    let resolveFetch: (names: string[]) => void = () => {};
+    mockListSpawnedRobotsInSimulation.mockReturnValue(
+      new Promise(resolve => {
+        resolveFetch = resolve;
+      }),
+    );
+
+    render(RobotDiagnosticsPanel, { props: { target: podmanTarget([]) } });
+
+    expect(screen.getByText(/Checking for robots/)).toBeTruthy();
+    expect(screen.queryByText(/No robot detected yet/)).toBeNull();
+
+    resolveFetch(['robot_1']);
+    expect(await screen.findByLabelText('Robot')).toBeTruthy();
+  });
+
   it('derives robot options from topics and auto-selects the first', () => {
     render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
     const select = screen.getByLabelText('Robot') as HTMLSelectElement;
@@ -257,14 +274,14 @@ describe('RobotDiagnosticsPanel', () => {
     const { unmount } = render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
     await fireEvent.click(screen.getByRole('button', { name: 'Refresh diagnostics' }));
     expect(await screen.findByText(/Laser scan looks normal/)).toBeTruthy();
-    expect(screen.queryByText(/Showing a remembered snapshot/)).toBeNull();
+    expect(screen.queryByText(/Last known snapshot/)).toBeNull();
     unmount();
 
     render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
-    expect(await screen.findByText(/Showing a remembered snapshot/)).toBeTruthy();
+    expect(await screen.findByText(/Last known snapshot/)).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Refresh diagnostics' }));
-    await waitFor(() => expect(screen.queryByText(/Showing a remembered snapshot/)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/Last known snapshot/)).toBeNull());
   });
 
   describe('OpenShift target', () => {
