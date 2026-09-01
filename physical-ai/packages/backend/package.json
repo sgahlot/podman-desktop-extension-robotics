@@ -142,9 +142,9 @@
         "physical-ai.buildHistoryLimit": {
           "type": "number",
           "minimum": 1,
-          "maximum": 5,
+          "maximum": 20,
           "default": 5,
-          "description": "Number of recent image builds to remember (tag, arch, duration, and SBOM if one was generated)."
+          "description": "Number of recent image builds to remember (tag, arch, duration, and SBOM if one was generated). SBOM text is fetched on demand when expanded, not kept in memory, so a higher limit mainly costs disk space."
         }
       }
     }

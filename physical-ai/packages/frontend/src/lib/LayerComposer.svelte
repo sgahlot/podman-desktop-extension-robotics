@@ -44,6 +44,13 @@ let attemptAnyway = false;
 // so the Target toggle silently did nothing in Layers mode).
 export let targetArch: TargetArch;
 export let hostArch: TargetArch;
+/** Notifies the parent (SimulationSetup, which owns the BuildHistoryPanel instance) that a
+ * build here just finished, so the Recent Builds list can refresh — this panel has no
+ * history view of its own (APPENG-6265: previously missing entirely, so a Layers build
+ * only ever showed up in Recent Builds once the panel's own periodic poll happened to
+ * catch it). `watchForSbom` should be true only for a build that opted into SBOM
+ * generation — its SBOM is attached asynchronously well after the build itself completes. */
+export let onBuildComplete: ((opts: { watchForSbom: boolean }) => void) | undefined = undefined;
 
 // Environment loaded once on mount.
 let ns = '';
@@ -379,6 +386,7 @@ onDestroy(() => {
           buildImage={t => physicalAiClient.buildBaseImage(t, presetConfig)}
           onBuildComplete={() => {
             void refreshLocalImages();
+            onBuildComplete?.({ watchForSbom: false });
           }} />
       </div>
 
@@ -397,6 +405,7 @@ onDestroy(() => {
             buildImage={t => physicalAiClient.buildSimulationImage(t, presetConfig)}
             onBuildComplete={() => {
               void refreshLocalImages();
+              onBuildComplete?.({ watchForSbom: false });
             }}
             disabled={!baseImageExists} />
         </div>
@@ -430,6 +439,7 @@ onDestroy(() => {
           })}
         onBuildComplete={() => {
           void refreshLocalImages();
+          onBuildComplete?.({ watchForSbom: selectedHbApps.includes('syft') });
         }}
         disabled={buildDisabled} />
     {/if}

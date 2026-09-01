@@ -49,6 +49,7 @@ import {
   BUILD_HISTORY_LIMIT_DEFAULT,
   assertBuildHistoryLimit,
   SBOM_FORMAT_DEFAULT,
+  parseSbomPackageCount,
 } from '/@shared/src/types/BuildHistory';
 import type {
   TopicInfo,
@@ -643,7 +644,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       const history = await this.#readBuildHistory();
       const idx = history.findIndex(e => e.tag === tag && e.startedAt === startedAt);
       if (idx === -1) return; // entry aged out of the retained limit while the SBOM ran
-      history[idx] = { ...history[idx], sbom, sbomFormat };
+      const sbomPackageCount = parseSbomPackageCount(sbom, sbomFormat);
+      history[idx] = { ...history[idx], sbom, sbomFormat, sbomPackageCount };
       await this.#writeBuildHistory(history);
     } catch (err) {
       console.error(`[physical-ai] Failed to attach SBOM to build history for "${tag}" (non-fatal):`, err);
@@ -724,9 +726,27 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     await rename(tmpPath, finalPath);
   }
 
-  /** Recent build results (newest first), persisted across restarts. See BuildHistoryEntry. */
+  /** Recent build results (newest first), persisted across restarts. See BuildHistoryEntry.
+   * Strips the (potentially tens-of-MB) `sbom` text — this is polled every few seconds by
+   * the UI, so the payload must stay small regardless of SBOM size (APPENG-6265). Use
+   * getBuildHistorySbom to fetch a specific entry's SBOM on demand. */
   async getBuildHistory(): Promise<BuildHistoryEntry[]> {
-    return this.#readBuildHistory();
+    const history = await this.#readBuildHistory();
+    return history.map(entry => {
+      const stripped: BuildHistoryEntry = { ...entry };
+      // Legacy entries recorded before `sbomFormat` existed are always SPDX — backfill it
+      // here so the stripped list's presence-of-format check (the frontend's only signal
+      // that an SBOM exists, now that `sbom` itself is never sent) still finds them.
+      if (stripped.sbom && !stripped.sbomFormat) stripped.sbomFormat = 'spdx-json';
+      delete stripped.sbom;
+      return stripped;
+    });
+  }
+
+  /** Full SBOM text for one entry, fetched on demand (see getBuildHistory). */
+  async getBuildHistorySbom(tag: string, startedAt: number): Promise<string | undefined> {
+    const history = await this.#readBuildHistory();
+    return history.find(e => e.tag === tag && e.startedAt === startedAt)?.sbom;
   }
 
   async getBuildHistoryLimit(): Promise<number> {

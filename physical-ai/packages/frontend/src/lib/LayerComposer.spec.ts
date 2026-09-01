@@ -119,9 +119,11 @@ describe('LayerComposer', () => {
     expect(document.body.textContent).toContain('quay.io/hummingbird/nginx');
   });
 
-  it('selecting the syft tool passes generateSbom: true to buildFromContainerfile on build', async () => {
+  it('selecting the syft tool passes generateSbom: true to buildFromContainerfile on build, and reports watchForSbom: true on completion', async () => {
     mockBuildFromContainerfile.mockResolvedValue(undefined);
-    render(LayerComposer);
+    mockGetBuildProgress.mockResolvedValue({ tag: 'x', status: 'Complete', logs: [], done: true });
+    const onBuildComplete = vi.fn();
+    render(LayerComposer, { props: { onBuildComplete } });
     const hardenedSelect = screen.getByLabelText('Hardened app');
     await fireEvent.change(hardenedSelect, { target: { value: 'hummingbird-app' } });
 
@@ -138,11 +140,18 @@ describe('LayerComposer', () => {
         sbomFormat: 'cyclonedx-json',
       });
     });
+    // A syft-enabled build's SBOM attaches asynchronously after completion (APPENG-6265) —
+    // the parent needs to know to keep watching Recent Builds for it.
+    await waitFor(() => {
+      expect(onBuildComplete).toHaveBeenCalledWith({ watchForSbom: true });
+    });
   });
 
-  it('building without syft selected passes generateSbom: false', async () => {
+  it('building without syft selected passes generateSbom: false, and reports watchForSbom: false on completion', async () => {
     mockBuildFromContainerfile.mockResolvedValue(undefined);
-    render(LayerComposer);
+    mockGetBuildProgress.mockResolvedValue({ tag: 'x', status: 'Complete', logs: [], done: true });
+    const onBuildComplete = vi.fn();
+    render(LayerComposer, { props: { onBuildComplete } });
     const hardenedSelect = screen.getByLabelText('Hardened app');
     await fireEvent.change(hardenedSelect, { target: { value: 'hummingbird-app' } });
 
@@ -158,6 +167,30 @@ describe('LayerComposer', () => {
         generateSbom: false,
         sbomFormat: 'cyclonedx-json',
       });
+    });
+    await waitFor(() => {
+      expect(onBuildComplete).toHaveBeenCalledWith({ watchForSbom: false });
+    });
+  });
+
+  it('reports watchForSbom: false when a preset-stack Base or Sim build completes (they never generate an SBOM)', async () => {
+    mockBuildBaseImage.mockResolvedValue(undefined);
+    mockGetBuildProgress.mockResolvedValue({ tag: 'x', status: 'Complete', logs: [], done: true });
+    const onBuildComplete = vi.fn();
+    render(LayerComposer, { props: { onBuildComplete } });
+
+    // Default selection is a supported preset stack — Step 1 (base) and Step 2 (sim) each
+    // render their own Build button; click Step 1's (the first one), once its tag has
+    // resolved from the (async) default namespace and the button is enabled.
+    await waitFor(() => {
+      const buttons = screen.getAllByRole('button', { name: 'Build' }) as HTMLButtonElement[];
+      expect(buttons[0].disabled).toBe(false);
+    });
+    const buildButtons = screen.getAllByRole('button', { name: 'Build' });
+    await fireEvent.click(buildButtons[0]);
+
+    await waitFor(() => {
+      expect(onBuildComplete).toHaveBeenCalledWith({ watchForSbom: false });
     });
   });
 

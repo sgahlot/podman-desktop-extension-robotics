@@ -37,11 +37,44 @@ export interface BuildHistoryEntry {
   /** The format `sbom` was generated in — undefined only for pre-existing entries recorded
    * before this field existed, which are always SPDX (the only format that ever existed). */
   sbomFormat?: SbomFormat;
+  /**
+   * Package/component count parsed from `sbom` once, at record time — lets the polled
+   * "list" view (see `PhysicalAiApi.getBuildHistory`, which strips `sbom` itself) show a
+   * count without ever shipping the SBOM text, which can run tens of MB (APPENG-6265).
+   * Absent for entries recorded before this field existed.
+   */
+  sbomPackageCount?: number;
 }
 
-/** Build history retention bounds (Preferences: physical-ai.buildHistoryLimit). */
+/**
+ * Package/component count from an SBOM's JSON — SPDX uses a `packages` array, CycloneDX
+ * uses `components`. Checks by declared format first (entries recorded before `sbomFormat`
+ * existed are always SPDX), falling back to whichever array is actually present.
+ */
+export function parseSbomPackageCount(sbom: string, format: SbomFormat | undefined): number | undefined {
+  try {
+    const parsed = JSON.parse(sbom) as { packages?: unknown[]; components?: unknown[] };
+    const arr = format === 'cyclonedx-json' ? parsed.components : (parsed.packages ?? parsed.components);
+    return Array.isArray(arr) ? arr.length : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** "packages" for SPDX, "components" for CycloneDX — matches each format's own terminology. */
+export function sbomItemLabel(format: SbomFormat | undefined): string {
+  return format === 'cyclonedx-json' ? 'components' : 'packages';
+}
+
+/**
+ * Build history retention bounds (Preferences: physical-ai.buildHistoryLimit). The max was
+ * 5 originally because every retained entry could carry its full SBOM text — now that SBOM
+ * text is fetched on demand rather than shipped with the list (APPENG-6265), a higher
+ * ceiling mainly costs disk space, not UI payload; default stays low since most entries
+ * never carry an SBOM at all (only Layers-wizard builds that opt in via the syft tool do).
+ */
 export const BUILD_HISTORY_LIMIT_MIN = 1;
-export const BUILD_HISTORY_LIMIT_MAX = 5;
+export const BUILD_HISTORY_LIMIT_MAX = 20;
 export const BUILD_HISTORY_LIMIT_DEFAULT = 5;
 
 /**

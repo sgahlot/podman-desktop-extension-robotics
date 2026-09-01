@@ -626,7 +626,10 @@ function cancelQuickStart() {
     {/if}
 
     {#if layout === 'layers'}
-      <LayerComposer targetArch={targetArch} hostArch={hostArch} />
+      <LayerComposer
+        targetArch={targetArch}
+        hostArch={hostArch}
+        onBuildComplete={({ watchForSbom }) => void buildHistoryPanel?.refreshAfterBuild(watchForSbom)} />
     {/if}
 
     <hr class="border-[var(--pd-content-card-border)] my-2" />
