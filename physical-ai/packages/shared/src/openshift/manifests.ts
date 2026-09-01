@@ -150,13 +150,17 @@ export function parseGpuToleration(raw: string): KubeToleration {
  * (`/etc/nginx/conf.d/default.conf`); the long `proxy_read_timeout` mirrors the
  * Route's `haproxy.router.openshift.io/timeout` rationale below — noVNC is a
  * long-lived connection that a default proxy timeout would sever mid-session.
+ * Proxies to `127.0.0.1` rather than `localhost`: confirmed live that nginx
+ * resolves `localhost` to `::1` first, and `websockify` only binds IPv4, so
+ * every request logged a "Connection refused" before nginx's automatic
+ * upstream retry silently fell back to the working IPv4 address.
  */
 function hummingbirdNginxConf(novncPort: number): string {
   return [
     'server {',
     `    listen ${HUMMINGBIRD_NGINX_CONTAINER_PORT};`,
     '    location / {',
-    `        proxy_pass http://localhost:${novncPort};`,
+    `        proxy_pass http://127.0.0.1:${novncPort};`,
     '        proxy_http_version 1.1;',
     '        proxy_set_header Upgrade $http_upgrade;',
     '        proxy_set_header Connection "upgrade";',

@@ -93,6 +93,8 @@ let deployError = '';
 let deployResult: OpenShiftDeployResult | null = null;
 /** Name the current deployResult refers to, so we can drop the panel when it's deleted. */
 let deployedName = '';
+/** Feedback for the "copy verify command" button (APPENG-6227), cleared on a timer like BuildHistoryPanel's copy buttons. */
+let curlCopyFeedback = '';
 
 let workloads: OpenShiftWorkload[] = [];
 let listBusy = false;
@@ -365,6 +367,22 @@ async function openRoute(url: string | undefined) {
     await physicalAiClient.openUrlInBrowser(url);
   } catch (e) {
     listError = e instanceof Error ? e.message : 'Failed to open route';
+  }
+}
+
+/**
+ * Copies a `curl -I <route>` command that shows `server: nginx/...` in the response —
+ * live proof the Hummingbird nginx sidecar (APPENG-6227) is fronting traffic, useful for
+ * demoing the companion pattern. Uses the extension's clipboard RPC, not
+ * navigator.clipboard.writeText, which silently no-ops in this webview (see BuildHistoryPanel).
+ */
+async function copyCurlCommand(url: string): Promise<void> {
+  try {
+    await physicalAiClient.copyToClipboard(`curl -I ${url}`);
+    curlCopyFeedback = 'Copied';
+    setTimeout(() => (curlCopyFeedback = ''), 1500);
+  } catch {
+    curlCopyFeedback = 'Copy failed';
   }
 }
 
@@ -846,6 +864,24 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
             {/if}
           </div>
           <div class="text-xs opacity-80">Applied: {deployResult.applied.join(', ')}</div>
+          {#if deployResult.routeUrl && deployResult.applied.includes('ConfigMap')}
+            <!-- ConfigMap in "applied" means the Hummingbird nginx sidecar was deployed
+                 (APPENG-6227) — offer a one-click verify command for the live demo. -->
+            <div class="flex flex-col gap-1 pt-1">
+              <div class="flex flex-row items-center gap-2">
+                <span class="text-xs opacity-80">Verify the Hummingbird sidecar is fronting traffic:</span>
+                <button
+                  on:click={() => copyCurlCommand(deployResult?.routeUrl ?? '')}
+                  class="pai-btn pai-btn-sm text-xs">
+                  {curlCopyFeedback || 'Copy'}
+                </button>
+              </div>
+              <pre
+                class="text-xs font-mono p-2 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] overflow-auto whitespace-pre">curl -I {deployResult.routeUrl}</pre>
+              <span class="text-xs opacity-80"
+                >Look for <span class="font-mono">server: nginx</span> in the response headers.</span>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>

@@ -306,7 +306,7 @@ describe('buildOpenShiftManifests — Hummingbird nginx sidecar (APPENG-6227)', 
     const cm = configMap as unknown as ConfigMapManifest;
     expect(cm.metadata.name).toBe(`${config.name}-hummingbird-nginx-conf`);
     expect(cm.metadata.namespace).toBe(config.namespace);
-    expect(cm.data['default.conf']).toContain(`proxy_pass http://localhost:${NOVNC_CONTAINER_PORT};`);
+    expect(cm.data['default.conf']).toContain(`proxy_pass http://127.0.0.1:${NOVNC_CONTAINER_PORT};`);
     expect(cm.data['default.conf']).toContain('proxy_set_header Upgrade $http_upgrade;');
     expect(cm.data['default.conf']).toContain('proxy_set_header Connection "upgrade";');
     expect(cm.data['default.conf']).toContain(`listen ${HUMMINGBIRD_NGINX_CONTAINER_PORT};`);
