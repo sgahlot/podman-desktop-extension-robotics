@@ -1,12 +1,18 @@
 <script lang="ts">
 import { physicalAiClient } from './api/client';
 import { onMount, onDestroy } from 'svelte';
+import { router } from 'tinro';
 import { simulationImageTag } from '/@shared/src/types/SimulationProfiles';
 import { DEFAULT_GPU_TOLERATION } from '/@shared/src/openshift/manifests';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import type { OpenShiftContext, OpenShiftDeployResult, OpenShiftWorkload } from '/@shared/src/types/OpenShiftDeploy';
 import RobotControls, { type RobotEntry } from './RobotControls.svelte';
 import { reconcileAdd, pruneStale } from './lib/robotReconcile';
+import { openShiftDiagnosticsHref } from './lib/diagnosticsLink';
+import { lastOpenShiftSelection } from './lib/simSelection';
+import { ocTargetKey } from './lib/diagnosticsTargetKey';
+import { setSpawnedRobotsForTarget } from './lib/spawnedRobotsStore';
+import { clearCachedDiagnostics } from './lib/robotDiagnosticsCache';
 
 let loading = true;
 let context: OpenShiftContext | undefined = undefined;
@@ -122,6 +128,21 @@ $: config = {
   middleware,
 };
 $: canDeploy = !!context && !!name && !!namespace && !!image && !deploying && loggedIn;
+/** Keep the shared last-used-OpenShift-target store in sync — covers every mutation
+ * path (onMount's seedNamespaceFromContext, onContextChange, manual namespace edits)
+ * for free, so Diagnostics.svelte can default to the same context/namespace instead of
+ * re-deriving or prompting for one independently. */
+$: if (selectedContext && namespace) lastOpenShiftSelection.set({ context: selectedContext, namespace });
+/** Keep the shared spawned-robots store in sync per workload — covers every mutation path
+ * (reconcile, prune, spawnRobot, removeRobot) for free, so RobotDiagnosticsPanel can notice a
+ * robot that spawned after its own one-shot fetch already ran, instead of relying solely on
+ * that fetch. */
+$: for (const w of workloads) {
+  setSpawnedRobotsForTarget(
+    ocTargetKey(w.namespace, w.name, selectedContext || undefined),
+    (robotsByWorkload[w.name] ?? []).map(r => r.name),
+  );
+}
 /** Suggestions matching the current free-text `namespace` (S8-21), case-insensitive
  * substring match, with system/default namespaces dropped first unless
  * `showSystemProjects` is on. Empty text shows the full (filtered) list, still
@@ -519,6 +540,9 @@ async function spawnRobot(w: OpenShiftWorkload, form: { name: string; x: string;
   const key = `${w.name}::${form.name}`;
   missingStreaks.delete(key);
   trackedSince.set(key, Date.now());
+  // A respawned robot under the same name is a new instance — its old cached diagnostics
+  // snapshot (if any) is stale and must not be shown as if it were current.
+  clearCachedDiagnostics(ocTargetKey(w.namespace, w.name, selectedContext || undefined), form.name);
   await physicalAiClient.spawnRobotInOpenShift(
     w.namespace,
     w.name,
@@ -579,6 +603,7 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
   const key = `${w.name}::${robot.name}`;
   missingStreaks.delete(key);
   trackedSince.delete(key);
+  clearCachedDiagnostics(ocTargetKey(w.namespace, w.name, selectedContext || undefined), robot.name);
   robotsByWorkload[w.name] = robots.filter((_, i) => i !== index);
   robotsByWorkload = robotsByWorkload;
 }
@@ -887,6 +912,15 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
                     onSpawn={form => spawnRobot(w, form)}
                     onNavigate={i => navigateRobot(w, i)}
                     onRemove={i => removeRobot(w, i)}
+                    onDiagnose={i =>
+                      router.goto(
+                        openShiftDiagnosticsHref(
+                          w.namespace,
+                          w.name,
+                          (robotsByWorkload[w.name] ?? [])[i].name,
+                          selectedContext || undefined,
+                        ),
+                      )}
                     disabled={!loggedIn}
                     idPrefix={`oc-${w.name}`} />
                 </div>

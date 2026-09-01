@@ -12,6 +12,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Image Catalog', to: '/images' },
   { label: 'Simulation', to: '/simulation' },
   { label: 'Topic Monitor', to: '/topics' },
+  { label: 'Diagnostics', to: '/diagnostics' },
   { label: 'Fleet', tooltip: 'Coming soon — scale to a multi-robot local fleet' },
   { label: 'Help', to: '/help' },
 ] as const;

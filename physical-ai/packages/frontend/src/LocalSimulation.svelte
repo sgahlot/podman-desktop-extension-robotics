@@ -7,6 +7,10 @@ import { SIM_STOPPED_BROWSER_HINT } from '/@shared/src/types/SimulationContainer
 import { isSimLaunchImageRef } from '/@shared/src/security/simImageTrust';
 import RobotControls, { type RobotEntry } from './RobotControls.svelte';
 import { reconcileAdd, pruneStale } from './lib/robotReconcile';
+import { localDiagnosticsHref } from './lib/diagnosticsLink';
+import { localTargetKey } from './lib/diagnosticsTargetKey';
+import { setSpawnedRobotsForTarget } from './lib/spawnedRobotsStore';
+import { clearCachedDiagnostics } from './lib/robotDiagnosticsCache';
 
 let localSimImages: string[] = [];
 let selectedImage = '';
@@ -41,6 +45,14 @@ $: if (!hasRunning && reconciled) {
   missingStreaks = new Map();
   trackedSince = new Map();
 }
+/** Keep the shared spawned-robots store in sync — covers every mutation path (reconcile,
+ * prune, spawnRobot, removeRobot) for free, so RobotDiagnosticsPanel can notice a robot that
+ * spawned after its own one-shot fetch already ran, instead of relying solely on that fetch. */
+$: if (runningContainer)
+  setSpawnedRobotsForTarget(
+    localTargetKey(runningContainer.id),
+    spawnedRobots.map(r => r.name),
+  );
 
 /** Host port mapped to container private port (e.g. 6080 noVNC). */
 function hostPortForPrivate(container: SimContainerInfo | undefined, privatePort: number): number {
@@ -153,6 +165,9 @@ async function spawnRobot(form: { name: string; x: string; y: string; yaw: strin
   if (!runningContainer) throw new Error('No running simulation');
   missingStreaks.delete(form.name);
   trackedSince.set(form.name, Date.now());
+  // A respawned robot under the same name is a new instance — its old cached diagnostics
+  // snapshot (if any) is stale and must not be shown as if it were current.
+  clearCachedDiagnostics(localTargetKey(runningContainer.id), form.name);
   await physicalAiClient.execInSimulation(runningContainer.id, [
     '/entrypoint-spawn-robot.sh',
     form.name,
@@ -269,7 +284,15 @@ async function removeRobot(index: number) {
   await physicalAiClient.despawnRobot(runningContainer.id, robot.name);
   missingStreaks.delete(robot.name);
   trackedSince.delete(robot.name);
+  clearCachedDiagnostics(localTargetKey(runningContainer.id), robot.name);
   spawnedRobots = spawnedRobots.filter((_, i) => i !== index);
+}
+
+function diagnoseRobot(index: number): void {
+  if (!runningContainer) return;
+  const robot = spawnedRobots[index];
+  if (!robot) return;
+  router.goto(localDiagnosticsHref(runningContainer.id, robot.name));
 }
 </script>
 
@@ -383,6 +406,7 @@ async function removeRobot(index: number) {
         onSpawn={spawnRobot}
         onNavigate={navigateRobot}
         onRemove={removeRobot}
+        onDiagnose={diagnoseRobot}
         spawnLabel="Add TurtleBot3"
         idPrefix="local" />
     </div>

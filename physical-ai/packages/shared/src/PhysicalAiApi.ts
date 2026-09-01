@@ -4,6 +4,7 @@ import type { SimulationConfig } from './types/SimulationConfig';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from './types/SimulationContainer';
 import type { TopicInfo, TopicDetailInfo, TopicPeekResult, TopicSchemaResult } from './types/TopicInfo';
 import type { NavigationGoalResult, Nav2WarmStatus } from './types/NavigationGoalResult';
+import type { TfTreeResult, CostmapSummaryResult, LaserScanSummary } from './types/RobotDiagnostics';
 import type {
   OpenShiftDeployConfig,
   OpenShiftDeployResult,
@@ -96,6 +97,14 @@ export abstract class PhysicalAiApi {
    * state (APPENG-6250). */
   abstract listSpawnedRobotsInSimulation(containerId: string): Promise<string[]>;
 
+  // --- Robot diagnostics (APPENG-5810): one-shot textual TF/costmap/sensor snapshots ---
+  /** Curated TF chain (map→odom→base_footprint→base_link→base_scan) via tf2_echo. */
+  abstract getTfTreeStatus(containerId: string, robotName: string): Promise<TfTreeResult>;
+  /** Local + global Nav2 OccupancyGrid summaries (cell counts, not raw grids). */
+  abstract getCostmapSummary(containerId: string, robotName: string): Promise<CostmapSummaryResult>;
+  /** LaserScan summary (angle/range bounds, min/max/mean of finite ranges). */
+  abstract getLaserScanSummary(containerId: string, robotName: string): Promise<LaserScanSummary>;
+
   // --- OpenShift deployment (APPENG-5777) ---
   /** Current Kubernetes/OpenShift context from the kubeconfig, or undefined if none. */
   abstract getOpenShiftContext(): Promise<OpenShiftContext | undefined>;
@@ -147,4 +156,27 @@ export abstract class PhysicalAiApi {
   /** Robots actually running in the deployment's pod, via `ros2 node list` (S8-17) — used
    * to reconcile the UI's robot list after a reload/restart forgets in-memory spawn state. */
   abstract listSpawnedRobotsInOpenShift(namespace: string, name: string, context?: string): Promise<string[]>;
+
+  // --- Robot diagnostics, OpenShift parity (APPENG-5810 follow-up) ---
+  /** Curated TF chain for a robot in a deployed pod — see getTfTreeStatus. */
+  abstract getTfTreeStatusInOpenShift(
+    namespace: string,
+    name: string,
+    robotName: string,
+    context?: string,
+  ): Promise<TfTreeResult>;
+  /** Local + global Nav2 costmap summaries for a robot in a deployed pod — see getCostmapSummary. */
+  abstract getCostmapSummaryInOpenShift(
+    namespace: string,
+    name: string,
+    robotName: string,
+    context?: string,
+  ): Promise<CostmapSummaryResult>;
+  /** LaserScan summary for a robot in a deployed pod — see getLaserScanSummary. */
+  abstract getLaserScanSummaryInOpenShift(
+    namespace: string,
+    name: string,
+    robotName: string,
+    context?: string,
+  ): Promise<LaserScanSummary>;
 }

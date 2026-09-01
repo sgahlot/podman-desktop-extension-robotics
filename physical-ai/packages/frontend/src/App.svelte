@@ -11,6 +11,7 @@ import Help from './Help.svelte';
 import ImageBuilder from './SimulationSetup.svelte';
 import Simulation from './Simulation.svelte';
 import TopicMonitor from './TopicMonitor.svelte';
+import Diagnostics from './Diagnostics.svelte';
 import { navigationLayout as navigationLayoutStore } from './lib/navigationLayout';
 
 router.mode.hash();
@@ -58,6 +59,9 @@ onMount(async () => {
       </Route>
       <Route path="/topics" breadcrumb="Topic Monitor">
         <TopicMonitor />
+      </Route>
+      <Route path="/diagnostics" breadcrumb="Diagnostics" let:meta>
+        <Diagnostics query={meta.query} />
       </Route>
       <!-- Back-compat: the old standalone Deploy page is now the Simulation → OpenShift tab. -->
       <Route path="/deploy" redirect="/simulation/openshift" />

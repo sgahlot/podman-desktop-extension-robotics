@@ -1,6 +1,15 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
 import DeployOpenShift from './OpenShiftSimulation.svelte';
+import { lastOpenShiftSelection } from './lib/simSelection';
+import { spawnedRobotsByTarget } from './lib/spawnedRobotsStore';
+import { ocTargetKey } from './lib/diagnosticsTargetKey';
+
+const mockClearCachedDiagnostics = vi.fn();
+
+vi.mock('./lib/robotDiagnosticsCache', () => ({
+  clearCachedDiagnostics: (...args: unknown[]) => mockClearCachedDiagnostics(...args),
+}));
 
 const mockGetOpenShiftContext = vi.fn();
 const mockListKubeContexts = vi.fn();
@@ -17,6 +26,7 @@ const mockSpawnRobotInOpenShift = vi.fn();
 const mockSendOpenShiftNavigationGoal = vi.fn();
 const mockGetRobotWarmStatusInOpenShift = vi.fn();
 const mockListSpawnedRobotsInOpenShift = vi.fn();
+const mockDespawnRobotInOpenShift = vi.fn();
 const mockOpenUrlInBrowser = vi.fn();
 const mockGoto = vi.fn();
 
@@ -38,6 +48,7 @@ vi.mock('./api/client', () => ({
     sendOpenShiftNavigationGoal: (...args: unknown[]) => mockSendOpenShiftNavigationGoal(...args),
     getRobotWarmStatusInOpenShift: (...args: unknown[]) => mockGetRobotWarmStatusInOpenShift(...args),
     listSpawnedRobotsInOpenShift: (...args: unknown[]) => mockListSpawnedRobotsInOpenShift(...args),
+    despawnRobotInOpenShift: (...args: unknown[]) => mockDespawnRobotInOpenShift(...args),
     openUrlInBrowser: (...args: unknown[]) => mockOpenUrlInBrowser(...args),
   },
 }));
@@ -59,6 +70,8 @@ const READY_WORKLOAD = {
 describe('OpenShiftSimulation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    lastOpenShiftSelection.set(undefined);
+    spawnedRobotsByTarget.set({});
     // The real OpenShiftContext carries the context's namespace (via the
     // kubeconfigContextNamespace helper); the component seeds its namespace from it,
     // and refreshWorkloads() no-ops without one — so the mock must provide it.
@@ -80,6 +93,7 @@ describe('OpenShiftSimulation', () => {
     mockDeleteOpenShiftDeployment.mockResolvedValue(undefined);
     mockGetRobotWarmStatusInOpenShift.mockResolvedValue('idle');
     mockListSpawnedRobotsInOpenShift.mockResolvedValue([]);
+    mockDespawnRobotInOpenShift.mockResolvedValue(undefined);
     mockOpenUrlInBrowser.mockResolvedValue(undefined);
   });
 
@@ -324,6 +338,34 @@ describe('OpenShiftSimulation', () => {
     await waitFor(() => expect(select.value).toBe('ctx'));
     expect(screen.getByText('https://api.cluster.example.com:6443')).toBeTruthy();
     expect(screen.getByText('https://api.other-cluster.example.com:6443')).toBeTruthy();
+  });
+
+  it('keeps lastOpenShiftSelection in sync with the resolved context/namespace (APPENG-5810)', async () => {
+    render(DeployOpenShift);
+    await waitFor(() => {
+      let stored: { context: string; namespace: string } | undefined = undefined;
+      lastOpenShiftSelection.subscribe(v => (stored = v))();
+      expect(stored).toEqual({ context: 'ctx', namespace: 'sgahlot-pd-extn' });
+    });
+  });
+
+  it('updates lastOpenShiftSelection when the Cluster/namespace changes (APPENG-5810)', async () => {
+    mockListKubeContexts.mockResolvedValue([
+      { name: 'ctx', namespace: 'sgahlot-pd-extn' },
+      { name: 'other-ctx', namespace: 'other-ns' },
+    ]);
+
+    render(DeployOpenShift);
+    const select = (await screen.findByLabelText('Cluster URL')) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('ctx'));
+
+    await fireEvent.change(select, { target: { value: 'other-ctx' } });
+
+    await waitFor(() => {
+      let stored: { context: string; namespace: string } | undefined = undefined;
+      lastOpenShiftSelection.subscribe(v => (stored = v))();
+      expect(stored).toEqual({ context: 'other-ctx', namespace: 'other-ns' });
+    });
   });
 
   it('switching the Cluster picker re-checks login and re-targets the workload list (S8-10)', async () => {
@@ -733,5 +775,50 @@ describe('OpenShiftSimulation', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('keeps spawnedRobotsByTarget in sync with the workload (APPENG-5810)', async () => {
+    mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
+
+    render(DeployOpenShift);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Spawn' }));
+
+    await waitFor(() => {
+      let stored: Record<string, string[]> = {};
+      spawnedRobotsByTarget.subscribe(v => (stored = v))();
+      expect(stored[ocTargetKey('sgahlot-pd-extn', 'ros2-jazzy-sim', 'ctx')]).toEqual(['robot_1']);
+    });
+  });
+
+  it('clears the cached diagnostics entry for a robot on spawn (APPENG-5810 stale-cache fix)', async () => {
+    mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
+
+    render(DeployOpenShift);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Spawn' }));
+
+    await waitFor(() => {
+      expect(mockClearCachedDiagnostics).toHaveBeenCalledWith(
+        ocTargetKey('sgahlot-pd-extn', 'ros2-jazzy-sim', 'ctx'),
+        'robot_1',
+      );
+    });
+  });
+
+  it('clears the cached diagnostics entry for a robot on remove (APPENG-5810 stale-cache fix)', async () => {
+    mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
+    mockListSpawnedRobotsInOpenShift.mockResolvedValue(['robot_1']);
+
+    render(DeployOpenShift);
+    await screen.findByText('robot_1');
+    mockClearCachedDiagnostics.mockClear();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+
+    await waitFor(() => {
+      expect(mockClearCachedDiagnostics).toHaveBeenCalledWith(
+        ocTargetKey('sgahlot-pd-extn', 'ros2-jazzy-sim', 'ctx'),
+        'robot_1',
+      );
+    });
   });
 });
