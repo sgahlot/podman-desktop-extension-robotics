@@ -78,7 +78,7 @@ let gpuToleration = DEFAULT_GPU_TOLERATION;
 let middleware = 'dds';
 /**
  * Hummingbird nginx companion sidecar (APPENG-6227), off by default. Adds a second
- * container (`quay.io/hummingbird/nginx`) to the pod reverse-proxying noVNC, to
+ * container (`registry.access.redhat.com/hi/nginx`) to the pod reverse-proxying noVNC, to
  * demonstrate the Hummingbird companion-image pattern live in this deployment.
  */
 let useHummingbirdSidecar = false;
@@ -803,8 +803,9 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
           Hummingbird nginx sidecar
         </label>
         <span class="text-xs pai-text-muted">
-          Adds a Hummingbird (<span class="font-mono">quay.io/hummingbird/nginx</span>) companion container to the pod,
-          reverse-proxying noVNC through it — demonstrates the Hummingbird companion pattern live in this deployment.
+          Adds a Hummingbird (<span class="font-mono">registry.access.redhat.com/hi/nginx</span>) companion container to
+          the pod, reverse-proxying noVNC through it — demonstrates the Hummingbird companion pattern live in this
+          deployment.
         </span>
       </div>
 
