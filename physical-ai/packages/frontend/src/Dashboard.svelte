@@ -177,20 +177,22 @@ onMount(async () => {
   <div class="flex flex-col gap-2">
     <h2 class="text-lg font-medium text-[var(--pd-content-header)]">Overview</h2>
     <div class="flex flex-row flex-wrap gap-4">
-      <div
-        class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 min-w-[10rem]">
+      <button
+        on:click={() => router.goto('/images')}
+        class="pai-card-interactive rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 min-w-[10rem] text-left cursor-pointer">
         <div class="text-2xl font-semibold text-[var(--pd-content-header)]">
           {localImagesLoaded ? localRos2ImageCount : '…'}
         </div>
         <div class="text-xs pai-text-muted mt-1">Local ROS 2 images</div>
-      </div>
-      <div
-        class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 min-w-[10rem]">
+      </button>
+      <button
+        on:click={() => router.goto('/simulation')}
+        class="pai-card-interactive rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 min-w-[10rem] text-left cursor-pointer">
         <div class="text-2xl font-semibold text-[var(--pd-content-header)]">
           {simCountLoaded ? runningSimCount : '…'}
         </div>
         <div class="text-xs pai-text-muted mt-1">Running simulations</div>
-      </div>
+      </button>
     </div>
   </div>
 

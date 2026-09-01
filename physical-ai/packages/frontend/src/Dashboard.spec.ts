@@ -179,4 +179,16 @@ describe('Dashboard', () => {
     await fireEvent.click(screen.getByText('Extension guide'));
     expect(mockGoto).toHaveBeenCalledWith('/help');
   });
+
+  it('navigates to Image Catalog when the local images metric tile is clicked', async () => {
+    render(Dashboard, { layout: 'sidebar' });
+    await fireEvent.click(screen.getByText('Local ROS 2 images'));
+    expect(mockGoto).toHaveBeenCalledWith('/images');
+  });
+
+  it('navigates to Simulation when the running simulations metric tile is clicked', async () => {
+    render(Dashboard, { layout: 'sidebar' });
+    await fireEvent.click(screen.getByText('Running simulations'));
+    expect(mockGoto).toHaveBeenCalledWith('/simulation');
+  });
 });
