@@ -348,4 +348,38 @@ describe('BuildHistoryPanel', () => {
     await vi.advanceTimersByTimeAsync(30_000);
     expect(mockGetBuildHistory).toHaveBeenCalledTimes(5);
   });
+
+  it('refreshAfterBuild(true) stops as soon as the newest entry gets its SBOM, without waiting out the full ceiling', async () => {
+    vi.useFakeTimers();
+    const withoutSbom: BuildHistoryEntry = {
+      tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
+      arch: 'arm64',
+      startedAt: 1,
+      durationMs: 3400,
+      success: true,
+    };
+    const withSbom: BuildHistoryEntry = { ...withoutSbom, sbomFormat: 'cyclonedx-json', sbomPackageCount: 2588 };
+    mockGetBuildHistory.mockResolvedValueOnce([withoutSbom]); // initial mount refresh
+    mockGetBuildHistory.mockResolvedValueOnce([withoutSbom]); // refreshAfterBuild's immediate refresh
+    mockGetBuildHistory.mockResolvedValueOnce([withoutSbom]); // 1st catch-up tick — syft still running
+    mockGetBuildHistory.mockResolvedValue([withSbom]); // 2nd catch-up tick — syft has attached it
+
+    const { component } = render(BuildHistoryPanel, {
+      props: { sbomWatchIntervalMs: 3000, sbomWatchDurationMs: 5 * 60_000 },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const watch = component.refreshAfterBuild(true);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(3000);
+    await watch;
+
+    expect(mockGetBuildHistory).toHaveBeenCalledTimes(4);
+    expect(await screen.findByRole('button', { name: /SBOM \(2588 components\)/ })).toBeTruthy();
+
+    // Well past the 5-minute ceiling — since it already stopped, no further calls.
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(mockGetBuildHistory).toHaveBeenCalledTimes(4);
+  });
 });

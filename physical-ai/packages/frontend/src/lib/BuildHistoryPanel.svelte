@@ -6,15 +6,18 @@ import { parseSbomPackageCount, sbomItemLabel } from '/@shared/src/types/BuildHi
 import { formatDurationSeconds } from './formatDuration';
 
 /**
- * Interval/duration for the bounded catch-up poll after a build that opted into SBOM
- * generation completes — `syft` runs asynchronously and can take tens of seconds after the
- * build itself is done (see PhysicalAiApiImpl#recordBuildHistory), so a single refresh
- * right at completion would usually show the build but miss its SBOM. Overridable for
- * tests. There is no continuous background poll (APPENG-6265) — history only refreshes on
- * mount and when a caller reports a build finished via refreshAfterBuild.
+ * Interval/ceiling for the catch-up poll after a build that opted into SBOM generation
+ * completes — `syft` runs asynchronously after the build itself is done (see
+ * PhysicalAiApiImpl#recordBuildHistory), so a single refresh right at completion would
+ * usually show the build but miss its SBOM. refreshAfterBuild stops as soon as the SBOM
+ * shows up, so sbomWatchDurationMs is a worst-case ceiling, not a typical wait — but it
+ * still needs real headroom: confirmed live on a real 2588-package robotics image that 60s
+ * was NOT enough (syft was still running), so this defaults well above that. Overridable
+ * for tests. There is no continuous background poll (APPENG-6265) — history only refreshes
+ * on mount and when a caller reports a build finished via refreshAfterBuild.
  */
 export let sbomWatchIntervalMs = 3000;
-export let sbomWatchDurationMs = 60_000;
+export let sbomWatchDurationMs = 5 * 60_000;
 
 let history: BuildHistoryEntry[] = [];
 let destroyed = false;
@@ -64,10 +67,13 @@ export async function refresh(): Promise<void> {
 
 /**
  * Called by a parent when one of its own build panels just finished — refreshes once
- * immediately, then (only when `watchForSbom` is true) keeps refreshing on a bounded
- * interval until `sbomWatchDurationMs` elapses, to pick up the SBOM once `syft` finishes
- * attaching it. Bounded rather than indefinite: once the window passes we stop regardless
- * of whether the SBOM showed up, matching the backend's own "best-effort, never blocks"
+ * immediately, then (only when `watchForSbom` is true) keeps refreshing on an interval
+ * until either the just-completed build's SBOM shows up or `sbomWatchDurationMs` elapses,
+ * whichever comes first. The newest entry (history[0]) is treated as "the build that just
+ * completed" — a reasonable assumption since only one build can run at a time — so we stop
+ * polling the moment ITS sbomFormat appears, rather than always waiting out the full
+ * ceiling. If it never appears (a slow or failed syft run), the ceiling still bounds this
+ * rather than polling indefinitely, matching the backend's own "best-effort, never blocks"
  * treatment of SBOM generation.
  */
 export async function refreshAfterBuild(watchForSbom = false): Promise<void> {
@@ -75,7 +81,7 @@ export async function refreshAfterBuild(watchForSbom = false): Promise<void> {
   if (!watchForSbom) return;
 
   const deadline = Date.now() + sbomWatchDurationMs;
-  while (!destroyed && Date.now() < deadline) {
+  while (!destroyed && !history[0]?.sbomFormat && Date.now() < deadline) {
     await new Promise(resolve => setTimeout(resolve, sbomWatchIntervalMs));
     if (destroyed) return;
     await refresh();
