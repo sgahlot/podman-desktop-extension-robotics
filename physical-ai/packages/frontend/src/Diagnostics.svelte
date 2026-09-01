@@ -188,7 +188,14 @@ async function fetchOcWorkloads(explicit?: string): Promise<void> {
   if (explicit) {
     if (!workloads.some(w => w.name === explicit)) {
       workloads = [
-        { name: explicit, namespace: ocNamespace, replicas: 0, readyReplicas: 0, ready: false },
+        {
+          name: explicit,
+          namespace: ocNamespace,
+          replicas: 0,
+          readyReplicas: 0,
+          ready: false,
+          hasHummingbirdSidecar: false,
+        },
         ...workloads,
       ];
     }

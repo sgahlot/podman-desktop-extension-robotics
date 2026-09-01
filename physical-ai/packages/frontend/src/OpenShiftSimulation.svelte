@@ -76,6 +76,12 @@ let gpuToleration = DEFAULT_GPU_TOLERATION;
  * in the deployed pod's env (see manifests.ts); anything else keeps the DDS default.
  */
 let middleware = 'dds';
+/**
+ * Hummingbird nginx companion sidecar (APPENG-6227), off by default. Adds a second
+ * container (`registry.access.redhat.com/hi/nginx`) to the pod reverse-proxying noVNC, to
+ * demonstrate the Hummingbird companion-image pattern live in this deployment.
+ */
+let useHummingbirdSidecar = false;
 
 let previewYaml = '';
 let previewBusy = false;
@@ -87,6 +93,12 @@ let deployError = '';
 let deployResult: OpenShiftDeployResult | null = null;
 /** Name the current deployResult refers to, so we can drop the panel when it's deleted. */
 let deployedName = '';
+/**
+ * Feedback for each workload's "copy curl command" button (APPENG-6227), keyed by workload
+ * name since the persistent "Deployed simulations" list can show several at once — mirrors
+ * BuildHistoryPanel's per-entry copy feedback pattern.
+ */
+let curlCopyFeedback: Record<string, string> = {};
 
 let workloads: OpenShiftWorkload[] = [];
 let listBusy = false;
@@ -126,6 +138,7 @@ $: config = {
   gpuToleration: useGpu ? gpuToleration : undefined,
   context: selectedContext || undefined,
   middleware,
+  useHummingbirdSidecar,
 };
 $: canDeploy = !!context && !!name && !!namespace && !!image && !deploying && loggedIn;
 /** Keep the shared last-used-OpenShift-target store in sync — covers every mutation
@@ -358,6 +371,24 @@ async function openRoute(url: string | undefined) {
     await physicalAiClient.openUrlInBrowser(url);
   } catch (e) {
     listError = e instanceof Error ? e.message : 'Failed to open route';
+  }
+}
+
+/**
+ * Copies a `curl -I <route>` command that shows `server: nginx/...` in the response —
+ * proof the Hummingbird nginx sidecar (APPENG-6227) is fronting traffic, for the user to
+ * run themselves. Uses the extension's clipboard RPC, not navigator.clipboard.writeText,
+ * which silently no-ops in this webview (see BuildHistoryPanel).
+ */
+async function copyCurlCommand(workloadName: string, url: string): Promise<void> {
+  try {
+    await physicalAiClient.copyToClipboard(`curl -I ${url}`);
+    curlCopyFeedback = { ...curlCopyFeedback, [workloadName]: 'Copied' };
+    setTimeout(() => {
+      curlCopyFeedback = { ...curlCopyFeedback, [workloadName]: '' };
+    }, 1500);
+  } catch {
+    curlCopyFeedback = { ...curlCopyFeedback, [workloadName]: 'Copy failed' };
   }
 }
 
@@ -767,6 +798,18 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
       {/if}
 
       <div class="flex flex-col gap-1">
+        <label class="flex flex-row items-center gap-2 text-sm text-[var(--pd-content-text)]">
+          <input type="checkbox" bind:checked={useHummingbirdSidecar} disabled={deploying} />
+          Hummingbird nginx sidecar
+        </label>
+        <span class="text-xs pai-text-muted">
+          Adds a Hummingbird (<span class="font-mono">registry.access.redhat.com/hi/nginx</span>) companion container to
+          the pod, reverse-proxying noVNC through it — demonstrates the Hummingbird companion pattern live in this
+          deployment.
+        </span>
+      </div>
+
+      <div class="flex flex-col gap-1">
         <label for="dep-cpu" class="text-xs text-[var(--pd-content-text)]">Software-render CPUs</label>
         <input
           id="dep-cpu"
@@ -901,6 +944,29 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
                 <span class="text-xs pai-text-muted">Route admitted; waiting for the pod to be ready…</span>
               {:else}
                 <span class="text-xs pai-text-muted">Route not admitted yet.</span>
+              {/if}
+
+              {#if w.hasHummingbirdSidecar && w.routeUrl}
+                <!-- Read live from the Deployment's own container list (APPENG-6227), not
+                     remembered from whatever the deploy form checkbox was set to — so this
+                     shows up correctly even for a workload deployed in an earlier session. -->
+                <div class="mt-1 pt-2 border-t border-[var(--pd-content-card-border)] flex flex-col gap-1.5">
+                  <div class="text-xs font-medium text-[var(--pd-content-header)]">Verify the Hummingbird sidecar</div>
+                  <div class="text-xs pai-text-muted">
+                    Run this in a terminal, then check the response headers for
+                    <span class="font-mono font-bold text-[var(--pd-content-header)]">server: nginx</span> — that confirms
+                    the Hummingbird nginx sidecar (not noVNC directly) is fronting traffic.
+                  </div>
+                  <div class="flex flex-row items-center gap-2">
+                    <pre
+                      class="flex-1 min-w-0 text-xs font-mono p-2 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] overflow-auto whitespace-pre">curl -I {w.routeUrl}</pre>
+                    <button
+                      on:click={() => copyCurlCommand(w.name, w.routeUrl ?? '')}
+                      class="pai-btn pai-btn-sm text-xs shrink-0">
+                      {curlCopyFeedback[w.name] || 'Copy'}
+                    </button>
+                  </div>
+                </div>
               {/if}
 
               <!-- In-cluster robot spawn + Nav2 -->

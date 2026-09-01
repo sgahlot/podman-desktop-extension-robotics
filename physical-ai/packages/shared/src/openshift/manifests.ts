@@ -11,6 +11,31 @@ import type { OpenShiftDeployConfig } from '../types/OpenShiftDeploy';
 /** noVNC port baked into the simulation image (matches the Containerfile EXPOSE). */
 export const NOVNC_CONTAINER_PORT = 6080;
 
+/**
+ * Hummingbird nginx companion image (APPENG-6227), reverse-proxying noVNC when enabled.
+ * `registry.access.redhat.com` is Red Hat's public, unauthenticated distribution registry
+ * for this image (confirmed with a live `podman pull`, no credentials needed) — the
+ * canonical path a partner/customer would actually be told to pull, rather than the
+ * project's `quay.io/hummingbird/` working namespace (same image content either way).
+ */
+export const HUMMINGBIRD_NGINX_IMAGE = 'registry.access.redhat.com/hi/nginx:latest';
+
+/**
+ * Port the Hummingbird nginx sidecar listens on inside the pod. Deliberately not 8080:
+ * the sim image already runs a `python3 -m http.server 8080` companion dashboard
+ * (baked in via APPENG-6226), and sidecar containers share the pod's network
+ * namespace, so 8080 is already taken — confirmed live (nginx crash-looped with
+ * "Address already in use" against that process) before landing on 9080.
+ */
+export const HUMMINGBIRD_NGINX_CONTAINER_PORT = 9080;
+
+/**
+ * Container name for the Hummingbird nginx sidecar — also used by listOpenShiftDeployments()
+ * to detect whether a live Deployment has the sidecar, since the Deployment's own container
+ * list is the source of truth (no separate "did the user check the box" state to keep in sync).
+ */
+export const HUMMINGBIRD_NGINX_CONTAINER_NAME = 'hummingbird-nginx';
+
 /** Label marking resources this extension manages, used for list/delete. */
 export const PART_OF_LABEL = 'app.kubernetes.io/part-of';
 export const PART_OF_VALUE = 'physical-ai';
@@ -133,15 +158,47 @@ export function parseGpuToleration(raw: string): KubeToleration {
 }
 
 /**
- * Build the [Deployment, Service, Route] objects for a single simulation pod.
- * Software (llvmpipe + headless EGL) rendering by default; when `config.useGpu`
- * is set the pod requests an NVIDIA GPU and the entrypoint uses hardware rendering.
+ * nginx server block reverse-proxying noVNC's WebSocket connection. Assumes the
+ * Hummingbird nginx image tracks the standard nginx image's config layout
+ * (`/etc/nginx/conf.d/default.conf`); the long `proxy_read_timeout` mirrors the
+ * Route's `haproxy.router.openshift.io/timeout` rationale below — noVNC is a
+ * long-lived connection that a default proxy timeout would sever mid-session.
+ * Proxies to `127.0.0.1` rather than `localhost`: confirmed live that nginx
+ * resolves `localhost` to `::1` first, and `websockify` only binds IPv4, so
+ * every request logged a "Connection refused" before nginx's automatic
+ * upstream retry silently fell back to the working IPv4 address.
+ */
+function hummingbirdNginxConf(novncPort: number): string {
+  return [
+    'server {',
+    `    listen ${HUMMINGBIRD_NGINX_CONTAINER_PORT};`,
+    '    location / {',
+    `        proxy_pass http://127.0.0.1:${novncPort};`,
+    '        proxy_http_version 1.1;',
+    '        proxy_set_header Upgrade $http_upgrade;',
+    '        proxy_set_header Connection "upgrade";',
+    '        proxy_set_header Host $host;',
+    '        proxy_read_timeout 3600s;',
+    '    }',
+    '}',
+    '',
+  ].join('\n');
+}
+
+/**
+ * Build the manifest objects for a single simulation pod: `[Deployment, Service, Route]`,
+ * or `[ConfigMap, Deployment, Service, Route]` when `config.useHummingbirdSidecar` adds the
+ * Hummingbird nginx companion container (APPENG-6227). Software (llvmpipe + headless EGL)
+ * rendering by default; when `config.useGpu` is set the pod requests an NVIDIA GPU and the
+ * entrypoint uses hardware rendering.
  */
 export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<string, unknown>[] {
   const name = assertK8sName(config.name, 'deployment name');
   const namespace = assertNamespace(config.namespace);
   const image = assertImageRef(config.image);
   const useGpu = config.useGpu === true;
+  const useHummingbirdSidecar = config.useHummingbirdSidecar === true;
+  const nginxConfigMapName = `${name}-hummingbird-nginx-conf`;
 
   const labels = {
     app: name,
@@ -191,6 +248,44 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
   // don't want a GPU node, so no toleration there.
   const tolerations = useGpu ? [parseGpuToleration(config.gpuToleration ?? DEFAULT_GPU_TOLERATION)] : undefined;
 
+  // Hummingbird nginx sidecar (APPENG-6227): a second container in the same pod,
+  // reverse-proxying noVNC over localhost (sidecar containers share the pod's
+  // network namespace). Demonstrates the Hummingbird companion-image pattern
+  // live in a real deployment; the Service then targets nginx's port instead of
+  // the sim container's, while its own external port/name stay unchanged.
+  const configMap = useHummingbirdSidecar
+    ? {
+        apiVersion: 'v1',
+        kind: 'ConfigMap',
+        metadata: { name: nginxConfigMapName, namespace, labels },
+        data: { 'default.conf': hummingbirdNginxConf(NOVNC_CONTAINER_PORT) },
+      }
+    : undefined;
+
+  const hummingbirdContainer = {
+    name: HUMMINGBIRD_NGINX_CONTAINER_NAME,
+    image: HUMMINGBIRD_NGINX_IMAGE,
+    imagePullPolicy: 'Always',
+    ports: [{ name: 'hummingbird', containerPort: HUMMINGBIRD_NGINX_CONTAINER_PORT }],
+    volumeMounts: [
+      {
+        name: 'hummingbird-nginx-conf',
+        mountPath: '/etc/nginx/conf.d/default.conf',
+        subPath: 'default.conf',
+      },
+    ],
+    resources: {
+      requests: { cpu: '50m', memory: '32Mi' },
+      limits: { cpu: '200m', memory: '64Mi' },
+    },
+    readinessProbe: {
+      tcpSocket: { port: HUMMINGBIRD_NGINX_CONTAINER_PORT },
+      initialDelaySeconds: 5,
+      periodSeconds: 10,
+      failureThreshold: 6,
+    },
+  };
+
   const deployment = {
     apiVersion: 'apps/v1',
     kind: 'Deployment',
@@ -224,7 +319,11 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
                 failureThreshold: 12,
               },
             },
+            ...(useHummingbirdSidecar ? [hummingbirdContainer] : []),
           ],
+          ...(useHummingbirdSidecar
+            ? { volumes: [{ name: 'hummingbird-nginx-conf', configMap: { name: nginxConfigMapName } }] }
+            : {}),
         },
       },
     },
@@ -236,7 +335,13 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
     metadata: { name, namespace, labels },
     spec: {
       selector: { app: name },
-      ports: [{ name: 'novnc', port: NOVNC_CONTAINER_PORT, targetPort: NOVNC_CONTAINER_PORT }],
+      ports: [
+        {
+          name: 'novnc',
+          port: NOVNC_CONTAINER_PORT,
+          targetPort: useHummingbirdSidecar ? HUMMINGBIRD_NGINX_CONTAINER_PORT : NOVNC_CONTAINER_PORT,
+        },
+      ],
     },
   };
 
@@ -258,7 +363,7 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
     },
   };
 
-  return [deployment, service, route];
+  return configMap ? [configMap, deployment, service, route] : [deployment, service, route];
 }
 
 // --- Minimal YAML emitter (block style) for the preview only -------------------

@@ -49,6 +49,14 @@ export interface OpenShiftDeployConfig {
    * the sim. Undefined/anything else keeps today's DDS default.
    */
   middleware?: string;
+  /**
+   * When true (APPENG-6227), adds a Hummingbird nginx companion container
+   * (`registry.access.redhat.com/hi/nginx`) to the pod as a reverse proxy in front of noVNC —
+   * demonstrating the Hummingbird companion-image pattern live in this deployment.
+   * Default/undefined = off: the Service reaches the sim container's noVNC port
+   * directly, unchanged from today's behavior.
+   */
+  useHummingbirdSidecar?: boolean;
 }
 
 export interface OpenShiftDeployResult {
@@ -88,4 +96,11 @@ export interface OpenShiftWorkload {
   ready: boolean;
   routeUrl?: string;
   image?: string;
+  /**
+   * Whether this Deployment's pod currently has the Hummingbird nginx sidecar container
+   * (APPENG-6227) — read live from the Deployment's own container list, not remembered
+   * from whatever the deploy form's checkbox was set to at deploy time, so it stays
+   * correct across extension restarts and reflects the cluster's actual current state.
+   */
+  hasHummingbirdSidecar: boolean;
 }

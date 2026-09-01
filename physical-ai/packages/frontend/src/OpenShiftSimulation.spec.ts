@@ -28,6 +28,7 @@ const mockGetRobotWarmStatusInOpenShift = vi.fn();
 const mockListSpawnedRobotsInOpenShift = vi.fn();
 const mockDespawnRobotInOpenShift = vi.fn();
 const mockOpenUrlInBrowser = vi.fn();
+const mockCopyToClipboard = vi.fn();
 const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
@@ -44,6 +45,7 @@ vi.mock('./api/client', () => ({
     listOpenShiftDeployments: (...args: unknown[]) => mockListOpenShiftDeployments(...args),
     deployToOpenShift: (...args: unknown[]) => mockDeployToOpenShift(...args),
     deleteOpenShiftDeployment: (...args: unknown[]) => mockDeleteOpenShiftDeployment(...args),
+    copyToClipboard: (...args: unknown[]) => mockCopyToClipboard(...args),
     spawnRobotInOpenShift: (...args: unknown[]) => mockSpawnRobotInOpenShift(...args),
     sendOpenShiftNavigationGoal: (...args: unknown[]) => mockSendOpenShiftNavigationGoal(...args),
     getRobotWarmStatusInOpenShift: (...args: unknown[]) => mockGetRobotWarmStatusInOpenShift(...args),
@@ -65,6 +67,7 @@ const READY_WORKLOAD = {
   ready: true,
   image: 'quay.io/ns/ros2-jazzy-sim:noble-amd64',
   routeUrl: 'https://host.apps.example.com',
+  hasHummingbirdSidecar: false,
 };
 
 describe('OpenShiftSimulation', () => {
@@ -95,6 +98,7 @@ describe('OpenShiftSimulation', () => {
     mockListSpawnedRobotsInOpenShift.mockResolvedValue([]);
     mockDespawnRobotInOpenShift.mockResolvedValue(undefined);
     mockOpenUrlInBrowser.mockResolvedValue(undefined);
+    mockCopyToClipboard.mockResolvedValue(undefined);
   });
 
   it('renders the deployed-simulations section', async () => {
@@ -197,6 +201,79 @@ describe('OpenShiftSimulation', () => {
 
     await waitFor(() => {
       expect(mockDeployToOpenShift).toHaveBeenCalledWith(expect.objectContaining({ middleware: 'dds' }));
+    });
+  });
+
+  it('deploys with the Hummingbird nginx sidecar off by default', async () => {
+    mockDeployToOpenShift.mockResolvedValue({
+      name: 'ros2-jazzy-sim',
+      namespace: 'sgahlot-pd-extn',
+      applied: ['Deployment', 'Service', 'Route'],
+      message: 'Deployed',
+    });
+    render(DeployOpenShift);
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
+
+    await waitFor(() => {
+      expect(mockDeployToOpenShift).toHaveBeenCalledWith(expect.objectContaining({ useHummingbirdSidecar: false }));
+    });
+  });
+
+  it('passes useHummingbirdSidecar true when the Hummingbird sidecar checkbox is ticked', async () => {
+    mockDeployToOpenShift.mockResolvedValue({
+      name: 'ros2-jazzy-sim',
+      namespace: 'sgahlot-pd-extn',
+      applied: ['ConfigMap', 'Deployment', 'Service', 'Route'],
+      message: 'Deployed',
+    });
+    render(DeployOpenShift);
+
+    await fireEvent.click(await screen.findByRole('checkbox', { name: /Hummingbird nginx sidecar/ }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+
+    await waitFor(() => {
+      expect(mockDeployToOpenShift).toHaveBeenCalledWith(expect.objectContaining({ useHummingbirdSidecar: true }));
+    });
+  });
+
+  describe('Hummingbird sidecar verify command (APPENG-6227)', () => {
+    const ROUTE_URL = 'https://route.example.com';
+
+    it('shows the copy command for an already-deployed workload, without deploying in this session', async () => {
+      // The key case this covers: a user who just navigates to Simulation → OpenShift, with
+      // the sim already deployed from an earlier session — hasHummingbirdSidecar is read live
+      // from the Deployment's own container list, not from any session-local deploy state.
+      mockListOpenShiftDeployments.mockResolvedValue([
+        { ...READY_WORKLOAD, routeUrl: ROUTE_URL, hasHummingbirdSidecar: true },
+      ]);
+
+      render(DeployOpenShift);
+
+      await screen.findByText('Verify the Hummingbird sidecar');
+      expect(screen.getByRole('button', { name: 'Copy' })).toBeTruthy();
+    });
+
+    it('does not show the copy command for a workload without the sidecar', async () => {
+      mockListOpenShiftDeployments.mockResolvedValue([{ ...READY_WORKLOAD, routeUrl: ROUTE_URL }]);
+
+      render(DeployOpenShift);
+
+      await screen.findByText(ROUTE_URL, { exact: false });
+      expect(screen.queryByText('Verify the Hummingbird sidecar')).toBeNull();
+    });
+
+    it('copies the curl command via the extension clipboard RPC', async () => {
+      mockListOpenShiftDeployments.mockResolvedValue([
+        { ...READY_WORKLOAD, routeUrl: ROUTE_URL, hasHummingbirdSidecar: true },
+      ]);
+      render(DeployOpenShift);
+
+      await fireEvent.click(await screen.findByRole('button', { name: 'Copy' }));
+
+      await waitFor(() => {
+        expect(mockCopyToClipboard).toHaveBeenCalledWith(`curl -I ${ROUTE_URL}`);
+      });
     });
   });
 

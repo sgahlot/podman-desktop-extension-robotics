@@ -38,6 +38,7 @@ import {
   DEFAULT_SW_RENDER_CPU,
   PART_OF_LABEL,
   PART_OF_VALUE,
+  HUMMINGBIRD_NGINX_CONTAINER_NAME,
 } from '/@shared/src/openshift/manifests';
 import { readFile, writeFile, mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -2350,6 +2351,28 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     // picked a different cluster from the dropdown; falls back to today's behavior.
     const targetContext = config.context ?? ctx.context;
 
+    // extensionApi.kubernetes.createResources() re-applies an already-existing Deployment
+    // or Service correctly, but leaves an already-existing ConfigMap untouched (confirmed
+    // live against a real OpenShift cluster — APPENG-6227): a redeploy with changed
+    // Hummingbird nginx proxy config would silently keep serving the stale config. Delete
+    // any prior ConfigMap for this deployment first so it's always created fresh.
+    const configMap = manifests.find(m => m.kind === 'ConfigMap') as
+      { metadata?: { name?: string; namespace?: string } } | undefined;
+    if (configMap?.metadata?.name && configMap.metadata.namespace) {
+      const contextArgs = config.context ? ['--context', config.context] : [];
+      await extensionApi.process
+        .exec('oc', [
+          ...contextArgs,
+          'delete',
+          'configmap',
+          configMap.metadata.name,
+          '-n',
+          configMap.metadata.namespace,
+          '--ignore-not-found',
+        ])
+        .catch(() => undefined);
+    }
+
     await extensionApi.kubernetes.createResources(targetContext, manifests);
 
     const routeUrl = await this.#readRouteUrl(config.namespace, config.name, config.context);
@@ -2398,14 +2421,19 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     for (const raw of items) {
       const d = raw as {
         metadata?: { name?: string };
-        spec?: { replicas?: number; template?: { spec?: { containers?: Array<{ image?: string }> } } };
+        spec?: {
+          replicas?: number;
+          template?: { spec?: { containers?: Array<{ name?: string; image?: string }> } };
+        };
         status?: { readyReplicas?: number };
       };
       const name = d.metadata?.name;
       if (!name) continue;
       const replicas = d.spec?.replicas ?? 0;
       const readyReplicas = d.status?.readyReplicas ?? 0;
-      const image = d.spec?.template?.spec?.containers?.[0]?.image;
+      const containers = d.spec?.template?.spec?.containers ?? [];
+      const image = containers[0]?.image;
+      const hasHummingbirdSidecar = containers.some(c => c.name === HUMMINGBIRD_NGINX_CONTAINER_NAME);
       const routeUrl = await this.#readRouteUrl(ns, name, context);
       workloads.push({
         name,
@@ -2415,6 +2443,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         ready: replicas > 0 && readyReplicas >= replicas,
         image,
         routeUrl,
+        hasHummingbirdSidecar,
       });
     }
     return workloads;
@@ -2425,11 +2454,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const safeName = assertK8sName(name, 'name');
     try {
       const contextArgs = context ? ['--context', context] : [];
+      // Selector-based (not name-based) so it also sweeps the Hummingbird nginx sidecar's
+      // ConfigMap (APPENG-6227), which is named `<name>-hummingbird-nginx-conf` rather than
+      // `<name>` but carries the same `app` label as the other three resources.
       await extensionApi.process.exec('oc', [
         ...contextArgs,
         'delete',
-        'deployment,service,route',
-        safeName,
+        'deployment,service,route,configmap',
+        '-l',
+        `app=${safeName}`,
         '-n',
         ns,
         '--ignore-not-found',
