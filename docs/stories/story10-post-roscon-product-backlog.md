@@ -29,6 +29,8 @@
 - [S10-11 — CLI: menu-driven help with no arguments (folds into S9-4)](#s10-11)
 - [S10-12 — Telemetry & richer metrics (OTEL / Prometheus)](#s10-12)
 - [S10-13 — Hybrid topology: local robot + in-cluster simulation & inference](#s10-13)
+- [S10-14 — Local Hummingbird nginx sidecar (Podman multi-container)](#s10-14)
+- [S10-15 — Hummingbird showcase expansion: registry-path audit & additional tools](#s10-15)
 - [Tracking: where each item currently lives](#tracking)
 
 ## Method
@@ -427,6 +429,135 @@ proven.
 
 ---
 
+<a id="s10-14"></a>
+
+## S10-14 — Local Hummingbird nginx sidecar (Podman multi-container)
+
+**Ask:** extend APPENG-6227's Hummingbird nginx sidecar (currently OpenShift-only) to the
+local (Podman Desktop) simulation launch path as well.
+
+**Findings (2026-09-01, verified in code):**
+- Local sim launch (`launchSimulation`, `packages/backend/src/api-impl.ts:1035-1088`) is a
+  single `containerEngine.createContainer` + `startContainer` call — no pod, network, or
+  Compose involved. noVNC port 6080 is published directly host→container 1:1
+  (`HostConfig.PortBindings`, line 1069-1071).
+- **This is not blocked on a missing SDK capability, only on wiring.** The
+  `@podman-desktop/api` package we already depend on exposes both
+  `containerEngine.createNetwork(...)` and `containerEngine.createPod(...)` — confirmed
+  present in the type defs, and confirmed **unused anywhere in this codebase today** (zero
+  grep hits outside `node_modules`). Story 9's S9-2 write-up assumed local support needed
+  APPENG-5774's full multi-container/Compose orchestration first; that's true for *general*
+  N-robot orchestration, but this narrow, fixed-shape case (exactly 2 containers, fixed
+  roles: sim + nginx) doesn't need that generality.
+- **Two feasible approaches, with a real tradeoff:**
+  1. **Podman pod** (`createPod`, then attach both containers via `ContainerCreateOptions.pod`)
+     — shares one network namespace across pod members, exactly like an OpenShift pod.
+     nginx keeps proxying to `127.0.0.1:6080`, reusing the *same* generated nginx config we
+     already built for OpenShift — no config fork needed.
+  2. **Podman user-defined network** (`createNetwork` + `HostConfig.NetworkMode` /
+     `NetworkConfig.EndpointsConfig` joining both containers) — matches Red Hat's own
+     documented "Configuring Cross-container Networking" recipe for this exact image
+     (`podman network create`, then `--network <name>` on both `podman run`s, reachable by
+     container name). Containers do **not** share localhost here, so nginx's `proxy_pass`
+     would need to target `http://<sim-container-name>:6080` instead of `127.0.0.1:6080` —
+     a genuine config difference between the local and OpenShift paths.
+- **Real follow-on work either way** (roughly the same order of magnitude as the OpenShift
+  side already shipped in APPENG-6227, not a trivial add-on):
+  - `LocalSimulation.svelte`'s noVNC URL today comes from a direct host-port lookup against
+    the *sim* container's own published ports (`hostPortForPrivate`,
+    `packages/frontend/src/LocalSimulation.svelte:56-64`, resolved via
+    `api-impl.ts:1195-1198`). With nginx as the entry point, this needs to resolve nginx's
+    published port instead.
+  - Teardown only knows about one container ID today — `stopSimulation`
+    (`api-impl.ts:1105-1108`) and `deleteSimulation` (`api-impl.ts:1110-1125`) would need
+    extending to also stop/remove the sidecar container and the pod/network.
+
+**Effort:** small-to-medium, self-contained — does not need to wait on APPENG-5774.
+
+**Recommendation:** worth a dedicated sub-task under Story APPENG-6225 (same parent as
+APPENG-6227) rather than deferring to APPENG-5774. Prefer the **pod approach** (1) over the
+network-join approach (2): it reuses the OpenShift-side nginx config verbatim instead of
+forking it per deployment target.
+
+---
+
+<a id="s10-15"></a>
+
+## S10-15 — Hummingbird showcase expansion: registry-path audit & additional tools
+
+**Ask:** (1) audit whether other `quay.io/hummingbird/*` references in the extension should
+move to the public `registry.access.redhat.com/hi/*` path, the way APPENG-6227 did for the
+OpenShift nginx sidecar; (2) research what else could be bundled to further showcase the
+Hummingbird pattern, and whether Red Hat's own guidance prefers sidecar/companion-style use
+over baking a tool's binary into another image (or vice versa).
+
+**Findings — `quay.io` vs `registry.access.redhat.com` (2026-09-01):**
+- For `nginx`: confirmed identical image content from both registries (matching
+  Entrypoint/CMD/User/labels/source repo — same Konflux CI pipeline, same
+  `gitlab.com/redhat/hummingbird/containers` source), and `registry.access.redhat.com/hi/nginx:latest`
+  pulls with **zero authentication** (`podman pull`, no gate) — this is what APPENG-6227
+  switched to for the OpenShift sidecar.
+- The Layers wizard's `hummingbirdImageRef()` (`packages/shared/src/types/layerCompatibility.ts:88-90`)
+  still hardcodes `quay.io/hummingbird/${app}:latest` for **every** Hummingbird tool/companion
+  option (`jq`, `kubectl`, `helm`, `cosign`, `curl`, `nginx`, `syft`, etc.) — none of the
+  others have been switched. Very likely equivalent to nginx's case (same pipeline/source),
+  but **do not assume** — verify each with a live unauthenticated pull before switching, the
+  same way nginx was verified, since not every Hummingbird app is guaranteed to exist under
+  the same tag on `registry.access.redhat.com` yet.
+- **The SBOM/Syft case is not a simple one-line swap.** The Layers wizard's "Syft" tool
+  bakes syft's binary into the user's *own* built image
+  (`COPY --from=quay.io/hummingbird/syft:latest`, `layerCompatibility.ts:172-177`), and the
+  actual SBOM-generation backend (`packages/backend/src/api-impl.ts:667-686`) then runs
+  `podman run --rm <built-image-tag> syft dir:/ -o <format> --select-catalogers -file` — i.e.
+  it execs the *baked-in* binary from inside the user's own image; no dedicated syft image is
+  pulled/run at scan time. Two options of very different size:
+  - **Small:** just repoint the `COPY --from` source to `registry.access.redhat.com/hi/syft:latest`,
+    keeping today's architecture unchanged.
+  - **Larger:** adopt Red Hat's own documented pattern instead —
+    `podman run --rm registry.access.redhat.com/hi/syft:latest <target-image-ref> --output <format>`,
+    syft as its own external container scanning *any* image (built or pulled) from the
+    outside. This would decouple SBOM generation entirely from the Layers wizard's "did you
+    check the Syft box" gate — arguably a better design — but is a genuine redesign of
+    `#generateSbom`, its gating in `buildFromContainerfile`, and several tests.
+
+**Findings — Red Hat's documented bundling guidance (sidecar vs. tool-copy vs. base-image):**
+- Both patterns our own code already distinguishes (`companion` = run as its own container;
+  `tool` = binary copied in) are **explicitly documented and treated as equally valid** by
+  Red Hat — not one recommended over the other. The "Build and deploy secure minimal
+  containers with Red Hat Hardened Images" guide names two workflows: *"running containerized
+  tools"* (standalone execution — our companion/sidecar analog) and *"building custom
+  application images"* (multi-stage `COPY --from`, our tool analog — with a `-builder` →
+  `core-runtime` two-stage example). Red Hat's only prescriptive steer found was
+  Hardened-Images-vs-UBI production suitability, not sidecar-vs-tool.
+  > **Caveat:** docs.redhat.com blocked direct fetch (HTTP 403) on the primary pages during
+  > this research; the above is reconstructed from search-indexed snippets, not a confirmed
+  > verbatim quote — verify against the live page (or its PDF) before quoting externally.
+- Catalog survey (images.redhat.com is a JS SPA that couldn't be directly fetched/rendered;
+  findings below are from indexed snippets only, not a rendered page): confirmed categories
+  beyond nginx/syft — Python, Node.js, Go, Java, .NET runtimes; PostgreSQL, Valkey; HAProxy;
+  curl; `-builder`/`core-runtime` base-image variants. "Over 45 images spanning 150+ variants"
+  per Red Hat's own announcement. **No robotics/ROS images exist or are expected.** cosign
+  itself doesn't appear to be a cataloged Hardened Image (no `hi/cosign` path found) — it's
+  the *verification tool* used against other Hardened Images
+  (`cosign verify --key ... registry.access.redhat.com/hi/<image>:<tag>`), distinct from the
+  unrelated RHTAS Cosign image on Red Hat's main Ecosystem Catalog — don't conflate the two.
+
+**Showcase ideas surfaced (not yet scoped or sized):**
+- A **"Verify Build"** action in the extension — run `cosign verify` against the deployed
+  Hummingbird sidecar image (or the user's own built image, if based on a Hardened Image) and
+  show the result. Demonstrates the security/provenance angle distinct from the SBOM feature
+  already shipped.
+- Redesigning SBOM generation to run syft externally against *any* image (built or pulled)
+  rather than gating it behind the Layers wizard's "Syft" checkbox (see the "larger" option
+  above).
+- A Hardened-Images-as-base-image example (`-builder` → minimal-runtime multi-stage pattern)
+  in the Layers wizard — distinct from today's tool-binary-copy pattern.
+
+**Effort:** research/analysis only so far, no implementation. Each idea above needs its own
+sizing before committing.
+
+---
+
 <a id="tracking"></a>
 
 ## Tracking: where each item currently lives
@@ -449,3 +580,5 @@ under an existing Story, a direct small commit, or a dedicated new doc.
 | S10-11 | CLI menu-driven help | Design requirement | Folds into [story9-platform-exploration.md](story9-platform-exploration.md), S9-4 |
 | S10-12 | Telemetry & richer metrics (OTEL/Prometheus) | Feature (2 threads: usage telemetry + runtime metrics) | This doc |
 | S10-13 | Hybrid local robot + in-cluster sim/inference | Feature (research/spike; 2 large pieces) | This doc |
+| S10-14 | Local Hummingbird nginx sidecar (Podman multi-container) | Feature | This doc |
+| S10-15 | Hummingbird showcase expansion: registry-path audit & tools | Research | This doc |
