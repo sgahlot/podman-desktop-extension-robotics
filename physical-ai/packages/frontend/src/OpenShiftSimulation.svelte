@@ -949,11 +949,22 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
                 <!-- Read live from the Deployment's own container list (APPENG-6227), not
                      remembered from whatever the deploy form checkbox was set to — so this
                      shows up correctly even for a workload deployed in an earlier session. -->
-                <div class="flex flex-row items-center gap-2">
-                  <span class="text-xs opacity-80">Verify the Hummingbird sidecar is fronting traffic:</span>
-                  <button on:click={() => copyCurlCommand(w.name, w.routeUrl ?? '')} class="pai-btn pai-btn-sm text-xs">
-                    {curlCopyFeedback[w.name] || 'Copy curl -I command'}
-                  </button>
+                <div class="mt-1 pt-2 border-t border-[var(--pd-content-card-border)] flex flex-col gap-1.5">
+                  <div class="text-xs font-medium text-[var(--pd-content-header)]">Verify the Hummingbird sidecar</div>
+                  <div class="text-xs pai-text-muted">
+                    Run this in a terminal, then check the response headers for
+                    <span class="font-mono">server: nginx</span> — that confirms the Hummingbird nginx sidecar (not noVNC
+                    directly) is fronting traffic.
+                  </div>
+                  <div class="flex flex-row items-center gap-2">
+                    <pre
+                      class="flex-1 min-w-0 text-xs font-mono p-2 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] overflow-auto whitespace-pre">curl -I {w.routeUrl}</pre>
+                    <button
+                      on:click={() => copyCurlCommand(w.name, w.routeUrl ?? '')}
+                      class="pai-btn pai-btn-sm text-xs shrink-0">
+                      {curlCopyFeedback[w.name] || 'Copy'}
+                    </button>
+                  </div>
                 </div>
               {/if}
 

@@ -250,8 +250,8 @@ describe('OpenShiftSimulation', () => {
 
       render(DeployOpenShift);
 
-      await screen.findByText('Verify the Hummingbird sidecar is fronting traffic:');
-      expect(screen.getByRole('button', { name: 'Copy curl -I command' })).toBeTruthy();
+      await screen.findByText('Verify the Hummingbird sidecar');
+      expect(screen.getByRole('button', { name: 'Copy' })).toBeTruthy();
     });
 
     it('does not show the copy command for a workload without the sidecar', async () => {
@@ -260,7 +260,7 @@ describe('OpenShiftSimulation', () => {
       render(DeployOpenShift);
 
       await screen.findByText(ROUTE_URL, { exact: false });
-      expect(screen.queryByText('Verify the Hummingbird sidecar is fronting traffic:')).toBeNull();
+      expect(screen.queryByText('Verify the Hummingbird sidecar')).toBeNull();
     });
 
     it('copies the curl command via the extension clipboard RPC', async () => {
@@ -269,7 +269,7 @@ describe('OpenShiftSimulation', () => {
       ]);
       render(DeployOpenShift);
 
-      await fireEvent.click(await screen.findByRole('button', { name: 'Copy curl -I command' }));
+      await fireEvent.click(await screen.findByRole('button', { name: 'Copy' }));
 
       await waitFor(() => {
         expect(mockCopyToClipboard).toHaveBeenCalledWith(`curl -I ${ROUTE_URL}`);
