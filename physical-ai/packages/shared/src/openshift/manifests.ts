@@ -14,8 +14,14 @@ export const NOVNC_CONTAINER_PORT = 6080;
 /** Hummingbird nginx companion image (APPENG-6227), reverse-proxying noVNC when enabled. */
 export const HUMMINGBIRD_NGINX_IMAGE = 'quay.io/hummingbird/nginx:latest';
 
-/** Port the Hummingbird nginx sidecar listens on inside the pod. */
-export const HUMMINGBIRD_NGINX_CONTAINER_PORT = 8080;
+/**
+ * Port the Hummingbird nginx sidecar listens on inside the pod. Deliberately not 8080:
+ * the sim image already runs a `python3 -m http.server 8080` companion dashboard
+ * (baked in via APPENG-6226), and sidecar containers share the pod's network
+ * namespace, so 8080 is already taken — confirmed live (nginx crash-looped with
+ * "Address already in use" against that process) before landing on 9080.
+ */
+export const HUMMINGBIRD_NGINX_CONTAINER_PORT = 9080;
 
 /** Label marking resources this extension manages, used for list/delete. */
 export const PART_OF_LABEL = 'app.kubernetes.io/part-of';

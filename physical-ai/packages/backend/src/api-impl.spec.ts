@@ -3211,6 +3211,50 @@ ranges: [0.3, 0.5, .inf, .nan]
         const routeArgs = vi.mocked(extensionApi.process.exec).mock.calls[0][1] as string[];
         expect(routeArgs.slice(0, 2)).toEqual(['--context', 'other-context']);
       });
+
+      it('deletes any prior Hummingbird nginx ConfigMap before creating resources (APPENG-6227)', async () => {
+        // extensionApi.kubernetes.createResources() re-applies an existing Deployment/Service
+        // correctly but leaves an already-existing ConfigMap untouched (confirmed live against
+        // a real cluster), so a redeploy must delete it first to avoid serving a stale proxy config.
+        mockKubeconfig(CONTEXT);
+        vi.mocked(extensionApi.kubernetes.createResources).mockResolvedValue(undefined);
+        vi.mocked(extensionApi.process.exec).mockResolvedValue({
+          stdout: 'route-host.example.com',
+          stderr: '',
+          command: 'oc',
+        } as extensionApi.RunResult);
+
+        await api.deployToOpenShift({ ...CONFIG, useHummingbirdSidecar: true });
+
+        const deleteArgs = vi.mocked(extensionApi.process.exec).mock.calls[0][1] as string[];
+        expect(deleteArgs).toEqual([
+          'delete',
+          'configmap',
+          'ros2-jazzy-sim-hummingbird-nginx-conf',
+          '-n',
+          'sgahlot-pd-extn',
+          '--ignore-not-found',
+        ]);
+        // The delete must happen before createResources, not after.
+        const deleteOrder = vi.mocked(extensionApi.process.exec).mock.invocationCallOrder[0];
+        const createOrder = vi.mocked(extensionApi.kubernetes.createResources).mock.invocationCallOrder[0];
+        expect(deleteOrder).toBeLessThan(createOrder);
+      });
+
+      it('does not attempt a ConfigMap delete when the sidecar is disabled', async () => {
+        mockKubeconfig(CONTEXT);
+        vi.mocked(extensionApi.kubernetes.createResources).mockResolvedValue(undefined);
+        vi.mocked(extensionApi.process.exec).mockResolvedValue({
+          stdout: 'route-host.example.com',
+          stderr: '',
+          command: 'oc',
+        } as extensionApi.RunResult);
+
+        await api.deployToOpenShift(CONFIG);
+
+        const calls = vi.mocked(extensionApi.process.exec).mock.calls as unknown as string[][];
+        expect(calls.some(call => call[1]?.includes('configmap'))).toBe(false);
+      });
     });
 
     describe('listOpenShiftDeployments', () => {
@@ -3305,8 +3349,9 @@ ranges: [0.3, 0.5, .inf, .nan]
         await api.deleteOpenShiftDeployment('sgahlot-pd-extn', 'ros2-jazzy-sim');
         expect(extensionApi.process.exec).toHaveBeenCalledWith('oc', [
           'delete',
-          'deployment,service,route',
-          'ros2-jazzy-sim',
+          'deployment,service,route,configmap',
+          '-l',
+          'app=ros2-jazzy-sim',
           '-n',
           'sgahlot-pd-extn',
           '--ignore-not-found',
@@ -3329,8 +3374,9 @@ ranges: [0.3, 0.5, .inf, .nan]
           '--context',
           'other-context',
           'delete',
-          'deployment,service,route',
-          'ros2-jazzy-sim',
+          'deployment,service,route,configmap',
+          '-l',
+          'app=ros2-jazzy-sim',
           '-n',
           'sgahlot-pd-extn',
           '--ignore-not-found',
