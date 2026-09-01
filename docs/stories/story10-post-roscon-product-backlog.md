@@ -580,5 +580,5 @@ under an existing Story, a direct small commit, or a dedicated new doc.
 | S10-11 | CLI menu-driven help | Design requirement | Folds into [story9-platform-exploration.md](story9-platform-exploration.md), S9-4 |
 | S10-12 | Telemetry & richer metrics (OTEL/Prometheus) | Feature (2 threads: usage telemetry + runtime metrics) | This doc |
 | S10-13 | Hybrid local robot + in-cluster sim/inference | Feature (research/spike; 2 large pieces) | This doc |
-| S10-14 | Local Hummingbird nginx sidecar (Podman multi-container) | Feature | This doc |
+| S10-14 | Local Hummingbird nginx sidecar (Podman multi-container) | Feature | Filed as [APPENG-6262](https://redhat.atlassian.net/browse/APPENG-6262) under APPENG-6225 |
 | S10-15 | Hummingbird showcase expansion: registry-path audit & tools | Research | This doc |
