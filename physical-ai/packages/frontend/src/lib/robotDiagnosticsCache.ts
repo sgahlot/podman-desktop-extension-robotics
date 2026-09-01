@@ -29,6 +29,14 @@ export function setCachedDiagnostics(targetKey: string, robotName: string, snaps
   cache.set(cacheKey(targetKey, robotName), snapshot);
 }
 
+/** Invalidates a stale entry — robot names aren't stable identities across respawns, so
+ * despawning/respawning under the same name must not keep showing the previous robot's
+ * cached snapshot as if it were current. Call from the spawn/remove call sites in
+ * LocalSimulation.svelte/OpenShiftSimulation.svelte. */
+export function clearCachedDiagnostics(targetKey: string, robotName: string): void {
+  cache.delete(cacheKey(targetKey, robotName));
+}
+
 /** Test-only: this cache is deliberately a module-level singleton (see comment above) so
  * specs reusing the same target/robot ids across cases must reset it in beforeEach. */
 export function __resetRobotDiagnosticsCacheForTests(): void {

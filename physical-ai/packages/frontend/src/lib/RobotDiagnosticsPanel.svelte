@@ -11,6 +11,8 @@ import {
 } from '/@shared/src/ros/robotDiagnosticsVerdict';
 import type { DiagnosticsTarget } from './RobotDiagnosticsPanel.types';
 import { getCachedDiagnostics, setCachedDiagnostics } from './robotDiagnosticsCache';
+import { localTargetKey, ocTargetKey } from './diagnosticsTargetKey';
+import { spawnedRobotsByTarget } from './spawnedRobotsStore';
 
 export let target: DiagnosticsTarget;
 /** Pre-selects a robot on arrival (deep link from Simulation's Diagnose button), without
@@ -27,6 +29,10 @@ let costmapResult: CostmapSummaryResult | null = null;
 let costmapError = '';
 let laserResult: LaserScanSummary | null = null;
 let laserError = '';
+/** True when the currently-shown results came from robotDiagnosticsCache (a remembered
+ * snapshot from an earlier "Refresh diagnostics"), false once a fresh refresh completes —
+ * drives the "remembered snapshot" banner so older data is never mistaken for current. */
+let isCachedSnapshot = false;
 
 // `ros2 node list` (same signal APPENG-6250 uses to reconcile the Simulation page's robot
 // state) registers a spawned robot's nodes almost immediately — well before Nav2 finishes
@@ -41,6 +47,7 @@ $: robotOptions = Array.from(
     ...spawnedRobotNames,
     ...(target.kind === 'podman' ? deriveRobotNamespaces(target.topics) : []),
     ...(initialRobotName ? [initialRobotName] : []),
+    ...($spawnedRobotsByTarget[targetKey(target)] ?? []),
   ]),
 ).sort();
 
@@ -54,7 +61,7 @@ $: if (robotOptions.length === 0 && robotName) {
 /** Stable identity for `target`, used to detect a real target change (vs. a same-target
  * re-render) without relying on object identity. */
 function targetKey(t: DiagnosticsTarget): string {
-  return t.kind === 'podman' ? `podman:${t.containerId}` : `oc:${t.namespace}/${t.workload}/${t.context ?? ''}`;
+  return t.kind === 'podman' ? localTargetKey(t.containerId) : ocTargetKey(t.namespace, t.workload, t.context);
 }
 
 async function fetchSpawnedRobots(): Promise<void> {
@@ -115,8 +122,10 @@ $: {
       costmapError = cached.costmapError;
       laserResult = cached.laserResult;
       laserError = cached.laserError;
+      isCachedSnapshot = true;
     } else {
       clearResults();
+      isCachedSnapshot = false;
     }
   }
 }
@@ -227,14 +236,18 @@ async function refreshDiagnostics(): Promise<void> {
     laserResult,
     laserError,
   });
+  isCachedSnapshot = false;
   refreshing = false;
 }
 </script>
 
 <div class="flex flex-col gap-4 min-w-0">
   {#if robotOptions.length === 0}
-    <div class="text-sm text-[var(--pd-content-text)]">
-      No robot detected yet. Spawn a robot in Simulation — it should appear here within a few seconds.
+    <div class="flex flex-row items-center gap-3 flex-wrap">
+      <span class="text-sm text-[var(--pd-content-text)]">
+        No robot detected yet. Spawn one in Simulation, or click Check again.
+      </span>
+      <button on:click={fetchSpawnedRobots} class="pai-btn text-xs">Check again</button>
     </div>
   {:else}
     <div class="flex flex-row items-end gap-3 flex-wrap">
@@ -258,6 +271,12 @@ async function refreshDiagnostics(): Promise<void> {
       A newly-spawned robot can show "missing"/timed-out cards for up to ~90s while Nav2 finishes starting — that's
       expected, not an error. Click Refresh again once it's warmed up.
     </div>
+
+    {#if isCachedSnapshot}
+      <div class="text-sm p-3 rounded pai-banner-info">
+        Showing a remembered snapshot from earlier — click Refresh diagnostics to get current data.
+      </div>
+    {/if}
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 min-w-0">
       <!-- TF Tree -->

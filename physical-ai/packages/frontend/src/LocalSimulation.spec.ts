@@ -1,6 +1,14 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import SimulationPage from './LocalSimulation.svelte';
+import { spawnedRobotsByTarget } from './lib/spawnedRobotsStore';
+import { localTargetKey } from './lib/diagnosticsTargetKey';
+
+const mockClearCachedDiagnostics = vi.fn();
+
+vi.mock('./lib/robotDiagnosticsCache', () => ({
+  clearCachedDiagnostics: (...args: unknown[]) => mockClearCachedDiagnostics(...args),
+}));
 
 const mockGetSimulationImageAllowlist = vi.fn();
 const mockListLocalImages = vi.fn();
@@ -14,6 +22,7 @@ const mockSendNavigationGoal = vi.fn();
 const mockGetRobotWarmStatus = vi.fn();
 const mockGetSimulationConfig = vi.fn();
 const mockListSpawnedRobotsInSimulation = vi.fn();
+const mockDespawnRobot = vi.fn();
 const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
@@ -30,6 +39,7 @@ vi.mock('./api/client', () => ({
     getRobotWarmStatus: (...args: unknown[]) => mockGetRobotWarmStatus(...args),
     getSimulationConfig: (...args: unknown[]) => mockGetSimulationConfig(...args),
     listSpawnedRobotsInSimulation: (...args: unknown[]) => mockListSpawnedRobotsInSimulation(...args),
+    despawnRobot: (...args: unknown[]) => mockDespawnRobot(...args),
   },
 }));
 
@@ -42,6 +52,7 @@ const SIM_IMAGE = 'quay.io/ns/ros2-jazzy-sim:noble';
 describe('LocalSimulation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    spawnedRobotsByTarget.set({});
     mockGetSimulationImageAllowlist.mockResolvedValue('');
     mockListLocalImages.mockResolvedValue([]);
     mockListSimulationContainers.mockResolvedValue([]);
@@ -51,6 +62,7 @@ describe('LocalSimulation', () => {
     mockOpenSimulationInBrowser.mockResolvedValue(undefined);
     mockGetRobotWarmStatus.mockResolvedValue('idle');
     mockListSpawnedRobotsInSimulation.mockResolvedValue([]);
+    mockDespawnRobot.mockResolvedValue(undefined);
     mockGetSimulationConfig.mockResolvedValue({
       robot: 'turtlebot3',
       distro: 'jazzy',
@@ -366,5 +378,49 @@ describe('LocalSimulation', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('keeps spawnedRobotsByTarget in sync with the running container (APPENG-5810)', async () => {
+    mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
+    mockListSimulationContainers.mockResolvedValue([RUNNING_CONTAINER]);
+    mockExecInSimulation.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
+
+    render(SimulationPage);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Add TurtleBot3' }));
+
+    await waitFor(() => {
+      let stored: Record<string, string[]> = {};
+      spawnedRobotsByTarget.subscribe(v => (stored = v))();
+      expect(stored[localTargetKey('abc123def456')]).toEqual(['robot_1']);
+    });
+  });
+
+  it('clears the cached diagnostics entry for a robot on spawn (APPENG-5810 stale-cache fix)', async () => {
+    mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
+    mockListSimulationContainers.mockResolvedValue([RUNNING_CONTAINER]);
+    mockExecInSimulation.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
+
+    render(SimulationPage);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Add TurtleBot3' }));
+
+    await waitFor(() => {
+      expect(mockClearCachedDiagnostics).toHaveBeenCalledWith(localTargetKey('abc123def456'), 'robot_1');
+    });
+  });
+
+  it('clears the cached diagnostics entry for a robot on remove (APPENG-5810 stale-cache fix)', async () => {
+    mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
+    mockListSimulationContainers.mockResolvedValue([RUNNING_CONTAINER]);
+    mockListSpawnedRobotsInSimulation.mockResolvedValue(['robot_1']);
+
+    render(SimulationPage);
+    await screen.findByText('robot_1');
+    mockClearCachedDiagnostics.mockClear();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+
+    await waitFor(() => {
+      expect(mockClearCachedDiagnostics).toHaveBeenCalledWith(localTargetKey('abc123def456'), 'robot_1');
+    });
   });
 });

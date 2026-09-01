@@ -4,6 +4,8 @@ import RobotDiagnosticsPanel from './RobotDiagnosticsPanel.svelte';
 import type { TopicInfo } from '/@shared/src/types/TopicInfo';
 import type { DiagnosticsTarget } from './RobotDiagnosticsPanel.types';
 import { __resetRobotDiagnosticsCacheForTests } from './robotDiagnosticsCache';
+import { spawnedRobotsByTarget } from './spawnedRobotsStore';
+import { localTargetKey } from './diagnosticsTargetKey';
 
 const mockGetTfTreeStatus = vi.fn();
 const mockGetCostmapSummary = vi.fn();
@@ -110,6 +112,7 @@ describe('RobotDiagnosticsPanel', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     __resetRobotDiagnosticsCacheForTests();
+    spawnedRobotsByTarget.set({});
     mockGetTfTreeStatus.mockResolvedValue(TF_RESULT);
     mockGetCostmapSummary.mockResolvedValue(COSTMAP_RESULT);
     mockGetLaserScanSummary.mockResolvedValue(LASER_RESULT);
@@ -224,6 +227,44 @@ describe('RobotDiagnosticsPanel', () => {
     resolveTf(TF_RESULT);
     await screen.findByRole('button', { name: 'Refresh diagnostics' });
     expect((screen.getByRole('button', { name: 'Refresh diagnostics' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('shows a robot from the shared spawnedRobotsByTarget store even when the one-shot fetch returns empty', async () => {
+    mockListSpawnedRobotsInSimulation.mockResolvedValue([]);
+    spawnedRobotsByTarget.set({ [localTargetKey('c1')]: ['robot_1'] });
+
+    render(RobotDiagnosticsPanel, { props: { target: podmanTarget([]) } });
+
+    const select = await screen.findByLabelText('Robot');
+    expect((select as HTMLSelectElement).value).toBe('robot_1');
+  });
+
+  it('re-invokes the spawned-robots fetch when "Check again" is clicked', async () => {
+    render(RobotDiagnosticsPanel, { props: { target: podmanTarget([]) } });
+    await waitFor(() => expect(mockListSpawnedRobotsInSimulation).toHaveBeenCalledTimes(1));
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+
+    await waitFor(() => expect(mockListSpawnedRobotsInSimulation).toHaveBeenCalledTimes(2));
+    // "Check again" only re-checks for a spawned robot — it must never fire the TF/costmap/scan
+    // RPCs, which stay explicit-Refresh-only everywhere in this feature.
+    expect(mockGetTfTreeStatus).not.toHaveBeenCalled();
+    expect(mockGetCostmapSummary).not.toHaveBeenCalled();
+    expect(mockGetLaserScanSummary).not.toHaveBeenCalled();
+  });
+
+  it('shows the remembered-snapshot banner after a remount that hydrates from cache, and hides it after a fresh Refresh', async () => {
+    const { unmount } = render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh diagnostics' }));
+    expect(await screen.findByText(/Laser scan looks normal/)).toBeTruthy();
+    expect(screen.queryByText(/Showing a remembered snapshot/)).toBeNull();
+    unmount();
+
+    render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
+    expect(await screen.findByText(/Showing a remembered snapshot/)).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh diagnostics' }));
+    await waitFor(() => expect(screen.queryByText(/Showing a remembered snapshot/)).toBeNull());
   });
 
   describe('OpenShift target', () => {
