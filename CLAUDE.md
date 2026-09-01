@@ -54,6 +54,20 @@
   commit link → then transition to Closed. Use **Review** (transition id 41) for
   code-complete-but-untested; In Progress until testing starts. Only merged branches are safe to
   delete.
+- **Merges into `main` only happen from the `main/` worktree:** git allows a given branch to be
+  checked out in exactly one worktree at a time, and `main` is always checked out in `main/` by
+  convention — a feature-branch worktree can never `git checkout main` itself, so it cannot run
+  the merge. When a feature branch is ready (user-tested, gate-green), perform the actual
+  `git merge --no-ff` + zero-errors-gate-on-integrated-`main` + push + Jira comment/Closed
+  sequence from the **`main/` worktree's session**, not the feature worktree's — if you're
+  working in a feature worktree and the branch is ready to merge, say so and hand off (ask the
+  user to continue in the `main/` worktree's session) rather than attempting the merge yourself.
+  Worktrees of the same repo share one object database, so this needs no push to origin first —
+  `main/` can merge a feature branch's local commits immediately. This doesn't change the rule
+  above about committing/pushing the feature branch itself freely from within its own worktree;
+  only the merge-**into**-`main` step is `main/`-only. Only run `git worktree remove <path>` for
+  a feature worktree after its branch is merged, and only once nothing is still actively using
+  that worktree (e.g. no live Claude Code session still `cd`'d into it).
 - **If this checkout is a git worktree sibling (not `main/`) and `physical-ai/node_modules`
   doesn't exist yet, it's a brand-new worktree — do this one-time setup before anything
   else, in order:**
