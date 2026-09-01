@@ -303,6 +303,88 @@ describe('SimulationSetup (Image Builder)', () => {
     expect(mockBuildBaseImage).not.toHaveBeenCalled();
   });
 
+  it('collapses Step 1 (base) build logs once Step 2 (sim) build starts', async () => {
+    mockGetSimulationConfig.mockResolvedValue({
+      robot: 'turtlebot3',
+      distro: 'jazzy',
+      middleware: 'dds',
+      engine: 'gazebo',
+      baseImage: 'jazzy-noble',
+    });
+    const baseTag = 'quay.io/ecosystem-appeng/ros2-jazzy-base:noble';
+    mockListLocalImages.mockResolvedValue([baseTag]);
+    mockBuildBaseImage.mockResolvedValue(undefined);
+    mockBuildSimulationImage.mockResolvedValue(undefined);
+    mockGetBuildProgress.mockResolvedValue({
+      tag: baseTag,
+      status: 'Complete',
+      logs: ['base build line'],
+      done: true,
+      startedAt: 1000,
+      finishedAt: 2000,
+    });
+
+    render(SimulationSetup);
+    await waitFor(() => {
+      expect(screen.queryByText('Loading configuration...')).toBeNull();
+    });
+
+    // Rebuild the already-existing base image so Step 1 has completed, expanded logs.
+    const rebuildButton = await screen.findByRole('button', { name: 'Rebuild' });
+    await fireEvent.click(rebuildButton);
+    await waitFor(() => expect(screen.getByText('base build line')).toBeTruthy());
+
+    // Starting the Step 2 (sim) build should auto-collapse Step 1's logs.
+    const simBuildButton = screen.getByRole('button', { name: 'Build' });
+    await fireEvent.click(simBuildButton);
+
+    await waitFor(() => {
+      expect(screen.queryByText('base build line')).toBeNull();
+    });
+  });
+
+  it('re-expands Step 1 (base) logs when the base build restarts after being auto-collapsed', async () => {
+    mockGetSimulationConfig.mockResolvedValue({
+      robot: 'turtlebot3',
+      distro: 'jazzy',
+      middleware: 'dds',
+      engine: 'gazebo',
+      baseImage: 'jazzy-noble',
+    });
+    const baseTag = 'quay.io/ecosystem-appeng/ros2-jazzy-base:noble';
+    mockListLocalImages.mockResolvedValue([baseTag]);
+    mockBuildBaseImage.mockResolvedValue(undefined);
+    mockBuildSimulationImage.mockResolvedValue(undefined);
+    mockGetBuildProgress.mockResolvedValue({
+      tag: baseTag,
+      status: 'Complete',
+      logs: ['line'],
+      done: true,
+      startedAt: 1000,
+      finishedAt: 2000,
+    });
+
+    render(SimulationSetup);
+    await waitFor(() => {
+      expect(screen.queryByText('Loading configuration...')).toBeNull();
+    });
+
+    // Complete a base build, then start the sim build to auto-collapse Step 1's logs.
+    await fireEvent.click(await screen.findByRole('button', { name: 'Rebuild' }));
+    await waitFor(() => expect(screen.getByText('line')).toBeTruthy());
+    await fireEvent.click(screen.getByRole('button', { name: 'Build' }));
+    await waitFor(() => {
+      const toggles = screen.getAllByRole('button', { name: /Build logs/ });
+      expect(toggles[0].textContent).toMatch(/^▶/);
+    });
+
+    // Restarting the base build should bring its own logs back, not leave them collapsed.
+    const rebuildButtons = screen.getAllByRole('button', { name: 'Rebuild' });
+    await fireEvent.click(rebuildButtons[0]);
+    const toggles = screen.getAllByRole('button', { name: /Build logs/ });
+    expect(toggles[0].textContent).toMatch(/^▼/);
+  });
+
   it('keeps Step 2 disabled with a hint when the base image is not built locally', async () => {
     mockGetSimulationConfig.mockResolvedValue({
       robot: 'turtlebot3',

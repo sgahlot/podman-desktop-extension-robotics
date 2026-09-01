@@ -43,6 +43,8 @@ let simTag = '';
 let lastConfigKey = '';
 let baseBusy = false;
 let simBusy = false;
+let baseLogsExpanded = true;
+let simLogsExpanded = true;
 let baseImageExists = false;
 let simImageExists = false;
 /** Guards the async existence check against stale responses. */
@@ -69,6 +71,14 @@ let buildChoice: 'base' | 'sim' | 'both' | undefined = undefined;
 let buildHistoryPanel: BuildHistoryPanel;
 
 $: buildBusy = baseBusy || simBusy;
+// Auto-expand a panel's own logs whenever ITS OWN build (re)starts — otherwise, once
+// collapsed by the rule below, a fresh build under that same panel would stay collapsed
+// forever with no way back short of manually clicking the toggle.
+$: if (baseBusy) baseLogsExpanded = true;
+$: if (simBusy) simLogsExpanded = true;
+// Collapse the completed Step 1 (base) logs once Step 2 (sim) starts building —
+// the base build is already done by then, so its logs just take up space.
+$: if (simBusy) baseLogsExpanded = false;
 $: currentConfig = { robot, distro, middleware, engine, baseImage, targetArch } as SimulationConfig;
 $: crossArch = targetArch !== hostArch;
 $: otherArch = (hostArch === 'amd64' ? 'arm64' : 'amd64') as TargetArch;
@@ -542,6 +552,7 @@ function cancelQuickStart() {
               <BuildPushPanel
                 bind:tag={baseTag}
                 bind:busy={baseBusy}
+                bind:buildLogsExpanded={baseLogsExpanded}
                 buildImage={t => physicalAiClient.buildBaseImage(t, currentConfig)}
                 onBuildComplete={() => {
                   baseImageExists = true;
@@ -588,6 +599,7 @@ function cancelQuickStart() {
               <BuildPushPanel
                 bind:tag={simTag}
                 bind:busy={simBusy}
+                bind:buildLogsExpanded={simLogsExpanded}
                 buildImage={t => physicalAiClient.buildSimulationImage(t, currentConfig)}
                 onBuildComplete={() => {
                   simImageExists = true;
