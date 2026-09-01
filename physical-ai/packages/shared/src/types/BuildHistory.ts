@@ -66,9 +66,15 @@ export function sbomItemLabel(format: SbomFormat | undefined): string {
   return format === 'cyclonedx-json' ? 'components' : 'packages';
 }
 
-/** Build history retention bounds (Preferences: physical-ai.buildHistoryLimit). */
+/**
+ * Build history retention bounds (Preferences: physical-ai.buildHistoryLimit). The max was
+ * 5 originally because every retained entry could carry its full SBOM text — now that SBOM
+ * text is fetched on demand rather than shipped with the list (APPENG-6265), a higher
+ * ceiling mainly costs disk space, not UI payload; default stays low since most entries
+ * never carry an SBOM at all (only Layers-wizard builds that opt in via the syft tool do).
+ */
 export const BUILD_HISTORY_LIMIT_MIN = 1;
-export const BUILD_HISTORY_LIMIT_MAX = 5;
+export const BUILD_HISTORY_LIMIT_MAX = 20;
 export const BUILD_HISTORY_LIMIT_DEFAULT = 5;
 
 /**

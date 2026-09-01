@@ -46,9 +46,9 @@ export abstract class PhysicalAiApi {
   /** Full SBOM text for one build history entry, identified by tag + startedAt (its stable
    * key). Undefined if the entry has aged out of history or has no recorded SBOM. */
   abstract getBuildHistorySbom(tag: string, startedAt: number): Promise<string | undefined>;
-  /** Number of recent builds retained in history (Preferences: physical-ai.buildHistoryLimit, 1–5). */
+  /** Number of recent builds retained in history (Preferences: physical-ai.buildHistoryLimit, 1–20). */
   abstract getBuildHistoryLimit(): Promise<number>;
-  /** Validates and persists the build history limit (1–5). Throws a user-facing error if out of range. */
+  /** Validates and persists the build history limit (1–20). Throws a user-facing error if out of range. */
   abstract setBuildHistoryLimit(limit: number): Promise<void>;
   abstract pushImage(tag: string): Promise<void>;
   abstract cancelPush(tag: string): Promise<void>;

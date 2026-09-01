@@ -5,7 +5,7 @@ describe('assertBuildHistoryLimit', () => {
   it('accepts integers in range', () => {
     expect(assertBuildHistoryLimit(1)).toBe(1);
     expect(assertBuildHistoryLimit(3)).toBe(3);
-    expect(assertBuildHistoryLimit(5)).toBe(5);
+    expect(assertBuildHistoryLimit(BUILD_HISTORY_LIMIT_MAX)).toBe(BUILD_HISTORY_LIMIT_MAX);
   });
 
   it('rejects values below the minimum', () => {
@@ -13,7 +13,9 @@ describe('assertBuildHistoryLimit', () => {
   });
 
   it('rejects values above the maximum', () => {
-    expect(() => assertBuildHistoryLimit(6)).toThrow(new RegExp(`at most ${BUILD_HISTORY_LIMIT_MAX}`));
+    expect(() => assertBuildHistoryLimit(BUILD_HISTORY_LIMIT_MAX + 1)).toThrow(
+      new RegExp(`at most ${BUILD_HISTORY_LIMIT_MAX}`),
+    );
   });
 
   it('rejects non-integers', () => {

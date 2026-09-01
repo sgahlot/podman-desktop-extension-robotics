@@ -931,7 +931,7 @@ describe('PhysicalAiApiImpl', () => {
         get: vi.fn(),
         update,
       } as unknown as extensionApi.Configuration);
-      await expect(api.setBuildHistoryLimit(6)).rejects.toThrow(/at most 5/);
+      await expect(api.setBuildHistoryLimit(21)).rejects.toThrow(/at most 20/);
       expect(update).not.toHaveBeenCalled();
     });
 
