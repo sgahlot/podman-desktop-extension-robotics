@@ -71,6 +71,11 @@ let buildChoice: 'base' | 'sim' | 'both' | undefined = undefined;
 let buildHistoryPanel: BuildHistoryPanel;
 
 $: buildBusy = baseBusy || simBusy;
+// Auto-expand a panel's own logs whenever ITS OWN build (re)starts — otherwise, once
+// collapsed by the rule below, a fresh build under that same panel would stay collapsed
+// forever with no way back short of manually clicking the toggle.
+$: if (baseBusy) baseLogsExpanded = true;
+$: if (simBusy) simLogsExpanded = true;
 // Collapse the completed Step 1 (base) logs once Step 2 (sim) starts building —
 // the base build is already done by then, so its logs just take up space.
 $: if (simBusy) baseLogsExpanded = false;
