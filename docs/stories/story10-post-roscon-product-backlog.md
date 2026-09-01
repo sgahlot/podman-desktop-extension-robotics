@@ -593,6 +593,23 @@ in code + registry, not assumed):**
    signature, surfacing the result in the UI via APPENG-6226's existing SBOM-result display
    patterns (pretty-print, copy-to-clipboard).
 
+**Clarified (2026-09-01) — `syft`'s wizard checkbox stays, but stops gating/mattering to our
+own SBOM feature:**
+- `syft` remains a selectable `tool` option in the Layers wizard (still bundleable via
+  `COPY --from` for a user's own purposes) — but our SBOM feature no longer depends on it
+  being checked at all. **"Generate SBOM" must become available unconditionally**, for any
+  built image, since it no longer execs a binary that may or may not have been baked in.
+  Whatever UI/backend gate currently keys "Generate SBOM" off the Layers wizard's Syft
+  selection needs to be removed as part of this redesign, not just left in place accidentally.
+- Once ungated, `syft`'s bundled-tool checkbox has **no live demo tied to it at all** — same
+  inert status as `curl`/`jq`/`kubectl`/`helm` today (available to bake in, but nothing in our
+  UI orchestrates it). `cosign` is the only bundled tool with an active, wizard-selection-gated
+  demo ("Verify Build" appears/is enabled only when `cosign` is selected+bundled).
+- Do **not** keep a second syft-from-the-bundled-binary demo path alongside the external one —
+  one tool, one pattern, one showcase each: `syft` = external/on-demand, `cosign` = bundled.
+  Splitting `syft` across both would undercut the reason `cosign` was added (filling the gap
+  left by `syft` vacating the only-bundled-demo slot) for no narrative benefit.
+
 **Effort:** medium–large — two coupled but separable pieces; the `syft` redesign is a real
 architecture change, the `cosign` demo mostly reuses APPENG-6226's UI patterns.
 
