@@ -101,6 +101,19 @@ serve a small dashboard through it). The local-path blocker (needs APPENG-5774's
 work first) still applies and is out of scope for now — this is an OpenShift-only demo feature
 until 5774 lands.
 
+**Correction (2026-09-01) — APPENG-6227 is done (tested live, in Review, not yet merged to
+`main`), and the "blocked on APPENG-5774" call above was wrong.** The OpenShift sidecar's image
+is `registry.access.redhat.com/hi/nginx:latest`, not `quay.io/hummingbird/nginx` — see
+`docs/stories/story10-post-roscon-product-backlog.md` S10-15 for why). Separately, re-investigating
+the local path found the "no multi-container infrastructure" framing above (lines 78-82) was true
+but overstated as a blocker: the `@podman-desktop/api` SDK already exposes both
+`containerEngine.createNetwork(...)` and `containerEngine.createPod(...)` — unused anywhere in this
+codebase, but not missing. A local nginx sidecar is a narrow, fixed-shape case (exactly 2
+containers) that doesn't need APPENG-5774's general N-robot orchestration at all. Filed as its own
+sub-task, **APPENG-6262**, rather than waiting on 5774 — full findings and the recommended approach
+(Podman pod, not the network-join Red Hat's own docs show) are in
+`docs/stories/story10-post-roscon-product-backlog.md` S10-14.
+
 <a id="s9-3"></a>
 
 ### S9-3 — Showcase a Hummingbird tool baked into the production image (APPENG-6226, Closed — under Story APPENG-6225)
@@ -286,7 +299,7 @@ of whether a second robot ever gets added.
 |---|---|---|---|
 | Done | APPENG-5775 Zenoh router | **Closed** | Single-container/pod `rmw_zenoh_cpp` foundation shipped and live-tested (local + OpenShift). Cross-container fleet win still needs 5774/story7. |
 | Done | S9-3 (Hummingbird tool showcase) | **Closed** (APPENG-6226) | `syft` baked in with a real use case (SBOM generation), shipped as part of the Hummingbird showcase story. |
-| **Do next** | S9-2 (Hummingbird nginx sidecar, OpenShift-only) | **New** (APPENG-6227) | Not started yet — driver is showcasing the Hummingbird companion pattern live, not a technical noVNC improvement. Feasible today on OpenShift; local path stays blocked on APPENG-5774. |
+| Done | S9-2 (Hummingbird nginx sidecar, OpenShift-only) | **Review** (APPENG-6227), tested live, not yet merged | See the Correction (2026-09-01) note above. Local-path follow-on filed separately as **APPENG-6262** (not blocked on APPENG-5774 after all — see story10 S10-14). |
 | **In progress** | S9-7 (externalize TurtleBot3 → config-driven robot definition) | **In Progress** (APPENG-6237), parallel worktree | Bounded refactor, real design-smell fix, sets up future robots as additive rather than a rewrite. |
 | **In progress, self-contained spike** | S9-6 (Quadlet ROS2+sim sidecar on a bootc base) | **In Progress**, folded into APPENG-5809, parallel worktree | Proven pattern elsewhere, testable now, independent of OSRA and of native ROS/sim packaging entirely. |
 | **In progress** | S9-1 (oc → library), read/delete half only | **New** (APPENG-6238) | Real robustness/testability payoff, bounded and low-risk if the `oc exec` half is deliberately deferred. Sequence relative to other OpenShift-area work (6070/6227/5778) touching the same methods — don't run simultaneously with them. |
