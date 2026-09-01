@@ -250,6 +250,34 @@ describe('BuildPushPanel', () => {
     expect(screen.queryByText(/Image built successfully/)).toBeNull();
   });
 
+  it('collapses build logs when the parent sets buildLogsExpanded to false', async () => {
+    mockGetBuildProgress.mockResolvedValue({
+      tag: TAG,
+      status: 'Complete',
+      logs: ['[00:00:01] STEP 1/1', '[00:00:06] Build finished'],
+      currentStep: 1,
+      totalSteps: 1,
+      done: true,
+      startedAt: 1_000,
+      finishedAt: 6_000,
+    });
+
+    const { rerender } = render(BuildPushPanel, {
+      props: { buildImage, tag: TAG, tagInputId: 'phase1-tag' },
+    });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Build' }));
+    expect(await screen.findByText('[00:00:01] STEP 1/1')).toBeTruthy();
+
+    await rerender({ buildImage, tag: TAG, tagInputId: 'phase1-tag', buildLogsExpanded: false });
+
+    await waitFor(() => {
+      expect(screen.queryByText('[00:00:01] STEP 1/1')).toBeNull();
+    });
+    // The toggle itself stays visible — only the log lines collapse.
+    expect(screen.getByText(/Build logs \(2 lines\)/)).toBeTruthy();
+  });
+
   it('surfaces build start failures', async () => {
     buildImage.mockRejectedValue(new Error('no podman'));
 

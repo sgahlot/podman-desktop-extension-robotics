@@ -29,6 +29,8 @@ export let busy = false;
 export let onBuildComplete: (() => void) | undefined = undefined;
 /** When true, the Build button is disabled (e.g. waiting for a prerequisite). */
 export let disabled = false;
+/** Bind from parent so a sibling panel starting its build can collapse this one's logs. */
+export let buildLogsExpanded = true;
 
 let inputValue = tag;
 let lastSyncedTag = tag;
@@ -58,8 +60,6 @@ let pushStatus = 'Pushing...';
 let pushDigest = '';
 let pushStartedAt: number | undefined;
 let pushFinishedAt: number | undefined;
-
-let buildLogsExpanded = true;
 
 let pollTimer: number | null = null;
 let logContainer: HTMLDivElement;
