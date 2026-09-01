@@ -1,5 +1,6 @@
 import type { ExtensionContext } from '@podman-desktop/api';
 import * as extensionApi from '@podman-desktop/api';
+import * as https from 'node:https';
 import type { PhysicalAiApi } from '/@shared/src/PhysicalAiApi';
 import type {
   QuayRepository,
@@ -2462,6 +2463,38 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       ]);
     } catch (err: unknown) {
       throw new Error(this.#ocErrorMessage(err, `delete ${safeName} in ${ns}`));
+    }
+  }
+
+  async checkRouteServerHeader(url: string): Promise<{ server?: string; error?: string }> {
+    try {
+      const server = await new Promise<string | undefined>((resolve, reject) => {
+        const req = https.request(
+          url,
+          {
+            method: 'HEAD',
+            // Dev/test OpenShift clusters commonly terminate Routes with a self-signed
+            // ingress CA; this only reads a header for display (APPENG-6227's live-verify
+            // hint), so skip verification the same way testing this manually needed `curl -k`.
+            rejectUnauthorized: false,
+            timeout: 5000,
+          },
+          res => {
+            const header = res.headers.server;
+            resolve(typeof header === 'string' ? header : undefined);
+            res.resume();
+          },
+        );
+        req.on('error', reject);
+        req.on('timeout', () => {
+          req.destroy();
+          reject(new Error('Request timed out'));
+        });
+        req.end();
+      });
+      return { server };
+    } catch (err: unknown) {
+      return { error: err instanceof Error ? err.message : String(err) };
     }
   }
 

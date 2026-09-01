@@ -95,6 +95,10 @@ let deployResult: OpenShiftDeployResult | null = null;
 let deployedName = '';
 /** Feedback for the "copy verify command" button (APPENG-6227), cleared on a timer like BuildHistoryPanel's copy buttons. */
 let curlCopyFeedback = '';
+/** Live "Verify sidecar" check state (APPENG-6227) — reset to 'idle' on every new deploy. */
+let sidecarCheckState: 'idle' | 'checking' | 'verified' | 'not-verified' | 'error' = 'idle';
+let sidecarCheckServer = '';
+let sidecarCheckError = '';
 
 let workloads: OpenShiftWorkload[] = [];
 let listBusy = false;
@@ -386,6 +390,29 @@ async function copyCurlCommand(url: string): Promise<void> {
   }
 }
 
+/**
+ * Live "Verify" check (APPENG-6227): HEAD-requests the route via the backend (a webview
+ * can't make this cross-origin request itself) and checks the `server` response header,
+ * so the Hummingbird companion pattern can be demonstrated with a click instead of a
+ * terminal — the copyable curl command above stays as the manual fallback.
+ */
+async function verifySidecarProxy(url: string): Promise<void> {
+  sidecarCheckState = 'checking';
+  sidecarCheckServer = '';
+  sidecarCheckError = '';
+  const { server, error } = await physicalAiClient.checkRouteServerHeader(url);
+  if (error) {
+    sidecarCheckState = 'error';
+    sidecarCheckError = error;
+  } else if (server && /nginx/i.test(server)) {
+    sidecarCheckState = 'verified';
+    sidecarCheckServer = server;
+  } else {
+    sidecarCheckState = 'not-verified';
+    sidecarCheckServer = server ?? '';
+  }
+}
+
 async function preview() {
   previewBusy = true;
   previewError = '';
@@ -405,6 +432,10 @@ async function deploy() {
   deploying = true;
   deployError = '';
   deployResult = null;
+  // Stale results from a previous deploy shouldn't linger under a new one (APPENG-6227).
+  sidecarCheckState = 'idle';
+  sidecarCheckServer = '';
+  sidecarCheckError = '';
   try {
     deployResult = await physicalAiClient.deployToOpenShift(config);
     deployedName = name;
@@ -871,15 +902,33 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
               <div class="flex flex-row items-center gap-2">
                 <span class="text-xs opacity-80">Verify the Hummingbird sidecar is fronting traffic:</span>
                 <button
+                  on:click={() => verifySidecarProxy(deployResult?.routeUrl ?? '')}
+                  disabled={sidecarCheckState === 'checking'}
+                  class="pai-btn pai-btn-sm text-xs">
+                  {sidecarCheckState === 'checking' ? 'Checking…' : 'Verify'}
+                </button>
+                <button
                   on:click={() => copyCurlCommand(deployResult?.routeUrl ?? '')}
                   class="pai-btn pai-btn-sm text-xs">
-                  {curlCopyFeedback || 'Copy'}
+                  {curlCopyFeedback || 'Copy curl'}
                 </button>
               </div>
+              {#if sidecarCheckState === 'verified'}
+                <div class="text-xs pai-text-success">
+                  ✓ Verified — response header <span class="font-mono">server: {sidecarCheckServer}</span>
+                </div>
+              {:else if sidecarCheckState === 'not-verified'}
+                <div class="text-xs pai-text-warning">
+                  Not verified — response header was
+                  <span class="font-mono">server: {sidecarCheckServer || '(none)'}</span>, expected nginx.
+                </div>
+              {:else if sidecarCheckState === 'error'}
+                <div class="text-xs pai-text-error">Verify failed: {sidecarCheckError}</div>
+              {/if}
               <pre
                 class="text-xs font-mono p-2 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] overflow-auto whitespace-pre">curl -I {deployResult.routeUrl}</pre>
               <span class="text-xs opacity-80"
-                >Look for <span class="font-mono">server: nginx</span> in the response headers.</span>
+                >Or run this yourself — look for <span class="font-mono">server: nginx</span> in the response headers.</span>
             </div>
           {/if}
         </div>

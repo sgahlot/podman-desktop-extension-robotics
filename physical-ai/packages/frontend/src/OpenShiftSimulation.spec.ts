@@ -28,6 +28,8 @@ const mockGetRobotWarmStatusInOpenShift = vi.fn();
 const mockListSpawnedRobotsInOpenShift = vi.fn();
 const mockDespawnRobotInOpenShift = vi.fn();
 const mockOpenUrlInBrowser = vi.fn();
+const mockCheckRouteServerHeader = vi.fn();
+const mockCopyToClipboard = vi.fn();
 const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
@@ -44,6 +46,8 @@ vi.mock('./api/client', () => ({
     listOpenShiftDeployments: (...args: unknown[]) => mockListOpenShiftDeployments(...args),
     deployToOpenShift: (...args: unknown[]) => mockDeployToOpenShift(...args),
     deleteOpenShiftDeployment: (...args: unknown[]) => mockDeleteOpenShiftDeployment(...args),
+    checkRouteServerHeader: (...args: unknown[]) => mockCheckRouteServerHeader(...args),
+    copyToClipboard: (...args: unknown[]) => mockCopyToClipboard(...args),
     spawnRobotInOpenShift: (...args: unknown[]) => mockSpawnRobotInOpenShift(...args),
     sendOpenShiftNavigationGoal: (...args: unknown[]) => mockSendOpenShiftNavigationGoal(...args),
     getRobotWarmStatusInOpenShift: (...args: unknown[]) => mockGetRobotWarmStatusInOpenShift(...args),
@@ -95,6 +99,8 @@ describe('OpenShiftSimulation', () => {
     mockListSpawnedRobotsInOpenShift.mockResolvedValue([]);
     mockDespawnRobotInOpenShift.mockResolvedValue(undefined);
     mockOpenUrlInBrowser.mockResolvedValue(undefined);
+    mockCheckRouteServerHeader.mockResolvedValue({ server: 'nginx/1.30.4' });
+    mockCopyToClipboard.mockResolvedValue(undefined);
   });
 
   it('renders the deployed-simulations section', async () => {
@@ -230,6 +236,86 @@ describe('OpenShiftSimulation', () => {
 
     await waitFor(() => {
       expect(mockDeployToOpenShift).toHaveBeenCalledWith(expect.objectContaining({ useHummingbirdSidecar: true }));
+    });
+  });
+
+  describe('Hummingbird sidecar verification (APPENG-6227)', () => {
+    const ROUTE_URL = 'https://route.example.com';
+
+    // refreshWorkloads() (called at the end of deploy()) drops the result panel if the
+    // just-deployed name isn't in the workloads list yet — mock it present so the panel
+    // (and the Verify button inside it) actually stays up for these assertions.
+    function mockWorkloadPresent(): void {
+      mockListOpenShiftDeployments.mockResolvedValue([{ ...READY_WORKLOAD, routeUrl: ROUTE_URL }]);
+    }
+
+    async function deployWithSidecar(): Promise<void> {
+      mockWorkloadPresent();
+      mockDeployToOpenShift.mockResolvedValue({
+        name: 'ros2-jazzy-sim',
+        namespace: 'sgahlot-pd-extn',
+        routeUrl: ROUTE_URL,
+        applied: ['ConfigMap', 'Deployment', 'Service', 'Route'],
+        message: 'Deployed',
+      });
+      render(DeployOpenShift);
+      await fireEvent.click(await screen.findByRole('checkbox', { name: /Hummingbird nginx sidecar/ }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+      await screen.findByRole('button', { name: 'Verify' });
+    }
+
+    it('does not show a Verify button when the sidecar was not deployed', async () => {
+      mockWorkloadPresent();
+      mockDeployToOpenShift.mockResolvedValue({
+        name: 'ros2-jazzy-sim',
+        namespace: 'sgahlot-pd-extn',
+        routeUrl: ROUTE_URL,
+        applied: ['Deployment', 'Service', 'Route'],
+        message: 'Deployed',
+      });
+      render(DeployOpenShift);
+      await fireEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
+      await screen.findByText('Applied: Deployment, Service, Route');
+      expect(screen.queryByRole('button', { name: 'Verify' })).toBeNull();
+    });
+
+    it('shows verified with the server header when it comes back nginx', async () => {
+      mockCheckRouteServerHeader.mockResolvedValue({ server: 'nginx/1.30.4' });
+      await deployWithSidecar();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+
+      expect(mockCheckRouteServerHeader).toHaveBeenCalledWith('https://route.example.com');
+      await screen.findByText(/Verified/);
+      expect(screen.getByText(/server: nginx\/1\.30\.4/)).toBeTruthy();
+    });
+
+    it('shows not-verified when the server header is not nginx', async () => {
+      mockCheckRouteServerHeader.mockResolvedValue({ server: 'websockify' });
+      await deployWithSidecar();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+
+      await screen.findByText(/Not verified/);
+    });
+
+    it('shows an error when the check fails', async () => {
+      mockCheckRouteServerHeader.mockResolvedValue({ error: 'connect ECONNREFUSED' });
+      await deployWithSidecar();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+
+      await screen.findByText(/Verify failed: connect ECONNREFUSED/);
+    });
+
+    it('copies the curl command via the extension clipboard RPC', async () => {
+      await deployWithSidecar();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Copy curl' }));
+
+      await waitFor(() => {
+        expect(mockCopyToClipboard).toHaveBeenCalledWith('curl -I https://route.example.com');
+      });
     });
   });
 
