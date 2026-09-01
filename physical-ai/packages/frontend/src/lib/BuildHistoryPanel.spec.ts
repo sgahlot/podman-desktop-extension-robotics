@@ -30,7 +30,7 @@ describe('BuildHistoryPanel', () => {
   });
 
   it('shows a placeholder when there is no history yet', async () => {
-    render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
+    render(BuildHistoryPanel);
     expect(await screen.findByText('No builds recorded yet.')).toBeTruthy();
   });
 
@@ -44,7 +44,7 @@ describe('BuildHistoryPanel', () => {
     };
     mockGetBuildHistory.mockResolvedValue([entry]);
 
-    render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
+    render(BuildHistoryPanel);
 
     expect(await screen.findByText(entry.tag)).toBeTruthy();
     expect(screen.getByText('(amd64)')).toBeTruthy();
@@ -62,7 +62,7 @@ describe('BuildHistoryPanel', () => {
     };
     mockGetBuildHistory.mockResolvedValue([entry]);
 
-    render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
+    render(BuildHistoryPanel);
 
     expect(await screen.findByText('19m 10s')).toBeTruthy();
   });
@@ -78,7 +78,7 @@ describe('BuildHistoryPanel', () => {
     };
     mockGetBuildHistory.mockResolvedValue([entry]);
 
-    render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
+    render(BuildHistoryPanel);
 
     expect(await screen.findByText(entry.tag)).toBeTruthy();
     expect(screen.getByText('❌')).toBeTruthy();
@@ -95,7 +95,7 @@ describe('BuildHistoryPanel', () => {
     };
     mockGetBuildHistory.mockResolvedValue([entry]);
 
-    render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
+    render(BuildHistoryPanel);
 
     await screen.findByText(entry.tag);
     expect(screen.queryByText(/SBOM/)).toBeNull();
@@ -113,7 +113,7 @@ describe('BuildHistoryPanel', () => {
     };
     mockGetBuildHistory.mockResolvedValue([entry]);
 
-    render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
+    render(BuildHistoryPanel);
 
     expect(await screen.findByRole('button', { name: /SBOM \(3 components\)/ })).toBeTruthy();
     // The count came from the polled entry's own field — no on-demand fetch needed yet.
@@ -133,7 +133,7 @@ describe('BuildHistoryPanel', () => {
     mockGetBuildHistory.mockResolvedValue([entry]);
     mockGetBuildHistorySbom.mockResolvedValue(SPDX_SBOM);
 
-    render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
+    render(BuildHistoryPanel);
 
     const toggle = await screen.findByRole('button', { name: /SBOM \(2 packages\)/ });
     expect(screen.queryByText(/pkg-a/)).toBeNull();
@@ -185,7 +185,7 @@ describe('BuildHistoryPanel', () => {
     };
     mockGetBuildHistory.mockResolvedValue([entry]);
 
-    render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
+    render(BuildHistoryPanel);
     const toggle = await screen.findByRole('button', { name: /SBOM \(2 packages\)/ });
     await fireEvent.click(toggle);
 
@@ -208,7 +208,7 @@ describe('BuildHistoryPanel', () => {
     };
     mockGetBuildHistory.mockResolvedValue([entry]);
 
-    render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
+    render(BuildHistoryPanel);
     const toggle = await screen.findByRole('button', { name: /SBOM \(2 packages\)/ });
     await fireEvent.click(toggle);
 
@@ -230,7 +230,7 @@ describe('BuildHistoryPanel', () => {
     };
     mockGetBuildHistory.mockResolvedValue([entry]);
 
-    render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
+    render(BuildHistoryPanel);
 
     const copyButton = await screen.findByRole('button', { name: 'Copy to clipboard' });
     await fireEvent.click(copyButton);
@@ -254,7 +254,7 @@ describe('BuildHistoryPanel', () => {
     };
     mockGetBuildHistory.mockResolvedValue([entry]);
 
-    render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
+    render(BuildHistoryPanel);
 
     const copyButton = await screen.findByRole('button', { name: 'Copy to clipboard' });
     await fireEvent.click(copyButton);
@@ -286,7 +286,7 @@ describe('BuildHistoryPanel', () => {
     mockGetBuildHistory.mockResolvedValue([entry]);
     mockGetBuildHistorySbom.mockResolvedValue('not valid json');
 
-    render(BuildHistoryPanel, { props: { pollIntervalMs: 1_000_000 } });
+    render(BuildHistoryPanel);
 
     const toggle = await screen.findByRole('button', { name: '▶ SBOM' });
     await fireEvent.click(toggle);
@@ -295,18 +295,57 @@ describe('BuildHistoryPanel', () => {
     expect(screen.getByRole('button', { name: '▼ SBOM' })).toBeTruthy();
   });
 
-  it('re-fetches history on the configured poll interval', async () => {
+  it('refreshes once on mount and does not keep polling in the background (APPENG-6265)', async () => {
     vi.useFakeTimers();
     mockGetBuildHistory.mockResolvedValue([]);
 
-    render(BuildHistoryPanel, { props: { pollIntervalMs: 3000 } });
+    render(BuildHistoryPanel);
     await vi.advanceTimersByTimeAsync(0);
     expect(mockGetBuildHistory).toHaveBeenCalledTimes(1);
 
-    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(mockGetBuildHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshAfterBuild(false) refreshes once and starts no catch-up poll', async () => {
+    vi.useFakeTimers();
+    mockGetBuildHistory.mockResolvedValue([]);
+
+    const { component } = render(BuildHistoryPanel);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockGetBuildHistory).toHaveBeenCalledTimes(1);
+
+    await component.refreshAfterBuild(false);
     expect(mockGetBuildHistory).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(mockGetBuildHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it('refreshAfterBuild(true) keeps polling on sbomWatchIntervalMs until sbomWatchDurationMs elapses, then stops', async () => {
+    vi.useFakeTimers();
+    mockGetBuildHistory.mockResolvedValue([]);
+
+    const { component } = render(BuildHistoryPanel, {
+      props: { sbomWatchIntervalMs: 3000, sbomWatchDurationMs: 9000 },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockGetBuildHistory).toHaveBeenCalledTimes(1);
+
+    const watch = component.refreshAfterBuild(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockGetBuildHistory).toHaveBeenCalledTimes(2); // the immediate refresh inside refreshAfterBuild
 
     await vi.advanceTimersByTimeAsync(3000);
     expect(mockGetBuildHistory).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(mockGetBuildHistory).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(mockGetBuildHistory).toHaveBeenCalledTimes(5);
+    await watch;
+
+    // The 9s watch window has elapsed — further time must not trigger more refreshes.
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(mockGetBuildHistory).toHaveBeenCalledTimes(5);
   });
 });

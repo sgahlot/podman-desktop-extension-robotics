@@ -5,18 +5,25 @@ import type { BuildHistoryEntry } from '/@shared/src/types/BuildHistory';
 import { parseSbomPackageCount, sbomItemLabel } from '/@shared/src/types/BuildHistory';
 import { formatDurationSeconds } from './formatDuration';
 
-/** Poll cadence for picking up history written by a build that finished in the
- * background (fire-and-forget on the backend) — overridable for tests. */
-export let pollIntervalMs = 3000;
+/**
+ * Interval/duration for the bounded catch-up poll after a build that opted into SBOM
+ * generation completes — `syft` runs asynchronously and can take tens of seconds after the
+ * build itself is done (see PhysicalAiApiImpl#recordBuildHistory), so a single refresh
+ * right at completion would usually show the build but miss its SBOM. Overridable for
+ * tests. There is no continuous background poll (APPENG-6265) — history only refreshes on
+ * mount and when a caller reports a build finished via refreshAfterBuild.
+ */
+export let sbomWatchIntervalMs = 3000;
+export let sbomWatchDurationMs = 60_000;
 
 let history: BuildHistoryEntry[] = [];
-let pollTimer: number | null = null;
+let destroyed = false;
 
 /**
  * Per-build UI/derived state, keyed by the same stable `${tag}-${startedAt}` string used
- * as the {#each} key — NOT array index. History is re-fetched wholesale on every poll, so
- * a new build prepended to the list would shift every later entry's index; keying expand/
- * format state by index would silently show the wrong entry's SBOM after a poll tick.
+ * as the {#each} key — NOT array index. History is re-fetched wholesale on every refresh,
+ * so a new build prepended to the list would shift every later entry's index; keying
+ * expand/format state by index would silently show the wrong entry's SBOM after a refresh.
  */
 let sbomExpanded: Record<string, boolean> = {};
 /** Full SBOM text, fetched on demand the first time an entry is expanded (APPENG-6265) —
@@ -52,6 +59,26 @@ export async function refresh(): Promise<void> {
     history = await physicalAiClient.getBuildHistory();
   } catch {
     // keep the last-known list on a transient fetch error
+  }
+}
+
+/**
+ * Called by a parent when one of its own build panels just finished — refreshes once
+ * immediately, then (only when `watchForSbom` is true) keeps refreshing on a bounded
+ * interval until `sbomWatchDurationMs` elapses, to pick up the SBOM once `syft` finishes
+ * attaching it. Bounded rather than indefinite: once the window passes we stop regardless
+ * of whether the SBOM showed up, matching the backend's own "best-effort, never blocks"
+ * treatment of SBOM generation.
+ */
+export async function refreshAfterBuild(watchForSbom = false): Promise<void> {
+  await refresh();
+  if (!watchForSbom) return;
+
+  const deadline = Date.now() + sbomWatchDurationMs;
+  while (!destroyed && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, sbomWatchIntervalMs));
+    if (destroyed) return;
+    await refresh();
   }
 }
 
@@ -144,16 +171,10 @@ function formatTimestamp(ms: number): string {
 
 onMount(() => {
   void refresh();
-  pollTimer = window.setInterval(() => {
-    void refresh();
-  }, pollIntervalMs);
 });
 
 onDestroy(() => {
-  if (pollTimer !== null) {
-    window.clearInterval(pollTimer);
-    pollTimer = null;
-  }
+  destroyed = true;
 });
 </script>
 
