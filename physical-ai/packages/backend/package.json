@@ -22,7 +22,6 @@
       "properties": {
         "physical-ai.general.sectionTitle": {
           "type": "markdown",
-          "title": " ",
           "markdownDescription": "### General"
         },
         "physical-ai.general.quayNamespace": {
@@ -54,7 +53,6 @@
         },
         "physical-ai.simulation.sectionTitle": {
           "type": "markdown",
-          "title": " ",
           "markdownDescription": "### Simulation"
         },
         "physical-ai.simulation.robot": {
@@ -106,7 +104,6 @@
         },
         "physical-ai.catalog.sectionTitle": {
           "type": "markdown",
-          "title": " ",
           "markdownDescription": "### Image Catalog"
         },
         "physical-ai.catalog.viewMode": {
@@ -129,7 +126,6 @@
         },
         "physical-ai.build.sectionTitle": {
           "type": "markdown",
-          "title": " ",
           "markdownDescription": "### Image Builder"
         },
         "physical-ai.build.layout": {
@@ -156,7 +152,6 @@
         },
         "physical-ai.openshift.sectionTitle": {
           "type": "markdown",
-          "title": " ",
           "markdownDescription": "### OpenShift"
         },
         "physical-ai.openshift.defaultNamespace": {
