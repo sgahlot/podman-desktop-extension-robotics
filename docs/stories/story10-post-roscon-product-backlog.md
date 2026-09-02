@@ -158,10 +158,11 @@ as a not-yet-sized follow-on). A "Show Viewer" toggle next to "Open in Browser"
 (`LocalSimulation.svelte`) / "Open {route}" (`OpenShiftSimulation.svelte`) reveals an inline
 `<iframe>` reusing the existing URL-resolution logic (`simulationBrowserUrl` for local,
 `w.routeUrl` for OpenShift) and the existing running/ready-and-admitted gating — no new
-not-running state needed. **Live-tested 2026-09-02 (local/Podman path):** the CSP/iframe
-question is resolved — Podman Desktop's webview does not block the embedded noVNC iframe; the
-Gazebo Sim canvas renders inline (scene tree, spawned robot visible) exactly like the "Open in
-Browser" tab did, confirmed via screenshot. OpenShift Route path not yet separately tested.
+not-running state needed. **Live-tested 2026-09-02, both paths:** the CSP/iframe question is
+resolved — Podman Desktop's webview does not block the embedded noVNC iframe. Confirmed via
+screenshot for both the local/Podman path (Gazebo Sim canvas + scene tree + spawned robot
+rendering inline) and the OpenShift Route path (same, over the cluster's HTTPS route, robot
+spawn/navigate UI working alongside it). Fully validated.
 
 ---
 
