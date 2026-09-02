@@ -3,7 +3,6 @@ import { physicalAiClient } from './api/client';
 import { onMount, onDestroy } from 'svelte';
 import { router } from 'tinro';
 import { simulationImageTag } from '/@shared/src/types/SimulationProfiles';
-import { isSimLaunchImageRef } from '/@shared/src/security/simImageTrust';
 import { DEFAULT_GPU_TOLERATION } from '/@shared/src/openshift/manifests';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import type { OpenShiftContext, OpenShiftDeployResult, OpenShiftWorkload } from '/@shared/src/types/OpenShiftDeploy';
@@ -58,13 +57,19 @@ let selectedContext = '';
 let loggedIn = true;
 let loginMessage = '';
 let image = 'quay.io/ecosystem-appeng/ros2-jazzy-sim:noble-amd64';
-/** Local images matching the simulation allowlist AND tagged `-amd64` (the suffix Image
- * Builder applies whenever a build targets amd64, see archTagSuffix) — the natural
- * candidates for an OpenShift deploy, which always needs an amd64, cluster-pullable image.
- * Empty when listing fails or none match; the Image field still works as free text then,
- * mirroring the Project/namespace combobox's degrade-to-free-text behavior. */
+/**
+ * Local images tagged `-amd64` (the suffix Image Builder applies whenever a build targets
+ * amd64, see archTagSuffix) — the natural candidates for an OpenShift deploy, which always
+ * needs an amd64, cluster-pullable image. Deliberately NOT filtered by the local
+ * simulation-launch allowlist (ros2-*-sim* / ros2-*-turtlebot3) — that allowlist is a trust
+ * boundary for auto-running an image via the local Gazebo entrypoint script, unrelated to
+ * picking an image to deploy to your own cluster. A Layers-wizard build (e.g.
+ * pai-layer-<base-os>:latest-amd64) is just as valid a candidate here and wouldn't match
+ * those name patterns at all. Empty when listing fails or none match; the Image field
+ * still works as free text then, mirroring the Project/namespace combobox's degrade-to-
+ * free-text behavior.
+ */
 let localAmd64Images: string[] = [];
-let simImageAllowlist = '';
 /** Custom combobox state for the Image field (APPENG-6259), mirroring the Project/
  * namespace combobox above — see its comment for why a custom menu instead of a native
  * `<input list>`/`<datalist>`. */
@@ -306,9 +311,8 @@ function handleNamespaceKeydown(e: KeyboardEvent) {
  * still accepts free text if listing fails, exactly like the Project/namespace combobox. */
 async function refreshLocalAmd64Images() {
   try {
-    simImageAllowlist = await physicalAiClient.getSimulationImageAllowlist();
     const all = await physicalAiClient.listLocalImages();
-    localAmd64Images = all.filter(t => isSimLaunchImageRef(t, simImageAllowlist || null) && t.endsWith('-amd64'));
+    localAmd64Images = all.filter(t => t.endsWith('-amd64'));
   } catch {
     localAmd64Images = [];
   }
