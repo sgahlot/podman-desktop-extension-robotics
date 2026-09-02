@@ -17,7 +17,7 @@ const mockGetDefaultNamespace = vi.fn();
 const mockGetDefaultOpenShiftNamespace = vi.fn();
 const mockCheckOpenShiftLogin = vi.fn();
 const mockListOpenShiftProjects = vi.fn();
-const mockListLocalImages = vi.fn();
+const mockListLocalImagesWithArch = vi.fn();
 const mockGetOpenShiftImageAllowlist = vi.fn();
 const mockGetSimulationConfig = vi.fn();
 const mockGetDefaultSoftwareRenderCpus = vi.fn();
@@ -40,7 +40,7 @@ vi.mock('./api/client', () => ({
     getDefaultOpenShiftNamespace: (...args: unknown[]) => mockGetDefaultOpenShiftNamespace(...args),
     checkOpenShiftLogin: (...args: unknown[]) => mockCheckOpenShiftLogin(...args),
     listOpenShiftProjects: (...args: unknown[]) => mockListOpenShiftProjects(...args),
-    listLocalImages: (...args: unknown[]) => mockListLocalImages(...args),
+    listLocalImagesWithArch: (...args: unknown[]) => mockListLocalImagesWithArch(...args),
     getOpenShiftImageAllowlist: (...args: unknown[]) => mockGetOpenShiftImageAllowlist(...args),
     getSimulationConfig: (...args: unknown[]) => mockGetSimulationConfig(...args),
     getDefaultSoftwareRenderCpus: (...args: unknown[]) => mockGetDefaultSoftwareRenderCpus(...args),
@@ -89,7 +89,7 @@ describe('OpenShiftSimulation', () => {
     mockGetDefaultOpenShiftNamespace.mockResolvedValue('');
     mockCheckOpenShiftLogin.mockResolvedValue({ loggedIn: true });
     mockListOpenShiftProjects.mockResolvedValue([]);
-    mockListLocalImages.mockResolvedValue([]);
+    mockListLocalImagesWithArch.mockResolvedValue([]);
     mockGetOpenShiftImageAllowlist.mockResolvedValue('');
     mockGetDefaultSoftwareRenderCpus.mockResolvedValue(8);
     // Keep the default image (avoids exercising simulationImageTag here).
@@ -139,12 +139,12 @@ describe('OpenShiftSimulation', () => {
 
   describe('Image picker (APPENG-6259)', () => {
     it('suggests any local image tagged -amd64, including non-"ros2-*-sim*"-named Layers builds', async () => {
-      mockListLocalImages.mockResolvedValue([
-        'quay.io/ns/ros2-jazzy-sim:noble-amd64', // amd64
-        'quay.io/ns/ros2-jazzy-sim:noble', // no -amd64 (host-native) — excluded
+      mockListLocalImagesWithArch.mockResolvedValue([
+        { tag: 'quay.io/ns/ros2-jazzy-sim:noble-amd64', arch: 'amd64' },
+        { tag: 'quay.io/ns/ros2-jazzy-sim:noble', arch: 'arm64' }, // host-native — excluded
         // A Layers-wizard build: doesn't match the local sim-launch allowlist's naming
         // convention at all, but is just as valid an OpenShift deploy candidate.
-        'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64',
+        { tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64', arch: 'amd64' },
       ]);
       render(DeployOpenShift);
 
@@ -156,10 +156,46 @@ describe('OpenShiftSimulation', () => {
       expect(screen.queryByRole('option', { name: 'quay.io/ns/ros2-jazzy-sim:noble' })).toBeNull();
     });
 
+    it('trusts reported arch over tag naming — includes an amd64 image without the -amd64 suffix', async () => {
+      mockListLocalImagesWithArch.mockResolvedValue([
+        { tag: 'quay.io/ns/some-tool:noble-linux', arch: 'amd64' },
+        { tag: 'quay.io/ns/some-tool:1.0.1', arch: 'amd64' },
+      ]);
+      render(DeployOpenShift);
+
+      const input = await screen.findByLabelText('Image (amd64, cluster-pullable)');
+      await fireEvent.focus(input);
+
+      expect(await screen.findByRole('option', { name: 'quay.io/ns/some-tool:noble-linux' })).toBeTruthy();
+      expect(screen.getByRole('option', { name: 'quay.io/ns/some-tool:1.0.1' })).toBeTruthy();
+    });
+
+    it('trusts reported arch over tag naming — excludes an arm64 image even if misleadingly tagged -amd64', async () => {
+      mockListLocalImagesWithArch.mockResolvedValue([{ tag: 'quay.io/ns/mistagged:noble-amd64', arch: 'arm64' }]);
+      render(DeployOpenShift);
+
+      await screen.findByLabelText('Image (amd64, cluster-pullable)');
+      expect(screen.queryByRole('option', { name: 'quay.io/ns/mistagged:noble-amd64' })).toBeNull();
+    });
+
+    it('falls back to the -amd64 tag suffix when arch is not reported (older Podman)', async () => {
+      mockListLocalImagesWithArch.mockResolvedValue([
+        { tag: 'quay.io/ns/ros2-jazzy-sim:noble-amd64', arch: undefined },
+        { tag: 'quay.io/ns/ros2-jazzy-sim:noble', arch: undefined },
+      ]);
+      render(DeployOpenShift);
+
+      const input = await screen.findByLabelText('Image (amd64, cluster-pullable)');
+      await fireEvent.focus(input);
+
+      expect(await screen.findByRole('option', { name: 'quay.io/ns/ros2-jazzy-sim:noble-amd64' })).toBeTruthy();
+      expect(screen.queryByRole('option', { name: 'quay.io/ns/ros2-jazzy-sim:noble' })).toBeNull();
+    });
+
     it('narrows suggestions by the configured OCP image allowlist, when set', async () => {
-      mockListLocalImages.mockResolvedValue([
-        'quay.io/ns/ros2-jazzy-sim:noble-amd64',
-        'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64',
+      mockListLocalImagesWithArch.mockResolvedValue([
+        { tag: 'quay.io/ns/ros2-jazzy-sim:noble-amd64', arch: 'amd64' },
+        { tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64', arch: 'amd64' },
       ]);
       mockGetOpenShiftImageAllowlist.mockResolvedValue('ros2-*-sim*');
       render(DeployOpenShift);
@@ -171,10 +207,10 @@ describe('OpenShiftSimulation', () => {
       expect(screen.queryByRole('option', { name: 'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64' })).toBeNull();
     });
 
-    it('shows every -amd64 image when the allowlist preference is empty (the default)', async () => {
-      mockListLocalImages.mockResolvedValue([
-        'quay.io/ns/ros2-jazzy-sim:noble-amd64',
-        'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64',
+    it('shows every amd64 image when the allowlist preference is empty (the default)', async () => {
+      mockListLocalImagesWithArch.mockResolvedValue([
+        { tag: 'quay.io/ns/ros2-jazzy-sim:noble-amd64', arch: 'amd64' },
+        { tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64', arch: 'amd64' },
       ]);
       mockGetOpenShiftImageAllowlist.mockResolvedValue('');
       render(DeployOpenShift);
@@ -187,7 +223,7 @@ describe('OpenShiftSimulation', () => {
     });
 
     it('picking a suggestion fills the Image field and closes the menu', async () => {
-      mockListLocalImages.mockResolvedValue(['quay.io/ns/ros2-jazzy-sim:noble-amd64']);
+      mockListLocalImagesWithArch.mockResolvedValue([{ tag: 'quay.io/ns/ros2-jazzy-sim:noble-amd64', arch: 'amd64' }]);
       render(DeployOpenShift);
 
       const input = (await screen.findByLabelText('Image (amd64, cluster-pullable)')) as HTMLInputElement;
@@ -201,7 +237,7 @@ describe('OpenShiftSimulation', () => {
     });
 
     it('still accepts free-text values not in the suggestion list', async () => {
-      mockListLocalImages.mockResolvedValue(['quay.io/ns/ros2-jazzy-sim:noble-amd64']);
+      mockListLocalImagesWithArch.mockResolvedValue([{ tag: 'quay.io/ns/ros2-jazzy-sim:noble-amd64', arch: 'amd64' }]);
       mockDeployToOpenShift.mockResolvedValue({
         name: 'ros2-jazzy-sim',
         namespace: 'sgahlot-pd-extn',
@@ -222,7 +258,7 @@ describe('OpenShiftSimulation', () => {
     });
 
     it('degrades to plain free-text with a placeholder hint when no local amd64 images are found', async () => {
-      mockListLocalImages.mockResolvedValue([]);
+      mockListLocalImagesWithArch.mockResolvedValue([]);
       render(DeployOpenShift);
 
       await screen.findByLabelText('Image (amd64, cluster-pullable)');

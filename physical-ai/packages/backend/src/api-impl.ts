@@ -7,6 +7,7 @@ import type {
   PullProgress,
   BuildProgress,
   PushProgress,
+  LocalImageInfo,
 } from '/@shared/src/types/ImageCatalog';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from '/@shared/src/types/SimulationContainer';
@@ -370,6 +371,53 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         .map(l => l.trim())
         .filter(l => l.length > 0 && !l.includes('<none>'));
       return [...new Set(lines)];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Local images with their reported CPU architecture (APPENG-6259) — a separate listing
+   * path from listLocalImages/#listLocalImagesFrom* above (which only need tags) so that
+   * path's plain-text CLI format stays untouched; this queries `--format json` instead to
+   * get the `Arch` field neither the engine API's RepoTags/Names-only fallback nor the
+   * plain-text CLI format expose per line. */
+  async listLocalImagesWithArch(): Promise<LocalImageInfo[]> {
+    const fromEngine = await this.#listLocalImagesWithArchFromEngine();
+    const fromCli = await this.#listLocalImagesWithArchFromPodmanCli();
+    const archByTag = new Map<string, string | undefined>();
+    for (const { tag, arch } of [...fromEngine, ...fromCli]) {
+      if (!archByTag.has(tag) || (!archByTag.get(tag) && arch)) {
+        archByTag.set(tag, arch);
+      }
+    }
+    return [...archByTag.entries()].map(([tag, arch]) => ({ tag, arch }));
+  }
+
+  async #listLocalImagesWithArchFromEngine(): Promise<LocalImageInfo[]> {
+    try {
+      const images = await extensionApi.containerEngine.listImages();
+      return images.flatMap(img => {
+        const repoTags = img.RepoTags?.filter(Boolean) ?? [];
+        const names =
+          repoTags.length > 0 ? repoTags : ((img as { Names?: string[] | null }).Names?.filter(Boolean) ?? []);
+        return names.map(tag => ({ tag, arch: img.Arch }));
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  async #listLocalImagesWithArchFromPodmanCli(): Promise<LocalImageInfo[]> {
+    try {
+      const result = await extensionApi.process.exec('podman', ['images', '--format', 'json']);
+      const parsed = JSON.parse(result.stdout || '[]') as Array<{ Names?: string[] | null; Arch?: string }>;
+      return parsed.flatMap(
+        entry =>
+          entry.Names?.filter((name): name is string => !!name && !name.includes('<none>')).map(tag => ({
+            tag,
+            arch: entry.Arch,
+          })) ?? [],
+      );
     } catch {
       return [];
     }

@@ -337,6 +337,93 @@ describe('PhysicalAiApiImpl', () => {
     });
   });
 
+  describe('listLocalImagesWithArch (APPENG-6259)', () => {
+    beforeEach(() => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '[]',
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+    });
+
+    it('returns each tag with its reported Arch from the engine listing', async () => {
+      vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
+        { RepoTags: ['quay.io/ns/img1:noble-amd64'], Arch: 'amd64' },
+        { RepoTags: ['quay.io/ns/img2:noble'], Arch: 'arm64' },
+      ] as unknown as extensionApi.ImageInfo[]);
+
+      const result = await api.listLocalImagesWithArch();
+      expect(result).toEqual(
+        expect.arrayContaining([
+          { tag: 'quay.io/ns/img1:noble-amd64', arch: 'amd64' },
+          { tag: 'quay.io/ns/img2:noble', arch: 'arm64' },
+        ]),
+      );
+    });
+
+    it('leaves arch undefined when the engine does not report one', async () => {
+      vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
+        { RepoTags: ['quay.io/ns/img:latest'] },
+      ] as unknown as extensionApi.ImageInfo[]);
+
+      const result = await api.listLocalImagesWithArch();
+      expect(result).toEqual([{ tag: 'quay.io/ns/img:latest', arch: undefined }]);
+    });
+
+    it('falls back to Names when RepoTags is empty (Podman 5)', async () => {
+      vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
+        { RepoTags: undefined, Names: ['quay.io/ns/img:latest'], Arch: 'amd64' },
+      ] as unknown as extensionApi.ImageInfo[]);
+
+      const result = await api.listLocalImagesWithArch();
+      expect(result).toEqual([{ tag: 'quay.io/ns/img:latest', arch: 'amd64' }]);
+    });
+
+    it('merges in the podman CLI JSON listing, filling in arch the engine missed', async () => {
+      vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
+        { RepoTags: ['quay.io/ns/img1:latest'] }, // engine has no Arch for this one
+      ] as unknown as extensionApi.ImageInfo[]);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: JSON.stringify([
+          { Names: ['quay.io/ns/img1:latest'], Arch: 'amd64' },
+          { Names: ['quay.io/ns/img2:latest'], Arch: 'arm64' },
+        ]),
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
+      const result = await api.listLocalImagesWithArch();
+      expect(result).toEqual(
+        expect.arrayContaining([
+          { tag: 'quay.io/ns/img1:latest', arch: 'amd64' },
+          { tag: 'quay.io/ns/img2:latest', arch: 'arm64' },
+        ]),
+      );
+      expect(result).toHaveLength(2);
+      expect(extensionApi.process.exec).toHaveBeenCalledWith('podman', ['images', '--format', 'json']);
+    });
+
+    it('drops <none> tags from the CLI JSON listing', async () => {
+      vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([]);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: JSON.stringify([{ Names: ['<none>:<none>'], Arch: 'amd64' }]),
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
+      const result = await api.listLocalImagesWithArch();
+      expect(result).toEqual([]);
+    });
+
+    it('returns [] when both sources fail', async () => {
+      vi.mocked(extensionApi.containerEngine.listImages).mockRejectedValue(new Error('boom'));
+      vi.mocked(extensionApi.process.exec).mockRejectedValue(new Error('boom'));
+
+      const result = await api.listLocalImagesWithArch();
+      expect(result).toEqual([]);
+    });
+  });
+
   describe('pullImage', () => {
     it('throws when no Podman connection found', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([]);

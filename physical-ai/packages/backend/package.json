@@ -100,7 +100,7 @@
         "physical-ai.simulation.imageAllowlist": {
           "type": "string",
           "default": "",
-          "description": "Optional comma-separated image refs or repo patterns allowed for Simulation launch (e.g. quay.io/ns/ros2-jazzy-sim:noble or quay.io/ns/ros2-jazzy-sim@sha256:…). Empty uses default ros2-*-sim* and ros2-*-turtlebot3. Pin exact tags/digests for demos — local image content is still trusted once selected."
+          "description": "ENFORCED — a non-empty value here is required for Simulation launch to succeed, not just a suggestion. Comma-separated image refs or repo patterns (e.g. quay.io/ns/ros2-jazzy-sim:noble or quay.io/ns/ros2-jazzy-sim@sha256:…). Empty = default ros2-*-sim* and ros2-*-turtlebot3. Setting a value REPLACES the defaults entirely — list them too (e.g. myimage-sim*,ros2-*-sim*,ros2-*-turtlebot3) if you still want them to launch. Local image content is still trusted once selected, so this is not cryptographic verification — it exists to stop an accidental/mistyped launch, not a determined user."
         },
         "physical-ai.catalog.sectionTitle": {
           "type": "markdown",
@@ -169,7 +169,7 @@
         "physical-ai.openshift.deployImageAllowlist": {
           "type": "string",
           "default": "",
-          "description": "Optional comma-separated image refs or repo patterns to narrow the OpenShift deploy tab's Image picker suggestions (e.g. ros2-*-sim*, or a full ref). Empty shows every local image tagged -amd64, regardless of name — this only filters suggestions, the field still accepts any free-text value."
+          "description": "NOT ENFORCED — UI convenience only. Comma-separated image refs or repo patterns (e.g. ros2-*-sim*, or a full ref) to narrow the OpenShift deploy tab's Image picker dropdown. Empty = suggest every genuinely-amd64 local image, regardless of name. Setting a value narrows the SUGGESTIONS only — the field always still accepts and deploys any free-text value, matched or not."
         }
       }
     }

@@ -324,13 +324,18 @@ function parseOpenShiftImageAllowlist(raw: string): string[] {
 async function refreshLocalAmd64Images() {
   try {
     const [all, allowlistRaw] = await Promise.all([
-      physicalAiClient.listLocalImages(),
+      physicalAiClient.listLocalImagesWithArch(),
       physicalAiClient.getOpenShiftImageAllowlist(),
     ]);
     const patterns = parseOpenShiftImageAllowlist(allowlistRaw);
-    localAmd64Images = all.filter(
-      t => t.endsWith('-amd64') && (patterns.length === 0 || imageRefMatchesAllowlist(t, patterns)),
-    );
+    localAmd64Images = all
+      // Trust reported arch when Podman gives us one; the -amd64 tag suffix is only a
+      // fallback guess for the rare case it doesn't (older Podman, or an unusual source) —
+      // real metadata beats a naming convention, since not every local image follows it
+      // (e.g. pulled or manually-tagged images).
+      .filter(({ tag, arch }) => (arch ? arch === 'amd64' : tag.endsWith('-amd64')))
+      .map(({ tag }) => tag)
+      .filter(tag => patterns.length === 0 || imageRefMatchesAllowlist(tag, patterns));
   } catch {
     localAmd64Images = [];
   }

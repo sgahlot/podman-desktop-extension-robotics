@@ -1,4 +1,11 @@
-import type { QuayRepository, QuayTag, PullProgress, BuildProgress, PushProgress } from './types/ImageCatalog';
+import type {
+  QuayRepository,
+  QuayTag,
+  PullProgress,
+  BuildProgress,
+  PushProgress,
+  LocalImageInfo,
+} from './types/ImageCatalog';
 import type { BuildHistoryEntry, SbomFormat } from './types/BuildHistory';
 import type { SimulationConfig } from './types/SimulationConfig';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from './types/SimulationContainer';
@@ -21,6 +28,9 @@ export abstract class PhysicalAiApi {
   abstract pullImageByRef(imageRef: string): Promise<void>;
   abstract getPullProgress(image: string): Promise<PullProgress | undefined>;
   abstract listLocalImages(): Promise<string[]>;
+  /** Local images with their reported CPU architecture, for finding genuinely-amd64 images
+   * regardless of tag naming (see LocalImageInfo). */
+  abstract listLocalImagesWithArch(): Promise<LocalImageInfo[]>;
   abstract buildBaseImage(tag: string, config: SimulationConfig): Promise<void>;
   abstract buildSimulationImage(tag: string, config: SimulationConfig): Promise<void>;
   /** Build an image from an in-memory Containerfile (layer-composition wizard). The
@@ -62,12 +72,16 @@ export abstract class PhysicalAiApi {
   abstract getNavigationLayout(): Promise<'sidebar' | 'tabs' | 'cards'>;
   abstract setNavigationLayout(layout: 'sidebar' | 'tabs' | 'cards'): Promise<void>;
   abstract getCatalogCuratedAllowlist(): Promise<string>;
-  /** Empty string = default ros2-*-sim* / ros2-*-turtlebot3 patterns. */
+  /** Enforced (see assertLaunchImageTag) — Simulation launch fails if the tag doesn't
+   * match. Empty string = default ros2-*-sim* / ros2-*-turtlebot3 patterns; a configured
+   * value replaces the defaults entirely rather than adding to them. */
   abstract getSimulationImageAllowlist(): Promise<string>;
-  /** Comma-separated image refs or repo patterns narrowing the OpenShift deploy tab's Image
-   * picker suggestions (Preferences: physical-ai.openshift.deployImageAllowlist). Empty string =
-   * suggest every local image tagged -amd64, regardless of name (APPENG-6259) — this only
-   * filters suggestions, never what the field accepts as free text. */
+  /** NOT enforced (unlike getSimulationImageAllowlist) — UI convenience only. Comma-separated
+   * image refs or repo patterns narrowing the OpenShift deploy tab's Image picker suggestions
+   * (Preferences: physical-ai.openshift.deployImageAllowlist). Empty string = suggest every
+   * genuinely-amd64 local image (real architecture metadata — see listLocalImagesWithArch),
+   * regardless of name (APPENG-6259) — this only filters suggestions, never what the field
+   * accepts as free text or what deploy actually sends. */
   abstract getOpenShiftImageAllowlist(): Promise<string>;
   /** Peek wait in seconds (Preferences: physical-ai.general.topicPeekTimeoutSeconds, 1–30). */
   abstract getTopicPeekTimeoutSeconds(): Promise<number>;
