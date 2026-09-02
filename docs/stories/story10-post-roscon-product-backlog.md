@@ -135,9 +135,34 @@ not just cosmetic. See the priority note below for why this may be worth pulling
 working embedded sim viewer (whichever option wins the spike) is a strong, visible showcase
 asset for demoing the extension, not just an incremental UX nicety.
 
-**Status:** filed as [APPENG-6283](https://redhat.atlassian.net/browse/APPENG-6283) under new
-Story [APPENG-6282](https://redhat.atlassian.net/browse/APPENG-6282) (which also tracks S10-2 as
-a not-yet-sized follow-on).
+**Spike result (2026-09-02): Option B ruled out, Option A chosen.** Checked the installed
+`@podman-desktop/api` types (`node_modules/@podman-desktop/api/src/extension-api.d.ts`,
+version `1.28.3`, declared in `packages/backend/package.json`) directly, plus current Podman
+Desktop docs/GitHub — confirmed live, not assumed. The only container-related contribution
+surfaces are context-menu items (`contributes.menus` with a `container/...` context, same
+pattern as pods/images/volumes) and `window.createWebviewPanel` (a brand-new panel in PD's own
+nav, like the extension-template-full "Hello World" tab) — neither lets an extension inject
+content into PD's existing container Details view. There is no
+`contributes.containerDetails`-style tab-panel contribution point in this API version. Option A
+it is.
+
+Within Option A, a further placement question came up: a new dedicated route/page (as
+literally described above) vs. embedding inline in the existing Local/OpenShift simulation
+panel where "Open in Browser" already lives. Decision (user, 2026-09-02): start with the inline
+panel — no extra navigation, and it can be revisited later if a dedicated page turns out to be
+better.
+
+**Status:** implemented under [APPENG-6283](https://redhat.atlassian.net/browse/APPENG-6283)
+(Story [APPENG-6282](https://redhat.atlassian.net/browse/APPENG-6282), which also tracks S10-2
+as a not-yet-sized follow-on). A "Show Viewer" toggle next to "Open in Browser"
+(`LocalSimulation.svelte`) / "Open {route}" (`OpenShiftSimulation.svelte`) reveals an inline
+`<iframe>` reusing the existing URL-resolution logic (`simulationBrowserUrl` for local,
+`w.routeUrl` for OpenShift) and the existing running/ready-and-admitted gating — no new
+not-running state needed. **Live-tested 2026-09-02, both paths:** the CSP/iframe question is
+resolved — Podman Desktop's webview does not block the embedded noVNC iframe. Confirmed via
+screenshot for both the local/Podman path (Gazebo Sim canvas + scene tree + spawned robot
+rendering inline) and the OpenShift Route path (same, over the cluster's HTTPS route, robot
+spawn/navigate UI working alongside it). Fully validated.
 
 ---
 

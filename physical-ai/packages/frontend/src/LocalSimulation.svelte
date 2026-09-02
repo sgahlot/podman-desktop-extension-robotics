@@ -5,6 +5,7 @@ import { router } from 'tinro';
 import type { SimContainerInfo } from '/@shared/src/types/SimulationContainer';
 import { SIM_STOPPED_BROWSER_HINT } from '/@shared/src/types/SimulationContainer';
 import { isSimLaunchImageRef } from '/@shared/src/security/simImageTrust';
+import { simulationBrowserUrl } from '/@shared/src/security/simInput';
 import RobotControls, { type RobotEntry } from './RobotControls.svelte';
 import { reconcileAdd, pruneStale } from './lib/robotReconcile';
 import { localDiagnosticsHref } from './lib/diagnosticsLink';
@@ -37,6 +38,8 @@ let reconciled = false;
  * sufficient map key (no workload-name prefix needed). */
 let missingStreaks = new Map<string, number>();
 let trackedSince = new Map<string, number>();
+/** Container ids with the embedded noVNC viewer expanded (APPENG-6283). */
+let expandedViewerIds: string[] = [];
 
 $: runningContainer = containers.find(c => c.state === 'running');
 $: hasRunning = !!runningContainer;
@@ -44,6 +47,9 @@ $: if (!hasRunning && reconciled) {
   reconciled = false;
   missingStreaks = new Map();
   trackedSince = new Map();
+}
+$: if (!hasRunning && expandedViewerIds.length > 0) {
+  expandedViewerIds = [];
 }
 /** Keep the shared spawned-robots store in sync — covers every mutation path (reconcile,
  * prune, spawnRobot, removeRobot) for free, so RobotDiagnosticsPanel can notice a robot that
@@ -143,6 +149,7 @@ async function stopSim(id: string) {
     await physicalAiClient.deleteSimulation(id);
     removedContainerIds = [...removedContainerIds, id];
     containers = containers.filter(c => c.id !== id);
+    expandedViewerIds = expandedViewerIds.filter(x => x !== id);
     spawnedRobots = [];
     actionInfo = SIM_STOPPED_BROWSER_HINT;
     await pollContainers();
@@ -159,6 +166,12 @@ async function openInBrowser() {
   } catch (e) {
     actionError = e instanceof Error ? e.message : String(e);
   }
+}
+
+function toggleViewer(id: string) {
+  expandedViewerIds = expandedViewerIds.includes(id)
+    ? expandedViewerIds.filter(x => x !== id)
+    : [...expandedViewerIds, id];
 }
 
 async function spawnRobot(form: { name: string; x: string; y: string; yaw: string }) {
@@ -364,7 +377,7 @@ function diagnoseRobot(index: number): void {
 
   <!-- Section 2: Running containers -->
   {#if containers.length > 0}
-    <div class="flex flex-col gap-2 max-w-lg">
+    <div class="flex flex-col gap-2 max-w-3xl">
       <h2 class="text-sm font-medium text-[var(--pd-content-header)]">Simulation Containers</h2>
 
       {#each containers as container (container.id)}
@@ -384,6 +397,9 @@ function diagnoseRobot(index: number): void {
           <div class="flex gap-2 mt-1">
             {#if container.state === 'running'}
               <button on:click={openInBrowser} class="pai-btn pai-btn-primary text-xs"> Open in Browser </button>
+              <button on:click={() => toggleViewer(container.id)} class="pai-btn text-xs">
+                {expandedViewerIds.includes(container.id) ? 'Hide Viewer' : 'Show Viewer'}
+              </button>
               <button on:click={() => router.goto('/topics')} class="pai-btn pai-btn-primary text-xs">
                 View Topics
               </button>
@@ -392,6 +408,12 @@ function diagnoseRobot(index: number): void {
               Stop &amp; remove
             </button>
           </div>
+          {#if container.state === 'running' && expandedViewerIds.includes(container.id)}
+            <iframe
+              title="Simulation viewer ({container.name})"
+              src={simulationBrowserUrl(hostPortForPrivate(container, 6080), 6080)}
+              class="w-full h-[480px] rounded border border-[var(--pd-content-card-border)] bg-black"></iframe>
+          {/if}
         </div>
       {/each}
     </div>

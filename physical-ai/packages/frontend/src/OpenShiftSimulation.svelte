@@ -127,6 +127,8 @@ let deployedName = '';
 let curlCopyFeedback: Record<string, string> = {};
 
 let workloads: OpenShiftWorkload[] = [];
+/** Workload names with the embedded viewer expanded (APPENG-6283). */
+let expandedViewerNames: string[] = [];
 let listBusy = false;
 let listError = '';
 let deletingName = '';
@@ -492,6 +494,12 @@ async function openRoute(url: string | undefined) {
   }
 }
 
+function toggleViewer(workloadName: string) {
+  expandedViewerNames = expandedViewerNames.includes(workloadName)
+    ? expandedViewerNames.filter(x => x !== workloadName)
+    : [...expandedViewerNames, workloadName];
+}
+
 /**
  * Copies a `curl -I <route>` command that shows `server: nginx/...` in the response —
  * proof the Hummingbird nginx sidecar (APPENG-6227) is fronting traffic, for the user to
@@ -673,6 +681,7 @@ async function remove(w: OpenShiftWorkload) {
     reconciledWorkloads.delete(w.name);
     clearMissingStreaksForWorkload(w.name);
     robotsByWorkload = robotsByWorkload;
+    expandedViewerNames = expandedViewerNames.filter(x => x !== w.name);
     if (deployedName === w.name) {
       deployResult = null;
       deployedName = '';
@@ -1097,15 +1106,27 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
                    (S8-5): a route can be admitted before the pod serves, so opening it early
                    just yields a 503. -->
               {#if w.ready && w.routeUrl}
-                <button
-                  on:click={() => openRoute(w.routeUrl)}
-                  class="pai-link pai-link-sm self-start break-all text-left">
-                  Open {w.routeUrl}
-                </button>
+                <div class="flex items-center gap-2">
+                  <button
+                    on:click={() => openRoute(w.routeUrl)}
+                    class="pai-link pai-link-sm self-start break-all text-left">
+                    Open {w.routeUrl}
+                  </button>
+                  <button on:click={() => toggleViewer(w.name)} class="pai-btn text-xs shrink-0">
+                    {expandedViewerNames.includes(w.name) ? 'Hide Viewer' : 'Show Viewer'}
+                  </button>
+                </div>
               {:else if w.routeUrl}
                 <span class="text-xs pai-text-muted">Route admitted; waiting for the pod to be ready…</span>
               {:else}
                 <span class="text-xs pai-text-muted">Route not admitted yet.</span>
+              {/if}
+
+              {#if w.ready && w.routeUrl && expandedViewerNames.includes(w.name)}
+                <iframe
+                  title="Simulation viewer ({w.name})"
+                  src={w.routeUrl}
+                  class="w-full h-[480px] rounded border border-[var(--pd-content-card-border)] bg-black"></iframe>
               {/if}
 
               {#if w.hasHummingbirdSidecar && w.routeUrl}
