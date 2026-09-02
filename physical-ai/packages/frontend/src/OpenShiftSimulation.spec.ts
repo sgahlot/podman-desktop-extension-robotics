@@ -18,6 +18,7 @@ const mockGetDefaultOpenShiftNamespace = vi.fn();
 const mockCheckOpenShiftLogin = vi.fn();
 const mockListOpenShiftProjects = vi.fn();
 const mockListLocalImages = vi.fn();
+const mockGetOpenShiftImageAllowlist = vi.fn();
 const mockGetSimulationConfig = vi.fn();
 const mockGetDefaultSoftwareRenderCpus = vi.fn();
 const mockListOpenShiftDeployments = vi.fn();
@@ -40,6 +41,7 @@ vi.mock('./api/client', () => ({
     checkOpenShiftLogin: (...args: unknown[]) => mockCheckOpenShiftLogin(...args),
     listOpenShiftProjects: (...args: unknown[]) => mockListOpenShiftProjects(...args),
     listLocalImages: (...args: unknown[]) => mockListLocalImages(...args),
+    getOpenShiftImageAllowlist: (...args: unknown[]) => mockGetOpenShiftImageAllowlist(...args),
     getSimulationConfig: (...args: unknown[]) => mockGetSimulationConfig(...args),
     getDefaultSoftwareRenderCpus: (...args: unknown[]) => mockGetDefaultSoftwareRenderCpus(...args),
     generateOpenShiftManifests: vi.fn(),
@@ -88,6 +90,7 @@ describe('OpenShiftSimulation', () => {
     mockCheckOpenShiftLogin.mockResolvedValue({ loggedIn: true });
     mockListOpenShiftProjects.mockResolvedValue([]);
     mockListLocalImages.mockResolvedValue([]);
+    mockGetOpenShiftImageAllowlist.mockResolvedValue('');
     mockGetDefaultSoftwareRenderCpus.mockResolvedValue(8);
     // Keep the default image (avoids exercising simulationImageTag here).
     mockGetSimulationConfig.mockRejectedValue(new Error('no config'));
@@ -151,6 +154,36 @@ describe('OpenShiftSimulation', () => {
       expect(await screen.findByRole('option', { name: 'quay.io/ns/ros2-jazzy-sim:noble-amd64' })).toBeTruthy();
       expect(screen.getByRole('option', { name: 'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64' })).toBeTruthy();
       expect(screen.queryByRole('option', { name: 'quay.io/ns/ros2-jazzy-sim:noble' })).toBeNull();
+    });
+
+    it('narrows suggestions by the configured OCP image allowlist, when set', async () => {
+      mockListLocalImages.mockResolvedValue([
+        'quay.io/ns/ros2-jazzy-sim:noble-amd64',
+        'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64',
+      ]);
+      mockGetOpenShiftImageAllowlist.mockResolvedValue('ros2-*-sim*');
+      render(DeployOpenShift);
+
+      const input = await screen.findByLabelText('Image (amd64, cluster-pullable)');
+      await fireEvent.focus(input);
+
+      expect(await screen.findByRole('option', { name: 'quay.io/ns/ros2-jazzy-sim:noble-amd64' })).toBeTruthy();
+      expect(screen.queryByRole('option', { name: 'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64' })).toBeNull();
+    });
+
+    it('shows every -amd64 image when the allowlist preference is empty (the default)', async () => {
+      mockListLocalImages.mockResolvedValue([
+        'quay.io/ns/ros2-jazzy-sim:noble-amd64',
+        'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64',
+      ]);
+      mockGetOpenShiftImageAllowlist.mockResolvedValue('');
+      render(DeployOpenShift);
+
+      const input = await screen.findByLabelText('Image (amd64, cluster-pullable)');
+      await fireEvent.focus(input);
+
+      expect(await screen.findByRole('option', { name: 'quay.io/ns/ros2-jazzy-sim:noble-amd64' })).toBeTruthy();
+      expect(screen.getByRole('option', { name: 'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64' })).toBeTruthy();
     });
 
     it('picking a suggestion fills the Image field and closes the menu', async () => {

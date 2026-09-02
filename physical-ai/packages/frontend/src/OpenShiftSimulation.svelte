@@ -3,6 +3,7 @@ import { physicalAiClient } from './api/client';
 import { onMount, onDestroy } from 'svelte';
 import { router } from 'tinro';
 import { simulationImageTag } from '/@shared/src/types/SimulationProfiles';
+import { imageRefMatchesAllowlist } from '/@shared/src/security/simImageTrust';
 import { DEFAULT_GPU_TOLERATION } from '/@shared/src/openshift/manifests';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import type { OpenShiftContext, OpenShiftDeployResult, OpenShiftWorkload } from '/@shared/src/types/OpenShiftDeploy';
@@ -19,7 +20,7 @@ let context: OpenShiftContext | undefined = undefined;
 
 let name = 'ros2-jazzy-sim';
 /** Seeded from the current kube context's namespace on mount (see onMount); editable.
- * Falls back to the physical-ai.defaultOpenShiftNamespace setting when the context sets
+ * Falls back to the physical-ai.openshift.defaultNamespace setting when the context sets
  * none, or sets it to the generic 'default' project (S8-16), instead of silently landing
  * on 'default'. */
 let namespace = '';
@@ -85,7 +86,7 @@ let imageFilterActive = false;
 let useGpu = false;
 /**
  * Guaranteed CPU count for the software-render pod; dial to your node sizes.
- * Seeded from the physical-ai.defaultSoftwareRenderCpus setting on mount, then
+ * Seeded from the physical-ai.openshift.defaultSoftwareRenderCpus setting on mount, then
  * editable per deploy.
  */
 let cpu = 8;
@@ -307,12 +308,29 @@ function handleNamespaceKeydown(e: KeyboardEvent) {
   }
 }
 
+/** Parses the physical-ai.openshift.imageAllowlist preference — comma-separated, empty
+ * entries dropped. Unlike the simulation-launch allowlist, an empty/unset preference here
+ * means "no filter" (show every -amd64 image), not a fallback pattern list — this is a
+ * suggestion-narrowing convenience, not a trust boundary. */
+function parseOpenShiftImageAllowlist(raw: string): string[] {
+  return raw
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
 /** Refresh the Image combobox's suggestions (APPENG-6259). Fails soft to [] — the field
  * still accepts free text if listing fails, exactly like the Project/namespace combobox. */
 async function refreshLocalAmd64Images() {
   try {
-    const all = await physicalAiClient.listLocalImages();
-    localAmd64Images = all.filter(t => t.endsWith('-amd64'));
+    const [all, allowlistRaw] = await Promise.all([
+      physicalAiClient.listLocalImages(),
+      physicalAiClient.getOpenShiftImageAllowlist(),
+    ]);
+    const patterns = parseOpenShiftImageAllowlist(allowlistRaw);
+    localAmd64Images = all.filter(
+      t => t.endsWith('-amd64') && (patterns.length === 0 || imageRefMatchesAllowlist(t, patterns)),
+    );
   } catch {
     localAmd64Images = [];
   }

@@ -67,7 +67,7 @@ export function sbomItemLabel(format: SbomFormat | undefined): string {
 }
 
 /**
- * Build history retention bounds (Preferences: physical-ai.buildHistoryLimit). The max was
+ * Build history retention bounds (Preferences: physical-ai.build.historyLimit). The max was
  * 5 originally because every retained entry could carry its full SBOM text — now that SBOM
  * text is fetched on demand rather than shipped with the list (APPENG-6265), a higher
  * ceiling mainly costs disk space, not UI payload; default stays low since most entries

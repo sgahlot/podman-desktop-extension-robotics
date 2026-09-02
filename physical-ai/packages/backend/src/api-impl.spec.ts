@@ -147,7 +147,7 @@ function mockStatefulBuildHistoryFile(): void {
 
 function mockConfigWithBuildHistoryLimit(limit: unknown): void {
   vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
-    get: vi.fn((key: string) => (key === 'buildHistoryLimit' ? limit : undefined)),
+    get: vi.fn((key: string) => (key === 'build.historyLimit' ? limit : undefined)),
     update: vi.fn(),
   } as unknown as extensionApi.Configuration);
 }
@@ -942,7 +942,7 @@ describe('PhysicalAiApiImpl', () => {
         update,
       } as unknown as extensionApi.Configuration);
       await api.setBuildHistoryLimit(3);
-      expect(update).toHaveBeenCalledWith('buildHistoryLimit', 3);
+      expect(update).toHaveBeenCalledWith('build.historyLimit', 3);
     });
   });
 
@@ -2182,7 +2182,7 @@ ranges: [0.3, 0.5, .inf, .nan]
         update,
       } as unknown as extensionApi.Configuration);
       await api.setTopicPeekTimeoutSeconds(15);
-      expect(update).toHaveBeenCalledWith('topicPeekTimeoutSeconds', 15);
+      expect(update).toHaveBeenCalledWith('general.topicPeekTimeoutSeconds', 15);
     });
   });
 
@@ -2231,7 +2231,7 @@ ranges: [0.3, 0.5, .inf, .nan]
         update,
       } as unknown as extensionApi.Configuration);
       await api.setNavigationLayout('tabs');
-      expect(update).toHaveBeenCalledWith('navigationLayout', 'tabs');
+      expect(update).toHaveBeenCalledWith('general.navigationLayout', 'tabs');
     });
   });
 
@@ -2761,7 +2761,7 @@ ranges: [0.3, 0.5, .inf, .nan]
     beforeEach(() => {
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockImplementation((key: string) => {
-          if (key === 'simulationGpuPassthrough') return false;
+          if (key === 'simulation.gpuPassthrough') return false;
           return '';
         }),
         update: vi.fn(),
@@ -2858,7 +2858,7 @@ ranges: [0.3, 0.5, .inf, .nan]
       const archSpy = vi.spyOn(process, 'arch', 'get').mockReturnValue('arm64');
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockImplementation((key: string) => {
-          if (key === 'simulationGpuPassthrough') return true;
+          if (key === 'simulation.gpuPassthrough') return true;
           return '';
         }),
         update: vi.fn(),

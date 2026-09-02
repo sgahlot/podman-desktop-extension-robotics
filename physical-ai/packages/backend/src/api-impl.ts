@@ -750,7 +750,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async getBuildHistoryLimit(): Promise<number> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    const raw = config.get<number>('buildHistoryLimit');
+    const raw = config.get<number>('build.historyLimit');
     if (raw === undefined) {
       return BUILD_HISTORY_LIMIT_DEFAULT;
     }
@@ -767,7 +767,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   async setBuildHistoryLimit(limit: number): Promise<void> {
     const safe = assertBuildHistoryLimit(limit);
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    await config.update('buildHistoryLimit', safe);
+    await config.update('build.historyLimit', safe);
   }
 
   async pullImage(fullImageName: string, tag: string): Promise<void> {
@@ -928,12 +928,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async getDefaultNamespace(): Promise<string> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    return config.get<string>('defaultNamespace') ?? 'ecosystem-appeng';
+    return config.get<string>('general.defaultNamespace') ?? 'ecosystem-appeng';
   }
 
   async getCatalogViewMode(): Promise<'all' | 'curated'> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    const mode = config.get<string>('catalogViewMode');
+    const mode = config.get<string>('catalog.viewMode');
     return mode === 'curated' ? 'curated' : 'all';
   }
 
@@ -942,12 +942,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       throw new Error(`Invalid catalog view mode "${String(mode)}". Use "all" or "curated".`);
     }
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    await config.update('catalogViewMode', mode);
+    await config.update('catalog.viewMode', mode);
   }
 
   async getImageBuilderLayout(): Promise<'pipeline' | 'guided' | 'layers'> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    const layout = config.get<string>('imageBuilderLayout');
+    const layout = config.get<string>('build.layout');
     return layout === 'pipeline' || layout === 'layers' ? layout : 'guided';
   }
 
@@ -956,12 +956,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       throw new Error(`Invalid image builder layout "${String(layout)}". Use "pipeline", "guided", or "layers".`);
     }
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    await config.update('imageBuilderLayout', layout);
+    await config.update('build.layout', layout);
   }
 
   async getNavigationLayout(): Promise<'sidebar' | 'tabs' | 'cards'> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    const layout = config.get<string>('navigationLayout');
+    const layout = config.get<string>('general.navigationLayout');
     return layout === 'tabs' || layout === 'cards' ? layout : 'sidebar';
   }
 
@@ -970,14 +970,14 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       throw new Error(`Invalid navigation layout "${String(layout)}". Use "sidebar", "tabs", or "cards".`);
     }
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    await config.update('navigationLayout', layout);
+    await config.update('general.navigationLayout', layout);
   }
 
   async getCatalogCuratedAllowlist(): Promise<string> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    const stored = config.get<string>('catalogCuratedAllowlist');
+    const stored = config.get<string>('catalog.curatedAllowlist');
     if (!stored || stored === 'ros2-*-base,ros2-*-turtlebot3,ros2-*-sim-*') {
-      await config.update('catalogCuratedAllowlist', DEFAULT_CURATED_ALLOWLIST);
+      await config.update('catalog.curatedAllowlist', DEFAULT_CURATED_ALLOWLIST);
       return DEFAULT_CURATED_ALLOWLIST;
     }
     return stored;
@@ -985,24 +985,24 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async getSimulationConfig(): Promise<SimulationConfig> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    const rawBase = config.get<string>('simulationBaseImage');
+    const rawBase = config.get<string>('simulation.baseImage');
     const baseImage = resolveSimulationBaseImage(rawBase).id;
     return {
-      robot: config.get<string>('simulationRobot') ?? 'turtlebot3',
-      distro: config.get<string>('simulationDistro') ?? 'humble',
-      middleware: config.get<string>('simulationMiddleware') ?? 'dds',
-      engine: config.get<string>('simulationEngine') ?? 'gazebo',
+      robot: config.get<string>('simulation.robot') ?? 'turtlebot3',
+      distro: config.get<string>('simulation.distro') ?? 'humble',
+      middleware: config.get<string>('simulation.middleware') ?? 'dds',
+      engine: config.get<string>('simulation.engine') ?? 'gazebo',
       baseImage,
     };
   }
 
   async saveSimulationConfig(config: SimulationConfig): Promise<void> {
     const pdConfig = extensionApi.configuration.getConfiguration('physical-ai');
-    await pdConfig.update('simulationRobot', config.robot);
-    await pdConfig.update('simulationDistro', config.distro);
-    await pdConfig.update('simulationMiddleware', config.middleware);
-    await pdConfig.update('simulationEngine', config.engine);
-    await pdConfig.update('simulationBaseImage', config.baseImage);
+    await pdConfig.update('simulation.robot', config.robot);
+    await pdConfig.update('simulation.distro', config.distro);
+    await pdConfig.update('simulation.middleware', config.middleware);
+    await pdConfig.update('simulation.engine', config.engine);
+    await pdConfig.update('simulation.baseImage', config.baseImage);
   }
 
   async #getEngineId(imageTag?: string): Promise<string> {
@@ -1018,12 +1018,17 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async getSimulationImageAllowlist(): Promise<string> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    return config.get<string>('simulationImageAllowlist') ?? '';
+    return config.get<string>('simulation.imageAllowlist') ?? '';
+  }
+
+  async getOpenShiftImageAllowlist(): Promise<string> {
+    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    return config.get<string>('openshift.imageAllowlist') ?? '';
   }
 
   async getTopicPeekTimeoutSeconds(): Promise<number> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    const raw = config.get<number>('topicPeekTimeoutSeconds');
+    const raw = config.get<number>('general.topicPeekTimeoutSeconds');
     if (raw === undefined) {
       return PEEK_TIMEOUT_DEFAULT_SEC;
     }
@@ -1033,12 +1038,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   async setTopicPeekTimeoutSeconds(seconds: number): Promise<void> {
     const safe = assertPeekTimeoutSeconds(seconds);
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    await config.update('topicPeekTimeoutSeconds', safe);
+    await config.update('general.topicPeekTimeoutSeconds', safe);
   }
 
   async getDefaultSoftwareRenderCpus(): Promise<number> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    const raw = config.get<number>('defaultSoftwareRenderCpus');
+    const raw = config.get<number>('openshift.defaultSoftwareRenderCpus');
     if (raw === undefined) {
       return DEFAULT_SW_RENDER_CPU;
     }
@@ -1111,7 +1116,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       return false;
     }
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    return config.get<boolean>('simulationGpuPassthrough') ?? true;
+    return config.get<boolean>('simulation.gpuPassthrough') ?? true;
   }
 
   #simulationGpuDeviceMappings(): Array<{ PathOnHost: string; PathInContainer: string; CgroupPermissions: string }> {
@@ -2309,7 +2314,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async getDefaultOpenShiftNamespace(): Promise<string> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    return config.get<string>('defaultOpenShiftNamespace') ?? '';
+    return config.get<string>('openshift.defaultNamespace') ?? '';
   }
 
   async checkOpenShiftLogin(context?: string): Promise<{ loggedIn: boolean; message?: string }> {

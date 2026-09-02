@@ -20,37 +20,54 @@
     "configuration": {
       "title": "Physical AI",
       "properties": {
-        "physical-ai.defaultNamespace": {
+        "physical-ai.general.defaultNamespace": {
           "type": "string",
           "default": "ecosystem-appeng",
           "description": "Default Quay.io namespace for browsing and building images"
         },
-        "physical-ai.defaultOpenShiftNamespace": {
+        "physical-ai.general.navigationLayout": {
           "type": "string",
-          "default": "",
-          "description": "Default OpenShift/Kubernetes namespace to use when the current kubeconfig context doesn't specify one (the kubeconfig context's own namespace, when present, always takes priority)"
+          "enum": [
+            "sidebar",
+            "tabs",
+            "cards"
+          ],
+          "enumDescriptions": [
+            "Persistent left sidebar listing every destination, with the active page highlighted",
+            "Persistent horizontal tab bar listing every destination, with the active page highlighted",
+            "No persistent navigation chrome — the Dashboard grid of cards is the hub (original behavior)"
+          ],
+          "default": "sidebar",
+          "description": "Navigation layout for the Physical AI extension shell"
         },
-        "physical-ai.simulationRobot": {
+        "physical-ai.general.topicPeekTimeoutSeconds": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 30,
+          "default": 5,
+          "description": "Timeout in seconds for Topic Monitor Peek (ros2 topic echo --once). Must be a whole number from 1 to 30."
+        },
+        "physical-ai.simulation.robot": {
           "type": "string",
           "default": "turtlebot3",
           "description": "Robot type for simulation (e.g. turtlebot3)"
         },
-        "physical-ai.simulationDistro": {
+        "physical-ai.simulation.distro": {
           "type": "string",
           "default": "humble",
           "description": "ROS distro for simulation (humble: TurtleBot3 sim; jazzy: sim + noVNC via jazzy-noble preset)"
         },
-        "physical-ai.simulationMiddleware": {
+        "physical-ai.simulation.middleware": {
           "type": "string",
           "default": "dds",
           "description": "Middleware for simulation (dds or zenoh)"
         },
-        "physical-ai.simulationEngine": {
+        "physical-ai.simulation.engine": {
           "type": "string",
           "default": "gazebo",
           "description": "Simulation engine (e.g. gazebo)"
         },
-        "physical-ai.simulationBaseImage": {
+        "physical-ai.simulation.baseImage": {
           "type": "string",
           "enum": [
             "sloretz",
@@ -67,7 +84,17 @@
           "default": "sloretz",
           "description": "Base image preset for Image Builder builds"
         },
-        "physical-ai.catalogViewMode": {
+        "physical-ai.simulation.gpuPassthrough": {
+          "type": "boolean",
+          "default": true,
+          "description": "On Apple Silicon (arm64), pass /dev/dri into simulation containers and use virtio-gpu rendering when available. Disable to force software rendering (llvmpipe). Ignored on amd64 (always software GL)."
+        },
+        "physical-ai.simulation.imageAllowlist": {
+          "type": "string",
+          "default": "",
+          "description": "Optional comma-separated image refs or repo patterns allowed for Simulation launch (e.g. quay.io/ns/ros2-jazzy-sim:noble or quay.io/ns/ros2-jazzy-sim@sha256:…). Empty uses default ros2-*-sim* and ros2-*-turtlebot3. Pin exact tags/digests for demos — local image content is still trusted once selected."
+        },
+        "physical-ai.catalog.viewMode": {
           "type": "string",
           "enum": [
             "all",
@@ -80,7 +107,12 @@
           "default": "all",
           "description": "Default Image Catalog view mode"
         },
-        "physical-ai.imageBuilderLayout": {
+        "physical-ai.catalog.curatedAllowlist": {
+          "type": "string",
+          "default": "ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*",
+          "description": "Comma-separated Quay repository name patterns for Curated catalog view. Use * as a wildcard (e.g. ros2-*-base,ros2-*-sim*,ros2-humble-turtlebot3)."
+        },
+        "physical-ai.build.layout": {
           "type": "string",
           "enum": [
             "pipeline",
@@ -95,56 +127,29 @@
           "default": "guided",
           "description": "Layout for the Image Builder page"
         },
-        "physical-ai.navigationLayout": {
-          "type": "string",
-          "enum": [
-            "sidebar",
-            "tabs",
-            "cards"
-          ],
-          "enumDescriptions": [
-            "Persistent left sidebar listing every destination, with the active page highlighted",
-            "Persistent horizontal tab bar listing every destination, with the active page highlighted",
-            "No persistent navigation chrome — the Dashboard grid of cards is the hub (original behavior)"
-          ],
-          "default": "sidebar",
-          "description": "Navigation layout for the Physical AI extension shell"
-        },
-        "physical-ai.catalogCuratedAllowlist": {
-          "type": "string",
-          "default": "ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*",
-          "description": "Comma-separated Quay repository name patterns for Curated catalog view. Use * as a wildcard (e.g. ros2-*-base,ros2-*-sim*,ros2-humble-turtlebot3)."
-        },
-        "physical-ai.simulationImageAllowlist": {
-          "type": "string",
-          "default": "",
-          "description": "Optional comma-separated image refs or repo patterns allowed for Simulation launch (e.g. quay.io/ns/ros2-jazzy-sim:noble or quay.io/ns/ros2-jazzy-sim@sha256:…). Empty uses default ros2-*-sim* and ros2-*-turtlebot3. Pin exact tags/digests for demos — local image content is still trusted once selected."
-        },
-        "physical-ai.topicPeekTimeoutSeconds": {
+        "physical-ai.build.historyLimit": {
           "type": "number",
           "minimum": 1,
-          "maximum": 30,
+          "maximum": 20,
           "default": 5,
-          "description": "Timeout in seconds for Topic Monitor Peek (ros2 topic echo --once). Must be a whole number from 1 to 30."
+          "description": "Number of recent image builds to remember (tag, arch, duration, and SBOM if one was generated). SBOM text is fetched on demand when expanded, not kept in memory, so a higher limit mainly costs disk space."
         },
-        "physical-ai.simulationGpuPassthrough": {
-          "type": "boolean",
-          "default": true,
-          "description": "On Apple Silicon (arm64), pass /dev/dri into simulation containers and use virtio-gpu rendering when available. Disable to force software rendering (llvmpipe). Ignored on amd64 (always software GL)."
+        "physical-ai.openshift.defaultNamespace": {
+          "type": "string",
+          "default": "",
+          "description": "Default OpenShift/Kubernetes namespace to use when the current kubeconfig context doesn't specify one (the kubeconfig context's own namespace, when present, always takes priority)"
         },
-        "physical-ai.defaultSoftwareRenderCpus": {
+        "physical-ai.openshift.defaultSoftwareRenderCpus": {
           "type": "number",
           "minimum": 1,
           "maximum": 64,
           "default": 8,
           "description": "Default guaranteed CPU count (requests == limits) for the software-render OpenShift sim pod. Seeds the Software-render CPUs field on the Simulation → OpenShift tab, where it can still be adjusted per deploy. An N-CPU pod only schedules on a node with ≥ N allocatable CPU. Ignored when the cluster-has-a-GPU toggle is on."
         },
-        "physical-ai.buildHistoryLimit": {
-          "type": "number",
-          "minimum": 1,
-          "maximum": 20,
-          "default": 5,
-          "description": "Number of recent image builds to remember (tag, arch, duration, and SBOM if one was generated). SBOM text is fetched on demand when expanded, not kept in memory, so a higher limit mainly costs disk space."
+        "physical-ai.openshift.imageAllowlist": {
+          "type": "string",
+          "default": "",
+          "description": "Optional comma-separated image refs or repo patterns to narrow the OpenShift deploy tab's Image picker suggestions (e.g. ros2-*-sim*, or a full ref). Empty shows every local image tagged -amd64, regardless of name — this only filters suggestions, the field still accepts any free-text value."
         }
       }
     }
