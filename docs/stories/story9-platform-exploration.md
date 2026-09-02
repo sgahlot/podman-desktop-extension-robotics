@@ -6,12 +6,15 @@
 > table below for its key. Story 8 (APPENG-6102, under epic APPENG-5763) is fully Closed; this
 > doc remains the analysis/backlog record for how each item's priority and Jira home were decided.
 >
-> **Status (2026-08-27):** S9-2 (APPENG-6227) and S9-3 (APPENG-6226, **Closed**) filed under new
-> Story APPENG-6225; S9-4 (APPENG-6236) filed under new Story APPENG-6235; S9-6 folded into
-> existing APPENG-5809 (no separate ticket); S9-7 filed as APPENG-6237 under existing APPENG-5766;
-> S9-1 filed as APPENG-6238 under existing APPENG-5767. S9-5 remains informational only (folded
-> into S9-6's writeup, no ticket needed). Items are still numbered `S9-N` for reference, matching
-> the `S8-N` convention.
+> **Status (2026-09-02, live-checked against Jira):** S9-2 (APPENG-6227, **Closed**, merged
+> 413ef88) and S9-3 (APPENG-6226, **Closed**) filed under new Story APPENG-6225 (which also now
+> has APPENG-6262/6263/6264 — see story10's S10-14/S10-15/S10-16); S9-4 (APPENG-6236, **Closed**,
+> merged 58a9045 — `physical-ai-cli`) filed under new Story APPENG-6235; S9-6 folded into existing
+> APPENG-5809 (no separate ticket); S9-7 filed as APPENG-6237 under existing APPENG-5766 (still
+> **New** — not actually started despite this doc previously saying "In Progress"); S9-1 filed as
+> APPENG-6238 under existing APPENG-5767 (**New**). S9-5 remains informational only (folded into
+> S9-6's writeup, no ticket needed). Items are still numbered `S9-N` for reference, matching the
+> `S8-N` convention.
 
 ## Table of Contents
 
@@ -101,8 +104,8 @@ serve a small dashboard through it). The local-path blocker (needs APPENG-5774's
 work first) still applies and is out of scope for now — this is an OpenShift-only demo feature
 until 5774 lands.
 
-**Correction (2026-09-01) — APPENG-6227 is done (tested live, in Review, not yet merged to
-`main`), and the "blocked on APPENG-5774" call above was wrong.** The OpenShift sidecar's image
+**Correction (2026-09-01, update 2026-09-02: merged and Closed) — APPENG-6227 is done (merged to
+`main` as 413ef88, Closed), and the "blocked on APPENG-5774" call above was wrong.** The OpenShift sidecar's image
 is `registry.access.redhat.com/hi/nginx:latest`, not `quay.io/hummingbird/nginx` — see
 `docs/stories/story10-post-roscon-product-backlog.md` S10-15 for why). Separately, re-investigating
 the local path found the "no multi-container infrastructure" framing above (lines 78-82) was true
@@ -299,11 +302,11 @@ of whether a second robot ever gets added.
 |---|---|---|---|
 | Done | APPENG-5775 Zenoh router | **Closed** | Single-container/pod `rmw_zenoh_cpp` foundation shipped and live-tested (local + OpenShift). Cross-container fleet win still needs 5774/story7. |
 | Done | S9-3 (Hummingbird tool showcase) | **Closed** (APPENG-6226) | `syft` baked in with a real use case (SBOM generation), shipped as part of the Hummingbird showcase story. |
-| Done | S9-2 (Hummingbird nginx sidecar, OpenShift-only) | **Review** (APPENG-6227), tested live, not yet merged | See the Correction (2026-09-01) note above. Local-path follow-on filed separately as **APPENG-6262** (not blocked on APPENG-5774 after all — see story10 S10-14). |
-| **In progress** | S9-7 (externalize TurtleBot3 → config-driven robot definition) | **In Progress** (APPENG-6237), parallel worktree | Bounded refactor, real design-smell fix, sets up future robots as additive rather than a rewrite. |
+| Done | S9-2 (Hummingbird nginx sidecar, OpenShift-only) | **Closed** (APPENG-6227), merged 413ef88 | See the Correction (2026-09-01) note above. Local-path follow-on filed separately as **APPENG-6262** (not blocked on APPENG-5774 after all — see story10 S10-14). |
+| Not started | S9-7 (externalize TurtleBot3 → config-driven robot definition) | **New** (APPENG-6237) — corrected 2026-09-02, no commits exist yet despite this doc previously saying "In Progress" | Bounded refactor, real design-smell fix, sets up future robots as additive rather than a rewrite. |
 | **In progress, self-contained spike** | S9-6 (Quadlet ROS2+sim sidecar on a bootc base) | **In Progress**, folded into APPENG-5809, parallel worktree | Proven pattern elsewhere, testable now, independent of OSRA and of native ROS/sim packaging entirely. |
 | **In progress** | S9-1 (oc → library), read/delete half only | **New** (APPENG-6238) | Real robustness/testability payoff, bounded and low-risk if the `oc exec` half is deliberately deferred. Sequence relative to other OpenShift-area work (6070/6227/5778) touching the same methods — don't run simultaneously with them. |
-| **In progress** | S9-4 (CLI version) | **In Progress** (APPENG-6236, under Story APPENG-6235), parallel worktree | Genuinely more tractable than expected (shared/ already decoupled); driving use case (headless CI vs. non-PD-user path vs. demo automation) still needs to be resolved early in that ticket. |
+| Done | S9-4 (CLI version) | **Closed** (APPENG-6236, under Story APPENG-6235), merged 58a9045 (`physical-ai-cli`: build/launch/spawn slice) | Shipped: build:base/sim/file, sim:open/list/remove, Listr2 task-list UI, oclif `--help` examples. See S10-11 for a design requirement (menu-driven help) that wasn't part of this shipped slice. |
 | **Informational only, already actioned** | S9-5 (bootc/Fedora links) | No ticket (by design) | Both Slack links already investigated; the more valuable find was in our own Jira comments (REP 2000 + RHEL RPM docs) — folded into S9-6 above. |
 
 <a id="cross-reference"></a>
@@ -328,8 +331,8 @@ From the current Physical AI epic (APPENG-5763), independent of anything above:
 - **APPENG-6071** — Port Jazzy sim-image improvements to the Humble image (**In Progress**,
   parallel worktree) — not from this doc's original 7 items, but tracked under the same epic.
 
-**Jira status for every Story 9 item (as of 2026-08-27):** S9-2 → APPENG-6227 (New), S9-3 →
-APPENG-6226 (**Closed**), S9-4 → APPENG-6236 (**In Progress**, under Story APPENG-6235), S9-5 → no
-ticket (informational, folded into S9-6), S9-6 → folded into APPENG-5809 (**In Progress**), S9-7 →
-APPENG-6237 (**In Progress**), S9-1 → APPENG-6238 (New). See each item's section above for the
-full writeup behind its Jira home.
+**Jira status for every Story 9 item (as of 2026-09-02, live-checked):** S9-2 → APPENG-6227
+(**Closed**, merged 413ef88), S9-3 → APPENG-6226 (**Closed**), S9-4 → APPENG-6236 (**Closed**,
+merged 58a9045, under Story APPENG-6235), S9-5 → no ticket (informational, folded into S9-6), S9-6
+→ folded into APPENG-5809 (**In Progress**), S9-7 → APPENG-6237 (**New**, not yet started), S9-1 →
+APPENG-6238 (New). See each item's section above for the full writeup behind its Jira home.

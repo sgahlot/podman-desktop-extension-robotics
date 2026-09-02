@@ -51,19 +51,6 @@ directly (S10-1's embed target, S10-3's "layers" meaning) before writing this do
 **Ask:** display the running simulation's noVNC output inside the extension itself, not by
 opening a separate browser tab.
 
-**Clarified scope (2026-09-01):** inside our **own extension's webview** — a new page/route
-in the Physical AI extension with an iframe (or equivalent embed) pointing at the noVNC URL —
-not a contribution to Podman Desktop's own native per-container Details tabs. This is the
-simpler of the two options; it doesn't depend on whatever UI-contribution points Podman
-Desktop's extension API does or doesn't expose for the container details panel.
-
-> **Decision (2026-09-01):** the original ask phrased this as displaying noVNC in a "podman
-> tab" — i.e. Podman Desktop's own native container **Details** tab. **That native-PD-tab
-> option is explicitly dropped**, not merely deferred. We will embed noVNC only in our own
-> extension's webview/route. Rationale: it avoids depending on PD's container-details
-> contribution points (uncertain/unstable surface) and keeps the viewer under our control for
-> the Phase 2 streaming-viewer evolution (S10-2).
-
 **Findings:** the simulation already exposes noVNC at a known host-mapped port
 (`hostPortForPrivate` in `LocalSimulation.svelte`, and the OpenShift Route for the
 in-cluster case) — the extension already knows this URL, it's just currently only offered as
@@ -73,11 +60,49 @@ mechanically small; the main unknowns are Podman Desktop webview CSP/iframe rest
 route isn't admitted (already partially handled for the "open in browser" case, needs the
 same treatment inline).
 
-**Effort:** small–medium (mostly a spike to confirm the iframe isn't blocked by CSP, then a
-new route + existing URL-resolution logic reused).
+**Where to render it — reopened for deeper investigation (2026-09-02):** an initial pass
+(2026-09-01) picked "our own extension's webview" and explicitly dropped Podman Desktop's
+native container Details tab, to avoid depending on an uncertain PD contribution surface.
+Given S10-1 is now being considered for earlier priority as a **major showcase asset** (see
+Priority note below), that tradeoff is worth re-examining properly rather than assuming the
+2026-09-01 pass had full information — both options below stay open; whoever picks up this
+item should spike the unknowns before committing:
+
+- **Option A — our own extension's webview/route.** A new page/route in the Physical AI
+  extension with an iframe (or equivalent embed) pointing at the noVNC URL.
+  - *Pros:* fully under our control; no dependency on Podman Desktop's own extension-API
+    surface for container details; sets up naturally for the Phase 2 custom streaming viewer
+    (S10-2), which will need to live somewhere we control anyway.
+  - *Cons:* still needs the CSP/iframe spike; it's "yet another page" the user has to navigate
+    to, one level removed from where they're already looking at the running container in PD.
+- **Option B — a contribution to Podman Desktop's own container Details tab (the original
+  "podman tab" phrasing).** The user is already looking at the sim container in PD's own
+  container list/details view — showing the live noVNC output right there, without switching
+  to our extension's pages, would be a more integrated experience and a stronger demo of deep
+  Podman Desktop extension-API integration than an ordinary in-extension route.
+  - *Pros:* more natural/discoverable placement (no extra navigation); if genuinely supported,
+    it's a differentiated, PD-native showcase — arguably a bigger "wow" moment for ROSCon-style
+    demos than a page inside our own extension.
+  - *Cons:* depends entirely on whatever UI-contribution points the `@podman-desktop/api`
+    version we depend on does or doesn't currently expose for the container Details view — this
+    was flagged as an "uncertain/unstable surface" in the original pass and was **never actually
+    verified against the current API**, only assumed risky. The real unknown is a live check of
+    the current `@podman-desktop/api` types/docs for a container-details-tab contribution point,
+    not a re-litigation of the tradeoff itself.
+
+**Effort:** small–medium for Option A (mostly a spike to confirm the iframe isn't blocked by
+CSP, then a new route + existing URL-resolution logic reused). Option B's effort is unknown
+until the contribution-point spike above happens — could be comparable, or could be a dead end
+if PD doesn't expose the needed surface today.
 
 **Value:** meaningfully reduces friction (a robotics engineer testing a sim now never leaves
-the extension) — a real product-completeness item, not just cosmetic.
+the extension, or never leaves PD's own container view) — a real product-completeness item,
+not just cosmetic. See the priority note below for why this may be worth pulling forward.
+
+**Priority note (2026-09-02):** flagged as a candidate to move earlier in the backlog — a
+working embedded sim viewer (whichever option wins the spike) is a strong, visible showcase
+asset for demoing the extension, not just an incremental UX nicety. Recommend sizing this into
+a real sub-task soon rather than leaving it in the general backlog alongside lower-value items.
 
 ---
 
@@ -199,6 +224,10 @@ patterns already used elsewhere (e.g. the namespace-suggestion combobox in the s
 **Value:** removes a real point of friction (remembering/copy-pasting a tag) in the OpenShift
 deploy flow.
 
+**Status:** filed as [APPENG-6259](https://redhat.atlassian.net/browse/APPENG-6259) under
+APPENG-6256, merged
+([f18e69e](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/f18e69e)), Closed.
+
 ---
 
 <a id="s10-6"></a>
@@ -255,6 +284,10 @@ honest about where each sim runs and lands the user on the matching tab in one c
 
 **Effort:** small.
 
+**Status (2026-09-02):** still open — not covered by S10-8's shipped work below. Verified in
+code: `Dashboard.svelte` today has only the 2 original tiles (Local ROS 2 images, running
+simulations), no "N OpenShift" sub-tile. Needs its own sub-task if still wanted.
+
 ---
 
 <a id="s10-8"></a>
@@ -274,6 +307,14 @@ non-clickable metric tiles remain under Overview.
 
 **Effort:** small — routing-only change, no new data needed.
 
+**Status (2026-09-02):** filed as [APPENG-6257](https://redhat.atlassian.net/browse/APPENG-6257)
+under APPENG-6256, merged
+([455babe](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/455babe)), Closed
+— **but the shipped scope was narrower than planned above**: only the 2 pre-existing tiles
+("Local ROS 2 images", running simulations) were made clickable. S10-7's new OpenShift sub-tile
+was never added, so its "make it clickable too" half of this item didn't happen either. If S10-7
+is picked up later, its sub-tile will need its own clickability wiring at that point.
+
 ---
 
 <a id="s10-9"></a>
@@ -286,6 +327,10 @@ non-clickable metric tiles remain under Overview.
 net-new feature — flagged for confirmation before deciding its track (see tracking table).
 Given its apparent small size, a plausible candidate for a direct small fix rather than a
 full sub-task, once confirmed.
+
+**Status:** filed as [APPENG-6260](https://redhat.atlassian.net/browse/APPENG-6260) under
+APPENG-6256, merged
+([dc52d2c](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/dc52d2c)), Closed.
 
 ---
 
@@ -303,6 +348,10 @@ change in the parent (`SimulationSetup.svelte`), not new state machinery.
 
 **Effort:** small.
 
+**Status:** filed as [APPENG-6258](https://redhat.atlassian.net/browse/APPENG-6258) under
+APPENG-6256, merged
+([a87b339](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/a87b339)), Closed.
+
 ---
 
 <a id="s10-11"></a>
@@ -317,6 +366,12 @@ areas (Image Builder, Image Catalog, Simulation, Topics), not just a bare usage 
 requirement to carry into S9-4 when that item is actually picked up, not a separate Story 10
 item. Recorded here only so it isn't lost, and cross-referenced back to
 [story9-platform-exploration.md](story9-platform-exploration.md#s9-4).
+
+**Status (2026-09-02): gap found.** S9-4/APPENG-6236 (`physical-ai-cli`) has since shipped and
+Closed (merged 58a9045) — but this menu-driven no-args help was **not** part of that shipped
+slice (build:base/sim/file, sim:open/list/remove, Listr2 task-list UI). The "carry into S9-4"
+plan above didn't happen. This now needs its own follow-up ticket if still wanted, rather than
+still being foldable into S9-4.
 
 ---
 
@@ -638,13 +693,14 @@ under an existing Story, a direct small commit, or a dedicated new doc.
 | S10-2 | Custom streaming-video viewer | Feature (research/spike) | This doc |
 | S10-3 | SBOM layer/slice attribution & visualization | Feature | This doc |
 | S10-4 | Per-slice incremental rebuild UX | Feature (mostly UX, caching likely already works) | This doc |
-| S10-5 | OpenShift tab image picker | Feature | This doc |
+| S10-5 | OpenShift tab image picker | Feature | Filed as [APPENG-6259](https://redhat.atlassian.net/browse/APPENG-6259) under APPENG-6256, merged ([f18e69e](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/f18e69e)), Closed |
 | S10-6 | Topic Monitor OpenShift support | Feature | This doc |
-| S10-7 | Dashboard OpenShift sim count | Feature | This doc |
-| S10-8 | Dashboard clickable metric tiles | Feature | This doc |
-| S10-9 | Get Started "Navigate" button | **Bug** | This doc |
-| S10-10 | Auto-collapse base logs on Phase 2 build | Polish | This doc |
-| S10-11 | CLI menu-driven help | Design requirement | Folds into [story9-platform-exploration.md](story9-platform-exploration.md), S9-4 |
+| S10-7 | Dashboard OpenShift sim count | Feature | This doc — **still open**; not covered by S10-8's shipped work (verified 2026-09-02: `Dashboard.svelte` has only the 2 original tiles, no "N OpenShift" sub-tile) |
+| S10-8 | Dashboard clickable metric tiles | Feature | Filed as [APPENG-6257](https://redhat.atlassian.net/browse/APPENG-6257) under APPENG-6256, merged ([455babe](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/455babe)), Closed — scope was only the 2 pre-existing tiles, not S10-7's new OpenShift sub-tile |
+| S10-9 | Get Started "Navigate" button | **Bug** | Filed as [APPENG-6260](https://redhat.atlassian.net/browse/APPENG-6260) under APPENG-6256, merged ([dc52d2c](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/dc52d2c)), Closed |
+| S10-10 | Auto-collapse base logs on Phase 2 build | Polish | Filed as [APPENG-6258](https://redhat.atlassian.net/browse/APPENG-6258) under APPENG-6256, merged ([a87b339](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/a87b339)), Closed |
+| S10-11 | CLI menu-driven help | Design requirement | **Gap:** S9-4/APPENG-6236 (the CLI itself) shipped and Closed (merged 58a9045) without this — the menu-driven no-args help was never folded in as intended. Needs its own follow-up ticket if still wanted; see [story9-platform-exploration.md](story9-platform-exploration.md), S9-4 |
+| — | (ad hoc) Build-history/SBOM polling fixes + retention ceiling | Bug/perf fix | Filed as [APPENG-6265](https://redhat.atlassian.net/browse/APPENG-6265) under APPENG-6256 (discovered during the batch, not a pre-planned Story 10 item), merged ([9095642](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/9095642)), Closed — touches the same `BuildHistoryPanel`/SBOM code S10-3/S10-4 discuss |
 | S10-12 | Telemetry & richer metrics (OTEL/Prometheus) | Feature (2 threads: usage telemetry + runtime metrics) | This doc |
 | S10-13 | Hybrid local robot + in-cluster sim/inference | Feature (research/spike; 2 large pieces) | This doc |
 | S10-14 | Local Hummingbird nginx sidecar (Podman multi-container) | Feature | Filed as [APPENG-6262](https://redhat.atlassian.net/browse/APPENG-6262) under APPENG-6225 |
