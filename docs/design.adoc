@@ -96,7 +96,7 @@ The backend is the entry point loaded by Podman Desktop. It manages the extensio
 | `src/extension.ts` | Entry point — creates webview panel, wires RPC, registers `physical-ai.open` command
 | `src/api-impl.ts` | `PhysicalAiApiImpl` — implements all API methods; private helpers use JS `#private` syntax (not RPC-callable)
 | `src/progressLogs.ts` | `appendProgressLog()` — capped at 500 lines with truncation marker
-| `package.json` | Extension manifest (contributes: commands, configuration with 15 properties)
+| `package.json` | Extension manifest (contributes: commands, configuration with 17 settings grouped under 5 namespaces — general/simulation/catalog/build/openshift — each with a markdown-type section-title entry since Podman Desktop's config schema has no native sub-sections)
 | `vite.config.js` | Builds to CJS, externalizes `@podman-desktop/api`
 | `assets/ros2-jazzy-base/` | Bundled Containerfile + entrypoint for Jazzy base builds
 | `assets/ros2-jazzy-sim/` | Jazzy simulation image: Containerfile, entrypoint-gazebo.sh, entrypoint-spawn-robot.sh, world SDF, noVNC landing page
@@ -425,7 +425,7 @@ The extension contributes 16 settings under **Settings → Preferences → Physi
 |===
 | Property | Type | Default | Description
 
-| `physical-ai.general.defaultNamespace` | string | `ecosystem-appeng` | Quay.io namespace for catalog browsing and image tags
+| `physical-ai.general.quayNamespace` | string | `ecosystem-appeng` | Quay.io namespace for catalog browsing and image tags
 | `physical-ai.openshift.defaultNamespace` | string | _(empty)_ | Default OpenShift/Kubernetes namespace used when the current kubeconfig context doesn't specify one (the context's own namespace, when present, always takes priority)
 | `physical-ai.simulation.robot` | string | `turtlebot3` | Robot type for simulation
 | `physical-ai.simulation.distro` | string | `humble` | ROS distro (`humble` and `jazzy` both have bundled simulation images)
@@ -441,7 +441,7 @@ The extension contributes 16 settings under **Settings → Preferences → Physi
 | `physical-ai.simulation.gpuPassthrough` | boolean | `true` | On arm64 Mac, pass `/dev/dri` into simulation containers and use virtio-gpu when available. Disable to force llvmpipe. Ignored on amd64.
 | `physical-ai.openshift.defaultSoftwareRenderCpus` | number | `8` | Default guaranteed CPU count (requests == limits) for the software-render OpenShift sim pod. Seeds the Software-render CPUs field on the Simulation → OpenShift tab (1–64); ignored when the cluster-has-a-GPU toggle is on.
 | `physical-ai.build.historyLimit` | number | `5` | Number of recent image builds to remember (tag, arch, duration, and SBOM if one was generated via the Layers wizard's `syft` tool). Whole number from 1 to 20 (APPENG-6226, raised from 5 in APPENG-6265 now that SBOM text is fetched on demand instead of shipped with the list).
-| `physical-ai.openshift.imageAllowlist` | string | _(empty)_ | Optional comma-separated image refs or patterns to narrow the OpenShift deploy tab's Image picker suggestions. Empty = suggest every local image tagged `-amd64`, regardless of name (APPENG-6259).
+| `physical-ai.openshift.deployImageAllowlist` | string | _(empty)_ | Optional comma-separated image refs or patterns to narrow the OpenShift deploy tab's Image picker suggestions. Empty = suggest every local image tagged `-amd64`, regardless of name (APPENG-6259).
 |===
 
 == Key Technical Decisions

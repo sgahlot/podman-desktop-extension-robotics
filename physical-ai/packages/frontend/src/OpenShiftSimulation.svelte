@@ -308,7 +308,7 @@ function handleNamespaceKeydown(e: KeyboardEvent) {
   }
 }
 
-/** Parses the physical-ai.openshift.imageAllowlist preference — comma-separated, empty
+/** Parses the physical-ai.openshift.deployImageAllowlist preference — comma-separated, empty
  * entries dropped. Unlike the simulation-launch allowlist, an empty/unset preference here
  * means "no filter" (show every -amd64 image), not a fallback pattern list — this is a
  * suggestion-narrowing convenience, not a trust boundary. */

@@ -65,7 +65,7 @@ export abstract class PhysicalAiApi {
   /** Empty string = default ros2-*-sim* / ros2-*-turtlebot3 patterns. */
   abstract getSimulationImageAllowlist(): Promise<string>;
   /** Comma-separated image refs or repo patterns narrowing the OpenShift deploy tab's Image
-   * picker suggestions (Preferences: physical-ai.openshift.imageAllowlist). Empty string =
+   * picker suggestions (Preferences: physical-ai.openshift.deployImageAllowlist). Empty string =
    * suggest every local image tagged -amd64, regardless of name (APPENG-6259) — this only
    * filters suggestions, never what the field accepts as free text. */
   abstract getOpenShiftImageAllowlist(): Promise<string>;

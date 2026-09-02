@@ -928,7 +928,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async getDefaultNamespace(): Promise<string> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    return config.get<string>('general.defaultNamespace') ?? 'ecosystem-appeng';
+    return config.get<string>('general.quayNamespace') ?? 'ecosystem-appeng';
   }
 
   async getCatalogViewMode(): Promise<'all' | 'curated'> {
@@ -1023,7 +1023,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async getOpenShiftImageAllowlist(): Promise<string> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
-    return config.get<string>('openshift.imageAllowlist') ?? '';
+    return config.get<string>('openshift.deployImageAllowlist') ?? '';
   }
 
   async getTopicPeekTimeoutSeconds(): Promise<number> {
