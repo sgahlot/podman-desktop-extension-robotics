@@ -147,7 +147,7 @@ function mockStatefulBuildHistoryFile(): void {
 
 function mockConfigWithBuildHistoryLimit(limit: unknown): void {
   vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
-    get: vi.fn((key: string) => (key === 'buildHistoryLimit' ? limit : undefined)),
+    get: vi.fn((key: string) => (key === 'build.historyLimit' ? limit : undefined)),
     update: vi.fn(),
   } as unknown as extensionApi.Configuration);
 }
@@ -334,6 +334,93 @@ describe('PhysicalAiApiImpl', () => {
         '--format',
         '{{.Repository}}:{{.Tag}}',
       ]);
+    });
+  });
+
+  describe('listLocalImagesWithArch (APPENG-6259)', () => {
+    beforeEach(() => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '[]',
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+    });
+
+    it('returns each tag with its reported Arch from the engine listing', async () => {
+      vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
+        { RepoTags: ['quay.io/ns/img1:noble-amd64'], Arch: 'amd64' },
+        { RepoTags: ['quay.io/ns/img2:noble'], Arch: 'arm64' },
+      ] as unknown as extensionApi.ImageInfo[]);
+
+      const result = await api.listLocalImagesWithArch();
+      expect(result).toEqual(
+        expect.arrayContaining([
+          { tag: 'quay.io/ns/img1:noble-amd64', arch: 'amd64' },
+          { tag: 'quay.io/ns/img2:noble', arch: 'arm64' },
+        ]),
+      );
+    });
+
+    it('leaves arch undefined when the engine does not report one', async () => {
+      vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
+        { RepoTags: ['quay.io/ns/img:latest'] },
+      ] as unknown as extensionApi.ImageInfo[]);
+
+      const result = await api.listLocalImagesWithArch();
+      expect(result).toEqual([{ tag: 'quay.io/ns/img:latest', arch: undefined }]);
+    });
+
+    it('falls back to Names when RepoTags is empty (Podman 5)', async () => {
+      vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
+        { RepoTags: undefined, Names: ['quay.io/ns/img:latest'], Arch: 'amd64' },
+      ] as unknown as extensionApi.ImageInfo[]);
+
+      const result = await api.listLocalImagesWithArch();
+      expect(result).toEqual([{ tag: 'quay.io/ns/img:latest', arch: 'amd64' }]);
+    });
+
+    it('merges in the podman CLI JSON listing, filling in arch the engine missed', async () => {
+      vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([
+        { RepoTags: ['quay.io/ns/img1:latest'] }, // engine has no Arch for this one
+      ] as unknown as extensionApi.ImageInfo[]);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: JSON.stringify([
+          { Names: ['quay.io/ns/img1:latest'], Arch: 'amd64' },
+          { Names: ['quay.io/ns/img2:latest'], Arch: 'arm64' },
+        ]),
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
+      const result = await api.listLocalImagesWithArch();
+      expect(result).toEqual(
+        expect.arrayContaining([
+          { tag: 'quay.io/ns/img1:latest', arch: 'amd64' },
+          { tag: 'quay.io/ns/img2:latest', arch: 'arm64' },
+        ]),
+      );
+      expect(result).toHaveLength(2);
+      expect(extensionApi.process.exec).toHaveBeenCalledWith('podman', ['images', '--format', 'json']);
+    });
+
+    it('drops <none> tags from the CLI JSON listing', async () => {
+      vi.mocked(extensionApi.containerEngine.listImages).mockResolvedValue([]);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: JSON.stringify([{ Names: ['<none>:<none>'], Arch: 'amd64' }]),
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
+      const result = await api.listLocalImagesWithArch();
+      expect(result).toEqual([]);
+    });
+
+    it('returns [] when both sources fail', async () => {
+      vi.mocked(extensionApi.containerEngine.listImages).mockRejectedValue(new Error('boom'));
+      vi.mocked(extensionApi.process.exec).mockRejectedValue(new Error('boom'));
+
+      const result = await api.listLocalImagesWithArch();
+      expect(result).toEqual([]);
     });
   });
 
@@ -942,7 +1029,7 @@ describe('PhysicalAiApiImpl', () => {
         update,
       } as unknown as extensionApi.Configuration);
       await api.setBuildHistoryLimit(3);
-      expect(update).toHaveBeenCalledWith('buildHistoryLimit', 3);
+      expect(update).toHaveBeenCalledWith('build.historyLimit', 3);
     });
   });
 
@@ -2182,7 +2269,7 @@ ranges: [0.3, 0.5, .inf, .nan]
         update,
       } as unknown as extensionApi.Configuration);
       await api.setTopicPeekTimeoutSeconds(15);
-      expect(update).toHaveBeenCalledWith('topicPeekTimeoutSeconds', 15);
+      expect(update).toHaveBeenCalledWith('general.topicPeekTimeoutSeconds', 15);
     });
   });
 
@@ -2231,7 +2318,7 @@ ranges: [0.3, 0.5, .inf, .nan]
         update,
       } as unknown as extensionApi.Configuration);
       await api.setNavigationLayout('tabs');
-      expect(update).toHaveBeenCalledWith('navigationLayout', 'tabs');
+      expect(update).toHaveBeenCalledWith('general.navigationLayout', 'tabs');
     });
   });
 
@@ -2761,7 +2848,7 @@ ranges: [0.3, 0.5, .inf, .nan]
     beforeEach(() => {
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockImplementation((key: string) => {
-          if (key === 'simulationGpuPassthrough') return false;
+          if (key === 'simulation.gpuPassthrough') return false;
           return '';
         }),
         update: vi.fn(),
@@ -2858,7 +2945,7 @@ ranges: [0.3, 0.5, .inf, .nan]
       const archSpy = vi.spyOn(process, 'arch', 'get').mockReturnValue('arm64');
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockImplementation((key: string) => {
-          if (key === 'simulationGpuPassthrough') return true;
+          if (key === 'simulation.gpuPassthrough') return true;
           return '';
         }),
         update: vi.fn(),

@@ -1,4 +1,11 @@
-import type { QuayRepository, QuayTag, PullProgress, BuildProgress, PushProgress } from './types/ImageCatalog';
+import type {
+  QuayRepository,
+  QuayTag,
+  PullProgress,
+  BuildProgress,
+  PushProgress,
+  LocalImageInfo,
+} from './types/ImageCatalog';
 import type { BuildHistoryEntry, SbomFormat } from './types/BuildHistory';
 import type { SimulationConfig } from './types/SimulationConfig';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from './types/SimulationContainer';
@@ -21,6 +28,9 @@ export abstract class PhysicalAiApi {
   abstract pullImageByRef(imageRef: string): Promise<void>;
   abstract getPullProgress(image: string): Promise<PullProgress | undefined>;
   abstract listLocalImages(): Promise<string[]>;
+  /** Local images with their reported CPU architecture, for finding genuinely-amd64 images
+   * regardless of tag naming (see LocalImageInfo). */
+  abstract listLocalImagesWithArch(): Promise<LocalImageInfo[]>;
   abstract buildBaseImage(tag: string, config: SimulationConfig): Promise<void>;
   abstract buildSimulationImage(tag: string, config: SimulationConfig): Promise<void>;
   /** Build an image from an in-memory Containerfile (layer-composition wizard). The
@@ -38,7 +48,7 @@ export abstract class PhysicalAiApi {
   abstract cancelBuild(tag: string): Promise<void>;
   abstract getBuildProgress(tag: string): Promise<BuildProgress | undefined>;
   /** Recent build results (tag, arch, duration, success, sbomPackageCount if generated),
-   * newest first — up to physical-ai.buildHistoryLimit entries. Persisted across restarts.
+   * newest first — up to physical-ai.build.historyLimit entries. Persisted across restarts.
    * Never includes the SBOM text itself (which can run tens of MB) — this is polled every
    * few seconds by the UI, so it must stay cheap regardless of SBOM size; fetch a specific
    * entry's SBOM on demand via getBuildHistorySbom (APPENG-6265). */
@@ -46,7 +56,7 @@ export abstract class PhysicalAiApi {
   /** Full SBOM text for one build history entry, identified by tag + startedAt (its stable
    * key). Undefined if the entry has aged out of history or has no recorded SBOM. */
   abstract getBuildHistorySbom(tag: string, startedAt: number): Promise<string | undefined>;
-  /** Number of recent builds retained in history (Preferences: physical-ai.buildHistoryLimit, 1–20). */
+  /** Number of recent builds retained in history (Preferences: physical-ai.build.historyLimit, 1–20). */
   abstract getBuildHistoryLimit(): Promise<number>;
   /** Validates and persists the build history limit (1–20). Throws a user-facing error if out of range. */
   abstract setBuildHistoryLimit(limit: number): Promise<void>;
@@ -62,13 +72,22 @@ export abstract class PhysicalAiApi {
   abstract getNavigationLayout(): Promise<'sidebar' | 'tabs' | 'cards'>;
   abstract setNavigationLayout(layout: 'sidebar' | 'tabs' | 'cards'): Promise<void>;
   abstract getCatalogCuratedAllowlist(): Promise<string>;
-  /** Empty string = default ros2-*-sim* / ros2-*-turtlebot3 patterns. */
+  /** Enforced (see assertLaunchImageTag) — Simulation launch fails if the tag doesn't
+   * match. Empty string = default ros2-*-sim* / ros2-*-turtlebot3 patterns; a configured
+   * value replaces the defaults entirely rather than adding to them. */
   abstract getSimulationImageAllowlist(): Promise<string>;
-  /** Peek wait in seconds (Preferences: physical-ai.topicPeekTimeoutSeconds, 1–30). */
+  /** NOT enforced (unlike getSimulationImageAllowlist) — UI convenience only. Comma-separated
+   * image refs or repo patterns narrowing the OpenShift deploy tab's Image picker suggestions
+   * (Preferences: physical-ai.openshift.deployImageAllowlist). Empty string = suggest every
+   * genuinely-amd64 local image (real architecture metadata — see listLocalImagesWithArch),
+   * regardless of name (APPENG-6259) — this only filters suggestions, never what the field
+   * accepts as free text or what deploy actually sends. */
+  abstract getOpenShiftImageAllowlist(): Promise<string>;
+  /** Peek wait in seconds (Preferences: physical-ai.general.topicPeekTimeoutSeconds, 1–30). */
   abstract getTopicPeekTimeoutSeconds(): Promise<number>;
   /** Validates and persists peek timeout (1–30). Throws a user-facing error if out of range. */
   abstract setTopicPeekTimeoutSeconds(seconds: number): Promise<void>;
-  /** Default software-render CPU count that seeds the OpenShift deploy form (Preferences: physical-ai.defaultSoftwareRenderCpus, 1–64). */
+  /** Default software-render CPU count that seeds the OpenShift deploy form (Preferences: physical-ai.openshift.defaultSoftwareRenderCpus, 1–64). */
   abstract getDefaultSoftwareRenderCpus(): Promise<number>;
   abstract getSimulationConfig(): Promise<SimulationConfig>;
   abstract saveSimulationConfig(config: SimulationConfig): Promise<void>;
@@ -117,7 +136,7 @@ export abstract class PhysicalAiApi {
   /** Every context available in the kubeconfig, so the UI can offer switching to a
    * different cluster (S8-10) — each carries its own credentials/user. */
   abstract listKubeContexts(): Promise<{ name: string; clusterUrl?: string; namespace?: string }[]>;
-  /** Configured fallback namespace (physical-ai.defaultOpenShiftNamespace) for when the
+  /** Configured fallback namespace (physical-ai.openshift.defaultNamespace) for when the
    * kubeconfig context sets none; '' when unconfigured (S8-16). */
   abstract getDefaultOpenShiftNamespace(): Promise<string>;
   /** Whether `oc` is currently logged in to a cluster (S8-11), via `oc whoami`. Checks the

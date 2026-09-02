@@ -15,6 +15,19 @@ export interface QuayTag {
   is_manifest_list: boolean;
 }
 
+/**
+ * A local image tag with its reported CPU architecture — `arch` is Podman-specific
+ * (available since Podman v5.1.0) and `undefined` means "not reported," never "confirmed
+ * not amd64" (older Podman, or a source that doesn't surface it). Used by the OpenShift
+ * deploy tab's Image picker to find genuinely-amd64 images regardless of tag naming
+ * (APPENG-6259) — the `-amd64` suffix Image Builder appends is just a naming convention,
+ * not a property every local image follows (e.g. a pulled or manually-tagged image).
+ */
+export interface LocalImageInfo {
+  tag: string;
+  arch: string | undefined;
+}
+
 export interface PullProgress {
   image: string;
   status: string;
