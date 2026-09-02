@@ -24,10 +24,11 @@ A point-in-time read of what's most worth picking up next, across Story 9 and St
 — re-derive from the [tracking table](#tracking) and Story 9's Jira-status line if this snapshot
 is more than a couple weeks old, don't trust it blindly.
 
-1. **S10-1/S10-2 (noVNC embedded viewer)** — recommended to pull forward, ahead of its original
-   backlog position. It's a genuine showcase asset (see S10-1's priority note), and the only real
-   blocker is a short spike: CSP/iframe feasibility for Option A, or whether Podman Desktop's
-   current extension API exposes a container-Details-tab contribution point at all for Option B.
+1. **S10-1/S10-2 (noVNC embedded viewer)** — pulled forward. Filed as
+   [APPENG-6283](https://redhat.atlassian.net/browse/APPENG-6283) under new Story
+   [APPENG-6282](https://redhat.atlassian.net/browse/APPENG-6282); worktree set up. Starts with a
+   spike: CSP/iframe feasibility for Option A, or whether Podman Desktop's current extension API
+   exposes a container-Details-tab contribution point at all for Option B.
 2. **S10-7 (Dashboard OpenShift sim count)** — small, well-scoped gap left over from the
    APPENG-6256 batch (S10-8 shipped without it); easy pickup.
 3. **S10-11 follow-up (CLI menu-driven help)** — small, now that S9-4/APPENG-6236 shipped
@@ -132,8 +133,11 @@ not just cosmetic. See the priority note below for why this may be worth pulling
 
 **Priority note (2026-09-02):** flagged as a candidate to move earlier in the backlog — a
 working embedded sim viewer (whichever option wins the spike) is a strong, visible showcase
-asset for demoing the extension, not just an incremental UX nicety. Recommend sizing this into
-a real sub-task soon rather than leaving it in the general backlog alongside lower-value items.
+asset for demoing the extension, not just an incremental UX nicety.
+
+**Status:** filed as [APPENG-6283](https://redhat.atlassian.net/browse/APPENG-6283) under new
+Story [APPENG-6282](https://redhat.atlassian.net/browse/APPENG-6282) (which also tracks S10-2 as
+a not-yet-sized follow-on).
 
 ---
 
@@ -164,6 +168,9 @@ building versus just embedding noVNC (S10-1) well.
 **Recommendation:** sequence strictly after S10-1 ships and is validated live; treat as a
 spike/research item, not a committed build, until S10-1's embedding proves the simpler path
 isn't good enough.
+
+**Status:** tracked under Story [APPENG-6282](https://redhat.atlassian.net/browse/APPENG-6282)
+(alongside S10-1) — not yet sized or filed as its own sub-task.
 
 ---
 
@@ -720,8 +727,8 @@ under an existing Story, a direct small commit, or a dedicated new doc.
 
 | ID | Item | Kind | Current location |
 |---|---|---|---|
-| S10-1 | noVNC embedded in the extension | Feature | This doc |
-| S10-2 | Custom streaming-video viewer | Feature (research/spike) | This doc |
+| S10-1 | noVNC embedded in the extension | Feature | Filed as [APPENG-6283](https://redhat.atlassian.net/browse/APPENG-6283) under new Story [APPENG-6282](https://redhat.atlassian.net/browse/APPENG-6282) |
+| S10-2 | Custom streaming-video viewer | Feature (research/spike) | Tracked under Story [APPENG-6282](https://redhat.atlassian.net/browse/APPENG-6282) (with S10-1), not yet sized/sub-tasked |
 | S10-3 | SBOM layer/slice attribution & visualization | Feature | This doc |
 | S10-4 | Per-slice incremental rebuild UX | Feature (mostly UX, caching likely already works) | This doc |
 | S10-5 | OpenShift tab image picker | Feature | Filed as [APPENG-6259](https://redhat.atlassian.net/browse/APPENG-6259) under APPENG-6256, merged ([f18e69e](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/f18e69e)), Closed |
