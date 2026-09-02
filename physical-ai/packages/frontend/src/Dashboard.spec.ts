@@ -88,6 +88,13 @@ describe('Dashboard', () => {
     expect(mockGoto).toHaveBeenCalledWith('/simulation');
   });
 
+  it('navigates to Simulation when the Get Started "3 · Navigate" step is clicked (APPENG-6260)', async () => {
+    render(Dashboard);
+    const btn = screen.getByText(/Navigate/);
+    await fireEvent.click(btn);
+    expect(mockGoto).toHaveBeenCalledWith('/simulation');
+  });
+
   it('navigates to Image Builder on click', async () => {
     render(Dashboard);
     const btn = screen.getByText('Image Builder');
