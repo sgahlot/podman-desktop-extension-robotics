@@ -95,6 +95,16 @@ describe('Dashboard', () => {
     expect(mockGoto).toHaveBeenCalledWith('/simulation');
   });
 
+  it('describes the Get Started flow with wording matching the step buttons below it (APPENG-6260)', () => {
+    render(Dashboard);
+    // "Simulate" and "Navigate" both land on /simulation (driving the robot happens on the
+    // same page as launching the sim) — that's intentional, not a routing bug. The actual
+    // confusion was this sentence saying "drive the robot" while the button below it says
+    // "Navigate"; the wording should match.
+    expect(screen.getByText(/navigate the robot/)).toBeTruthy();
+    expect(screen.queryByText(/drive the robot/)).toBeNull();
+  });
+
   it('navigates to Image Builder on click', async () => {
     render(Dashboard);
     const btn = screen.getByText('Image Builder');

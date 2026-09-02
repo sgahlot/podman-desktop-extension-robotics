@@ -146,7 +146,7 @@ onMount(async () => {
     class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 flex flex-col gap-3">
     <h2 class="text-lg font-medium text-[var(--pd-content-header)]">Get started</h2>
     <p class="text-sm text-[var(--pd-content-text)]">
-      New here? Build a ROS 2 image, launch a simulation, drive the robot, then watch its topics.
+      New here? Build a ROS 2 image, launch a simulation, navigate the robot, then watch its topics.
     </p>
     <div class="flex flex-wrap gap-2">
       <button
