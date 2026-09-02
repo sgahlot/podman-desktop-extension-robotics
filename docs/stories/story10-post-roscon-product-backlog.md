@@ -1,20 +1,51 @@
 # Story 10 — Post-ROSCon Product Backlog
 
-> **Jira:** not yet filed. Per explicit instruction (2026-09-01), this doc captures analysis
-> and categorization only — **no Jira tickets have been created for any item below.**
+> **Jira:** several items are now filed (see the [tracking table](#tracking) for the
+> authoritative live status of every item) — this doc started 2026-09-01 as analysis/
+> categorization only with no tickets filed, but items get sub-tasked and Closed over time as
+> they're picked up.
 >
 > **Scope:** explicitly *not* about the ROSCon MVP demo path — these are features, fixes, and
 > polish aimed at making the extension a real, complete product beyond the demo. Deliberately
 > broader than "UX" — several items (Topics-from-OpenShift, per-layer SBOM attribution, the
 > streaming viewer) are genuinely new capabilities, not visual polish.
 >
-> **Status:** exploration + triage only. Items are numbered `S10-N`. This doc exists so every
-> raw item from the original list is visible in one place — the next step for each is a
-> separate decision (new sub-task under an existing Story, a direct small fix, or its own new
-> doc); as that happens, update the tracking table at the bottom to say where it moved.
+> **Status:** ongoing — a mix of pure-exploration items and some already Closed. Items are
+> numbered `S10-N`. This doc exists so every raw item from the original list is visible in one
+> place — the next step for each is a separate decision (new sub-task under an existing Story, a
+> direct small fix, or its own new doc); as that happens, update the [tracking table](#tracking)
+> to say where it moved.
+
+<a id="whats-next"></a>
+
+## What's next (priority snapshot, 2026-09-02)
+
+A point-in-time read of what's most worth picking up next, across Story 9 and Story 10 combined
+— re-derive from the [tracking table](#tracking) and Story 9's Jira-status line if this snapshot
+is more than a couple weeks old, don't trust it blindly.
+
+1. **S10-1/S10-2 (noVNC embedded viewer)** — recommended to pull forward, ahead of its original
+   backlog position. It's a genuine showcase asset (see S10-1's priority note), and the only real
+   blocker is a short spike: CSP/iframe feasibility for Option A, or whether Podman Desktop's
+   current extension API exposes a container-Details-tab contribution point at all for Option B.
+2. **S10-7 (Dashboard OpenShift sim count)** — small, well-scoped gap left over from the
+   APPENG-6256 batch (S10-8 shipped without it); easy pickup.
+3. **S10-11 follow-up (CLI menu-driven help)** — small, now that S9-4/APPENG-6236 shipped
+   without it.
+4. **APPENG-6263 (S10-15 registry audit)** and **APPENG-6264 (S10-16 syft/cosign showcase)** —
+   already filed under APPENG-6225, no worktree started yet.
+5. **S9-7/APPENG-6237** (config-driven robot definition) and **S9-1/APPENG-6238** (`oc` → library)
+   — already filed in Story 9, genuinely not started (see
+   [story9-platform-exploration.md](story9-platform-exploration.md)).
+6. **Idle pre-existing spikes** — `APPENG-5809-fedora-quadlet-spike`, `APPENG-6070-multipod-zenoh`,
+   `APPENG-6071-humble-parity` worktrees — untouched, still there whenever picked up.
+7. **Larger/lower-readiness backlog** — S10-3/S10-4 (SBOM layer viz), S10-6 (Topic Monitor
+   OpenShift), S10-12 (telemetry), S10-13 (hybrid topology) — all still research/spike-only, no
+   ticket yet.
 
 ## Table of Contents
 
+- [What's next (priority snapshot)](#whats-next)
 - [Method](#method)
 - [S10-1 — noVNC embedded in the extension (Phase 1)](#s10-1)
 - [S10-2 — Custom streaming-video simulation viewer (Phase 2)](#s10-2)
