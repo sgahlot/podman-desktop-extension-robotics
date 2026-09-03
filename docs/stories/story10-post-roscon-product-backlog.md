@@ -27,13 +27,7 @@ A point-in-time read of what's most worth picking up next, across Story 9 and St
 — re-derive from the [tracking table](#tracking) and Story 9's Jira-status line if this snapshot
 is more than a couple weeks old, don't trust it blindly.
 
-1. **S10-15 (Hummingbird registry-path audit)** — **fastest pickup in this whole list.**
-   Already filed ([APPENG-6263](https://redhat.atlassian.net/browse/APPENG-6263)) under an
-   existing open Story ([APPENG-6225](https://redhat.atlassian.net/browse/APPENG-6225)) — no
-   new Story/ticket needed. All verification already done (2026-09-01, `skopeo inspect` on all
-   5 tools) — remaining work is a pure mechanical path swap in `hummingbirdImageRef()` plus
-   test/fixture updates. No investigation left to do.
-2. **S10-17/S10-18/S10-21 (Topic Monitor perf, Diagnostics sensor list, custom base image)** —
+1. **S10-17/S10-18/S10-21 (Topic Monitor perf, Diagnostics sensor list, custom base image)** —
    freshest signal: all three surfaced live by the target robotics-engineer audience itself
    (2026-09-03 feedback session/Slack), not internal backlog grooming. S10-17 first
    (small–medium effort, a concrete pain point hit during a real demo); S10-18 a reasonable
@@ -42,32 +36,31 @@ is more than a couple weeks old, don't trust it blindly.
    None fit an existing open Story — APPENG-6282 is scoped specifically to the noVNC/streaming
    viewer, APPENG-6225 specifically to the Hummingbird showcase — so this needs its own new
    Story.
-3. **S10-16 (Hummingbird syft-external + cosign-bundled showcase)** — already filed
+2. **S10-16 (Hummingbird syft-external + cosign-bundled showcase)** — already filed
    ([APPENG-6264](https://redhat.atlassian.net/browse/APPENG-6264)) under APPENG-6225, and
    unlike most of this backlog it's fully decision-locked (2026-09-01: "yes to all three") with
    a concretely scoped 2-part plan and verified groundwork (`cosign` confirmed identical digest
    on both registry paths). Medium-large effort — a real feature, not a quick pickup like
-   S10-14/S10-15, but genuinely ready to build, not just research.
-4. **S10-2 (custom streaming-video viewer)** — natural follow-on now that S10-1 has shipped
+   S10-14, but genuinely ready to build, not just research.
+3. **S10-2 (custom streaming-video viewer)** — natural follow-on now that S10-1 has shipped
    ([APPENG-6283](https://redhat.atlassian.net/browse/APPENG-6283), Closed); still a large,
    multi-week spike, not yet sized or sub-tasked under
    [APPENG-6282](https://redhat.atlassian.net/browse/APPENG-6282).
-5. **S10-7 (Dashboard OpenShift sim count)** — small, well-scoped gap left over from the
-   APPENG-6256 batch (S10-8 shipped without it); easy pickup, but needs a new sub-task filed
-   (unlike S10-15, which already has one).
-6. **S10-11 follow-up (CLI menu-driven help)** — small, now that S9-4/APPENG-6236 shipped
+4. **S10-7 (Dashboard OpenShift sim count)** — small, well-scoped gap left over from the
+   APPENG-6256 batch (S10-8 shipped without it); easy pickup, but needs a new sub-task filed.
+5. **S10-11 follow-up (CLI menu-driven help)** — small, now that S9-4/APPENG-6236 shipped
    without it; also needs a new ticket.
-7. **S10-14** (APPENG-6262) — already filed under APPENG-6225, no worktree started yet;
+6. **S10-14** (APPENG-6262) — already filed under APPENG-6225, no worktree started yet;
    small-to-medium, a real feature (pod/network wiring for the local Hummingbird sidecar).
-8. **S9-7/APPENG-6237** (config-driven robot definition) and **S9-1/APPENG-6238** (`oc` → library)
+7. **S9-7/APPENG-6237** (config-driven robot definition) and **S9-1/APPENG-6238** (`oc` → library)
    — already filed in Story 9, genuinely not started (see
    [story9-platform-exploration.md](story9-platform-exploration.md)).
-9. **Idle pre-existing spikes** — `APPENG-5809-fedora-quadlet-spike`, `APPENG-6070-multipod-zenoh`,
+8. **Idle pre-existing spikes** — `APPENG-5809-fedora-quadlet-spike`, `APPENG-6070-multipod-zenoh`,
    `APPENG-6071-humble-parity` worktrees — untouched, still there whenever picked up.
-10. **Larger/lower-readiness backlog** — S10-3/S10-4 (SBOM layer viz), S10-6 (Topic Monitor
-    OpenShift), S10-12 (telemetry), S10-13 (hybrid topology), S10-19 (Docker Desktop
-    compatibility research) — all still research/spike-only, no ticket yet.
-11. **Shelved** — S10-20 (Zenoh streaming as an alternative remote-viewing mechanism) — the team
+9. **Larger/lower-readiness backlog** — S10-3/S10-4 (SBOM layer viz), S10-6 (Topic Monitor
+   OpenShift), S10-12 (telemetry), S10-13 (hybrid topology), S10-19 (Docker Desktop
+   compatibility research) — all still research/spike-only, no ticket yet.
+10. **Shelved** — S10-20 (Zenoh streaming as an alternative remote-viewing mechanism) — the team
    explicitly deprioritized this live in the 2026-09-03 session ("does not require immediate
    changes"); revisit only if S10-13's underlying cross-boundary transport work happens first.
 
@@ -634,7 +627,7 @@ forking it per deployment target.
 
 <a id="s10-15"></a>
 
-## 📋 S10-15 — Hummingbird registry-path audit (`quay.io` → `registry.access.redhat.com`)
+## ✅ S10-15 — Hummingbird registry-path audit (`quay.io` → `registry.access.redhat.com`)
 
 **Ask:** audit whether other `quay.io/hummingbird/*` references in the extension should
 move to the public `registry.access.redhat.com/hi/*` path, the way APPENG-6227 did for the
@@ -653,14 +646,33 @@ OpenShift nginx sidecar.
   confirmed to resolve to the **identical image digest** on both registries — same
   equivalence already established for nginx. No blockers found; this is a pure path swap for
   all five.
-- `syft` is deliberately **out of scope here** — its registry path is handled together with a
-  bigger architecture change; see [S10-16](#s10-16).
+- `syft` was originally planned as **out of scope here** — the intent was to handle its
+  registry path together with the bigger usage-pattern change in [S10-16](#s10-16) (moving it
+  from a bundled `COPY --from` tool to an external on-demand scan). That plan changed during
+  implementation — see below — but S10-16's *usage-pattern* change (bundled → external) is
+  still separate, unstarted work; only `syft`'s registry *host* moved as part of this item.
 
 **Effort:** small — verification is done; remaining work is the code swap + updating any
 tests/fixtures referencing the old `quay.io` path.
 
-**Status:** filed as [APPENG-6263](https://redhat.atlassian.net/browse/APPENG-6263) under
-Story APPENG-6225.
+**Scope changed during implementation (2026-09-03):** rather than ship the curated
+verified-subset split above (5 tools + `nginx` on the new registry, everything else on
+`quay.io`), a live re-check found the split's underlying assumption shakier than expected —
+`grafana` and `valkey` matched digests at check time, but `prometheus` didn't, and both
+rebuild every few hours per their Red Hat catalog pages, so a point-in-time digest snapshot
+doesn't prove long-term equivalence for that class of app the way it does for the
+rarely-rebuilt CLI tools. Decision (user, 2026-09-03): since none of these apps are actually
+exercised end-to-end today except `syft` (SBOM generation) and `nginx` (OpenShift sidecar),
+there's no basis for treating any subset as more trustworthy than another — every Hummingbird
+app, including `syft`, now points at `registry.access.redhat.com/hi/*` uniformly. If `:latest`
+churn ever causes a problem for `syft` or `nginx` specifically, pin those two to a known-good
+tag/digest rather than reintroducing a mixed-registry split.
+
+**Status:** ✅ **Done.** Implemented, live-tested (OpenShift nginx sidecar deployed and
+confirmed serving traffic; `syft` SBOM generation confirmed working, 2587 components), and
+merged to `main`
+([Merge feature/APPENG-6263-hummingbird-registry-path-audit → main](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/eb306223f1f46141fa287d6e4f5d72f281e3646c)).
+[APPENG-6263](https://redhat.atlassian.net/browse/APPENG-6263) Closed, under Story APPENG-6225.
 
 ---
 
@@ -943,7 +955,7 @@ under an existing Story, a direct small commit, or a dedicated new doc.
 | S10-12 | Telemetry & richer metrics (OTEL/Prometheus) | Feature (2 threads: usage telemetry + runtime metrics) | This doc |
 | S10-13 | Hybrid local robot + in-cluster sim/inference | Feature (research/spike; 2 large pieces) | This doc |
 | S10-14 | Local Hummingbird nginx sidecar (Podman multi-container) | Feature | Filed as [APPENG-6262](https://redhat.atlassian.net/browse/APPENG-6262) under APPENG-6225 |
-| S10-15 | Hummingbird registry-path audit (quay.io → registry.access.redhat.com) | Research/audit | Filed as [APPENG-6263](https://redhat.atlassian.net/browse/APPENG-6263) under APPENG-6225 |
+| S10-15 | Hummingbird registry-path audit (quay.io → registry.access.redhat.com) | Research/audit | Filed as [APPENG-6263](https://redhat.atlassian.net/browse/APPENG-6263) under APPENG-6225, merged ([eb30622](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/eb306223f1f46141fa287d6e4f5d72f281e3646c)), Closed — scope grew to all Hummingbird apps uniformly, not just the originally-verified subset |
 | S10-16 | Hummingbird showcase: syft external-scan + cosign bundled-tool demo | Feature | Filed as [APPENG-6264](https://redhat.atlassian.net/browse/APPENG-6264) under APPENG-6225 |
 | S10-17 | Topic Monitor slow/reload with many topics | Perf/UX | This doc |
 | S10-18 | Diagnostics dynamic/full sensor list | Feature | This doc |
