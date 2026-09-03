@@ -46,7 +46,13 @@ npm install
 npm run build
 ```
 
-Then load `packages/backend` in Podman Desktop (Settings → Extensions → Local extension).
+Then, in Podman Desktop, go to **Settings → Extensions → Install a new extension from a local folder → Browse**, and select the **`packages/backend`** subfolder specifically — **not** this repo's top-level `physical-ai/` folder. Both folders have a `package.json` named `physical-ai`, but only `packages/backend/package.json` declares the `podman-desktop` engine version the extension actually requires; the top-level one is just the npm workspace root. Pointing the picker at the wrong (top-level) folder fails with:
+
+```
+Error: Extension with id redhat.physical-ai is not compatible with Podman Desktop. It requires 'podman-desktop' engine.
+```
+
+If you hit that error, re-check the folder you selected.
 
 ## Quick Start
 
