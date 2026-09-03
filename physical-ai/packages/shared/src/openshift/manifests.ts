@@ -7,18 +7,22 @@
  */
 
 import type { OpenShiftDeployConfig } from '../types/OpenShiftDeploy';
+import { hummingbirdImageRef } from '../types/layerCompatibility';
 
 /** noVNC port baked into the simulation image (matches the Containerfile EXPOSE). */
 export const NOVNC_CONTAINER_PORT = 6080;
 
 /**
  * Hummingbird nginx companion image (APPENG-6227), reverse-proxying noVNC when enabled.
- * `registry.access.redhat.com` is Red Hat's public, unauthenticated distribution registry
- * for this image (confirmed with a live `podman pull`, no credentials needed) — the
- * canonical path a partner/customer would actually be told to pull, rather than the
- * project's `quay.io/hummingbird/` working namespace (same image content either way).
+ * Derived from `hummingbirdImageRef` (APPENG-6263) rather than hardcoded separately, so there
+ * is exactly one rule for which registry each Hummingbird app resolves to — `nginx` is one of
+ * the apps confirmed to resolve identically on `registry.access.redhat.com/hi/*`, Red Hat's
+ * public, unauthenticated distribution registry (confirmed with a live `podman pull`, no
+ * credentials needed) — the canonical path a partner/customer would actually be told to pull,
+ * rather than the project's `quay.io/hummingbird/` working namespace (same image content
+ * either way).
  */
-export const HUMMINGBIRD_NGINX_IMAGE = 'registry.access.redhat.com/hi/nginx:latest';
+export const HUMMINGBIRD_NGINX_IMAGE = hummingbirdImageRef('nginx');
 
 /**
  * Port the Hummingbird nginx sidecar listens on inside the pod. Deliberately not 8080:

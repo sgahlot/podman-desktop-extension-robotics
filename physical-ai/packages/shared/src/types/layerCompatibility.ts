@@ -84,9 +84,27 @@ export interface HummingbirdAppOption extends LayerOption<HardenedApp> {
   binPath?: string;
 }
 
+/**
+ * Hummingbird apps confirmed (2026-09-01, via `skopeo inspect --override-os linux
+ * --override-arch amd64`, unauthenticated) to resolve to an identical image digest on both
+ * `quay.io/hummingbird/*` and the public `registry.access.redhat.com/hi/*` path — safe to serve
+ * from the latter (APPENG-6263). `syft`'s path is handled separately as part of a bigger
+ * architecture change (APPENG-6264); apps not in this set haven't been audited, so they stay on
+ * `quay.io` rather than assuming equivalence.
+ */
+const REGISTRY_ACCESS_REDHAT_COM_APPS: ReadonlySet<HardenedApp> = new Set<HardenedApp>([
+  'nginx',
+  'cosign',
+  'curl',
+  'jq',
+  'kubectl',
+  'helm',
+]);
+
 /** Full hardened image reference for a Hummingbird app (always the `:latest` daily rebuild). */
 export function hummingbirdImageRef(app: HardenedApp): string {
-  return `quay.io/hummingbird/${app}:latest`;
+  const registry = REGISTRY_ACCESS_REDHAT_COM_APPS.has(app) ? 'registry.access.redhat.com/hi' : 'quay.io/hummingbird';
+  return `${registry}/${app}:latest`;
 }
 
 export const BASE_OS_OPTIONS: readonly LayerOption<BaseOsLayer>[] = [
