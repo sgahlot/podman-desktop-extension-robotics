@@ -3,6 +3,8 @@ export interface TopicInfo {
   type: string;
   publishers: number;
   subscribers: number;
+  /** True after `ros2 topic list -t` before pub/sub counts have been fetched. */
+  countsPending?: boolean;
 }
 
 export interface TopicNodeInfo {

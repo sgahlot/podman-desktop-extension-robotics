@@ -11,6 +11,7 @@ import type {
   TopicSchemaResult,
 } from '/@shared/src/types/TopicInfo';
 import { parseEchoYamlTree, shortMessageType, PEEK_TIMEOUT_DEFAULT_SEC } from '/@shared/src/ros/topicPeek';
+import { topicSnapshotsEqual, mergeTopicSummaries, applyTopicCounts } from '/@shared/src/ros/topicList';
 import MessageTree from './lib/MessageTree.svelte';
 import QuickLinks from './lib/QuickLinks.svelte';
 import { navigationLayout } from './lib/navigationLayout';
@@ -22,6 +23,7 @@ let loading = false;
 let error = '';
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let pollInFlight = false;
+let countsInFlight = false;
 
 let expandedTopic: string | null = null;
 let topicDetail: TopicDetailInfo | null = null;
@@ -101,20 +103,43 @@ async function pollContainers() {
   }
 }
 
-async function pollTopics() {
+async function pollTopics(opts?: { forceCounts?: boolean }) {
   if (!selectedContainerId || pollInFlight) return;
   const targetId = selectedContainerId;
   pollInFlight = true;
   try {
-    const next = await physicalAiClient.listRosTopics(targetId);
+    const summaries = await physicalAiClient.listRosTopicSummaries(targetId);
     if (selectedContainerId !== targetId) return;
-    topics = next;
+    const next = mergeTopicSummaries(topics, summaries);
+    if (!topicSnapshotsEqual(topics, next)) {
+      topics = next;
+    }
     error = '';
+    if (opts?.forceCounts || next.some(t => t.countsPending)) {
+      void fillTopicCounts(targetId);
+    }
   } catch (e) {
     if (selectedContainerId !== targetId) return;
     error = e instanceof Error ? e.message : String(e);
   } finally {
     pollInFlight = false;
+  }
+}
+
+async function fillTopicCounts(targetId: string) {
+  if (countsInFlight) return;
+  countsInFlight = true;
+  try {
+    const detailed = await physicalAiClient.listRosTopics(targetId);
+    if (selectedContainerId !== targetId) return;
+    const next = applyTopicCounts(topics, detailed);
+    if (!topicSnapshotsEqual(topics, next)) {
+      topics = next;
+    }
+  } catch {
+    // Keep names/types; pub/sub stay pending until a later poll.
+  } finally {
+    countsInFlight = false;
   }
 }
 
@@ -126,8 +151,14 @@ async function refresh() {
   } catch {
     peekTimeoutSec = PEEK_TIMEOUT_DEFAULT_SEC;
   }
+  if (!selectedContainerId) {
+    const running = containers.filter(c => c.state === 'running');
+    if (running.length > 0) {
+      selectedContainerId = running[0].id;
+    }
+  }
   if (selectedContainerId) {
-    await pollTopics();
+    await pollTopics({ forceCounts: true });
   }
   loading = false;
 }
@@ -282,7 +313,9 @@ onDestroy(() => {
       <div class="p-3 rounded text-sm pai-banner-error max-w-lg">{error}</div>
     {/if}
 
-    {#if topics.length === 0 && !loading && !error}
+    {#if topics.length === 0 && loading}
+      <div class="text-sm text-[var(--pd-content-text)]">Loading topics...</div>
+    {:else if topics.length === 0 && !error}
       <div class="text-sm text-[var(--pd-content-text)]">
         No topics detected yet. The simulation may still be starting up — topics appear once ROS2 nodes are active.
       </div>
@@ -303,7 +336,7 @@ onDestroy(() => {
             </tr>
           </thead>
           <tbody>
-            {#each topics as topic}
+            {#each topics as topic (topic.name)}
               <tr
                 class="border-b border-[var(--pd-content-card-border)] cursor-pointer hover:bg-[var(--pd-content-bg)] transition-colors"
                 on:click={() => toggleTopicDetail(topic.name)}>
@@ -316,8 +349,10 @@ onDestroy(() => {
                     title={topic.type}>{shortMessageType(topic.type)}</span>
                 </td>
                 <td class="p-3 pr-4 font-mono text-[var(--pd-content-text)] break-all">{topic.type}</td>
-                <td class="p-3 pr-4 text-right text-[var(--pd-content-text)]">{topic.publishers}</td>
-                <td class="p-3 text-right text-[var(--pd-content-text)]">{topic.subscribers}</td>
+                <td class="p-3 pr-4 text-right text-[var(--pd-content-text)]"
+                  >{topic.countsPending ? '—' : topic.publishers}</td>
+                <td class="p-3 text-right text-[var(--pd-content-text)]"
+                  >{topic.countsPending ? '—' : topic.subscribers}</td>
               </tr>
               {#if expandedTopic === topic.name}
                 <tr class="border-b border-[var(--pd-content-card-border)]">

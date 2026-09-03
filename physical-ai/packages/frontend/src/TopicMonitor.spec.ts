@@ -1,10 +1,11 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import TopicMonitor from './TopicMonitor.svelte';
 import { navigationLayout } from './lib/navigationLayout';
 
 const mockListSimulationContainers = vi.fn();
 const mockListRosTopics = vi.fn();
+const mockListRosTopicSummaries = vi.fn();
 const mockGetRosTopicDetail = vi.fn();
 const mockPeekRosTopic = vi.fn();
 const mockGetRosMessageSchema = vi.fn();
@@ -16,6 +17,7 @@ vi.mock('./api/client', () => ({
   physicalAiClient: {
     listSimulationContainers: (...args: unknown[]) => mockListSimulationContainers(...args),
     listRosTopics: (...args: unknown[]) => mockListRosTopics(...args),
+    listRosTopicSummaries: (...args: unknown[]) => mockListRosTopicSummaries(...args),
     getRosTopicDetail: (...args: unknown[]) => mockGetRosTopicDetail(...args),
     peekRosTopic: (...args: unknown[]) => mockPeekRosTopic(...args),
     getRosMessageSchema: (...args: unknown[]) => mockGetRosMessageSchema(...args),
@@ -34,6 +36,21 @@ describe('TopicMonitor', () => {
     navigationLayout.set('sidebar');
     mockListSimulationContainers.mockResolvedValue([]);
     mockListRosTopics.mockResolvedValue([]);
+    mockListRosTopicSummaries.mockImplementation(async () => {
+      const full = (await mockListRosTopics()) as Array<{
+        name: string;
+        type: string;
+        publishers: number;
+        subscribers: number;
+      }>;
+      return full.map(t => ({
+        name: t.name,
+        type: t.type,
+        publishers: 0,
+        subscribers: 0,
+        countsPending: true,
+      }));
+    });
     mockGetRosTopicDetail.mockResolvedValue({ topicName: '', type: '', publishers: [], subscribers: [] });
     mockPeekRosTopic.mockResolvedValue({
       topicName: '',
@@ -44,6 +61,10 @@ describe('TopicMonitor', () => {
     mockGetRosMessageSchema.mockResolvedValue({ type: '', schema: '' });
     mockGetTopicPeekTimeoutSeconds.mockResolvedValue(5);
     mockCopyToClipboard.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('renders heading', () => {
@@ -282,5 +303,66 @@ describe('TopicMonitor', () => {
 
     expect(await screen.findByText(/No message on \/idle/)).toBeTruthy();
     expect(screen.getByText(/active publishers/)).toBeTruthy();
+  });
+
+  it('keeps an expanded row across a poll that returns the same topics', async () => {
+    vi.useFakeTimers();
+    mockListSimulationContainers.mockResolvedValue([
+      { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
+    ]);
+    mockListRosTopics.mockResolvedValue([
+      { name: '/cmd_vel', type: 'geometry_msgs/msg/Twist', publishers: 1, subscribers: 1 },
+    ]);
+    mockGetRosTopicDetail.mockResolvedValue({
+      topicName: '/cmd_vel',
+      type: 'geometry_msgs/msg/Twist',
+      publishers: [{ nodeName: 'teleop_keyboard', nodeNamespace: '/' }],
+      subscribers: [],
+    });
+
+    render(TopicMonitor);
+    await vi.advanceTimersByTimeAsync(100);
+    const topicCell = screen.getByText('/cmd_vel');
+    await fireEvent.click(topicCell.closest('tr')!);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(screen.getByText(/teleop_keyboard/)).toBeTruthy();
+    expect(screen.getByText('▼')).toBeTruthy();
+
+    mockListRosTopics.mockResolvedValue([
+      { name: '/cmd_vel', type: 'geometry_msgs/msg/Twist', publishers: 1, subscribers: 1 },
+    ]);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(screen.getByText(/teleop_keyboard/)).toBeTruthy();
+    expect(screen.getByText('▼')).toBeTruthy();
+  });
+
+  it('paints topic names before pub/sub counts resolve', async () => {
+    mockListSimulationContainers.mockResolvedValue([
+      { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
+    ]);
+    mockListRosTopicSummaries.mockResolvedValue([
+      {
+        name: '/rosout',
+        type: 'rcl_interfaces/msg/Log',
+        publishers: 0,
+        subscribers: 0,
+        countsPending: true,
+      },
+    ]);
+    let resolveCounts: (value: unknown) => void = () => {};
+    mockListRosTopics.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveCounts = resolve;
+        }),
+    );
+
+    render(TopicMonitor);
+    expect(await screen.findByText('/rosout')).toBeTruthy();
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
+
+    resolveCounts([{ name: '/rosout', type: 'rcl_interfaces/msg/Log', publishers: 3, subscribers: 1 }]);
+    expect(await screen.findByText('3')).toBeTruthy();
+    expect(screen.getByText('1')).toBeTruthy();
   });
 });
