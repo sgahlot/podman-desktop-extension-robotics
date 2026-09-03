@@ -17,17 +17,17 @@ A Podman Desktop extension that gives robotics developers a GUI-driven path from
 
 === What It Does
 
-* Curated catalog of ROS2 base images (Ubuntu interim) pullable from Quay.io
-* Image Builder with two-phase build (base + simulation) and Quick Start presets
-* One-click launch of ROS2 + Gazebo simulation in a single Podman container
-* Browser-based simulation visualization via noVNC (view the Gazebo GUI in a browser without a separate VNC client)
-* Add TurtleBot3 robots into a running simulation interactively
+* Browse and pull ROS2 base images from Quay.io (All or Curated catalog view)
+* Image Builder with two-phase build (base + simulation), Quick Start presets, and an alternate Layers layout for composing custom images (including Hummingbird hardened-app layers)
+* One-click launch of ROS2 + Gazebo simulation in a single Podman container — locally, or deployed to an OpenShift cluster
+* Simulation viewer embedded inline in the extension panel (Show Viewer) or via browser-based noVNC — no separate VNC client needed
+* Add TurtleBot3 robots into a running simulation interactively, with per-robot diagnostics (TF tree, costmap, laser topic checks)
 * ROS2 topic inspection panel (Topic Monitor — list, drill-down, message peek)
 
 === Strategic Drivers
 
 * Push workloads to OpenShift and the Red Hat ecosystem
-* Clear path from Ubuntu builds on laptops to Fedora (and eventually RHEL) containers
+* Clear path from Ubuntu builds on laptops to Fedora containers (currently parked)
 * Bridge the gap from robotics lab projects to hardened, full-scale production deployment on OpenShift
 
 == Quick Start
@@ -90,28 +90,17 @@ podman-work/                            <1>
 │   └── packages/
 │       ├── backend/                    <4>
 │       │   ├── README.md               # User-facing README (ships in OCI image)
-│       │   ├── src/
-│       │   │   ├── extension.ts        # Entry point (activate/deactivate)
-│       │   │   └── api-impl.ts         # PhysicalAiApi implementation (27 methods)
-│       │   ├── assets/                 # Bundled Containerfiles + entrypoints
-│       │   │   ├── ros2-jazzy-base/
-│       │   │   ├── ros2-jazzy-sim/          # Jazzy sim: Gazebo + noVNC (Nav2 pkgs in image; stack deferred to OpenShift)
-│       │   │   ├── ros2-humble-base/
-│       │   │   └── ros2-humble-turtlebot3/
-│       │   └── package.json            # Extension manifest (8 config properties)
+│       │   ├── src/                    # Extension entry point + PhysicalAiApi implementation
+│       │   └── assets/                 # Bundled Containerfiles + entrypoints (ros2-jazzy-base,
+│       │                               # ros2-jazzy-sim, ros2-humble-* — Humble unverified)
 │       ├── frontend/                   <5>
-│       │   └── src/
-│       │       ├── App.svelte          # Root component with routing
-│       │       ├── Dashboard.svelte    # Landing page
-│       │       ├── ImageCatalog.svelte # Image browsing (All/Curated)
-│       │       ├── SimulationSetup.svelte  # Image Builder + Quick Start
-│       │       ├── SimulationPage.svelte   # Launch, noVNC, Add TurtleBot3
-│       │       └── api/client.ts       # RPC client setup
-│       └── shared/                     <6>
-│           └── src/
-│               ├── PhysicalAiApi.ts    # API interface (27 abstract methods)
-│               └── messages/
-│                   └── MessageProxy.ts # RPC bridge
+│       │   └── src/                    # Svelte 5 pages/components — Dashboard, Image Catalog,
+│       │                               # Image Builder, Simulation (Local/OpenShift), Diagnostics,
+│       │                               # Topic Monitor, Help
+│       ├── shared/                     <6>
+│       │   └── src/                    # API interface (PhysicalAiApi), RPC bridge, shared types
+│       └── cli/                        <7>
+│           └── src/                    # Standalone CLI for build/launch/spawn without Podman Desktop
 ----
 <1> Main repo (git root)
 <2> Project docs: plan, design, per-story tracking (lives here, not inside extension dir)
@@ -119,6 +108,7 @@ podman-work/                            <1>
 <4> Backend: extension lifecycle, Podman Desktop API integration, bundled container assets
 <5> Frontend: Svelte 5 + TailwindCSS UI
 <6> Shared: RPC bridge, API interface, simulation profiles and types
+<7> CLI: build/launch/spawn workflows without Podman Desktop
 
 == Tech Stack
 
@@ -132,7 +122,7 @@ podman-work/                            <1>
 | Build | Vite 8, npm workspaces
 | Testing | Vitest 4
 | Routing | tinro (hash mode)
-| Container images | Ubuntu 24.04 + ROS2 Jazzy/Humble (Fedora migration parked — APPENG-5809)
+| Container images | Ubuntu 24.04 + ROS2 Jazzy (Humble exists, not currently verified working)
 | Registry | Quay.io
 | Middleware | Zenoh / DDS
 | Simulation | Gazebo
@@ -143,19 +133,6 @@ podman-work/                            <1>
 * link:docs/podman-extension-plan.md[Plan doc] — work breakdown, progress, dependency analysis
 * link:docs/design.adoc[Design doc] — architecture, component design, data flow
 * link:docs/stories/[Story docs] — per-story status tracking
-
-== Jira
-
-[cols="1,1,2"]
-|===
-| Type | Key | Summary
-
-| Epic | APPENG-5763 | Podman Desktop Extension for Physical AI Robotics Development
-| Story | APPENG-5764 | Extension scaffolding and base image catalog _(done)_
-| Story | APPENG-5765 | Single robot simulation workflow _(in progress)_
-| Story | APPENG-5766 | Multi-robot local scaling _(not started)_
-| Story | APPENG-5767 | OpenShift deployment bridge _(not started)_
-|===
 
 == License
 
