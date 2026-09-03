@@ -16,6 +16,13 @@
 # Flags:
 #   --no-push        build the image locally but do not push (dry run of the build)
 #   --allow-nonmain  skip the "must be on main" guard (escape hatch; see below)
+#   --notes "..."    one-line "what's new" blurb baked into the image as the
+#                    io.physical-ai.release-notes label. Shows up on Quay's tag detail
+#                    page (and via `podman inspect` / `skopeo inspect`) without needing a
+#                    Quay-specific feature — it's a standard OCI image label. Also stamps
+#                    org.opencontainers.image.version (the tag) and .revision (git commit
+#                    SHA) the same way. Keep it free of embedded double quotes — it's
+#                    passed straight through as a Containerfile ARG.
 #
 # SAFEGUARDS (why this refuses to run in some states):
 #   1. Branch guard    — images are only ever published from `main`. By worktree
@@ -32,12 +39,14 @@ REPO=""
 TAG=""
 PUSH=1
 ALLOW_NONMAIN=0
+NOTES=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-push)       PUSH=0 ;;
     --allow-nonmain) ALLOW_NONMAIN=1 ;;
-    -h|--help)       sed -n '2,30p' "$0"; exit 0 ;;
+    --notes)         NOTES="${2:?--notes requires a value}"; shift ;;
+    -h|--help)       sed -n '2,36p' "$0"; exit 0 ;;
     -*)              echo "Unknown flag: $1" >&2; exit 2 ;;
     *)               if [ -z "$REPO" ]; then REPO="$1"; elif [ -z "$TAG" ]; then TAG="$1"; else
                        echo "Unexpected extra argument: $1" >&2; exit 2; fi ;;
@@ -46,8 +55,8 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$REPO" ]; then
-  echo "Usage: publish-extension-image.sh <quay-repo> [tag] [--no-push] [--allow-nonmain]" >&2
-  echo "  e.g. publish-extension-image.sh quay.io/rhrobotics/physical-ai" >&2
+  echo "Usage: publish-extension-image.sh <quay-repo> [tag] [--no-push] [--allow-nonmain] [--notes \"...\"]" >&2
+  echo "  e.g. publish-extension-image.sh quay.io/rhrobotics/physical-ai latest --notes \"Adds inline Show Viewer\"" >&2
   exit 2
 fi
 
@@ -96,6 +105,7 @@ IMG_LATEST="${REPO}:latest"
 # emulation — it just stamps the per-arch manifest entry. Override with PLATFORMS=… if
 # you ever need a single arch.
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
+REVISION="$(git -C "$ROOT" rev-parse HEAD)"
 
 # Snapshot dangling ("<none>") image IDs before touching anything, so cleanup at the end
 # can remove only what THIS run adds — never unrelated dangling images already sitting in
@@ -107,6 +117,7 @@ echo "==> Building extension (npm run build)"
 
 echo "==> Building multi-arch OCI image  ($PLATFORMS)"
 echo "      $IMG_VER  (also pushed as :latest)"
+echo "      version=$TAG  revision=${REVISION:0:12}  notes=${NOTES:-<none>}"
 # Create the manifest list explicitly, then add each arch in its own build. The one-shot
 # `--platform a,b --manifest` form collapses to a single image when the per-arch content
 # is byte-identical (which it is here: same JS/assets FROM scratch), so it must be built
@@ -116,7 +127,11 @@ podman manifest create "$IMG_VER" >/dev/null
 IFS=',' read -ra _PLATS <<< "$PLATFORMS"
 for _p in "${_PLATS[@]}"; do
   echo "    - building $_p"
-  podman build --platform "$_p" --manifest "$IMG_VER" -f "$EXT_DIR/Containerfile" "$EXT_DIR" >/dev/null
+  podman build --platform "$_p" --manifest "$IMG_VER" \
+    --build-arg "VERSION=$TAG" \
+    --build-arg "REVISION=$REVISION" \
+    --build-arg "RELEASE_NOTES=$NOTES" \
+    -f "$EXT_DIR/Containerfile" "$EXT_DIR" >/dev/null
 done
 
 echo "==> Manifest contents:"

@@ -238,15 +238,10 @@ import { navigationLayout } from './lib/navigationLayout';
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Golden Quay images</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-1">
         <p>
-          Recommended set to publish for Catalog demos (replace <span class="font-mono">&lt;ns&gt;</span> with your
-          namespace). The Humble entries below are <strong>not currently verified working</strong> — only publish them if
-          you've validated your own build.
+          Recommended set to publish for Catalog demos (replace <span class="font-mono">&lt;ns&gt;</span> with your namespace).
         </p>
-        <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-humble-base:sloretz</p>
-        <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-humble-base:osrf</p>
         <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-jazzy-base:latest</p>
         <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-jazzy-base:noble</p>
-        <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-humble-turtlebot3:sloretz</p>
         <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-jazzy-sim:noble</p>
       </div>
     </div>
@@ -282,6 +277,9 @@ import { navigationLayout } from './lib/navigationLayout';
         <p><strong>Customize hardware</strong> — Swap sensors (e.g. camera) on a running robot.</p>
         <p><strong>Additional robots</strong> — Beyond TurtleBot3.</p>
         <p><strong>Fleet</strong> — Multi-robot local fleets with Zenoh.</p>
+        <p>
+          <strong>Humble support</strong> — exists in the codebase but is not currently verified working; needs re-validation.
+        </p>
       </div>
     </div>
   </div>

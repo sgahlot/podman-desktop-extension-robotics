@@ -10,9 +10,16 @@ COPY packages/backend/README.md /extension/
 
 FROM scratch
 
+ARG VERSION=""
+ARG REVISION=""
+ARG RELEASE_NOTES=""
+
 LABEL org.opencontainers.image.title="Physical AI" \
       org.opencontainers.image.description="Podman Desktop extension for Physical AI robotics development" \
       org.opencontainers.image.vendor="Red Hat" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      io.physical-ai.release-notes="${RELEASE_NOTES}" \
       io.podman-desktop.api.version=">= 1.28.0"
 
 COPY --from=builder /extension /extension

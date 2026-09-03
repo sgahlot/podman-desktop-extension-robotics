@@ -5,7 +5,7 @@ Podman Desktop extension for Physical AI robotics development. Provides a GUI-dr
 ## Features
 
 - **Image Catalog** — Browse and pull ROS2 images from Quay.io (All or Curated view; allowlist configurable in Preferences)
-- **Image Builder** — Configure, build, and push ROS2 images (Humble TurtleBot3 or Jazzy sim + noVNC). Uses a [two-phase build](#two-phase-image-build): Phase 1 base, Phase 2 simulation. Builds and pushes are cancellable. A **Layers** layout is also available to compose a custom image from Base OS / hardened app / ROS / simulation layers, with a live compatibility verdict as you pick — see [Hummingbird support](#hummingbird-support) and Help → Image Builder.
+- **Image Builder** — Configure, build, and push ROS2 images (Jazzy sim + noVNC; Humble exists but is not currently verified working — see Coming Soon). Uses a [two-phase build](#two-phase-image-build): Phase 1 base, Phase 2 simulation. Builds and pushes are cancellable. A **Layers** layout is also available to compose a custom image from Base OS / hardened app / ROS / simulation layers, with a live compatibility verdict as you pick — see [Hummingbird support](#hummingbird-support) and Help → Image Builder.
 - **Simulation** — Launch Gazebo via Podman, open noVNC, add TurtleBot3 into a running world. Launch only allows images matching the simulation allowlist (default `ros2-*-sim*` / `ros2-*-turtlebot3`; optional exact tag/digest pins in Preferences). Local image content is trusted once selected — see Help → Image trust. A **Show Viewer** toggle next to **Open in Browser** embeds the noVNC canvas inline in the panel, no browser tab needed (APPENG-6283).
 - **OpenShift Deployment** — Deploy a pushed `amd64` image to an OpenShift cluster from the Simulation page's **OpenShift** tab: pick a namespace/context, preview generated manifests, Deploy, Open URL. Lists deployed sims with per-robot spawn/navigate/remove, delete/refresh, a **Cluster has a GPU** toggle, an optional [Hummingbird](#hummingbird-support) nginx sidecar demo, and the same inline **Show Viewer** toggle as local Simulation, over the route.
 - **Diagnostics** — Live diagnostics for spawned robots (local or OpenShift), deep-linkable via URL query params (`target=`, `containerId=`/context, `robot=`).
@@ -24,7 +24,7 @@ Current container bases are **Ubuntu interim** (official `ros` / OSRF / sloretz 
 
 ![Quick Start: build, launch, and view the simulation inline](https://raw.githubusercontent.com/sgahlot/podman-desktop-extension-robotics/main/physical-ai/docs/img/quick-start-show-viewer.gif)
 
-Quick Start — Image Builder Phase 1/Phase 2 build → Launch → **Show Viewer** (embedded inline, no browser tab) → Add TurtleBot3.
+Quick Start — Image Builder page: Phase 1/Phase 2 build → Simulation page: Launch → **Show Viewer** (embedded inline, no browser tab) → Add TurtleBot3.
 
 ![Image Catalog: browse and pull an image](https://raw.githubusercontent.com/sgahlot/podman-desktop-extension-robotics/main/physical-ai/docs/img/image-catalog-pull.gif)
 
@@ -36,7 +36,7 @@ OpenShift tab — Deploy → preview manifests → Deploy → **Show Viewer**, r
 
 ![Show Viewer toggle: embed the simulation inline](https://raw.githubusercontent.com/sgahlot/podman-desktop-extension-robotics/main/physical-ai/docs/img/show-viewer-toggle.gif)
 
-**Show Viewer** — toggle the embedded noVNC canvas on and off inline in the panel, no browser tab needed.
+**Show Viewer** (Simulation page, local or OpenShift) — toggle the embedded noVNC canvas on and off inline in the panel, no browser tab needed.
 
 ## Prerequisites
 
@@ -60,7 +60,7 @@ To check or change Podman Machine resources: open **Settings → Resources → P
 
 ## Getting Started
 
-1. Install the extension — either the published image (Podman Desktop → Extensions → Install custom extension → `quay.io/sgahlot/physical-ai-extension:<tag>`) or load from source (see the root README)
+1. Install the extension — either the published image (Podman Desktop → Extensions → Install custom extension → `quay.io/sgahlot/physical-ai-extension:latest`, or a specific version tag) or load from source (see the root README)
 2. Open **Physical AI**, or press **F1** → **Physical AI: Open Dashboard**
 3. **Image Builder** → Quick Start **Local** (**TurtleBot3 Sim (Jazzy)**) → Phase 1 Build → Phase 2 Build (use **OpenShift** for a cluster-pullable `amd64` image)
 4. **Simulation** → Launch → **Show Viewer** (or Open in Browser) → Add TurtleBot3 → optional **Navigate** (X/Y) and Topic Monitor **Peek**
@@ -81,26 +81,24 @@ Idle noVNC tabs may show Disconnected; reconnect or refresh — the simulation i
 
 ## Golden images to publish
 
-Pre-built images to push to your Quay.io namespace so that users can pull and run without building locally. For a quick showcase, push just the Jazzy base + sim pair — users pull the sim image directly instead of building for ~20 minutes. The Humble entries below are **not currently verified working** (see Platform notes) — only publish them if you've validated your own build.
+Pre-built images to push to your Quay.io namespace so that users can pull and run without building locally. For a quick showcase, push just the Jazzy base + sim pair — users pull the sim image directly instead of building for ~20 minutes.
 
 Build via Image Builder (or CLI against `assets/`), then push:
 
 ### Base images (Phase 1 outputs)
 
-- `quay.io/<ns>/ros2-humble-base:sloretz` — Humble base built from sloretz's multi-arch desktop image. Works on Mac (arm64) and Linux (amd64).
-- `quay.io/<ns>/ros2-humble-base:osrf` — Humble base built from the official OSRF image. amd64 only (Linux).
 - `quay.io/<ns>/ros2-jazzy-base:latest` — Jazzy headless base for amd64. No GUI, for CI or headless ROS2 work.
 - `quay.io/<ns>/ros2-jazzy-base:noble` — Jazzy base for arm64 (the Quick Start path). This is what Phase 1 produces on Mac.
 
 ### Simulation images (Phase 2 outputs, built on top of a base)
 
-- `quay.io/<ns>/ros2-humble-turtlebot3:sloretz` — Humble TurtleBot3 sim (layers on the sloretz base).
 - `quay.io/<ns>/ros2-jazzy-sim:noble` — The Jazzy sim: Gazebo + noVNC + Nav2 (launched on **Navigate** via `entrypoint-nav2.sh`).
 
 ## Coming Soon
 
 - **Customize hardware** — Swap sensors on a running robot
 - **Fleet** — Multi-robot scaling for local simulations (with Zenoh)
+- **Humble support** — TurtleBot3 sim on ROS2 Humble exists in the codebase (`assets/ros2-humble-base`, `assets/ros2-humble-turtlebot3`) but is not currently verified working; needs re-validation before it's recommended
 
 ## Packaging note
 
@@ -141,6 +139,6 @@ Robots are added to the running container via `podman exec` (not by starting add
 The Image Builder splits the build into a base image (Phase 1) and a simulation image (Phase 2) that layers on top via `FROM $LOCAL_BASE_IMAGE`. This is a practical optimization:
 
 - **Build speed** — The base (ROS2 core, ~1–2 GB of apt packages) rarely changes. Sim layer rebuilds take ~5 min vs ~15–20 min for the full stack.
-- **Shared foundation** — Multiple sim images share the same base (Humble TurtleBot3, Jazzy sim, future robot types).
+- **Shared foundation** — Multiple sim images can share the same base (Jazzy sim, future robot types).
 - **Smaller pushes** — If the base is already on Quay, only the sim diff layers are transferred.
 - **Non-simulation use** — The base image works standalone for headless ROS2 development or CI.
