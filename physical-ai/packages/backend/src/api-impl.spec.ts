@@ -1641,22 +1641,21 @@ describe('PhysicalAiApiImpl', () => {
     });
 
     it('parses topic list and fetches info for each topic', async () => {
-      vi.mocked(extensionApi.process.exec)
-        .mockResolvedValueOnce({
-          stdout: '/rosout\n/robot_1/cmd_vel\n',
-          stderr: '',
-          command: 'podman',
-        } as extensionApi.RunResult)
-        .mockResolvedValueOnce({
-          stdout: 'Type: rcl_interfaces/msg/Log\nPublisher count: 2\nSubscription count: 0\n',
-          stderr: '',
-          command: 'podman',
-        } as extensionApi.RunResult)
-        .mockResolvedValueOnce({
-          stdout: 'Type: geometry_msgs/msg/Twist\nPublisher count: 0\nSubscription count: 1\n',
-          stderr: '',
-          command: 'podman',
-        } as extensionApi.RunResult);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: [
+          'T\t/rosout',
+          'Type: rcl_interfaces/msg/Log',
+          'Publisher count: 2',
+          'Subscription count: 0',
+          'T\t/robot_1/cmd_vel',
+          'Type: geometry_msgs/msg/Twist',
+          'Publisher count: 0',
+          'Subscription count: 1',
+          '',
+        ].join('\n'),
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
 
       const result = await api.listRosTopics(CONTAINER_ID);
       expect(result).toHaveLength(2);
@@ -1672,20 +1671,15 @@ describe('PhysicalAiApiImpl', () => {
         publishers: 0,
         subscribers: 1,
       });
+      expect(extensionApi.process.exec).toHaveBeenCalledTimes(1);
     });
 
     it('handles topic info failure gracefully', async () => {
-      vi.mocked(extensionApi.process.exec)
-        .mockResolvedValueOnce({
-          stdout: '/rosout\n',
-          stderr: '',
-          command: 'podman',
-        } as extensionApi.RunResult)
-        .mockRejectedValueOnce({
-          exitCode: 1,
-          stdout: '',
-          stderr: 'error',
-        });
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: 'T\t/rosout\n',
+        stderr: 'error',
+        command: 'podman',
+      } as extensionApi.RunResult);
 
       const result = await api.listRosTopics(CONTAINER_ID);
       expect(result).toHaveLength(1);
@@ -1716,7 +1710,8 @@ describe('PhysicalAiApiImpl', () => {
 
     it('skips injectable topic names from ros2 topic list', async () => {
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
-        stdout: '/rosout\n/cmd_vel; id\n',
+        stdout:
+          'T\t/rosout\nType: rcl_interfaces/msg/Log\nPublisher count: 1\nSubscription count: 0\nT\t/cmd_vel; id\n',
         stderr: '',
         command: 'podman',
       } as extensionApi.RunResult);
@@ -1733,25 +1728,21 @@ describe('PhysicalAiApiImpl', () => {
       await expect(api.listRosTopics(CONTAINER_ID)).rejects.toThrow('Not a Physical AI simulation container');
     });
 
-    it('passes topic names as bash positional args (not interpolated)', async () => {
-      vi.mocked(extensionApi.process.exec)
-        .mockResolvedValueOnce({
-          stdout: '/robot_1/cmd_vel\n',
-          stderr: '',
-          command: 'podman',
-        } as extensionApi.RunResult)
-        .mockResolvedValueOnce({
-          stdout: 'Type: geometry_msgs/msg/Twist\nPublisher count: 0\nSubscription count: 1\n',
-          stderr: '',
-          command: 'podman',
-        } as extensionApi.RunResult);
+    it('looks up topic info inside one sourced bash with quoted names', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: 'T\t/robot_1/cmd_vel\nType: geometry_msgs/msg/Twist\nPublisher count: 0\nSubscription count: 1\n',
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
 
       await api.listRosTopics(CONTAINER_ID);
-      const args = execArgs(1);
-      const bashCmd = args.find((arg: string) => arg.includes('ros2 topic info'));
-      expect(bashCmd).toContain('ros2 topic info "$1"');
+      expect(extensionApi.process.exec).toHaveBeenCalledTimes(1);
+      const args = execArgs(0);
+      const bashCmd = args.find((arg: string) => arg.includes('source'));
+      expect(bashCmd).toContain('ros2 topic list');
+      expect(bashCmd).toContain('ros2 topic info "$name"');
       expect(bashCmd).not.toContain('/robot_1/cmd_vel');
-      expect(args).toContain('/robot_1/cmd_vel');
+      expect(args).not.toContain('/robot_1/cmd_vel');
     });
 
     it('calls podman exec without -d flag (attached mode)', async () => {
@@ -1766,6 +1757,55 @@ describe('PhysicalAiApiImpl', () => {
       expect(args[0]).toBe('exec');
       expect(args[1]).toBe(CONTAINER_ID);
       expect(args).not.toContain('-d');
+    });
+  });
+
+  describe('listRosTopicSummaries', () => {
+    const CONTAINER_ID = 'abc123def456';
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as unknown as extensionApi.ContainerInfo[]);
+    });
+
+    it('parses ros2 topic list -t in a single exec', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '/rosout [rcl_interfaces/msg/Log]\n/robot_1/cmd_vel [geometry_msgs/msg/Twist]\n',
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
+      const result = await api.listRosTopicSummaries(CONTAINER_ID);
+      expect(result).toEqual([
+        {
+          name: '/rosout',
+          type: 'rcl_interfaces/msg/Log',
+          publishers: 0,
+          subscribers: 0,
+          countsPending: true,
+        },
+        {
+          name: '/robot_1/cmd_vel',
+          type: 'geometry_msgs/msg/Twist',
+          publishers: 0,
+          subscribers: 0,
+          countsPending: true,
+        },
+      ]);
+      expect(extensionApi.process.exec).toHaveBeenCalledTimes(1);
+      const bashCmd = execArgs(0).find((arg: string) => arg.includes('source'));
+      expect(bashCmd).toContain('ros2 topic list -t');
+    });
+
+    it('returns empty array when topic list fails', async () => {
+      vi.mocked(extensionApi.process.exec).mockRejectedValue({
+        exitCode: 1,
+        stdout: '',
+        stderr: 'command not found',
+      });
+
+      expect(await api.listRosTopicSummaries(CONTAINER_ID)).toEqual([]);
     });
   });
 

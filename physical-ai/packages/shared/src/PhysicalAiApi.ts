@@ -100,6 +100,8 @@ export abstract class PhysicalAiApi {
   /** Open an external http(s) URL (e.g. an OpenShift Route) in the host browser. */
   abstract openUrlInBrowser(url: string): Promise<void>;
   abstract listRosTopics(containerId: string): Promise<TopicInfo[]>;
+  /** Fast names+types via `ros2 topic list -t` (pub/sub counts pending). */
+  abstract listRosTopicSummaries(containerId: string): Promise<TopicInfo[]>;
   abstract getRosTopicDetail(containerId: string, topicName: string): Promise<TopicDetailInfo>;
   /** One live message via `ros2 topic echo --once` (bounded wait). */
   abstract peekRosTopic(containerId: string, topicName: string): Promise<TopicPeekResult>;

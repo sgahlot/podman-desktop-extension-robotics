@@ -73,7 +73,6 @@ import {
   assertPortMappings,
   assertContainerName,
   simulationBrowserUrl,
-  ROS_TOPIC_NAME_RE,
   type SupportedRosDistro,
 } from '/@shared/src/security/simInput';
 import { assertLaunchImageTag } from '/@shared/src/security/simImageTrust';
@@ -97,6 +96,7 @@ import type {
   LaserScanSummary,
 } from '/@shared/src/types/RobotDiagnostics';
 import { parseSpawnedRobotNames } from '/@shared/src/ros/robotNodeList';
+import { parseRosTopicListDump, parseRosTopicListTypes, ROS_TOPIC_LIST_INFO_SCRIPT } from '/@shared/src/ros/topicList';
 import { appendProgressLog } from './progressLogs';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
@@ -1305,51 +1305,31 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async listRosTopics(containerId: string): Promise<TopicInfo[]> {
-    const { id } = await this.#resolveSimulationContainer(containerId);
-    const distro = await this.#detectRosDistro(id);
+    const { id, image } = await this.#resolveSimulationContainer(containerId);
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
     const target = { kind: 'podman', id } as const;
 
-    const listResult = await this.#execRosBash(target, distro, 'ros2 topic list');
+    const listResult = await this.#execRosBash(target, distro, ROS_TOPIC_LIST_INFO_SCRIPT);
 
     if (listResult.exitCode !== 0 || !listResult.stdout.trim()) {
       return [];
     }
 
-    const topicNames = listResult.stdout
-      .trim()
-      .split('\n')
-      .map(l => l.trim())
-      .filter(l => ROS_TOPIC_NAME_RE.test(l));
+    return parseRosTopicListDump(listResult.stdout);
+  }
 
-    const BATCH_SIZE = 5;
-    const topics: TopicInfo[] = [];
+  async listRosTopicSummaries(containerId: string): Promise<TopicInfo[]> {
+    const { id, image } = await this.#resolveSimulationContainer(containerId);
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    const target = { kind: 'podman', id } as const;
 
-    for (let i = 0; i < topicNames.length; i += BATCH_SIZE) {
-      const batch = topicNames.slice(i, i + BATCH_SIZE);
-      const results = await Promise.all(
-        batch.map(async (name): Promise<TopicInfo> => {
-          const infoResult = await this.#execRosBash(target, distro, 'ros2 topic info "$1"', [name]);
+    const listResult = await this.#execRosBash(target, distro, 'ros2 topic list -t');
 
-          let type = 'unknown';
-          let publishers = 0;
-          let subscribers = 0;
-
-          if (infoResult.exitCode === 0 && infoResult.stdout) {
-            const typeMatch = infoResult.stdout.match(/Type:\s*(.+)/);
-            const pubMatch = infoResult.stdout.match(/Publisher count:\s*(\d+)/);
-            const subMatch = infoResult.stdout.match(/Subscription count:\s*(\d+)/);
-            if (typeMatch) type = typeMatch[1].trim();
-            if (pubMatch) publishers = parseInt(pubMatch[1], 10);
-            if (subMatch) subscribers = parseInt(subMatch[1], 10);
-          }
-
-          return { name, type, publishers, subscribers };
-        }),
-      );
-      topics.push(...results);
+    if (listResult.exitCode !== 0 || !listResult.stdout.trim()) {
+      return [];
     }
 
-    return topics;
+    return parseRosTopicListTypes(listResult.stdout);
   }
 
   async getRosTopicDetail(containerId: string, topicName: string): Promise<TopicDetailInfo> {
