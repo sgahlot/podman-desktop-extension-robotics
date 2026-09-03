@@ -8,10 +8,22 @@
 #
 # Usage (run from anywhere inside the repo; operates on the repo's physical-ai/ tree):
 #   scripts/publish-extension-image.sh <quay-repo> [tag]
+#   scripts/publish-extension-image.sh --inspect <full-image-ref>
 #
 #   <quay-repo>   target repo WITHOUT a tag, e.g. quay.io/rhrobotics/physical-ai
 #   [tag]         optional; defaults to the extension version from backend package.json.
 #                 The image is always ALSO tagged :latest.
+#
+#   --inspect <full-image-ref>   read-only: prints the resolved OCI labels (version,
+#                                 revision, release-notes, ...) for each platform in an
+#                                 already-published tag — e.g. to confirm what a --notes
+#                                 push actually landed with. Takes a FULL ref (repo:tag),
+#                                 not the two-part <quay-repo> [tag] form, since it isn't
+#                                 building anything. Bypasses every safeguard below (no
+#                                 branch/identity check, no npm build) — it's read-only
+#                                 and doesn't touch local state. Requires `skopeo`.
+#                                 e.g. scripts/publish-extension-image.sh --inspect \
+#                                      quay.io/sgahlot/physical-ai-extension:latest
 #
 # Flags:
 #   --no-push        build the image locally but do not push (dry run of the build)
@@ -34,6 +46,46 @@
 #                        canonical `physical-ai` identity, never a per-worktree `-appengNNNN`
 #                        one. Fix by running:  scripts/apply-worktree-identity.sh restore
 set -euo pipefail
+
+# --- Special mode: --inspect <full-image-ref> (read-only, no build/push, no safeguards) --
+if [ "${1:-}" = "--inspect" ]; then
+  REF="${2:?Usage: publish-extension-image.sh --inspect <full-image-ref>, e.g. quay.io/sgahlot/physical-ai-extension:latest}"
+  command -v skopeo >/dev/null 2>&1 || { echo "--inspect requires skopeo — see https://github.com/containers/skopeo/blob/main/install.md" >&2; exit 1; }
+  for _arch in amd64 arm64; do
+    echo "==> linux/$_arch"
+    if _out="$(skopeo inspect --override-os linux --override-arch "$_arch" "docker://$REF" 2>/dev/null)"; then
+      echo "$_out" | node -e 'const d=JSON.parse(require("fs").readFileSync(0));console.log(JSON.stringify(d.Labels,null,2))'
+    else
+      echo "    (no linux/$_arch image found for $REF)"
+    fi
+  done
+
+  # Also report any other tags in the same repo pointing at the same manifest-list digest
+  # (e.g. confirming :latest and :0.0.2 are literally the same push). Uses Quay's tag-list
+  # API directly rather than N per-tag `skopeo inspect` calls — quicker, and this script
+  # already only targets quay.io repos. Skipped silently for a non-quay.io ref.
+  _host="${REF%%/*}"
+  if [ "$_host" = "quay.io" ]; then
+    _repo_and_tag="${REF#*/}"
+    _ref_tag="${_repo_and_tag##*:}"
+    _repo_path="${_repo_and_tag%:*}"
+    echo "==> other tags pointing at the same digest"
+    if _tags_json="$(curl -fsS "https://quay.io/api/v1/repository/${_repo_path}/tag/?onlyActiveTags=true&limit=100" 2>/dev/null)"; then
+      echo "$_tags_json" | node -e '
+        const d = JSON.parse(require("fs").readFileSync(0));
+        const tags = d.tags || [];
+        const target = tags.find(t => t.name === process.argv[1]);
+        if (!target) { console.log("    (tag not found via Quay API)"); process.exit(0); }
+        const same = tags.filter(t => t.manifest_digest === target.manifest_digest && t.name !== target.name).map(t => t.name);
+        console.log(same.length ? "    " + same.join(", ") : "    (none — only this tag points at this digest)");
+      ' "$_ref_tag"
+    else
+      echo "    (Quay API lookup failed)"
+    fi
+  fi
+
+  exit 0
+fi
 
 REPO=""
 TAG=""
