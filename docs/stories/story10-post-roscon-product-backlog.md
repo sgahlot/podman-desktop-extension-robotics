@@ -15,34 +15,61 @@
 > place — the next step for each is a separate decision (new sub-task under an existing Story, a
 > direct small fix, or its own new doc); as that happens, update the [tracking table](#tracking)
 > to say where it moved.
+>
+> **Status legend:** ✅ done/Closed · 🚧 in progress · 📋 filed, not started · 🔭 research/spike
+> only, no ticket yet · ⏸️ deprioritized/parked.
 
 <a id="whats-next"></a>
 
-## What's next (priority snapshot, 2026-09-02)
+## What's next (priority snapshot, 2026-09-03)
 
 A point-in-time read of what's most worth picking up next, across Story 9 and Story 10 combined
 — re-derive from the [tracking table](#tracking) and Story 9's Jira-status line if this snapshot
 is more than a couple weeks old, don't trust it blindly.
 
-1. **S10-1/S10-2 (noVNC embedded viewer)** — pulled forward. Filed as
-   [APPENG-6283](https://redhat.atlassian.net/browse/APPENG-6283) under new Story
-   [APPENG-6282](https://redhat.atlassian.net/browse/APPENG-6282); worktree set up. Starts with a
-   spike: CSP/iframe feasibility for Option A, or whether Podman Desktop's current extension API
-   exposes a container-Details-tab contribution point at all for Option B.
-2. **S10-7 (Dashboard OpenShift sim count)** — small, well-scoped gap left over from the
-   APPENG-6256 batch (S10-8 shipped without it); easy pickup.
-3. **S10-11 follow-up (CLI menu-driven help)** — small, now that S9-4/APPENG-6236 shipped
-   without it.
-4. **APPENG-6263 (S10-15 registry audit)** and **APPENG-6264 (S10-16 syft/cosign showcase)** —
-   already filed under APPENG-6225, no worktree started yet.
-5. **S9-7/APPENG-6237** (config-driven robot definition) and **S9-1/APPENG-6238** (`oc` → library)
+1. **S10-15 (Hummingbird registry-path audit)** — **fastest pickup in this whole list.**
+   Already filed ([APPENG-6263](https://redhat.atlassian.net/browse/APPENG-6263)) under an
+   existing open Story ([APPENG-6225](https://redhat.atlassian.net/browse/APPENG-6225)) — no
+   new Story/ticket needed. All verification already done (2026-09-01, `skopeo inspect` on all
+   5 tools) — remaining work is a pure mechanical path swap in `hummingbirdImageRef()` plus
+   test/fixture updates. No investigation left to do.
+2. **S10-17/S10-18/S10-21 (Topic Monitor perf, Diagnostics sensor list, custom base image)** —
+   freshest signal: all three surfaced live by the target robotics-engineer audience itself
+   (2026-09-03 feedback session/Slack), not internal backlog grooming. S10-17 first
+   (small–medium effort, a concrete pain point hit during a real demo); S10-18 a reasonable
+   follow-on (medium effort, directly requested live); S10-21 not yet scoped (Leonardo expected
+   his own pushed image to work as the Image Builder's parent — it can't, presets are fixed).
+   None fit an existing open Story — APPENG-6282 is scoped specifically to the noVNC/streaming
+   viewer, APPENG-6225 specifically to the Hummingbird showcase — so this needs its own new
+   Story.
+3. **S10-16 (Hummingbird syft-external + cosign-bundled showcase)** — already filed
+   ([APPENG-6264](https://redhat.atlassian.net/browse/APPENG-6264)) under APPENG-6225, and
+   unlike most of this backlog it's fully decision-locked (2026-09-01: "yes to all three") with
+   a concretely scoped 2-part plan and verified groundwork (`cosign` confirmed identical digest
+   on both registry paths). Medium-large effort — a real feature, not a quick pickup like
+   S10-14/S10-15, but genuinely ready to build, not just research.
+4. **S10-2 (custom streaming-video viewer)** — natural follow-on now that S10-1 has shipped
+   ([APPENG-6283](https://redhat.atlassian.net/browse/APPENG-6283), Closed); still a large,
+   multi-week spike, not yet sized or sub-tasked under
+   [APPENG-6282](https://redhat.atlassian.net/browse/APPENG-6282).
+5. **S10-7 (Dashboard OpenShift sim count)** — small, well-scoped gap left over from the
+   APPENG-6256 batch (S10-8 shipped without it); easy pickup, but needs a new sub-task filed
+   (unlike S10-15, which already has one).
+6. **S10-11 follow-up (CLI menu-driven help)** — small, now that S9-4/APPENG-6236 shipped
+   without it; also needs a new ticket.
+7. **S10-14** (APPENG-6262) — already filed under APPENG-6225, no worktree started yet;
+   small-to-medium, a real feature (pod/network wiring for the local Hummingbird sidecar).
+8. **S9-7/APPENG-6237** (config-driven robot definition) and **S9-1/APPENG-6238** (`oc` → library)
    — already filed in Story 9, genuinely not started (see
    [story9-platform-exploration.md](story9-platform-exploration.md)).
-6. **Idle pre-existing spikes** — `APPENG-5809-fedora-quadlet-spike`, `APPENG-6070-multipod-zenoh`,
+9. **Idle pre-existing spikes** — `APPENG-5809-fedora-quadlet-spike`, `APPENG-6070-multipod-zenoh`,
    `APPENG-6071-humble-parity` worktrees — untouched, still there whenever picked up.
-7. **Larger/lower-readiness backlog** — S10-3/S10-4 (SBOM layer viz), S10-6 (Topic Monitor
-   OpenShift), S10-12 (telemetry), S10-13 (hybrid topology) — all still research/spike-only, no
-   ticket yet.
+10. **Larger/lower-readiness backlog** — S10-3/S10-4 (SBOM layer viz), S10-6 (Topic Monitor
+    OpenShift), S10-12 (telemetry), S10-13 (hybrid topology), S10-19 (Docker Desktop
+    compatibility research) — all still research/spike-only, no ticket yet.
+11. **Shelved** — S10-20 (Zenoh streaming as an alternative remote-viewing mechanism) — the team
+   explicitly deprioritized this live in the 2026-09-03 session ("does not require immediate
+   changes"); revisit only if S10-13's underlying cross-boundary transport work happens first.
 
 ## Table of Contents
 
@@ -68,6 +95,7 @@ is more than a couple weeks old, don't trust it blindly.
 - [S10-18 — Diagnostics: dynamic/full sensor list, not a fixed 3-check list](#s10-18)
 - [S10-19 — Investigate Docker Desktop compatibility](#s10-19)
 - [S10-20 — ROS middleware (Zenoh) streaming as an alternative remote-viewing mechanism](#s10-20)
+- [S10-21 — Image Builder: support an arbitrary custom base image, not just fixed presets](#s10-21)
 - [Tracking: where each item currently lives](#tracking)
 
 ## Method
@@ -82,7 +110,7 @@ directly (S10-1's embed target, S10-3's "layers" meaning) before writing this do
 
 <a id="s10-1"></a>
 
-## S10-1 — noVNC embedded in the extension (Phase 1)
+## ✅ S10-1 — noVNC embedded in the extension (Phase 1)
 
 **Ask:** display the running simulation's noVNC output inside the extension itself, not by
 opening a separate browser tab.
@@ -172,7 +200,7 @@ spawn/navigate UI working alongside it). Fully validated.
 
 <a id="s10-2"></a>
 
-## S10-2 — Custom streaming-video simulation viewer (Phase 2)
+## 🔭 S10-2 — Custom streaming-video simulation viewer (Phase 2)
 
 **Ask:** "develop our own app" to display the sim, and separately, a note about "streaming
 video instead of frames — much faster/smaller."
@@ -205,7 +233,7 @@ isn't good enough.
 
 <a id="s10-3"></a>
 
-## S10-3 — SBOM layer/slice attribution and visualization
+## 🔭 S10-3 — SBOM layer/slice attribution and visualization
 
 **Ask (5 sub-asks from the original list, all one underlying feature):**
 1. Group the SBOM's components instead of a flat list
@@ -242,7 +270,7 @@ contributes" is a compelling, differentiated demo.
 
 <a id="s10-4"></a>
 
-## S10-4 — Per-slice incremental rebuild UX
+## 🔭 S10-4 — Per-slice incremental rebuild UX
 
 **Ask:** updating one slice (e.g. just the Sim layer) shouldn't require rebuilding the whole
 multi-GB image.
@@ -272,7 +300,7 @@ existing mechanism, not new build infrastructure.
 
 <a id="s10-5"></a>
 
-## S10-5 — OpenShift tab: pick from already-pushed images
+## ✅ S10-5 — OpenShift tab: pick from already-pushed images
 
 **Ask:** the OpenShift deploy tab should list the same already-known local images (amd64,
 pushed to quay.io) that Image Builder/Image Catalog already track, instead of requiring
@@ -299,7 +327,7 @@ APPENG-6256, merged
 
 <a id="s10-6"></a>
 
-## S10-6 — Topic Monitor support for OpenShift simulations
+## 🔭 S10-6 — Topic Monitor support for OpenShift simulations
 
 **Ask (two original bullets, same underlying gap):** "No link to Topics from OCP tab — do we
 even allow topics being pulled from OCP simulations?" and, separately, "when viewing topics,
@@ -331,7 +359,7 @@ box for topic inspection today.
 
 <a id="s10-7"></a>
 
-## S10-7 — Dashboard: OpenShift simulation count metric
+## 📋 S10-7 — Dashboard: OpenShift simulation count metric
 
 **Ask:** show a count of currently-deployed OpenShift simulations (current kube context)
 under the Dashboard Overview, alongside whatever local metrics already exist — "or is that
@@ -359,7 +387,7 @@ simulations), no "N OpenShift" sub-tile. Needs its own sub-task if still wanted.
 
 <a id="s10-8"></a>
 
-## S10-8 — Dashboard: clickable metric tiles
+## ✅ S10-8 — Dashboard: clickable metric tiles
 
 **Ask:** "Local ROS 2 images" and "N running simulations" tiles under Overview should
 navigate to Image Catalog and Simulation respectively when clicked.
@@ -386,7 +414,7 @@ is picked up later, its sub-tile will need its own clickability wiring at that p
 
 <a id="s10-9"></a>
 
-## S10-9 — BUG: Get Started "Navigate" button goes to the wrong page
+## ✅ S10-9 — BUG: Get Started "Navigate" button goes to the wrong page
 
 **Ask:** clicking "Navigate" under Get Started should go to the Simulation page.
 
@@ -403,7 +431,7 @@ APPENG-6256, merged
 
 <a id="s10-10"></a>
 
-## S10-10 — Image Builder: auto-collapse base-image logs on Phase 2 build
+## ✅ S10-10 — Image Builder: auto-collapse base-image logs on Phase 2 build
 
 **Ask:** when the Phase 2 (Sim image) build starts, automatically collapse the already-done
 Phase 1 (Base image) build logs panel.
@@ -423,7 +451,7 @@ APPENG-6256, merged
 
 <a id="s10-11"></a>
 
-## S10-11 — CLI: menu-driven help with no arguments (folds into S9-4)
+## 📋 S10-11 — CLI: menu-driven help with no arguments (folds into S9-4)
 
 **Ask:** running the future CLI with no arguments/options should show a menu of available
 areas (Image Builder, Image Catalog, Simulation, Topics), not just a bare usage error.
@@ -444,7 +472,7 @@ still being foldable into S9-4.
 
 <a id="s10-12"></a>
 
-## S10-12 — Telemetry & richer metrics (OTEL / Prometheus)
+## 🔭 S10-12 — Telemetry & richer metrics (OTEL / Prometheus)
 
 **Ask:** add support for telemetry and more metrics — OpenTelemetry, Prometheus, etc.
 
@@ -494,7 +522,7 @@ Thread (1) is lower-visibility but useful for product decisions.
 
 <a id="s10-13"></a>
 
-## S10-13 — Hybrid topology: local robot + in-cluster simulation & inference
+## 🔭 S10-13 — Hybrid topology: local robot + in-cluster simulation & inference
 
 **Ask:** run **one robot/pod locally** (on the user's machine via podman) while the
 **simulation world and any inferencing/ML** run in OpenShift — the local robot and the
@@ -554,7 +582,7 @@ proven.
 
 <a id="s10-14"></a>
 
-## S10-14 — Local Hummingbird nginx sidecar (Podman multi-container)
+## 📋 S10-14 — Local Hummingbird nginx sidecar (Podman multi-container)
 
 **Ask:** extend APPENG-6227's Hummingbird nginx sidecar (currently OpenShift-only) to the
 local (Podman Desktop) simulation launch path as well.
@@ -606,7 +634,7 @@ forking it per deployment target.
 
 <a id="s10-15"></a>
 
-## S10-15 — Hummingbird registry-path audit (`quay.io` → `registry.access.redhat.com`)
+## 📋 S10-15 — Hummingbird registry-path audit (`quay.io` → `registry.access.redhat.com`)
 
 **Ask:** audit whether other `quay.io/hummingbird/*` references in the extension should
 move to the public `registry.access.redhat.com/hi/*` path, the way APPENG-6227 did for the
@@ -638,7 +666,7 @@ Story APPENG-6225.
 
 <a id="s10-16"></a>
 
-## S10-16 — Hummingbird showcase: syft external-scan pattern + cosign bundled-tool demo
+## 📋 S10-16 — Hummingbird showcase: syft external-scan pattern + cosign bundled-tool demo
 
 **Ask (raised 2026-09-01):** (1) is a separate external/"sidecar"-style container the right
 approach for `syft`, or is it fine to keep it bundled into the final image as today? (2) Red
@@ -749,7 +777,7 @@ Story APPENG-6225.
 
 <a id="s10-17"></a>
 
-## S10-17 — Topic Monitor: avoid full reload/slowness with many active topics
+## 🚧 S10-17 — Topic Monitor: avoid full reload/slowness with many active topics
 
 **Source:** raised live during the "Podman work sync" robotics-engineer feedback session
 (2026-09-03, Leonardo Rossetti / Jeremy Ary) — Sandip's own demo hit a real simulation with
@@ -775,7 +803,7 @@ simulation — not hypothetical.
 
 <a id="s10-18"></a>
 
-## S10-18 — Diagnostics: dynamic/full sensor list, not a fixed 3-check list
+## 📋 S10-18 — Diagnostics: dynamic/full sensor list, not a fixed 3-check list
 
 **Source:** raised live during the same 2026-09-03 session — Leonardo directly asked "could we
 have a list of all the sensors in the robot?" after seeing Diagnostics only cover three fixed
@@ -800,7 +828,7 @@ black box beyond three things" feeling Leonardo flagged live.
 
 <a id="s10-19"></a>
 
-## S10-19 — Investigate Docker Desktop compatibility
+## 🔭 S10-19 — Investigate Docker Desktop compatibility
 
 **Source:** Sandip's own action item from the 2026-09-03 session, motivated by Leonardo's point
 that most robotics/ROS audiences are more familiar with Docker tooling/terminology than Podman,
@@ -823,7 +851,7 @@ Podman Desktop specifically — but speculative until the spike happens.
 
 <a id="s10-20"></a>
 
-## S10-20 — ROS middleware (Zenoh) streaming as an alternative remote-viewing mechanism
+## ⏸️ S10-20 — ROS middleware (Zenoh) streaming as an alternative remote-viewing mechanism
 
 **Source:** raised live during the 2026-09-03 session — Leonardo proposed, as an alternative to
 today's noVNC/web-view approach for viewing an in-cluster (OpenShift) simulation, streaming the
@@ -852,6 +880,42 @@ that S10-13 already flags as a prerequisite; not a standalone small feature.
 proposed by the target engineer audience — but explicitly deprioritized by the team in the
 meeting itself. Sequence behind S10-1/S10-2 and S10-13's underlying transport work; treat as a
 research idea, not a committed direction.
+
+---
+
+<a id="s10-21"></a>
+
+## 📋 S10-21 — Image Builder: support an arbitrary custom base image, not just fixed presets
+
+**Source:** raised live 2026-09-03 (Slack) — Leonardo Rossetti set the Image Builder's tag field
+to his own pushed image (`quay.io/lrossett/ros2:f43-full-desktop`), expecting it to be used as
+the build's parent image, and was confused when the generated Containerfile's `STEP 1/8` showed
+`FROM docker.io/library/ros:jazzy-ros-base` instead.
+
+**Findings (confirmed in code, not assumed):** this was a UI terminology mix-up, not a bug —
+- The field Leonardo edited is `BuildPushPanel.svelte`'s `tag` prop (placeholder `e.g.
+  quay.io/org/image:latest`) — the **output** tag the newly built image gets pushed/tagged as,
+  not an input.
+- The actual parent/`FROM` image comes from a separate, easy-to-miss control: the **"Base
+  image"** dropdown in `SimulationSetup.svelte` (`id="baseImage"`, bound to
+  `SimulationBaseImageId`) — a fixed preset `<select>` (sloretz/osrf for Humble, Noble/amd64 for
+  Jazzy, etc.), each mapping to a hardcoded upstream image. There is currently no way to point
+  the Base image dropdown at an arbitrary existing image reference (local or registry) — only
+  the presets baked into `SimulationBaseImages.ts`.
+
+**Ask:** let the Base image control accept an arbitrary image reference (e.g. a free-text entry
+or "Custom..." option alongside the existing presets) so a user can build on top of an image
+they already maintain, instead of being limited to the fixed preset list.
+
+**Effort:** unknown pending scoping — likely needs: a UI affordance distinct from the existing
+preset dropdown, validation/existence-checking for an arbitrary ref (reusing patterns already
+built for Quay tag-existence checks elsewhere in Image Builder), and deciding how compatibility
+warnings (arch, distro assumptions) degrade gracefully when the base is unknown/arbitrary rather
+than a known preset.
+
+**Value:** directly requested by the target robotics-engineer audience, and a real capability
+gap — today's presets assume a small fixed set of upstream bases, but engineers with their own
+existing images have no supported path to build on top of them.
 
 ---
 
@@ -885,3 +949,4 @@ under an existing Story, a direct small commit, or a dedicated new doc.
 | S10-18 | Diagnostics dynamic/full sensor list | Feature | This doc |
 | S10-19 | Docker Desktop compatibility investigation | Research | This doc |
 | S10-20 | Zenoh streaming as alternative remote-viewing mechanism | Feature (research; depends on S10-13's transport work) | This doc |
+| S10-21 | Image Builder: arbitrary custom base image | Feature | This doc |

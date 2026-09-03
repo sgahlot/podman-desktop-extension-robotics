@@ -15,6 +15,9 @@
 > APPENG-6238 under existing APPENG-5767 (**New**). S9-5 remains informational only (folded into
 > S9-6's writeup, no ticket needed). Items are still numbered `S9-N` for reference, matching the
 > `S8-N` convention.
+>
+> **Status legend:** ✅ done/Closed · 🚧 in progress · 📋 filed, not started · 🔭 research/spike
+> only, no ticket yet · ℹ️ informational, no action needed.
 
 ## Table of Contents
 
@@ -41,7 +44,7 @@ threads for anything that changes priority.
 
 <a id="s9-1"></a>
 
-### S9-1 — Replace `oc` CLI shell-outs with a Kubernetes/OpenShift client library (APPENG-6238)
+### 📋 S9-1 — Replace `oc` CLI shell-outs with a Kubernetes/OpenShift client library (APPENG-6238)
 
 **Ask:** use a library for all `oc` calls instead of the CLI.
 
@@ -70,7 +73,7 @@ functional user-facing change. Hygiene/robustness, not a demo feature.
 
 <a id="s9-2"></a>
 
-### S9-2 — nginx sidecar (Hummingbird) for noVNC (APPENG-6227, under Story APPENG-6225)
+### ✅ S9-2 — nginx sidecar (Hummingbird) for noVNC (APPENG-6227, under Story APPENG-6225)
 
 **Ask:** try using a Hummingbird nginx sidecar/container for noVNC instead of the current setup.
 
@@ -119,7 +122,7 @@ sub-task, **APPENG-6262**, rather than waiting on 5774 — full findings and the
 
 <a id="s9-3"></a>
 
-### S9-3 — Showcase a Hummingbird tool baked into the production image (APPENG-6226, Closed — under Story APPENG-6225)
+### ✅ S9-3 — Showcase a Hummingbird tool baked into the production image (APPENG-6226, Closed — under Story APPENG-6225)
 
 **Ask:** show a Hummingbird bundled image/tool (jq, kubectl, or helm) actually in use in our
 image, not just the experimental Layers wizard.
@@ -144,7 +147,7 @@ baked-in tool) so it's not purely decorative. **Recommend as a near-term, low-ri
 
 <a id="s9-4"></a>
 
-### S9-4 — CLI version of the extension (APPENG-6236, under Story APPENG-6235)
+### ✅ S9-4 — CLI version of the extension (APPENG-6236, under Story APPENG-6235)
 
 **Ask:** reuse the same codebase to provide all existing functionality via a CLI — either Makefile
 targets or a standalone app (TypeScript or otherwise).
@@ -173,7 +176,7 @@ effort here.**
 
 <a id="s9-5"></a>
 
-### S9-5 — Follow up on the two bootc/Fedora ROS Slack links
+### ℹ️ S9-5 — Follow up on the two bootc/Fedora ROS Slack links
 
 **Ask:** review the links shared in the two Slack threads for bootc/Fedora ROS image options.
 
@@ -219,7 +222,7 @@ closes, regardless of which el9 flavor sits underneath.
 
 <a id="s9-6"></a>
 
-### S9-6 — Sidecar containers: Fedora/RHEL/bootc base + ROS2 + Simulation-engine sidecar (folded into APPENG-5809)
+### 🔭 S9-6 — Sidecar containers: Fedora/RHEL/bootc base + ROS2 + Simulation-engine sidecar (folded into APPENG-5809)
 
 **Ask (clarified 2026-08-26):** evaluate a **base OS (Fedora/RHEL/bootc) with a sidecar container
 that runs ROS2 + the simulation engine** — three distinct layers (base / ROS2 / sim), not a vague
@@ -256,7 +259,7 @@ independent of native packaging or OSRA" — not a vague "look at Fedora again."
 
 <a id="s9-7"></a>
 
-### S9-7 — Externalize the hardcoded TurtleBot3 references (plug-and-play robot support) (APPENG-6237)
+### 📋 S9-7 — Externalize the hardcoded TurtleBot3 references (plug-and-play robot support) (APPENG-6237)
 
 **Ask (clarified 2026-08-26):** not "add a second robot" — **remove the hardcoded TurtleBot3
 references and externalize them into config**, so a new robot becomes a real plug-and-play
