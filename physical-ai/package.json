@@ -13,6 +13,7 @@
     "clean": "rm -rf packages/backend/dist packages/backend/media packages/cli/dist packages/cli/assets",
     "build": "concurrently \"npm run -w packages/frontend build\" \"npm run -w packages/backend build\" \"npm run -w packages/cli build\"",
     "watch": "concurrently \"npm run -w packages/frontend watch\" \"npm run -w packages/backend watch\" \"npm run -w packages/cli watch\"",
+    "package:image": "npm run build && podman build -t physical-ai:local -f Containerfile .",
     "format:check": "prettier --check \"**/src/**/*.{ts,svelte}\"",
     "format:fix": "prettier --write \"**/src/**/*.{ts,svelte}\"",
     "lint:check": "eslint . --ext js,ts,tsx",

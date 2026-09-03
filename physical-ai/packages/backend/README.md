@@ -5,11 +5,38 @@ Podman Desktop extension for Physical AI robotics development. Provides a GUI-dr
 ## Features
 
 - **Image Catalog** — Browse and pull ROS2 images from Quay.io (All or Curated view; allowlist configurable in Preferences)
-- **Image Builder** — Configure, build, and push ROS2 images (Humble TurtleBot3 or Jazzy sim + noVNC). Uses a [two-phase build](#two-phase-image-build): Phase 1 base, Phase 2 simulation. Builds and pushes are cancellable.
-- **Simulation** — Launch Gazebo via Podman, open noVNC, add TurtleBot3 into a running world. Launch only allows images matching the simulation allowlist (default `ros2-*-sim*` / `ros2-*-turtlebot3`; optional exact tag/digest pins in Preferences). Local image content is trusted once selected — see Help → Image trust.
+- **Image Builder** — Configure, build, and push ROS2 images (Humble TurtleBot3 or Jazzy sim + noVNC). Uses a [two-phase build](#two-phase-image-build): Phase 1 base, Phase 2 simulation. Builds and pushes are cancellable. A **Layers** layout is also available to compose a custom image from Base OS / hardened app / ROS / simulation layers, with a live compatibility verdict as you pick — see [Hummingbird support](#hummingbird-support) and Help → Image Builder.
+- **Simulation** — Launch Gazebo via Podman, open noVNC, add TurtleBot3 into a running world. Launch only allows images matching the simulation allowlist (default `ros2-*-sim*` / `ros2-*-turtlebot3`; optional exact tag/digest pins in Preferences). Local image content is trusted once selected — see Help → Image trust. A **Show Viewer** toggle next to **Open in Browser** embeds the noVNC canvas inline in the panel, no browser tab needed (APPENG-6283).
+- **OpenShift Deployment** — Deploy a pushed `amd64` image to an OpenShift cluster from the Simulation page's **OpenShift** tab: pick a namespace/context, preview generated manifests, Deploy, Open URL. Lists deployed sims with per-robot spawn/navigate/remove, delete/refresh, a **Cluster has a GPU** toggle, an optional [Hummingbird](#hummingbird-support) nginx sidecar demo, and the same inline **Show Viewer** toggle as local Simulation, over the route.
+- **Diagnostics** — Live diagnostics for spawned robots (local or OpenShift), deep-linkable via URL query params (`target=`, `containerId=`/context, `robot=`).
 - **Help** — In-extension documentation
 
 Current container bases are **Ubuntu interim** (official `ros` / OSRF / sloretz images). Fedora/RHEL migration is parked (APPENG-5809). Catalog lists **public** Quay repos only.
+
+<a id="hummingbird-support"></a>
+
+### Hummingbird support
+
+- The **Layers** image-builder layout can pull Hummingbird hardened-app images as optional layers — *companions* (pulled and run alongside) or *tools* (baked in via `COPY --from`). Install the `redhat.hummingbird` extension (and `redhat.bootc` for the bootc bases) to pull those images.
+- The **OpenShift** deploy tab has a **Hummingbird nginx sidecar** checkbox that adds a `registry.access.redhat.com/hi/nginx` companion container to the pod, reverse-proxying noVNC through it, to demonstrate the companion-image pattern live (APPENG-6227).
+
+## Screenshots
+
+![Quick Start: build, launch, and view the simulation inline](https://raw.githubusercontent.com/sgahlot/podman-desktop-extension-robotics/main/physical-ai/docs/img/quick-start-show-viewer.gif)
+
+Quick Start — Image Builder Phase 1/Phase 2 build → Launch → **Show Viewer** (embedded inline, no browser tab) → Add TurtleBot3.
+
+![Image Catalog: browse and pull an image](https://raw.githubusercontent.com/sgahlot/podman-desktop-extension-robotics/main/physical-ai/docs/img/image-catalog-pull.gif)
+
+Image Catalog — browse a Quay.io namespace and pull a pre-built image instead of building locally.
+
+![OpenShift: deploy and view the simulation inline over the route](https://raw.githubusercontent.com/sgahlot/podman-desktop-extension-robotics/main/physical-ai/docs/img/openshift-deploy-show-viewer.gif)
+
+OpenShift tab — Deploy → preview manifests → Deploy → **Show Viewer**, rendering inline over the cluster's route.
+
+![Show Viewer toggle: embed the simulation inline](https://raw.githubusercontent.com/sgahlot/podman-desktop-extension-robotics/main/physical-ai/docs/img/show-viewer-toggle.gif)
+
+**Show Viewer** — toggle the embedded noVNC canvas on and off inline in the panel, no browser tab needed.
 
 ## Prerequisites
 
@@ -26,16 +53,17 @@ To check or change Podman Machine resources: open **Settings → Resources → P
 ### Platform notes
 
 - **Mac Apple Silicon (arm64)**: Use the **Local** Jazzy Quick Start — builds natively, no QEMU. VM backend is LibKrun (default). Simulation launch passes `/dev/dri` by default (virtio-gpu); see [GPU and rendering](#gpu-and-rendering).
-- **OpenShift target (amd64)**: Use the **OpenShift** Quick Start (**TurtleBot3 Sim (Jazzy · amd64)**) — targets `amd64` (tagged `-amd64`) so the image is cluster-pullable. On an Apple Silicon host this cross-builds via QEMU emulation and is slower (expected).
-- **Linux amd64**: Use Humble (sloretz or osrf base) or Jazzy (Noble or amd64 preset). Native GPU rendering may work but is untested.
+- **OpenShift target (amd64)**: Use the **OpenShift** Quick Start (**TurtleBot3 Sim (Jazzy · amd64)**) — targets `amd64` (tagged `-amd64`) so the image is cluster-pullable. On an Apple Silicon host this cross-builds via QEMU emulation and is slower (expected). The in-cluster GPU rendering path (server + GUI, via NVIDIA headless EGL / VirtualGL) has been validated live on a real GPU cluster for a single robot — see [GPU and rendering](#gpu-and-rendering).
+- **Linux amd64**: Use the **Jazzy** Quick Start. Humble base/sim images exist under `assets/` but are **not currently verified working** — don't rely on them until re-validated.
+- **Native GPU rendering (bare-metal Linux, outside a VM or cluster)**: not tested. This is separate from the in-cluster OpenShift GPU path above, which has been validated.
 - **Windows**: Untested.
 
 ## Getting Started
 
-1. Install / load the extension in Podman Desktop
+1. Install the extension — either the published image (Podman Desktop → Extensions → Install custom extension → `quay.io/sgahlot/physical-ai-extension:<tag>`) or load from source (see the root README)
 2. Open **Physical AI**, or press **F1** → **Physical AI: Open Dashboard**
 3. **Image Builder** → Quick Start **Local** (**TurtleBot3 Sim (Jazzy)**) → Phase 1 Build → Phase 2 Build (use **OpenShift** for a cluster-pullable `amd64` image)
-4. **Simulation** → Launch → Open in Browser → Add TurtleBot3 → optional **Navigate** (X/Y) and Topic Monitor **Peek**
+4. **Simulation** → Launch → **Show Viewer** (or Open in Browser) → Add TurtleBot3 → optional **Navigate** (X/Y) and Topic Monitor **Peek**
 5. **Stop & remove** when done — close the Gazebo (noVNC) browser tab manually if it is still open
 6. Adjust defaults under **Settings → Preferences → Physical AI** (including **Simulation GPU passthrough** on Mac)
 
@@ -53,7 +81,7 @@ Idle noVNC tabs may show Disconnected; reconnect or refresh — the simulation i
 
 ## Golden images to publish
 
-Pre-built images to push to your Quay.io namespace so that users can pull and run without building locally. For a quick showcase, push just the Jazzy base + sim pair — users pull the sim image directly instead of building for ~20 minutes.
+Pre-built images to push to your Quay.io namespace so that users can pull and run without building locally. For a quick showcase, push just the Jazzy base + sim pair — users pull the sim image directly instead of building for ~20 minutes. The Humble entries below are **not currently verified working** (see Platform notes) — only publish them if you've validated your own build.
 
 Build via Image Builder (or CLI against `assets/`), then push:
 
@@ -72,7 +100,7 @@ Build via Image Builder (or CLI against `assets/`), then push:
 ## Coming Soon
 
 - **Customize hardware** — Swap sensors on a running robot
-- **Fleet** / **OpenShift Bridge** — Multi-robot scaling and deployment to OpenShift
+- **Fleet** — Multi-robot scaling for local simulations (with Zenoh)
 
 ## Packaging note
 
@@ -96,7 +124,7 @@ On **amd64**, launch always forces `llvmpipe` (no GPU passthrough).
 
 **In-cluster CPU sizing (no GPU):** software rendering is CPU-bound — the `gz sim -g` GUI client alone needs ~2.3 cores to render the scene for noVNC, and during *active* Nav2 navigation the planner/controller/costmaps add ~1 more. On a 2-core pod the sim's real-time factor collapses to ~0.1 (goals never finish); at 4 cores goals complete but active-nav utilization hits ~90%, so RTF sags to ~0.3–0.6 and motion is slow and jerky. The software-rendering Deployment therefore requests **8 guaranteed CPUs by default** (`requests == limits`), which keeps utilization comfortable with headroom so navigation runs at ~real-time (RTF ~1.0, a warm ~2 m trip in ~33 s). The count is **configurable** via the **Software-render CPUs** field on the OpenShift tab (`OpenShiftDeployConfig.cpu`, validated 1–64) so you can dial it to your node sizes — note an N-CPU Guaranteed pod only schedules on a node with ≥ N *allocatable* CPU. The bottleneck is the GUI (not the depth camera), so dropping sensors doesn't lower the requirement — a GPU does. A residual micro-stutter used to remain because the container sees all host CPUs but is CFS-throttled to the quota (Gazebo/Ogre size thread pools to the visible count); `entrypoint-gazebo.sh` now caps the render/physics thread pools (`OMP_/OPENBLAS_/LP_/MESA_/GALLIUM_NUM_THREADS`) to the cgroup quota to remove it (takes effect after an image rebuild + push).
 
-**In-cluster with a GPU (OpenShift + NVIDIA GPU operator):** the **OpenShift** tab of the Simulation page has a **"Cluster has a GPU"** toggle. When on, the Deployment requests `nvidia.com/gpu: 1` and sets `PHYSICAL_AI_USE_GPU=1` (dropping the software-rendering env), and the CPU ask drops back to 2 (the GPU does the rendering). The entrypoint then sees a GPU request without `/dev/dri` (the GPU operator exposes `/dev/nvidia*`, not DRI) and renders the server off-screen via **hardware EGL** (`--headless-rendering`, no `surfaceless`/llvmpipe override). This path is **implemented but not yet verified** — no GPU cluster was available to test. The default (toggle off) is the tested software path above.
+**In-cluster with a GPU (OpenShift + NVIDIA GPU operator):** the **OpenShift** tab of the Simulation page has a **"Cluster has a GPU"** toggle. When on, the Deployment requests `nvidia.com/gpu: 1` and sets `PHYSICAL_AI_USE_GPU=1` (dropping the software-rendering env), and the CPU ask drops back to 2 (the GPU does the rendering). The entrypoint then sees a GPU request without `/dev/dri` (the GPU operator exposes `/dev/nvidia*`, not DRI) and renders the server off-screen via **hardware EGL** (`--headless-rendering`, no `surfaceless`/llvmpipe override) — this half is validated. The GUI (`gz sim -g`) additionally GPU-renders via **VirtualGL**'s EGL back end (`vglrun -d egl`, pinned to the NVIDIA EGL vendor, APPENG-6083) instead of llvmpipe. **Validated via a live PoC on a real GPU cluster:** single robot, zero CPU throttling, GPU-rendered GUI. Multi-robot behavior on this path has not yet been characterized. The default (toggle off) is the tested software path above.
 
 **Ogre2 Sensors (2026-08 re-verification):** The `gz-sim-sensors-system` plugin no longer segfaults on current Gazebo Harmonic + Mesa (llvmpipe or virtio-gpu). It is re-enabled in `tb3_sandbox.sdf.xacro`. Lidar (`/scan`) and IMU topics are available after spawn.
 

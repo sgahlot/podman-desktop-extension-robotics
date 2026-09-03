@@ -72,8 +72,8 @@ import { navigationLayout } from './lib/navigationLayout';
           Silicon host this cross-builds via emulation and is slower — expected).
         </div>
         <div>
-          <strong>Configure</strong> — Select ROS distro (Humble or Jazzy), robot, middleware, engine, and base preset. Save
-          persists to Preferences.
+          <strong>Configure</strong> — Select ROS distro (Humble or Jazzy), robot, middleware, engine, and base preset.
+          Save persists to Preferences. Humble is <strong>not currently verified working</strong> — use Jazzy.
         </div>
         <div>
           <strong>Phase 1: Base Image</strong> — Humble: <span class="font-mono">sloretz</span> (<span class="font-mono"
@@ -83,9 +83,9 @@ import { navigationLayout } from './lib/navigationLayout';
           <span class="font-mono">:latest</span>.
         </div>
         <div>
-          <strong>Phase 2: Simulation Image</strong> — Layers Gazebo, TurtleBot3 spawn assets, and noVNC (Jazzy) on your Phase
-          1 local base. Nav2 packages are included; on Jazzy sim, **Navigate** launches Nav2 for obstacle-aware navigation.
-          Disabled until the base exists locally.
+          <strong>Phase 2: Simulation Image</strong> — Layers Gazebo, TurtleBot3 spawn assets, and noVNC (Jazzy) on your
+          Phase 1 local base. Nav2 packages are included; on Jazzy sim, <strong>Navigate</strong> launches Nav2 for obstacle-aware
+          navigation. Disabled until the base exists locally.
         </div>
         <div>
           <strong>Cancel / Push</strong> — Cancel aborts an in-progress <strong>build</strong> or <strong>push</strong>.
@@ -134,6 +134,11 @@ import { navigationLayout } from './lib/navigationLayout';
           reconnect or a refresh brings the view back — the sim is still running.
         </div>
         <div>
+          <strong>Show Viewer</strong> — Embeds the same noVNC canvas inline in the panel instead of opening a browser
+          tab — click again (<strong>Hide Viewer</strong>) to collapse it. No separate reconnect step; it collapses
+          automatically if the container stops.
+        </div>
+        <div>
           <strong>Add TurtleBot3</strong> — Spawns a robot into the running world via
           <span class="font-mono">podman exec</span> (name + X/Y/yaw).
         </div>
@@ -144,6 +149,53 @@ import { navigationLayout } from './lib/navigationLayout';
           goal with lidar-based obstacle avoidance. Status shows: Navigating &rarr; Reached (X, Y) / Failed. Humble images
           still use open-loop <span class="font-mono">cmd_vel</span> (turn + drive, no obstacle avoidance). Run one simulation
           at a time when navigating (default ROS domain is shared across containers).
+        </div>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
+      <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">OpenShift Deployment</h2>
+      <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
+        <div>
+          <strong>Deploy</strong> — On the Simulation page's <strong>OpenShift</strong> tab, pick a pushed
+          <span class="font-mono">amd64</span>
+          image, a namespace/context (seeded from your current kubeconfig), and a name, then
+          <strong>Preview manifests</strong>
+          and <strong>Deploy</strong>. Once the route is ready, <strong>Open URL</strong> launches noVNC in a browser
+          tab, or <strong>Show Viewer</strong> embeds it inline in the panel instead — same as local Simulation, over the
+          cluster's route.
+        </div>
+        <div>
+          <strong>Manage</strong> — Deployed sims are listed with delete/refresh and per-robot spawn/navigate/remove, same
+          as the local Simulation page.
+        </div>
+        <div>
+          <strong>Cluster has a GPU</strong> — Toggle to switch from software (llvmpipe + off-screen EGL) to hardware EGL
+          rendering on a GPU-operator cluster; the CPU request drops from 8 to 2 since the GPU renders instead.
+        </div>
+        <div>
+          <strong>Software-render CPUs</strong> — When the GPU toggle is off, sets the guaranteed CPU count (1–64, default
+          8) for the software-rendering Deployment. Dial it to your node sizes — an N-CPU Guaranteed pod only schedules on
+          a node with &ge; N allocatable CPU.
+        </div>
+        <div>
+          <strong>Hummingbird nginx sidecar</strong> — Optional checkbox that adds a
+          <span class="font-mono">registry.access.redhat.com/hi/nginx</span> companion container to the pod, reverse-proxying
+          noVNC through it, to demonstrate the Hummingbird companion-image pattern live.
+        </div>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
+      <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Diagnostics</h2>
+      <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
+        <div>
+          <strong>Overview</strong> — A health-check panel for a selected spawned robot (local or OpenShift): TF tree status,
+          costmap topic, and laser/lidar topic — useful for confirming Nav2 is actually ready before you hit Navigate.
+        </div>
+        <div>
+          <strong>Access</strong> — Click <strong>Diagnose</strong> next to a spawned robot on the Simulation or OpenShift
+          page, or open the Diagnostics page directly and pick a target/robot.
         </div>
       </div>
     </div>
@@ -186,7 +238,9 @@ import { navigationLayout } from './lib/navigationLayout';
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Golden Quay images</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-1">
         <p>
-          Recommended set to publish for Catalog demos (replace <span class="font-mono">&lt;ns&gt;</span> with your namespace):
+          Recommended set to publish for Catalog demos (replace <span class="font-mono">&lt;ns&gt;</span> with your
+          namespace). The Humble entries below are <strong>not currently verified working</strong> — only publish them if
+          you've validated your own build.
         </p>
         <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-humble-base:sloretz</p>
         <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-humble-base:osrf</p>
@@ -216,7 +270,7 @@ import { navigationLayout } from './lib/navigationLayout';
           close it).
         </p>
         <p>
-          &#8226; Demo flow: Image Builder → Launch → Open in Browser → Add TurtleBot3 → Navigate → Topics → Stop &amp;
+          &#8226; Demo flow: Image Builder → Launch → Show Viewer → Add TurtleBot3 → Navigate → Topics → Stop &amp;
           remove.
         </p>
       </div>
@@ -228,7 +282,6 @@ import { navigationLayout } from './lib/navigationLayout';
         <p><strong>Customize hardware</strong> — Swap sensors (e.g. camera) on a running robot.</p>
         <p><strong>Additional robots</strong> — Beyond TurtleBot3.</p>
         <p><strong>Fleet</strong> — Multi-robot local fleets with Zenoh.</p>
-        <p><strong>OpenShift Bridge</strong> — Export to Kubernetes / OpenShift.</p>
       </div>
     </div>
   </div>
