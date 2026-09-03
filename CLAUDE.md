@@ -24,6 +24,14 @@
   named `feature/APPENG-<NNNN>-<slug>`, so `git branch --show-current` gives you the key
   without having to ask. Read the ticket via the Atlassian tools, transition it to **In
   Progress** if it isn't already, then proceed with analysis and implementation.
+- **Parent Story follows its sub-tasks into In Progress:** when a sub-task transitions to In
+  Progress, also check its parent Story (Jira `parent` field) and transition the Story to In
+  Progress if it's still sitting in New — a Story shouldn't stay New while a sub-task under it
+  is actively being worked. Don't auto-Close the parent just because one sub-task closes; only
+  close/transition it further once everything under it (including any not-yet-filed follow-on
+  work noted in its own description) is actually done. (Missed on APPENG-6282/APPENG-6283
+  2026-09-02 — closed the sub-task without ever moving the parent Story out of New; user caught
+  it.)
 - Check the plan doc for context on what each story/sub-task requires
 - Ask questions before starting a new task if the scope or approach is unclear
 - Keep this rules doc updated as decisions are made
