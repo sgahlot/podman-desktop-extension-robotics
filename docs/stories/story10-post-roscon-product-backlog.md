@@ -27,15 +27,12 @@ A point-in-time read of what's most worth picking up next, across Story 9 and St
 — re-derive from the [tracking table](#tracking) and Story 9's Jira-status line if this snapshot
 is more than a couple weeks old, don't trust it blindly.
 
-1. **S10-17/S10-18/S10-21 (Topic Monitor perf, Diagnostics sensor list, custom base image)** —
-   freshest signal: all three surfaced live by the target robotics-engineer audience itself
-   (2026-09-03 feedback session/Slack), not internal backlog grooming. S10-17 first
-   (small–medium effort, a concrete pain point hit during a real demo); S10-18 a reasonable
-   follow-on (medium effort, directly requested live); S10-21 not yet scoped (Leonardo expected
-   his own pushed image to work as the Image Builder's parent — it can't, presets are fixed).
-   None fit an existing open Story — APPENG-6282 is scoped specifically to the noVNC/streaming
-   viewer, APPENG-6225 specifically to the Hummingbird showcase — so this needs its own new
-   Story.
+1. **S10-18/S10-21 (Diagnostics sensor list, custom base image)** — S10-17 shipped
+   ([APPENG-6291](https://redhat.atlassian.net/browse/APPENG-6291), merged
+   [32f6dd1](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/32f6dd173f12df74a0e51826fdfd53dc131d4928),
+   Closed). S10-18 next (medium effort, directly requested live); S10-21 not yet scoped
+   (Leonardo expected his own pushed image to work as the Image Builder's parent — it can't,
+   presets are fixed). Parent Story: [APPENG-6290](https://redhat.atlassian.net/browse/APPENG-6290).
 2. **S10-16 (Hummingbird syft-external + cosign-bundled showcase)** — already filed
    ([APPENG-6264](https://redhat.atlassian.net/browse/APPENG-6264)) under APPENG-6225, and
    unlike most of this backlog it's fully decision-locked (2026-09-01: "yes to all three") with
@@ -789,27 +786,29 @@ Story APPENG-6225.
 
 <a id="s10-17"></a>
 
-## 🚧 S10-17 — Topic Monitor: avoid full reload/slowness with many active topics
+## ✅ S10-17 — Topic Monitor: avoid full reload/slowness with many active topics
+
+**Jira:** [APPENG-6291](https://redhat.atlassian.net/browse/APPENG-6291) under
+[APPENG-6290](https://redhat.atlassian.net/browse/APPENG-6290) — merged
+([32f6dd1](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/32f6dd173f12df74a0e51826fdfd53dc131d4928)),
+Closed.
 
 **Source:** raised live during the "Podman work sync" robotics-engineer feedback session
 (2026-09-03, Leonardo Rossetti / Jeremy Ary) — Sandip's own demo hit a real simulation with
-~82 active topics, and flagged the load time as feedback-worthy: "can we not store this
-information, save it somewhere locally" instead of reloading fully each time.
+~82 active topics, and flagged the load time as feedback-worthy.
 
 **Ask:** reduce Topic Monitor's perceived slowness/reload cost when a simulation has a large
 number of active topics.
 
-**Findings:** not yet verified against the current code — this is a live-usage observation, not
-a code-read finding (per this doc's normal method, that verification pass still needs to
-happen). Worth checking whether `TopicMonitor.svelte`'s topic list is refetched from scratch on
-every render/poll cycle, versus something that could be cached/diffed instead.
+**Shipped (APPENG-6291):**
 
-**Effort:** unknown pending investigation — likely small–medium if it's a straightforward
-caching/memoization fix, larger if the ROS-side listing itself (`ros2 topic list`/`info` over
-`podman exec`) is the actual bottleneck.
+- **Two-phase poll:** `listRosTopicSummaries` (`ros2 topic list -t`) paints names/types first;
+  `listRosTopics` fills pub/sub counts in a **single** `podman exec` (parallel `topic info`
+  inside the container via `topicList.ts` — was N+1 execs per poll).
+- **UI:** keyed `{#each}`, snapshot merge/diff (`topicSnapshotsEqual`) so unchanged polls do
+  not replace the whole table; expanded rows / Peek unchanged on refresh.
 
-**Value:** a genuine usability pain point surfaced by direct live use with a real, larger
-simulation — not hypothetical.
+**Value:** addresses the live ~82-topic pain point without changing drill-down or Peek behavior.
 
 ---
 
@@ -957,7 +956,7 @@ under an existing Story, a direct small commit, or a dedicated new doc.
 | S10-14 | Local Hummingbird nginx sidecar (Podman multi-container) | Feature | Filed as [APPENG-6262](https://redhat.atlassian.net/browse/APPENG-6262) under APPENG-6225 |
 | S10-15 | Hummingbird registry-path audit (quay.io → registry.access.redhat.com) | Research/audit | Filed as [APPENG-6263](https://redhat.atlassian.net/browse/APPENG-6263) under APPENG-6225, merged ([eb30622](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/eb306223f1f46141fa287d6e4f5d72f281e3646c)), Closed — scope grew to all Hummingbird apps uniformly, not just the originally-verified subset |
 | S10-16 | Hummingbird showcase: syft external-scan + cosign bundled-tool demo | Feature | Filed as [APPENG-6264](https://redhat.atlassian.net/browse/APPENG-6264) under APPENG-6225 |
-| S10-17 | Topic Monitor slow/reload with many topics | Perf/UX | This doc |
+| S10-17 | Topic Monitor slow/reload with many topics | Perf/UX | Filed as [APPENG-6291](https://redhat.atlassian.net/browse/APPENG-6291) under APPENG-6290, merged ([32f6dd1](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/32f6dd173f12df74a0e51826fdfd53dc131d4928)), Closed |
 | S10-18 | Diagnostics dynamic/full sensor list | Feature | This doc |
 | S10-19 | Docker Desktop compatibility investigation | Research | This doc |
 | S10-20 | Zenoh streaming as alternative remote-viewing mechanism | Feature (research; depends on S10-13's transport work) | This doc |
