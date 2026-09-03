@@ -116,7 +116,7 @@ describe('LayerComposer', () => {
     expect(nginxCheckbox).toBeTruthy();
     await fireEvent.click(nginxCheckbox as HTMLInputElement);
 
-    expect(document.body.textContent).toContain('quay.io/hummingbird/nginx');
+    expect(document.body.textContent).toContain('registry.access.redhat.com/hi/nginx');
   });
 
   it('selecting the syft tool passes generateSbom: true to buildFromContainerfile on build, and reports watchForSbom: true on completion', async () => {

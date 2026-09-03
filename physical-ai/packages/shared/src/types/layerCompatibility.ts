@@ -84,9 +84,24 @@ export interface HummingbirdAppOption extends LayerOption<HardenedApp> {
   binPath?: string;
 }
 
-/** Full hardened image reference for a Hummingbird app (always the `:latest` daily rebuild). */
+/**
+ * Full hardened image reference for a Hummingbird app — always the public,
+ * unauthenticated `registry.access.redhat.com/hi/*` path, one rule for every app (APPENG-6263).
+ *
+ * A `skopeo inspect` digest comparison (2026-09-01) found `nginx`/`cosign`/`curl`/`jq`/
+ * `kubectl`/`helm` byte-identical to their old `quay.io/hummingbird/*` counterparts, but
+ * `prometheus`/`grafana`-class apps rebuild every few hours and can legitimately drift between
+ * the two registries at any given moment — a digest snapshot doesn't prove long-term
+ * equivalence the way it does for the rarely-rebuilt CLI tools. None of these apps have
+ * actually been exercised end-to-end yet (only `syft`, via SBOM generation, and `nginx`, as the
+ * OpenShift sidecar, have real usage in the extension today), so rather than keep a curated
+ * "verified" subset on one registry and everything else on the other, every app points here
+ * uniformly until real testing says otherwise. If `:latest` churn ever causes a problem for
+ * `syft` or `nginx` specifically (the two with actual live usage), pin those two to a known-good
+ * tag/digest rather than reintroducing a mixed-registry split.
+ */
 export function hummingbirdImageRef(app: HardenedApp): string {
-  return `quay.io/hummingbird/${app}:latest`;
+  return `registry.access.redhat.com/hi/${app}:latest`;
 }
 
 export const BASE_OS_OPTIONS: readonly LayerOption<BaseOsLayer>[] = [
@@ -351,7 +366,7 @@ export function evaluateStack(sel: LayerSelection): CompatResult {
   if (sel.hardened === 'hummingbird-app' && wantsRos) {
     messages.push({
       level: 'info',
-      text: 'Hummingbird provides optional hardened application images (quay.io/hummingbird/*) as a side component — it does not change the ROS/robotics build.',
+      text: 'Hummingbird provides optional hardened application images (registry.access.redhat.com/hi/*) as a side component — it does not change the ROS/robotics build.',
     });
   }
 
@@ -445,7 +460,9 @@ export function generateLayerContainerfile(sel: LayerSelection): string {
         }
       }
     } else {
-      lines.push('# (Hummingbird provides hardened app images from quay.io/hummingbird/*; optional component)');
+      lines.push(
+        '# (Hummingbird provides hardened app images from registry.access.redhat.com/hi/*; optional component)',
+      );
     }
     sections.push(lines.join('\n'));
   }

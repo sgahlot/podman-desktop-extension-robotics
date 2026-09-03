@@ -47,7 +47,7 @@ describe('Help', () => {
   it('mentions key features in coming soon section', () => {
     render(Help);
     expect(screen.getByText('Coming Soon')).toBeTruthy();
-    expect(screen.getByText(/OpenShift Bridge/)).toBeTruthy();
+    expect(screen.getByText(/Fleet/)).toBeTruthy();
   });
 
   it('renders Image Builder section', () => {
