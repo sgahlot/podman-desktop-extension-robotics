@@ -54,6 +54,15 @@ Error: Extension with id redhat.physical-ai is not compatible with Podman Deskto
 
 If you hit that error, re-check the folder you selected.
 
+**Don't build the `Containerfile` locally and try to install that image via "Install custom
+extension…"** — that flow always does a real registry pull of whatever reference you paste; it
+never checks local image storage first. A locally-built image that was never pushed to a
+registry will fail there (typically with an auth error against `localhost/<image>:<tag>`, since
+an unqualified `podman build -t` tag resolves to `localhost/...` locally). Building the
+`Containerfile` yourself is only useful for verifying the packaging step before running
+`scripts/publish-extension-image.sh` to actually push it — for installing your own local changes,
+use **Option B** instead (no container image involved).
+
 ## Quick Start
 
 ![Quick Start: build, launch, and view the simulation inline](docs/img/quick-start-show-viewer.gif)
