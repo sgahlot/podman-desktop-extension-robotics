@@ -64,6 +64,10 @@ is more than a couple weeks old, don't trust it blindly.
 - [S10-14 — Local Hummingbird nginx sidecar (Podman multi-container)](#s10-14)
 - [S10-15 — Hummingbird registry-path audit (quay.io → registry.access.redhat.com)](#s10-15)
 - [S10-16 — Hummingbird showcase: syft external-scan pattern + cosign bundled-tool demo](#s10-16)
+- [S10-17 — Topic Monitor: avoid full reload/slowness with many active topics](#s10-17)
+- [S10-18 — Diagnostics: dynamic/full sensor list, not a fixed 3-check list](#s10-18)
+- [S10-19 — Investigate Docker Desktop compatibility](#s10-19)
+- [S10-20 — ROS middleware (Zenoh) streaming as an alternative remote-viewing mechanism](#s10-20)
 - [Tracking: where each item currently lives](#tracking)
 
 ## Method
@@ -743,6 +747,114 @@ Story APPENG-6225.
 
 ---
 
+<a id="s10-17"></a>
+
+## S10-17 — Topic Monitor: avoid full reload/slowness with many active topics
+
+**Source:** raised live during the "Podman work sync" robotics-engineer feedback session
+(2026-09-03, Leonardo Rossetti / Jeremy Ary) — Sandip's own demo hit a real simulation with
+~82 active topics, and flagged the load time as feedback-worthy: "can we not store this
+information, save it somewhere locally" instead of reloading fully each time.
+
+**Ask:** reduce Topic Monitor's perceived slowness/reload cost when a simulation has a large
+number of active topics.
+
+**Findings:** not yet verified against the current code — this is a live-usage observation, not
+a code-read finding (per this doc's normal method, that verification pass still needs to
+happen). Worth checking whether `TopicMonitor.svelte`'s topic list is refetched from scratch on
+every render/poll cycle, versus something that could be cached/diffed instead.
+
+**Effort:** unknown pending investigation — likely small–medium if it's a straightforward
+caching/memoization fix, larger if the ROS-side listing itself (`ros2 topic list`/`info` over
+`podman exec`) is the actual bottleneck.
+
+**Value:** a genuine usability pain point surfaced by direct live use with a real, larger
+simulation — not hypothetical.
+
+---
+
+<a id="s10-18"></a>
+
+## S10-18 — Diagnostics: dynamic/full sensor list, not a fixed 3-check list
+
+**Source:** raised live during the same 2026-09-03 session — Leonardo directly asked "could we
+have a list of all the sensors in the robot?" after seeing Diagnostics only cover three fixed
+checks.
+
+**Ask:** expand Diagnostics beyond today's fixed TF tree / costmap / laser-scan trio to a
+fuller, ideally dynamic, list of the robot's actual sensors.
+
+**Findings:** confirms what was already known — Diagnostics' three checks
+(`getTfTreeStatus`/`getCostmapSummary`/`getLaserScanSummary` + `...InOpenShift` variants) are a
+static, hardcoded list, not derived from the robot's actual sensor set. Making this dynamic
+would need a way to enumerate a robot's real sensors/topics (e.g. topic introspection or a
+robot-description lookup) rather than checking the same three fixed things regardless of robot.
+
+**Effort:** medium — extending beyond a fixed check list to a dynamic one is a real design
+question, not just adding more hardcoded checks.
+
+**Value:** directly requested by the target robotics-engineer audience; closes the "this is a
+black box beyond three things" feeling Leonardo flagged live.
+
+---
+
+<a id="s10-19"></a>
+
+## S10-19 — Investigate Docker Desktop compatibility
+
+**Source:** Sandip's own action item from the 2026-09-03 session, motivated by Leonardo's point
+that most robotics/ROS audiences are more familiar with Docker tooling/terminology than Podman,
+which affects how documentation and onboarding should be framed.
+
+**Ask:** research whether the extension (or Podman Desktop extensions in general) can run under
+Docker Desktop, not just Podman Desktop.
+
+**Findings:** none yet — pure research spike, nothing investigated in code so far. Sandip noted
+in the meeting that company policy leans Podman-only, so this is informational/lower-urgency
+unless a concrete need (e.g. a ROSCon audience ask) makes it worth prioritizing.
+
+**Effort:** small research spike — check Podman Desktop's extension API/packaging against
+whatever extension mechanism Docker Desktop exposes, if any.
+
+**Value:** could broaden the pool of people able to try the extension without first adopting
+Podman Desktop specifically — but speculative until the spike happens.
+
+---
+
+<a id="s10-20"></a>
+
+## S10-20 — ROS middleware (Zenoh) streaming as an alternative remote-viewing mechanism
+
+**Source:** raised live during the 2026-09-03 session — Leonardo proposed, as an alternative to
+today's noVNC/web-view approach for viewing an in-cluster (OpenShift) simulation, streaming the
+ROS graph's actual data over a ROS middleware (Zenoh) to a local machine, rather than remoting
+the rendered GUI. His framing: "more lightweight... I'm just streaming chunks of data" versus a
+full remote-desktop-style web view. The team explicitly agreed this is **not required now** —
+"the current approach is an excellent development tool and does not require immediate changes."
+
+**Distinction from APPENG-5774 (important, corrects an earlier mixup in this doc):** APPENG-5774
+is about **local multi-robot orchestration** — launching multiple robot *containers on the same
+machine* via Podman Compose/pod-based orchestration, scaling one robot to a local fleet. This
+item is unrelated to that — it's about the **transport/viewing mechanism for an entirely
+remote/in-cluster simulation**, a third alternative alongside S10-1 (embed noVNC as-is) and
+S10-2 (custom WebRTC video-streaming viewer), not a local-orchestration feature.
+
+**Findings:** not yet investigated in code. Conceptually this would mean running a local
+ROS/Zenoh-aware viewer (e.g. a local rviz2 or Gazebo GUI client) subscribing to topics forwarded
+from the remote simulation over Zenoh's *cross-boundary* router — the same deferred
+router/bridge design already noted in [S10-13](#s10-13) (APPENG-5775 shipped the
+single-container/pod foundation only; the cross-pod router+bridge is unbuilt).
+
+**Effort:** unknown/large — depends entirely on the deferred cross-boundary Zenoh transport work
+that S10-13 already flags as a prerequisite; not a standalone small feature.
+
+**Value:** potentially more network-lightweight than video/framebuffer streaming, and directly
+proposed by the target engineer audience — but explicitly deprioritized by the team in the
+meeting itself. Sequence behind S10-1/S10-2 and S10-13's underlying transport work; treat as a
+research idea, not a committed direction.
+
+---
+
 <a id="tracking"></a>
 
 ## Tracking: where each item currently lives
@@ -769,3 +881,7 @@ under an existing Story, a direct small commit, or a dedicated new doc.
 | S10-14 | Local Hummingbird nginx sidecar (Podman multi-container) | Feature | Filed as [APPENG-6262](https://redhat.atlassian.net/browse/APPENG-6262) under APPENG-6225 |
 | S10-15 | Hummingbird registry-path audit (quay.io → registry.access.redhat.com) | Research/audit | Filed as [APPENG-6263](https://redhat.atlassian.net/browse/APPENG-6263) under APPENG-6225 |
 | S10-16 | Hummingbird showcase: syft external-scan + cosign bundled-tool demo | Feature | Filed as [APPENG-6264](https://redhat.atlassian.net/browse/APPENG-6264) under APPENG-6225 |
+| S10-17 | Topic Monitor slow/reload with many topics | Perf/UX | This doc |
+| S10-18 | Diagnostics dynamic/full sensor list | Feature | This doc |
+| S10-19 | Docker Desktop compatibility investigation | Research | This doc |
+| S10-20 | Zenoh streaming as alternative remote-viewing mechanism | Feature (research; depends on S10-13's transport work) | This doc |
