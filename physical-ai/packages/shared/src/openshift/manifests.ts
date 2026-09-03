@@ -15,12 +15,11 @@ export const NOVNC_CONTAINER_PORT = 6080;
 /**
  * Hummingbird nginx companion image (APPENG-6227), reverse-proxying noVNC when enabled.
  * Derived from `hummingbirdImageRef` (APPENG-6263) rather than hardcoded separately, so there
- * is exactly one rule for which registry each Hummingbird app resolves to — `nginx` is one of
- * the apps confirmed to resolve identically on `registry.access.redhat.com/hi/*`, Red Hat's
- * public, unauthenticated distribution registry (confirmed with a live `podman pull`, no
- * credentials needed) — the canonical path a partner/customer would actually be told to pull,
- * rather than the project's `quay.io/hummingbird/` working namespace (same image content
- * either way).
+ * is exactly one rule for which registry every Hummingbird app resolves to — the public,
+ * unauthenticated `registry.access.redhat.com/hi/*` path, the canonical path a partner/customer
+ * would actually be told to pull. `nginx` is one of the two apps (with `syft`) that actually run
+ * live in the extension today (as this sidecar); if `:latest` churn ever causes it a problem,
+ * pin it to a known-good tag/digest rather than reverting to a different registry.
  */
 export const HUMMINGBIRD_NGINX_IMAGE = hummingbirdImageRef('nginx');
 

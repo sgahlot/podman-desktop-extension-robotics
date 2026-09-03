@@ -189,14 +189,14 @@ describe('generateLayerContainerfile', () => {
       sel({ baseOs: 'ubuntu-noble', hardened: 'hummingbird-app', hummingbirdApps: ['nginx', 'nodejs'] }),
     );
     expect(containerfile).toContain('registry.access.redhat.com/hi/nginx');
-    expect(containerfile).toContain('quay.io/hummingbird/nodejs');
+    expect(containerfile).toContain('registry.access.redhat.com/hi/nodejs');
   });
 
   it('hummingbird hardened with postgresql selected renders the postgresql hummingbird image ref', () => {
     const containerfile = generateLayerContainerfile(
       sel({ baseOs: 'ubuntu-noble', hardened: 'hummingbird-app', hummingbirdApps: ['postgresql'] }),
     );
-    expect(containerfile).toContain('quay.io/hummingbird/postgresql');
+    expect(containerfile).toContain('registry.access.redhat.com/hi/postgresql');
   });
 
   it('a hummingbird tool (jq) is baked in with a real COPY --from line', () => {
@@ -222,7 +222,9 @@ describe('generateLayerContainerfile', () => {
     const containerfile = generateLayerContainerfile(
       sel({ baseOs: 'ubuntu-noble', hardened: 'hummingbird-app', hummingbirdApps: ['grafana', 'cosign'] }),
     );
-    expect(containerfile).toContain('companion image (pull & run alongside): quay.io/hummingbird/grafana:latest');
+    expect(containerfile).toContain(
+      'companion image (pull & run alongside): registry.access.redhat.com/hi/grafana:latest',
+    );
     expect(containerfile).toContain(
       'COPY --from=registry.access.redhat.com/hi/cosign:latest /usr/bin/cosign /usr/local/bin/cosign',
     );
@@ -250,20 +252,17 @@ describe('generateLayerContainerfile', () => {
 });
 
 describe('Hummingbird app catalog', () => {
-  it('hummingbirdImageRef resolves verified apps to registry.access.redhat.com (APPENG-6263)', () => {
+  it('hummingbirdImageRef resolves every app to registry.access.redhat.com (APPENG-6263)', () => {
     expect(hummingbirdImageRef('nginx')).toBe('registry.access.redhat.com/hi/nginx:latest');
     expect(hummingbirdImageRef('cosign')).toBe('registry.access.redhat.com/hi/cosign:latest');
     expect(hummingbirdImageRef('curl')).toBe('registry.access.redhat.com/hi/curl:latest');
     expect(hummingbirdImageRef('jq')).toBe('registry.access.redhat.com/hi/jq:latest');
     expect(hummingbirdImageRef('kubectl')).toBe('registry.access.redhat.com/hi/kubectl:latest');
     expect(hummingbirdImageRef('helm')).toBe('registry.access.redhat.com/hi/helm:latest');
-  });
-
-  it('hummingbirdImageRef keeps unaudited apps and syft (deferred to APPENG-6264) on quay.io', () => {
-    expect(hummingbirdImageRef('syft')).toBe('quay.io/hummingbird/syft:latest');
-    expect(hummingbirdImageRef('nodejs')).toBe('quay.io/hummingbird/nodejs:latest');
-    expect(hummingbirdImageRef('postgresql')).toBe('quay.io/hummingbird/postgresql:latest');
-    expect(hummingbirdImageRef('grafana')).toBe('quay.io/hummingbird/grafana:latest');
+    expect(hummingbirdImageRef('syft')).toBe('registry.access.redhat.com/hi/syft:latest');
+    expect(hummingbirdImageRef('nodejs')).toBe('registry.access.redhat.com/hi/nodejs:latest');
+    expect(hummingbirdImageRef('postgresql')).toBe('registry.access.redhat.com/hi/postgresql:latest');
+    expect(hummingbirdImageRef('grafana')).toBe('registry.access.redhat.com/hi/grafana:latest');
   });
 
   it('partitions every app into exactly one of companion / tool', () => {
@@ -287,6 +286,8 @@ describe('Hummingbird app catalog', () => {
     expect(syft!.binPath).toBeUndefined();
 
     const containerfile = generateLayerContainerfile(sel({ hardened: 'hummingbird-app', hummingbirdApps: ['syft'] }));
-    expect(containerfile).toContain('COPY --from=quay.io/hummingbird/syft:latest /usr/bin/syft /usr/local/bin/syft');
+    expect(containerfile).toContain(
+      'COPY --from=registry.access.redhat.com/hi/syft:latest /usr/bin/syft /usr/local/bin/syft',
+    );
   });
 });
