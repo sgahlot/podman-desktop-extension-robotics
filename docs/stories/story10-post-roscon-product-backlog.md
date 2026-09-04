@@ -43,21 +43,19 @@ is more than a couple weeks old, don't trust it blindly.
    ([APPENG-6283](https://redhat.atlassian.net/browse/APPENG-6283), Closed); still a large,
    multi-week spike, not yet sized or sub-tasked under
    [APPENG-6282](https://redhat.atlassian.net/browse/APPENG-6282).
-4. **S10-7 (Dashboard OpenShift sim count)** — small, well-scoped gap left over from the
-   APPENG-6256 batch (S10-8 shipped without it); easy pickup, but needs a new sub-task filed.
-5. **S10-11 follow-up (CLI menu-driven help)** — small, now that S9-4/APPENG-6236 shipped
+4. **S10-11 follow-up (CLI menu-driven help)** — small, now that S9-4/APPENG-6236 shipped
    without it; also needs a new ticket.
-6. **S10-14** (APPENG-6262) — already filed under APPENG-6225, no worktree started yet;
+5. **S10-14** (APPENG-6262) — already filed under APPENG-6225, no worktree started yet;
    small-to-medium, a real feature (pod/network wiring for the local Hummingbird sidecar).
-7. **S9-7/APPENG-6237** (config-driven robot definition) and **S9-1/APPENG-6238** (`oc` → library)
+6. **S9-7/APPENG-6237** (config-driven robot definition) and **S9-1/APPENG-6238** (`oc` → library)
    — already filed in Story 9, genuinely not started (see
    [story9-platform-exploration.md](story9-platform-exploration.md)).
-8. **Idle pre-existing spikes** — `APPENG-5809-fedora-quadlet-spike`, `APPENG-6070-multipod-zenoh`,
+7. **Idle pre-existing spikes** — `APPENG-5809-fedora-quadlet-spike`, `APPENG-6070-multipod-zenoh`,
    `APPENG-6071-humble-parity` worktrees — untouched, still there whenever picked up.
-9. **Larger/lower-readiness backlog** — S10-3/S10-4 (SBOM layer viz), S10-6 (Topic Monitor
+8. **Larger/lower-readiness backlog** — S10-3/S10-4 (SBOM layer viz), S10-6 (Topic Monitor
    OpenShift), S10-12 (telemetry), S10-13 (hybrid topology), S10-19 (Docker Desktop
    compatibility research) — all still research/spike-only, no ticket yet.
-10. **Shelved** — S10-20 (Zenoh streaming as an alternative remote-viewing mechanism) — the team
+9. **Shelved** — S10-20 (Zenoh streaming as an alternative remote-viewing mechanism) — the team
    explicitly deprioritized this live in the 2026-09-03 session ("does not require immediate
    changes"); revisit only if S10-13's underlying cross-boundary transport work happens first.
 
@@ -349,7 +347,7 @@ box for topic inspection today.
 
 <a id="s10-7"></a>
 
-## 📋 S10-7 — Dashboard: OpenShift simulation count metric
+## ✅ S10-7 — Dashboard: OpenShift simulation count metric
 
 **Ask:** show a count of currently-deployed OpenShift simulations (current kube context)
 under the Dashboard Overview, alongside whatever local metrics already exist — "or is that
@@ -369,9 +367,7 @@ honest about where each sim runs and lands the user on the matching tab in one c
 
 **Effort:** small.
 
-**Status (2026-09-02):** still open — not covered by S10-8's shipped work below. Verified in
-code: `Dashboard.svelte` today has only the 2 original tiles (Local ROS 2 images, running
-simulations), no "N OpenShift" sub-tile. Needs its own sub-task if still wanted.
+**Status (2026-09-04):** shipped as [APPENG-6296](https://redhat.atlassian.net/browse/APPENG-6296) — Overview simulations split into clickable **local** and **OpenShift** sub-tiles; OpenShift count uses `listOpenShiftDeployments()` scoped to the resolved default/current namespace.
 
 ---
 

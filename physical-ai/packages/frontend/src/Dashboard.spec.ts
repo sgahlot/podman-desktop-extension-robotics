@@ -1,10 +1,13 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, within } from '@testing-library/svelte';
 import Dashboard from './Dashboard.svelte';
 
 const mockGetStatus = vi.fn();
 const mockListLocalImages = vi.fn();
 const mockListSimulationContainers = vi.fn();
+const mockListOpenShiftDeployments = vi.fn();
+const mockGetOpenShiftContext = vi.fn();
+const mockGetDefaultOpenShiftNamespace = vi.fn();
 const mockOpenUrlInBrowser = vi.fn();
 const mockGoto = vi.fn();
 
@@ -13,6 +16,9 @@ vi.mock('./api/client', () => ({
     getStatus: (...args: unknown[]) => mockGetStatus(...args),
     listLocalImages: (...args: unknown[]) => mockListLocalImages(...args),
     listSimulationContainers: (...args: unknown[]) => mockListSimulationContainers(...args),
+    listOpenShiftDeployments: (...args: unknown[]) => mockListOpenShiftDeployments(...args),
+    getOpenShiftContext: (...args: unknown[]) => mockGetOpenShiftContext(...args),
+    getDefaultOpenShiftNamespace: (...args: unknown[]) => mockGetDefaultOpenShiftNamespace(...args),
     openUrlInBrowser: (...args: unknown[]) => mockOpenUrlInBrowser(...args),
   },
 }));
@@ -20,6 +26,10 @@ vi.mock('./api/client', () => ({
 vi.mock('tinro', () => ({
   router: { goto: (...args: unknown[]) => mockGoto(...args) },
 }));
+
+function metricButton(name: string): HTMLElement {
+  return screen.getByRole('button', { name }) as HTMLElement;
+}
 
 describe('Dashboard', () => {
   beforeEach(() => {
@@ -30,6 +40,11 @@ describe('Dashboard', () => {
       { id: 'c1', name: 'pai-sim-1', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [], labels: {} },
       { id: 'c2', name: 'pai-sim-2', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [], labels: {} },
     ]);
+    mockGetOpenShiftContext.mockResolvedValue({ context: 'ctx1', kubeconfigPath: '/x', namespace: 'team-ns' });
+    mockListOpenShiftDeployments.mockResolvedValue([
+      { name: 'ros2-jazzy-sim', namespace: 'team-ns', replicas: 1, readyReplicas: 1, ready: true, image: 'img', routeUrl: 'https://x', hasHummingbirdSidecar: false },
+    ]);
+    mockGetDefaultOpenShiftNamespace.mockResolvedValue('');
     mockOpenUrlInBrowser.mockResolvedValue(undefined);
   });
 
@@ -150,16 +165,20 @@ describe('Dashboard', () => {
     expect(screen.getByText('Welcome to Physical AI')).toBeTruthy();
     expect(screen.getByText('Open Image Builder')).toBeTruthy();
     expect(screen.getByText('Local ROS 2 images')).toBeTruthy();
-    expect(screen.getByText('Running simulations')).toBeTruthy();
+    expect(screen.getByText('local')).toBeTruthy();
+    expect(screen.getByText('OpenShift')).toBeTruthy();
     expect(screen.getByText('ROS 2 Jazzy documentation')).toBeTruthy();
     expect(screen.getByText('TurtleBot3')).toBeTruthy();
     expect(screen.getByText('Nav2')).toBeTruthy();
     expect(screen.getByText('Extension guide')).toBeTruthy();
     // Metric counts load async.
-    const ros2Count = await screen.findByText('1');
-    expect(ros2Count).toBeTruthy();
-    const simCount = await screen.findByText('2');
-    expect(simCount).toBeTruthy();
+    const imagesTile = screen.getByText('Local ROS 2 images').closest('button');
+    expect(imagesTile).toBeTruthy();
+    expect(await within(imagesTile as HTMLElement).findByText('1')).toBeTruthy();
+    const localTile = metricButton('Local simulations');
+    expect(within(localTile).getByText('2')).toBeTruthy();
+    const openShiftTile = metricButton('OpenShift simulations');
+    expect(await within(openShiftTile).findByText('1')).toBeTruthy();
   });
 
   it('shows dashboard content instead of Quick Links in sidebar layout', async () => {
@@ -167,7 +186,8 @@ describe('Dashboard', () => {
     expect(screen.getByText('Welcome to Physical AI')).toBeTruthy();
     expect(screen.getByText('Open Image Builder')).toBeTruthy();
     expect(screen.getByText('Local ROS 2 images')).toBeTruthy();
-    expect(screen.getByText('Running simulations')).toBeTruthy();
+    expect(screen.getByText('local')).toBeTruthy();
+    expect(screen.getByText('OpenShift')).toBeTruthy();
     expect(screen.getByText('ROS 2 Jazzy documentation')).toBeTruthy();
     expect(screen.getByText('TurtleBot3')).toBeTruthy();
     expect(screen.getByText('Nav2')).toBeTruthy();
@@ -178,11 +198,13 @@ describe('Dashboard', () => {
   it('loads and shows metric counts in sidebar layout', async () => {
     render(Dashboard, { layout: 'sidebar' });
     // Only the quay.io/x/ros2-jazzy-sim ref matches the ros2- image name filter.
-    const ros2Count = await screen.findByText('1');
-    expect(ros2Count).toBeTruthy();
-    // Two mocked running simulation containers.
-    const simCount = await screen.findByText('2');
-    expect(simCount).toBeTruthy();
+    const imagesTile = screen.getByText('Local ROS 2 images').closest('button');
+    expect(imagesTile).toBeTruthy();
+    expect(await within(imagesTile as HTMLElement).findByText('1')).toBeTruthy();
+    const localTile = metricButton('Local simulations');
+    expect(within(localTile).getByText('2')).toBeTruthy();
+    const openShiftTile = metricButton('OpenShift simulations');
+    expect(await within(openShiftTile).findByText('1')).toBeTruthy();
   });
 
   it('opens the ROS 2 docs URL when the explore card is clicked', async () => {
@@ -203,9 +225,21 @@ describe('Dashboard', () => {
     expect(mockGoto).toHaveBeenCalledWith('/images');
   });
 
-  it('navigates to Simulation when the running simulations metric tile is clicked', async () => {
+  it('navigates to Simulation Local tab when the local simulations metric tile is clicked', async () => {
     render(Dashboard, { layout: 'sidebar' });
-    await fireEvent.click(screen.getByText('Running simulations'));
+    await fireEvent.click(metricButton('Local simulations'));
     expect(mockGoto).toHaveBeenCalledWith('/simulation');
+  });
+
+  it('navigates to Simulation OpenShift tab when the OpenShift simulations metric tile is clicked', async () => {
+    render(Dashboard, { layout: 'sidebar' });
+    await fireEvent.click(metricButton('OpenShift simulations'));
+    expect(mockGoto).toHaveBeenCalledWith('/simulation/openshift');
+  });
+
+  it('loads OpenShift simulation count from listOpenShiftDeployments using the resolved namespace', async () => {
+    render(Dashboard, { layout: 'sidebar' });
+    expect(await within(metricButton('OpenShift simulations')).findByText('1')).toBeTruthy();
+    expect(mockListOpenShiftDeployments).toHaveBeenCalledWith('team-ns', 'ctx1');
   });
 });

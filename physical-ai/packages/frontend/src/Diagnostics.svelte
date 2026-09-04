@@ -1,16 +1,16 @@
 <script lang="ts">
 import { onMount, onDestroy } from 'svelte';
-import { get } from 'svelte/store';
 import { router } from 'tinro';
 import { physicalAiClient } from './api/client';
 import type { SimContainerInfo } from '/@shared/src/types/SimulationContainer';
 import type { TopicInfo } from '/@shared/src/types/TopicInfo';
-import type { OpenShiftContext, OpenShiftWorkload } from '/@shared/src/types/OpenShiftDeploy';
+import type { OpenShiftWorkload } from '/@shared/src/types/OpenShiftDeploy';
 import RobotDiagnosticsPanel from './lib/RobotDiagnosticsPanel.svelte';
 import type { DiagnosticsTarget } from './lib/RobotDiagnosticsPanel.types';
 import QuickLinks from './lib/QuickLinks.svelte';
 import { navigationLayout } from './lib/navigationLayout';
 import { lastOpenShiftSelection } from './lib/simSelection';
+import { resolveOpenShiftNamespace } from './lib/resolveOpenShiftNamespace';
 
 /**
  * Deep-link query params (see lib/diagnosticsLink.ts): `target=local&containerId=...&robot=...`
@@ -137,36 +137,6 @@ $: ocTarget = (
     ? { kind: 'oc', namespace: ocNamespace, workload: selectedWorkloadName, context: ocContext || undefined }
     : null
 ) as DiagnosticsTarget | null;
-
-/**
- * Resolves an OpenShift namespace/context to try, in order: (a) the last one used on the
- * Simulation page (lastOpenShiftSelection); (b) the current kube context, if it's bound to a
- * real (non-'default') namespace; (c) the configured default namespace setting; (d) none — the
- * Cluster/Namespace fields stay editable and empty until the user lists manually.
- */
-async function resolveOpenShiftNamespace(): Promise<{ namespace: string; context?: string } | null> {
-  const stored = get(lastOpenShiftSelection);
-  if (stored) return { namespace: stored.namespace, context: stored.context };
-
-  let context: OpenShiftContext | undefined;
-  try {
-    context = await physicalAiClient.getOpenShiftContext();
-  } catch {
-    context = undefined;
-  }
-  if (context?.namespace && context.namespace !== 'default') {
-    return { namespace: context.namespace, context: context.context };
-  }
-
-  try {
-    const fallback = await physicalAiClient.getDefaultOpenShiftNamespace();
-    if (fallback) return { namespace: fallback, context: context?.context };
-  } catch {
-    // Fail soft — the Cluster/Namespace fields are still available for a manual list.
-  }
-
-  return null;
-}
 
 /**
  * Fetches workloads for the current ocNamespace/ocContext. `explicit` (set for a deep-linked
