@@ -65,10 +65,11 @@ vi.mock('node:fs/promises', () => ({
   mkdir: vi.fn(),
   rename: vi.fn(),
   rm: vi.fn(),
+  cp: vi.fn(),
 }));
 
 import * as extensionApi from '@podman-desktop/api';
-import { readFile, writeFile, mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, mkdir, rename, rm, cp } from 'node:fs/promises';
 
 const MOCK_CONTEXT = {
   extensionUri: { fsPath: '/fake/extension/path' },
@@ -140,6 +141,15 @@ function mockStatefulBuildHistoryFile(): void {
   vi.mocked(readFile).mockImplementation(async path => {
     if (String(path).endsWith('build-history.json') && stored !== undefined) {
       return stored as unknown as Awaited<ReturnType<typeof readFile>>;
+    }
+    throw new Error('ENOENT');
+  });
+}
+
+function mockPresetContainerfileRead(content = 'ARG X\nFROM scratch\nRUN echo base\nCOPY f /f\n'): void {
+  vi.mocked(readFile).mockImplementation(async path => {
+    if (String(path).endsWith('Containerfile')) {
+      return content as unknown as Awaited<ReturnType<typeof readFile>>;
     }
     throw new Error('ENOENT');
   });
@@ -1042,6 +1052,10 @@ describe('PhysicalAiApiImpl', () => {
       baseImage: 'sloretz' as const,
     };
 
+    beforeEach(() => {
+      mockPresetContainerfileRead();
+    });
+
     it('throws when no Podman connection found', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([]);
 
@@ -1189,6 +1203,34 @@ RUN apt-get install -y ros-jazzy-desktop
       ]);
     });
 
+    it('records per-layer cache status for preset base image builds', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({
+        fsPath: '/fake/assets/ros2-jazzy-base',
+      } as unknown as extensionApi.Uri);
+      mockPresetContainerfileRead('FROM docker.io/ros:jazzy\nRUN apt-get\nCOPY f /f\n');
+
+      let buildCallback: Parameters<typeof extensionApi.containerEngine.buildImage>[1];
+      vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation((_ctx, cb, _opts) => {
+        buildCallback = cb;
+        return new Promise(() => {});
+      });
+
+      await api.buildBaseImage('preset-base:latest', { ...baseConfig, distro: 'jazzy', baseImage: 'jazzy' });
+      buildCallback!('stream', 'STEP 1/3: FROM docker.io/ros:jazzy');
+      buildCallback!('stream', '--> Using cache');
+      buildCallback!('stream', 'STEP 2/3: RUN apt-get');
+      buildCallback!('finish', 'Successfully tagged preset-base:latest');
+
+      const done = await api.getBuildProgress('preset-base:latest');
+      expect(done!.layerCacheStatus).toEqual([
+        { layer: 'Base OS', cached: true },
+        { layer: 'ROS Jazzy', cached: false },
+      ]);
+    });
+
     it('records error events', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
@@ -1328,6 +1370,10 @@ RUN apt-get install -y ros-jazzy-desktop
       engine: 'gazebo',
       baseImage: 'sloretz' as const,
     };
+
+    beforeEach(() => {
+      mockPresetContainerfileRead('ARG LOCAL_BASE_IMAGE\nFROM ${LOCAL_BASE_IMAGE}\nRUN apt-get\n');
+    });
 
     it('builds from the turtlebot3 simulation asset directory with LOCAL_BASE_IMAGE build-arg', async () => {
       const mockConnection = createMockConnection();

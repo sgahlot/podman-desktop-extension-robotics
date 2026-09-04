@@ -423,7 +423,7 @@ const ROS_DISTRO: Record<Exclude<RosLayer, 'none'>, string> = {
   'ros2-humble': 'humble',
 };
 
-function labelFor<TId extends string>(options: readonly LayerOption<TId>[], id: TId): string {
+export function labelFor<TId extends string>(options: readonly LayerOption<TId>[], id: TId): string {
   return options.find(o => o.id === id)?.label ?? id;
 }
 

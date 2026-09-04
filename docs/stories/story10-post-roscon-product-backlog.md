@@ -260,7 +260,7 @@ contributes" is a compelling, differentiated demo.
 
 ## 🔭 S10-4 — Per-slice incremental rebuild UX
 
-**Status:** In progress — [APPENG-6298](https://redhat.atlassian.net/browse/APPENG-6298) (layer cache capture + Build History card).
+**Status:** In progress — [APPENG-6298](https://redhat.atlassian.net/browse/APPENG-6298) (uniform layer-cache UX across preset + containerfile builds; bake-in tools stay on tested preset recipe).
 
 **Ask:** updating one slice (e.g. just the Sim layer) shouldn't require rebuilding the whole
 multi-GB image.
