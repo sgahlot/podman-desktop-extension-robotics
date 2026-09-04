@@ -3,6 +3,7 @@ import { physicalAiClient } from '../api/client';
 import { onMount, onDestroy } from 'svelte';
 import type { BuildHistoryEntry } from '/@shared/src/types/BuildHistory';
 import { parseSbomPackageCount, sbomItemLabel } from '/@shared/src/types/BuildHistory';
+import LayerCacheCompare from './LayerCacheCompare.svelte';
 import { formatDurationSeconds } from './formatDuration';
 
 /**
@@ -206,6 +207,9 @@ onDestroy(() => {
           </div>
           {#if !entry.success && entry.errorMessage}
             <span class="text-xs pai-text-error" title={entry.errorMessage}>{entry.errorMessage}</span>
+          {/if}
+          {#if entry.layerCacheStatus?.length}
+            <LayerCacheCompare entries={entry.layerCacheStatus} />
           {/if}
           {#if entry.sbomFormat}
             <div class="flex flex-col gap-1">

@@ -23,7 +23,7 @@ import type { SimulationBaseImageId } from '/@shared/src/types/SimulationBaseIma
 import type { SimulationConfig, TargetArch } from '/@shared/src/types/SimulationConfig';
 
 let robot = 'turtlebot3';
-let distro = 'humble';
+let distro = 'jazzy';
 let middleware = 'dds';
 let engine = 'gazebo';
 let baseImage: SimulationBaseImageId = DEFAULT_SIMULATION_BASE_IMAGE;

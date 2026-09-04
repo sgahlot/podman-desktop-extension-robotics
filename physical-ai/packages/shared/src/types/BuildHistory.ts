@@ -19,6 +19,14 @@
 export type SbomFormat = 'cyclonedx-json' | 'spdx-json';
 export const SBOM_FORMAT_DEFAULT: SbomFormat = 'cyclonedx-json';
 
+/** Per composition-layer cache outcome for a Layers-wizard build (APPENG-6298 / S10-4). */
+export interface LayerCacheStatusEntry {
+  /** Display label, e.g. "Base OS", "ROS". */
+  layer: string;
+  /** True when every Containerfile step for this layer was a Podman cache hit. */
+  cached: boolean;
+}
+
 export interface BuildHistoryEntry {
   tag: string;
   arch: 'amd64' | 'arm64';
@@ -44,6 +52,11 @@ export interface BuildHistoryEntry {
    * Absent for entries recorded before this field existed.
    */
   sbomPackageCount?: number;
+  /**
+   * Per-layer Podman cache summary for Layers-wizard containerfile builds. Absent for
+   * preset-path builds, bundled asset builds, and entries recorded before APPENG-6298.
+   */
+  layerCacheStatus?: LayerCacheStatusEntry[];
 }
 
 /**

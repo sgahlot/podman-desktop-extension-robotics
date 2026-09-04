@@ -1152,6 +1152,43 @@ describe('PhysicalAiApiImpl', () => {
       expect(progress!.logs.some(l => l.includes('STEP 3/8: RUN apt-get update'))).toBe(true);
     });
 
+    it('records per-layer cache status for layer-composition containerfile builds', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(mkdtemp).mockResolvedValue('/tmp/physical-ai-layer-build-cache');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+
+      const containerfile = `# Layer 1 — Base OS: Ubuntu Noble
+FROM ubuntu:24.04
+
+# Layer 3 — ROS: ROS2 Jazzy
+RUN apt-get install -y ros-jazzy-desktop
+`;
+
+      let buildCallback: Parameters<typeof extensionApi.containerEngine.buildImage>[1];
+      vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation((_ctx, cb, _opts) => {
+        buildCallback = cb;
+        return new Promise(() => {});
+      });
+
+      await api.buildFromContainerfile('layer-cache:latest', containerfile);
+      buildCallback!('stream', 'STEP 1/2: FROM ubuntu:24.04');
+      buildCallback!('stream', '--> Using cache');
+      buildCallback!('stream', 'STEP 2/2: RUN apt-get install -y ros-jazzy-desktop');
+
+      const progress = await api.getBuildProgress('layer-cache:latest');
+      expect(progress!.layerCacheStatus).toBeUndefined();
+
+      buildCallback!('finish', 'Successfully tagged layer-cache:latest');
+
+      const done = await api.getBuildProgress('layer-cache:latest');
+      expect(done!.layerCacheStatus).toEqual([
+        { layer: 'Base OS', cached: true },
+        { layer: 'ROS Jazzy', cached: false },
+      ]);
+    });
+
     it('records error events', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),

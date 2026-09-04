@@ -260,6 +260,8 @@ contributes" is a compelling, differentiated demo.
 
 ## 🔭 S10-4 — Per-slice incremental rebuild UX
 
+**Status:** In progress — [APPENG-6298](https://redhat.atlassian.net/browse/APPENG-6298) (layer cache capture + Build History card).
+
 **Ask:** updating one slice (e.g. just the Sim layer) shouldn't require rebuilding the whole
 multi-GB image.
 
@@ -938,7 +940,7 @@ under an existing Story, a direct small commit, or a dedicated new doc.
 | S10-1 | noVNC embedded in the extension | Feature | Filed as [APPENG-6283](https://redhat.atlassian.net/browse/APPENG-6283) under new Story [APPENG-6282](https://redhat.atlassian.net/browse/APPENG-6282) |
 | S10-2 | Custom streaming-video viewer | Feature (research/spike) | Tracked under Story [APPENG-6282](https://redhat.atlassian.net/browse/APPENG-6282) (with S10-1), not yet sized/sub-tasked |
 | S10-3 | SBOM layer/slice attribution & visualization | Feature | This doc |
-| S10-4 | Per-slice incremental rebuild UX | Feature (mostly UX, caching likely already works) | This doc |
+| S10-4 | Per-slice incremental rebuild UX | Feature (mostly UX, caching likely already works) | [APPENG-6298](https://redhat.atlassian.net/browse/APPENG-6298) — in progress |
 | S10-5 | OpenShift tab image picker | Feature | Filed as [APPENG-6259](https://redhat.atlassian.net/browse/APPENG-6259) under APPENG-6256, merged ([f18e69e](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/f18e69e)), Closed |
 | S10-6 | Topic Monitor OpenShift support | Feature | This doc |
 | S10-7 | Dashboard OpenShift sim count | Feature | This doc — **still open**; not covered by S10-8's shipped work (verified 2026-09-02: `Dashboard.svelte` has only the 2 original tiles, no "N OpenShift" sub-tile) |
