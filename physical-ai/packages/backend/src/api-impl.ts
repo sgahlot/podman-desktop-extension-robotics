@@ -41,7 +41,7 @@ import {
   PART_OF_VALUE,
   HUMMINGBIRD_NGINX_CONTAINER_NAME,
 } from '/@shared/src/openshift/manifests';
-import { readFile, writeFile, mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, mkdir, rename, rm, cp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join as pathJoin } from 'node:path';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
@@ -54,7 +54,10 @@ import {
 } from '/@shared/src/types/BuildHistory';
 import {
   BuildCacheStreamParser,
+  injectHummingbirdToolsIntoPresetBase,
   isLayerCompositionContainerfile,
+  layerCachePlanFromSimulationConfig,
+  type LayerCacheBuildOptions,
 } from '/@shared/src/types/buildLayerCache';
 import type {
   TopicInfo,
@@ -481,12 +484,46 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
   }
 
-  #startImageBuild(tag: string, assetDir: string, buildargs?: { [key: string]: string }, platform?: string): void {
+  async #startImageBuild(
+    tag: string,
+    assetDir: string,
+    buildargs?: { [key: string]: string },
+    platform?: string,
+    cacheOptions?: LayerCacheBuildOptions & { kind: 'preset-base' | 'preset-sim' },
+  ): Promise<void> {
     this.#assertCanStartOp(this.activeBuilds, tag, 'build');
     // Fail fast if there's no running Podman, before resolving the asset context dir.
     this.#getRunningPodmanConnection();
-    const contextDir = extensionApi.Uri.joinPath(this.extensionContext.extensionUri, 'assets', assetDir).fsPath;
-    this.#runContainerBuild(tag, contextDir, 'Containerfile', buildargs, platform);
+    const assetPath = extensionApi.Uri.joinPath(this.extensionContext.extensionUri, 'assets', assetDir).fsPath;
+    let contextDir = assetPath;
+    let containerfileContent = await readFile(pathJoin(assetPath, 'Containerfile'), 'utf8');
+    let onSettled: (() => void) | undefined;
+
+    const tools = cacheOptions?.hummingbirdTools ?? [];
+    if (tools.length > 0) {
+      containerfileContent = injectHummingbirdToolsIntoPresetBase(containerfileContent, tools);
+      contextDir = await mkdtemp(pathJoin(tmpdir(), 'physical-ai-preset-build-'));
+      await cp(assetPath, contextDir, { recursive: true });
+      await writeFile(pathJoin(contextDir, 'Containerfile'), containerfileContent, 'utf8');
+      onSettled = () => {
+        void rm(contextDir, { recursive: true, force: true }).catch(() => {});
+      };
+    }
+
+    const kind = cacheOptions?.kind ?? 'preset-base';
+    const layerPlan = cacheOptions?.layerPlan ?? [];
+    const layerCacheParser = new BuildCacheStreamParser(containerfileContent, { kind, plan: layerPlan });
+
+    this.#runContainerBuild(
+      tag,
+      contextDir,
+      'Containerfile',
+      buildargs,
+      platform,
+      undefined,
+      layerCacheParser,
+      onSettled,
+    );
   }
 
   /**
@@ -503,6 +540,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     buildargs?: { [key: string]: string },
     platform?: string,
     layerContainerfile?: string,
+    layerCacheParser?: BuildCacheStreamParser,
     onSettled?: () => void,
     generateSbom?: boolean,
     sbomFormat: SbomFormat = SBOM_FORMAT_DEFAULT,
@@ -519,8 +557,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const abortController = new AbortController();
     this.buildAbortControllers.set(tag, abortController);
 
-    if (layerContainerfile && isLayerCompositionContainerfile(layerContainerfile)) {
-      this.layerCacheParsers.set(tag, new BuildCacheStreamParser(layerContainerfile));
+    const parser =
+      layerCacheParser ??
+      (layerContainerfile && isLayerCompositionContainerfile(layerContainerfile)
+        ? new BuildCacheStreamParser(layerContainerfile)
+        : undefined);
+    if (parser?.hasLayerPlan) {
+      this.layerCacheParsers.set(tag, parser);
     } else {
       this.layerCacheParsers.delete(tag);
     }
@@ -836,7 +879,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async getBuildHistoryLimit(): Promise<number> {
-    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const config = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     const raw = config.get<number>('build.historyLimit');
     if (raw === undefined) {
       return BUILD_HISTORY_LIMIT_DEFAULT;
@@ -853,7 +896,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async setBuildHistoryLimit(limit: number): Promise<void> {
     const safe = assertBuildHistoryLimit(limit);
-    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const config = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     await config.update('build.historyLimit', safe);
   }
 
@@ -922,7 +965,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return this.activeBuilds.get(tag);
   }
 
-  async buildBaseImage(tag: string, config: SimulationConfig): Promise<void> {
+  async buildBaseImage(tag: string, config: SimulationConfig, options?: LayerCacheBuildOptions): Promise<void> {
     const profile = resolveSimulationProfile(config);
     if (!profile) {
       throw new Error(
@@ -931,15 +974,20 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       );
     }
     const baseImage = resolveSimulationBaseImage(config.baseImage);
-    this.#startImageBuild(
+    await this.#startImageBuild(
       tag,
       profile.baseAssetDir,
       { ROS_BASE_IMAGE: baseImage.imageRef },
       platformForArch(config.targetArch),
+      {
+        kind: 'preset-base',
+        layerPlan: options?.layerPlan ?? layerCachePlanFromSimulationConfig(config, { includeSim: false }),
+        hummingbirdTools: options?.hummingbirdTools,
+      },
     );
   }
 
-  async buildSimulationImage(tag: string, config: SimulationConfig): Promise<void> {
+  async buildSimulationImage(tag: string, config: SimulationConfig, options?: LayerCacheBuildOptions): Promise<void> {
     const profile = resolveSimulationProfile(config);
     if (!profile) {
       throw new Error(
@@ -957,11 +1005,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const baseImage = resolveSimulationBaseImage(config.baseImage);
     // The Phase 1 base carries the same arch suffix, so point FROM at it.
     const localBaseTag = `quay.io/${ns}/${profile.baseImageName}:${baseImage.imageTag}${archTagSuffix(config.targetArch)}`;
-    this.#startImageBuild(
+    await this.#startImageBuild(
       tag,
       profile.assetDir,
       { LOCAL_BASE_IMAGE: localBaseTag },
       platformForArch(config.targetArch),
+      {
+        kind: 'preset-sim',
+        layerPlan: options?.layerPlan ?? layerCachePlanFromSimulationConfig(config, { includeSim: true }),
+      },
     );
   }
 
@@ -993,6 +1045,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         undefined,
         platform,
         containerfile,
+        undefined,
         () => {
           void rm(contextDir, { recursive: true, force: true }).catch(() => {});
         },
@@ -1015,12 +1068,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async getDefaultNamespace(): Promise<string> {
-    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const config = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     return config.get<string>('general.quayNamespace') ?? 'ecosystem-appeng';
   }
 
   async getCatalogViewMode(): Promise<'all' | 'curated'> {
-    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const config = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     const mode = config.get<string>('catalog.viewMode');
     return mode === 'curated' ? 'curated' : 'all';
   }
@@ -1029,12 +1082,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     if (mode !== 'all' && mode !== 'curated') {
       throw new Error(`Invalid catalog view mode "${String(mode)}". Use "all" or "curated".`);
     }
-    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const config = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     await config.update('catalog.viewMode', mode);
   }
 
   async getImageBuilderLayout(): Promise<'pipeline' | 'guided' | 'layers'> {
-    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const config = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     const layout = config.get<string>('build.layout');
     return layout === 'pipeline' || layout === 'layers' ? layout : 'guided';
   }
@@ -1043,12 +1096,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     if (layout !== 'pipeline' && layout !== 'guided' && layout !== 'layers') {
       throw new Error(`Invalid image builder layout "${String(layout)}". Use "pipeline", "guided", or "layers".`);
     }
-    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const config = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     await config.update('build.layout', layout);
   }
 
   async getNavigationLayout(): Promise<'sidebar' | 'tabs' | 'cards'> {
-    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const config = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     const layout = config.get<string>('general.navigationLayout');
     return layout === 'tabs' || layout === 'cards' ? layout : 'sidebar';
   }
@@ -1057,12 +1110,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     if (layout !== 'sidebar' && layout !== 'tabs' && layout !== 'cards') {
       throw new Error(`Invalid navigation layout "${String(layout)}". Use "sidebar", "tabs", or "cards".`);
     }
-    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const config = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     await config.update('general.navigationLayout', layout);
   }
 
   async getCatalogCuratedAllowlist(): Promise<string> {
-    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const config = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     const stored = config.get<string>('catalog.curatedAllowlist');
     if (!stored || stored === 'ros2-*-base,ros2-*-turtlebot3,ros2-*-sim-*') {
       await config.update('catalog.curatedAllowlist', DEFAULT_CURATED_ALLOWLIST);
@@ -1072,7 +1125,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async getSimulationConfig(): Promise<SimulationConfig> {
-    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const config = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     const rawBase = config.get<string>('simulation.baseImage');
     const baseImage = resolveSimulationBaseImage(rawBase).id;
     return {
@@ -1085,7 +1138,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async saveSimulationConfig(config: SimulationConfig): Promise<void> {
-    const pdConfig = extensionApi.configuration.getConfiguration('physical-ai');
+    const pdConfig = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     await pdConfig.update('simulation.robot', config.robot);
     await pdConfig.update('simulation.distro', config.distro);
     await pdConfig.update('simulation.middleware', config.middleware);
@@ -1105,17 +1158,17 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async getSimulationImageAllowlist(): Promise<string> {
-    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const config = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     return config.get<string>('simulation.imageAllowlist') ?? '';
   }
 
   async getOpenShiftImageAllowlist(): Promise<string> {
-    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const config = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     return config.get<string>('openshift.deployImageAllowlist') ?? '';
   }
 
   async getTopicPeekTimeoutSeconds(): Promise<number> {
-    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const config = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     const raw = config.get<number>('general.topicPeekTimeoutSeconds');
     if (raw === undefined) {
       return PEEK_TIMEOUT_DEFAULT_SEC;
@@ -1125,12 +1178,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async setTopicPeekTimeoutSeconds(seconds: number): Promise<void> {
     const safe = assertPeekTimeoutSeconds(seconds);
-    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const config = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     await config.update('general.topicPeekTimeoutSeconds', safe);
   }
 
   async getDefaultSoftwareRenderCpus(): Promise<number> {
-    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const config = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     const raw = config.get<number>('openshift.defaultSoftwareRenderCpus');
     if (raw === undefined) {
       return DEFAULT_SW_RENDER_CPU;
@@ -1203,7 +1256,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     if (process.arch !== 'arm64') {
       return false;
     }
-    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const config = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     return config.get<boolean>('simulation.gpuPassthrough') ?? true;
   }
 
@@ -2483,7 +2536,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async getDefaultOpenShiftNamespace(): Promise<string> {
-    const config = extensionApi.configuration.getConfiguration('physical-ai');
+    const config = extensionApi.configuration.getConfiguration('physical-ai-appeng6298');
     return config.get<string>('openshift.defaultNamespace') ?? '';
   }
 

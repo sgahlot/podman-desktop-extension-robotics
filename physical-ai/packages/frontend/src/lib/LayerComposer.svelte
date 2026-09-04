@@ -13,6 +13,7 @@ import {
   type HardenedApp,
   type LayerSelection,
 } from '/@shared/src/types/layerCompatibility';
+import { layerCachePlanFromSelection } from '/@shared/src/types/buildLayerCache';
 import { SBOM_FORMAT_DEFAULT, type SbomFormat } from '/@shared/src/types/BuildHistory';
 import {
   baseImageTag,
@@ -84,19 +85,19 @@ $: if (selection.hardened !== 'hummingbird-app' && (selection.hummingbirdApps?.l
 }
 
 // --- Build mode -----------------------------------------------------------------
-// Mode A ("preset"): an Ubuntu + ROS [+ Sim] stack maps to a tested preset, so we build
-// the real, runnable image with the bundled asset recipe (entrypoints, worlds, noVNC)
-// via buildBaseImage/buildSimulationImage. Selecting a bake-in tool forces the generated
-// Containerfile path so the COPY --from actually lands in the image.
-// Mode B ("containerfile"): everything else (bootc bases, attempt-anyway, tool bake-in)
-// builds from the generated Containerfile — it either succeeds as a plain image or fails
-// for real, exactly as the compatibility verdict predicts.
+// Mode A ("preset"): Ubuntu + ROS [+ Sim] on the tested asset recipe (entrypoints, worlds,
+// noVNC, VirtualGL). Optional Hummingbird bake-in tools are injected into the base image.
+// Mode B ("containerfile"): bootc bases, attempt-anyway, and other non-preset stacks build
+// from the generated Containerfile preview.
 $: isPresetStack =
   selection.baseOs === 'ubuntu-noble' &&
   (selection.ros === 'ros2-jazzy' || selection.ros === 'ros2-humble') &&
   (selection.sim === 'none' || selection.sim === 'gazebo-nav2-tb3');
-$: hasBakeInTools = (selection.hummingbirdApps ?? []).some(a => HUMMINGBIRD_TOOL_OPTIONS.some(o => o.id === a));
-$: buildMode = isPresetStack && !hasBakeInTools ? 'preset' : 'containerfile';
+$: bakeInTools = (selection.hummingbirdApps ?? []).filter((a: HardenedApp) =>
+  HUMMINGBIRD_TOOL_OPTIONS.some(o => o.id === a),
+);
+$: buildMode = isPresetStack ? 'preset' : 'containerfile';
+$: layerCachePlan = layerCachePlanFromSelection(selection);
 
 $: presetDistro = selection.ros === 'ros2-humble' ? 'humble' : 'jazzy';
 $: presetConfig = {
@@ -373,8 +374,9 @@ onDestroy(() => {
       <div class="text-sm p-3 rounded pai-banner-info">
         This maps to the tested <span class="font-medium"
           >Ubuntu + ROS 2 {presetDistro} {wantsSim ? '+ Gazebo simulation' : ''}</span>
-        preset — building it uses the full tested recipe (entrypoints, worlds{wantsSim ? ', noVNC' : ''}), not the naive
-        Containerfile above.
+        preset — the full runnable recipe (entrypoints, worlds{wantsSim ? ', noVNC' : ''}, VirtualGL).{#if bakeInTools.length > 0}
+          Bake-in Hummingbird tools are added to the <span class="font-medium">base image</span> build.{/if}
+        The generated Containerfile preview above is informational for this stack.
       </div>
 
       <div class="flex flex-col gap-1">
@@ -383,7 +385,11 @@ onDestroy(() => {
           tagInputId="layer-base-tag"
           tag={presetBaseTag}
           tagPlaceholder="e.g. quay.io/org/ros2-base:latest"
-          buildImage={t => physicalAiClient.buildBaseImage(t, presetConfig)}
+          buildImage={t =>
+            physicalAiClient.buildBaseImage(t, presetConfig, {
+              layerPlan: layerCachePlan,
+              hummingbirdTools: bakeInTools,
+            })}
           onBuildComplete={() => {
             void refreshLocalImages();
             onBuildComplete?.({ watchForSbom: false });
@@ -402,7 +408,8 @@ onDestroy(() => {
             tagInputId="layer-sim-tag"
             tag={presetSimTag}
             tagPlaceholder="e.g. quay.io/org/ros2-sim:latest"
-            buildImage={t => physicalAiClient.buildSimulationImage(t, presetConfig)}
+            buildImage={t =>
+              physicalAiClient.buildSimulationImage(t, presetConfig, { layerPlan: layerCachePlan })}
             onBuildComplete={() => {
               void refreshLocalImages();
               onBuildComplete?.({ watchForSbom: false });
