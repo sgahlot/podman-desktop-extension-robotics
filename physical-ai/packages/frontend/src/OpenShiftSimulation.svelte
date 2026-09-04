@@ -4,7 +4,7 @@ import { onMount, onDestroy } from 'svelte';
 import { router } from 'tinro';
 import { simulationImageTag } from '/@shared/src/types/SimulationProfiles';
 import { imageRefMatchesAllowlist } from '/@shared/src/security/simImageTrust';
-import { DEFAULT_GPU_TOLERATION } from '/@shared/src/openshift/manifests';
+import { DEFAULT_GPU_TOLERATION, GPU_POD_CPU } from '/@shared/src/openshift/manifests';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import type { OpenShiftContext, OpenShiftDeployResult, OpenShiftWorkload } from '/@shared/src/types/OpenShiftDeploy';
 import RobotControls, { type RobotEntry } from './RobotControls.svelte';
@@ -14,6 +14,7 @@ import { lastOpenShiftSelection } from './lib/simSelection';
 import { ocTargetKey } from './lib/diagnosticsTargetKey';
 import { setSpawnedRobotsForTarget } from './lib/spawnedRobotsStore';
 import { clearCachedDiagnostics } from './lib/robotDiagnosticsCache';
+import { formatRpcError } from './lib/formatRpcError';
 
 let loading = true;
 let context: OpenShiftContext | undefined = undefined;
@@ -490,7 +491,7 @@ async function openRoute(url: string | undefined) {
   try {
     await physicalAiClient.openUrlInBrowser(url);
   } catch (e) {
-    listError = e instanceof Error ? e.message : 'Failed to open route';
+    listError = formatRpcError(e, 'Failed to open route');
   }
 }
 
@@ -526,7 +527,7 @@ async function preview() {
     previewYaml = res.yaml;
     showPreview = true;
   } catch (e) {
-    previewError = e instanceof Error ? e.message : 'Failed to render manifests';
+    previewError = formatRpcError(e, 'Failed to render manifests');
     previewYaml = '';
   } finally {
     previewBusy = false;
@@ -542,7 +543,7 @@ async function deploy() {
     deployedName = name;
     await refreshWorkloads();
   } catch (e) {
-    deployError = e instanceof Error ? e.message : 'Deploy failed';
+    deployError = formatRpcError(e, 'Deploy failed');
   } finally {
     deploying = false;
   }
@@ -593,7 +594,7 @@ async function refreshWorkloads(opts?: { silent?: boolean }) {
     }
   } catch (e) {
     if (!silent) {
-      listError = e instanceof Error ? e.message : 'Failed to list deployments';
+      listError = formatRpcError(e, 'Failed to list deployments');
       workloads = [];
     }
     // silent: keep the last-known list; a transient oc hiccup shouldn't blank the UI.
@@ -688,7 +689,7 @@ async function remove(w: OpenShiftWorkload) {
     }
     await refreshWorkloads();
   } catch (e) {
-    listError = e instanceof Error ? e.message : 'Failed to delete';
+    listError = formatRpcError(e, 'Failed to delete');
   } finally {
     deletingName = '';
   }
@@ -942,7 +943,13 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
 
       <div class="flex flex-col gap-1">
         <label class="flex flex-row items-center gap-2 text-sm text-[var(--pd-content-text)]">
-          <input type="checkbox" bind:checked={useGpu} disabled={deploying} />
+          <input
+            type="checkbox"
+            bind:checked={useGpu}
+            disabled={deploying}
+            on:change={e => {
+              if (e.currentTarget.checked) cpu = GPU_POD_CPU;
+            }} />
           Cluster has a GPU (NVIDIA GPU operator)
         </label>
         <span class="text-xs pai-text-muted">
@@ -981,7 +988,7 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
       </div>
 
       <div class="flex flex-col gap-1">
-        <label for="dep-cpu" class="text-xs text-[var(--pd-content-text)]">Software-render CPUs</label>
+        <label for="dep-cpu" class="text-xs text-[var(--pd-content-text)]">Guaranteed CPUs (sim container)</label>
         <input
           id="dep-cpu"
           type="number"
@@ -989,11 +996,13 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
           max="64"
           step="1"
           bind:value={cpu}
-          disabled={deploying || useGpu}
+          disabled={deploying}
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono w-24" />
         <span class="text-xs pai-text-muted">
-          Guaranteed CPUs (requests == limits) for the pod. Seeded from Preferences (Default software-render CPUs); dial
-          to your node sizes — an N-CPU pod only schedules on nodes with &ge; N allocatable. Ignored when GPU is on.
+          Guaranteed CPUs (requests == limits) for the sim container. Seeded from Preferences on the software-render
+          path; defaults to {GPU_POD_CPU} when GPU is on. Dial to your node sizes — the whole pod (sim + sidecars) must fit
+          on one node. On an 8-vCPU g5 with the Hummingbird sidecar, try 6–7; lower values may schedule but the Gazebo GUI
+          still renders on CPU and can stutter.
         </span>
       </div>
 
@@ -1007,10 +1016,16 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
       </div>
 
       {#if previewError}
-        <span class="text-sm pai-text-error">{previewError}</span>
+        <div class="text-sm p-3 rounded pai-banner-error" role="alert">
+          <div class="font-semibold">Preview failed</div>
+          <div class="font-mono text-xs break-all whitespace-pre-wrap mt-1">{previewError}</div>
+        </div>
       {/if}
       {#if deployError}
-        <span class="text-sm pai-text-error">{deployError}</span>
+        <div class="text-sm p-3 rounded pai-banner-error" role="alert">
+          <div class="font-semibold">Deploy failed</div>
+          <div class="font-mono text-xs break-all whitespace-pre-wrap mt-1">{deployError}</div>
+        </div>
       {/if}
 
       {#if deploying}

@@ -956,4 +956,5 @@ under an existing Story, a direct small commit, or a dedicated new doc.
 | S10-18 | Diagnostics dynamic/full sensor list | Feature | This doc |
 | S10-19 | Docker Desktop compatibility investigation | Research | This doc |
 | S10-20 | Zenoh streaming as alternative remote-viewing mechanism | Feature (research; depends on S10-13's transport work) | This doc |
+| — | OpenShift deploy UX polish (GPU-path CPU dial, deploy error surfacing, Help) | Polish | Filed as [APPENG-6303](https://redhat.atlassian.net/browse/APPENG-6303) under APPENG-6290 — branch `feature/APPENG-6303-openshift-deploy-ux`, in progress |
 | S10-21 | Image Builder: arbitrary custom base image | Feature | This doc |

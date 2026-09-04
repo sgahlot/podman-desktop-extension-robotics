@@ -2426,7 +2426,11 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         .catch(() => undefined);
     }
 
-    await extensionApi.kubernetes.createResources(targetContext, manifests);
+    try {
+      await extensionApi.kubernetes.createResources(targetContext, manifests);
+    } catch (err: unknown) {
+      throw new Error(this.#kubernetesApplyErrorMessage(err, config.namespace));
+    }
 
     const routeUrl = await this.#readRouteUrl(config.namespace, config.name, config.context);
     const applied = manifests.map(m => String(m.kind));
@@ -2756,5 +2760,11 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       return `Could not run "oc" to ${action}. Ensure the OpenShift CLI is installed and on PATH.`;
     }
     return `Failed to ${action}: ${detail}`;
+  }
+
+  #kubernetesApplyErrorMessage(err: unknown, namespace: string): string {
+    const e = err as { message?: string };
+    const detail = firstNonEmpty(e.message, String(err));
+    return `Failed to apply manifests to namespace ${namespace}: ${detail}`;
   }
 }

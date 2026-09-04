@@ -242,7 +242,7 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
   // off the CPU — the GUI canvas is still software-rendered on a no-DRI cluster
   // (see entrypoint-gazebo.sh path 2), so the GPU pod still needs ~GPU_POD_CPU
   // cores (requests==limits) or the GUI throttles and the noVNC view never paints.
-  const cpu = useGpu ? String(GPU_POD_CPU) : String(assertCpuCount(config.cpu ?? DEFAULT_SW_RENDER_CPU));
+  const cpu = String(assertCpuCount(config.cpu ?? (useGpu ? GPU_POD_CPU : DEFAULT_SW_RENDER_CPU)));
   const requests: Record<string, string> = { cpu, memory: '2Gi' };
   const limits: Record<string, string> = useGpu ? { cpu, memory: '4Gi', [GPU_RESOURCE]: '1' } : { cpu, memory: '4Gi' };
 

@@ -136,7 +136,7 @@ export class RpcBrowser {
 
         const { resolve, reject } = this.promises.get(message.id) ?? {};
         if (message.status === 'error') {
-          reject?.(message.error);
+          reject?.(new Error(message.error ?? 'Unknown error'));
         } else {
           resolve?.(message.body);
         }

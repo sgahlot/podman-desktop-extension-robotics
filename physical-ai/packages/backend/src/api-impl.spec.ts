@@ -3368,6 +3368,17 @@ ranges: [0.3, 0.5, .inf, .nan]
         expect(result.message).toMatch(/not admitted/i);
       });
 
+      it('surfaces createResources failures with namespace context', async () => {
+        mockKubeconfig(CONTEXT);
+        vi.mocked(extensionApi.kubernetes.createResources).mockRejectedValue(
+          new Error('admission webhook "quota.openshift.io/ValidateQuota" denied the request'),
+        );
+
+        await expect(api.deployToOpenShift(CONFIG)).rejects.toThrow(
+          /Failed to apply manifests to namespace sgahlot-pd-extn.*admission webhook/i,
+        );
+      });
+
       it('throws when there is no current context', async () => {
         mockKubeconfig();
         await expect(api.deployToOpenShift(CONFIG)).rejects.toThrow(/context/i);

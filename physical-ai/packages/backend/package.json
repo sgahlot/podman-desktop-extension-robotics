@@ -164,7 +164,7 @@
           "minimum": 1,
           "maximum": 64,
           "default": 8,
-          "description": "Default guaranteed CPU count (requests == limits) for the software-render OpenShift sim pod. Seeds the Software-render CPUs field on the Simulation → OpenShift tab, where it can still be adjusted per deploy. An N-CPU pod only schedules on a node with ≥ N allocatable CPU. Ignored when the cluster-has-a-GPU toggle is on."
+          "description": "Default guaranteed CPU count (requests == limits) for the OpenShift sim container on the software-render path. Seeds the Guaranteed CPUs (sim container) field on the Simulation → OpenShift tab, where it can still be adjusted per deploy (including on the GPU path, which defaults to 7). An N-CPU pod only schedules on a node with ≥ N allocatable CPU."
         },
         "physical-ai.openshift.deployImageAllowlist": {
           "type": "string",

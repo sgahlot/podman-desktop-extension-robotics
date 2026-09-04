@@ -150,6 +150,32 @@ import { navigationLayout } from './lib/navigationLayout';
           still use open-loop <span class="font-mono">cmd_vel</span> (turn + drive, no obstacle avoidance). Run one simulation
           at a time when navigating (default ROS domain is shared across containers).
         </div>
+        <div>
+          <strong>Nav2 warming</strong> — After you spawn a robot on a Jazzy image, the extension starts Nav2 in the
+          background so the first <strong>Navigate</strong> is not starting from a cold stop. While warming you see
+          <strong>Nav2 warming&hellip;</strong> and the target/Navigate controls stay hidden; once Nav2 is ready the
+          controls appear. Warming is best-effort (if it fails, <strong>Navigate</strong> can still cold-start Nav2, just
+          slower).
+        </div>
+        <div>
+          <strong>Why nothing moves for ~15&ndash;20&nbsp;s after Navigate</strong> — On the <em>first</em> navigation after
+          spawn (or after Nav2 was not running), the stack must finish coming up and the global costmap must settle. The extension
+          clears stale obstacle cells from that startup window before planning. Until a valid path exists, Nav2 retries internally
+          and the robot stays put &mdash; this is normal, not a hang. The second Navigate on the same robot is usually much
+          quicker.
+        </div>
+        <div>
+          <strong>Why the robot &ldquo;hops&rdquo; or sits in one spot for a minute or more</strong> — Two common
+          causes: (1)&nbsp;<strong>Not enough CPU</strong> for the workload &mdash; Gazebo (especially the noVNC GUI),
+          physics, and Nav2 all compete for the pod&rsquo;s CPU quota. When the cluster throttles the pod, simulation
+          time runs slower than real time, so motion looks frozen or stuttery even though Nav2 is working. On OpenShift
+          GPU nodes (<span class="font-mono">g5.2xlarge</span>), request <strong>6&ndash;7</strong> guaranteed CPUs for
+          the sim container (7 without the Hummingbird sidecar, 6 with it); values like 3 are too low and match the
+          slow/hoppy behavior. Software-render (no GPU) deployments usually need <strong>8</strong> (adjust via
+          <strong>Guaranteed CPUs</strong>). (2)&nbsp;<strong>Nav2 recovery</strong> &mdash; if the planner cannot find a
+          path yet, the behavior tree runs recovery moves (spin, backup, clear costmap) that can look like hopping in place
+          before forward motion starts.
+        </div>
       </div>
     </div>
 
@@ -170,13 +196,21 @@ import { navigationLayout } from './lib/navigationLayout';
           as the local Simulation page.
         </div>
         <div>
-          <strong>Cluster has a GPU</strong> — Toggle to switch from software (llvmpipe + off-screen EGL) to hardware EGL
-          rendering on a GPU-operator cluster; the CPU request drops from 8 to 2 since the GPU renders instead.
+          <strong>Cluster has a GPU</strong> — Toggle for NVIDIA GPU Operator clusters: requests
+          <span class="font-mono">nvidia.com/gpu</span> and uses hardware rendering for the noVNC GUI (VirtualGL).
+          Sensor rendering stays on software EGL to avoid a known long-run GPU driver issue. You still need enough CPU
+          for the GUI, physics, and Nav2 &mdash; see <strong>Guaranteed CPUs</strong> below.
         </div>
         <div>
-          <strong>Software-render CPUs</strong> — When the GPU toggle is off, sets the guaranteed CPU count (1–64, default
-          8) for the software-rendering Deployment. Dial it to your node sizes — an N-CPU Guaranteed pod only schedules on
-          a node with &ge; N allocatable CPU.
+          <strong>Guaranteed CPUs (sim container)</strong> — Sets guaranteed CPU for the sim container (1&ndash;64;
+          requests&nbsp;==&nbsp;limits). The whole pod (sim&nbsp;+&nbsp;optional Hummingbird sidecar) must fit on one
+          node.
+          <strong>Software-render (GPU off):</strong> default <strong>8</strong>; dial to your worker node sizes.
+          <strong>GPU on a <span class="font-mono">g5.2xlarge</span> node:</strong> use <strong>7</strong> without the
+          Hummingbird sidecar, or <strong>6</strong> with it &mdash; that is the practical maximum on an 8&nbsp;vCPU GPU node
+          after system overhead (~7.5&nbsp;cores allocatable). Lower values schedule but navigation becomes slow or jerky
+          (simulation runs below real-time). The UI allows up to 64; the scheduler will keep the pod Pending if the request
+          exceeds what the node can fit.
         </div>
         <div>
           <strong>Hummingbird nginx sidecar</strong> — Optional checkbox that adds a

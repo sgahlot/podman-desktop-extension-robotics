@@ -22,11 +22,10 @@ export interface OpenShiftDeployConfig {
    */
   useGpu?: boolean;
   /**
-   * Guaranteed CPU count (requests == limits) for the **software-render** pod, so
-   * users can dial it to their cluster's node sizes. Default `DEFAULT_SW_RENDER_CPU`.
-   * Ignored when `useGpu` is set (GPU offloads the render, so CPU is fixed low).
-   * See `story7-multipod-openshift-architecture.md` for why a single pod's request
-   * must fit on one node.
+   * Guaranteed CPU count (requests == limits) for the sim container. Dial to your
+   * cluster's node sizes — the pod (sim + any sidecars) must fit on one node.
+   * Defaults to `DEFAULT_SW_RENDER_CPU` on the software-render path and
+   * `GPU_POD_CPU` on the GPU path when omitted. See `story7-multipod-openshift-architecture.md`.
    */
   cpu?: number;
   /**
