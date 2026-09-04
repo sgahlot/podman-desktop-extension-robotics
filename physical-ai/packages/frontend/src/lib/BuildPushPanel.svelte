@@ -16,6 +16,9 @@
 import { physicalAiClient } from '../api/client';
 import { onMount, onDestroy } from 'svelte';
 import { formatDurationSeconds } from './formatDuration';
+import type { LayerCacheStatusEntry } from '/@shared/src/types/BuildHistory';
+import { isBuildCacheHitLogLine } from '/@shared/src/types/buildLayerCache';
+import LayerCacheCompare from './LayerCacheCompare.svelte';
 
 /** Called to start a build for the current tag (fire-and-forget; progress via polling). */
 export let buildImage: (tag: string) => Promise<void>;
@@ -48,6 +51,7 @@ let cancelling = false;
 let currentStep = 0;
 let totalSteps = 0;
 let logs: string[] = [];
+let layerCacheStatus: LayerCacheStatusEntry[] = [];
 let buildStartedAt: number | undefined;
 let buildFinishedAt: number | undefined;
 
@@ -234,6 +238,7 @@ function startPolling(mode: 'build' | 'push') {
         const progress = await physicalAiClient.getBuildProgress(inputValue);
         if (progress) {
           logs = progress.logs;
+          layerCacheStatus = progress.layerCacheStatus ?? layerCacheStatus;
           currentStep = progress.currentStep ?? 0;
           totalSteps = progress.totalSteps ?? 0;
           buildStartedAt = progress.startedAt ?? buildStartedAt;
@@ -300,6 +305,7 @@ function reset() {
   buildCancelled = false;
   cancelling = false;
   logs = [];
+  layerCacheStatus = [];
   currentStep = 0;
   totalSteps = 0;
   buildStartedAt = undefined;
@@ -420,7 +426,7 @@ $: pushDurationSec =
             class="rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] font-mono text-xs text-[var(--pd-content-text)]"
             style="max-height: 400px; overflow-y: auto; padding: 8px; white-space: pre-wrap; word-break: break-all;">
             {#each logs as line}
-              <div>{line}</div>
+              <div class={isBuildCacheHitLogLine(line) ? 'pai-text-success' : ''}>{line}</div>
             {/each}
             {#if building && logs.length === 0}
               <div class="pai-text-accent">Waiting for build output...</div>
@@ -449,10 +455,15 @@ $: pushDurationSec =
               {/if}
             </div>
           {:else}
-            <div class="text-sm pai-text-success">
-              Image built successfully: <span class="font-mono">{inputValue}</span>
-              {#if buildDurationSec !== undefined}
-                <span class="text-xs pai-text-muted">(built in {formatDurationSeconds(buildDurationSec)})</span>
+            <div class="flex flex-col gap-1">
+              <div class="text-sm pai-text-success">
+                Image built successfully: <span class="font-mono">{inputValue}</span>
+                {#if buildDurationSec !== undefined}
+                  <span class="text-xs pai-text-muted">(built in {formatDurationSeconds(buildDurationSec)})</span>
+                {/if}
+              </div>
+              {#if layerCacheStatus.length > 0}
+                <LayerCacheCompare entries={layerCacheStatus} />
               {/if}
             </div>
           {/if}

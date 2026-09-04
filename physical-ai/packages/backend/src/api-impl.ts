@@ -52,6 +52,10 @@ import {
   SBOM_FORMAT_DEFAULT,
   parseSbomPackageCount,
 } from '/@shared/src/types/BuildHistory';
+import {
+  BuildCacheStreamParser,
+  isLayerCompositionContainerfile,
+} from '/@shared/src/types/buildLayerCache';
 import type {
   TopicInfo,
   TopicDetailInfo,
@@ -258,6 +262,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   private layerProgress = new Map<string, Map<string, { current: number; total: number }>>();
   private activeBuilds = new Map<string, BuildProgress>();
   private buildAbortControllers = new Map<string, AbortController>();
+  /** Per-tag cache parsers for Layers-wizard containerfile builds (APPENG-6298). */
+  private layerCacheParsers = new Map<string, BuildCacheStreamParser>();
   private activePushes = new Map<string, PushProgress>();
   private pushAbortControllers = new Map<string, AbortController>();
   private progressCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -496,6 +502,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     containerFileName: string,
     buildargs?: { [key: string]: string },
     platform?: string,
+    layerContainerfile?: string,
     onSettled?: () => void,
     generateSbom?: boolean,
     sbomFormat: SbomFormat = SBOM_FORMAT_DEFAULT,
@@ -511,6 +518,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
     const abortController = new AbortController();
     this.buildAbortControllers.set(tag, abortController);
+
+    if (layerContainerfile && isLayerCompositionContainerfile(layerContainerfile)) {
+      this.layerCacheParsers.set(tag, new BuildCacheStreamParser(layerContainerfile));
+    } else {
+      this.layerCacheParsers.delete(tag);
+    }
 
     this.activeBuilds.set(tag, {
       tag,
@@ -529,6 +542,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
           if (eventName === 'stream') {
             const line = data.trim();
             if (line) {
+              this.layerCacheParsers.get(tag)?.processLine(line);
               appendProgressLog(progress.logs, line);
               const stepMatch = line.match(/^STEP\s+(\d+)\/(\d+)/i);
               if (stepMatch) {
@@ -550,6 +564,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
               progress.finishedAt = Date.now();
               progress.error = 'Build cancelled';
               appendProgressLog(progress.logs, 'Build cancelled by user');
+              this.layerCacheParsers.delete(tag);
             } else {
               progress.status = 'Complete';
               progress.done = true;
@@ -558,9 +573,11 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
                 progress.currentStep = progress.totalSteps;
               }
               appendProgressLog(progress.logs, data?.trim() ? data.trim() : 'Build finished');
+              this.#finalizeLayerCache(tag, progress);
               void this.#recordBuildHistory(tag, platform, progress, generateSbom, sbomFormat);
             }
             this.buildAbortControllers.delete(tag);
+            this.layerCacheParsers.delete(tag);
             this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
           }
         },
@@ -584,10 +601,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
             progress.finishedAt = Date.now();
             progress.error = 'Build cancelled';
             appendProgressLog(progress.logs, 'Build cancelled by user');
+            this.layerCacheParsers.delete(tag);
           } else {
             progress.status = 'Complete';
             progress.done = true;
             progress.finishedAt = Date.now();
+            this.#finalizeLayerCache(tag, progress);
             void this.#recordBuildHistory(tag, platform, progress, generateSbom, sbomFormat);
           }
         }
@@ -604,11 +623,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
             progress.finishedAt = Date.now();
             progress.error = 'Build cancelled';
             appendProgressLog(progress.logs, 'Build cancelled by user');
+            this.layerCacheParsers.delete(tag);
           } else {
             progress.status = 'Failed';
             progress.done = true;
             progress.finishedAt = Date.now();
             progress.error = err instanceof Error ? err.message : String(err);
+            this.#finalizeLayerCache(tag, progress);
             void this.#recordBuildHistory(tag, platform, progress, generateSbom, sbomFormat);
           }
         }
@@ -649,6 +670,16 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   /**
+   * Snapshot per-layer Podman cache outcomes onto progress before persisting history.
+   */
+  #finalizeLayerCache(tag: string, progress: BuildProgress): void {
+    const parser = this.layerCacheParsers.get(tag);
+    if (!parser) return;
+    progress.layerCacheStatus = parser.finalize();
+    this.layerCacheParsers.delete(tag);
+  }
+
+  /**
    * Persist a build-history entry once a build has definitively settled to Complete or
    * Failed (never called for a Cancelled build — see #runContainerBuild's call sites).
    * Fire-and-forget from those call sites: never throws, and must not block the
@@ -678,6 +709,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         durationMs: Math.max(0, finishedAt - startedAt),
         success,
         ...(success ? {} : { errorMessage: progress.error ?? 'Build failed' }),
+        ...(progress.layerCacheStatus?.length ? { layerCacheStatus: progress.layerCacheStatus } : {}),
       };
 
       const limit = await this.getBuildHistoryLimit();
@@ -960,6 +992,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         'Containerfile',
         undefined,
         platform,
+        containerfile,
         () => {
           void rm(contextDir, { recursive: true, force: true }).catch(() => {});
         },
@@ -1044,7 +1077,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const baseImage = resolveSimulationBaseImage(rawBase).id;
     return {
       robot: config.get<string>('simulation.robot') ?? 'turtlebot3',
-      distro: config.get<string>('simulation.distro') ?? 'humble',
+      distro: config.get<string>('simulation.distro') ?? 'jazzy',
       middleware: config.get<string>('simulation.middleware') ?? 'dds',
       engine: config.get<string>('simulation.engine') ?? 'gazebo',
       baseImage,

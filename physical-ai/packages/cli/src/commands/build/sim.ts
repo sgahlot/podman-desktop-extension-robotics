@@ -59,7 +59,7 @@ export default class BuildSim extends Command {
       exclusive: PROFILE_FLAGS,
     }),
     robot: Flags.string({ default: 'turtlebot3', description: 'Robot type' }),
-    distro: Flags.string({ options: ['humble', 'jazzy'], default: 'humble', description: 'ROS distro' }),
+    distro: Flags.string({ options: ['humble', 'jazzy'], default: 'jazzy', description: 'ROS distro' }),
     middleware: Flags.string({ options: ['dds', 'zenoh'], default: 'dds', description: 'Middleware' }),
     engine: Flags.string({ default: 'gazebo', description: 'Simulation engine' }),
   };

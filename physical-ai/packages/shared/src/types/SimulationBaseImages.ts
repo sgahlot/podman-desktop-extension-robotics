@@ -67,7 +67,7 @@ export const SIMULATION_BASE_IMAGES: readonly SimulationBaseImagePreset[] = [
   },
 ];
 
-export const DEFAULT_SIMULATION_BASE_IMAGE: SimulationBaseImageId = 'sloretz';
+export const DEFAULT_SIMULATION_BASE_IMAGE: SimulationBaseImageId = 'jazzy-noble';
 
 /** Older ids from the first preset rollout — still accepted when loading settings. */
 const LEGACY_BASE_IMAGE_IDS: Record<string, SimulationBaseImageId> = {
