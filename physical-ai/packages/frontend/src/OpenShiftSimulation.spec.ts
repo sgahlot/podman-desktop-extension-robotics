@@ -74,6 +74,9 @@ const READY_WORKLOAD = {
   hasHummingbirdSidecar: false,
 };
 
+/** Default local amd64 image seeded on mount when listing succeeds (APPENG-6302). */
+const DEFAULT_LOCAL_AMD64_IMAGE = 'quay.io/sgahlot-pd-extn/ros2-jazzy-sim:noble-amd64';
+
 describe('OpenShiftSimulation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -92,10 +95,10 @@ describe('OpenShiftSimulation', () => {
     mockGetDefaultOpenShiftNamespace.mockResolvedValue('');
     mockCheckOpenShiftLogin.mockResolvedValue({ loggedIn: true });
     mockListOpenShiftProjects.mockResolvedValue([]);
-    mockListLocalImagesWithArch.mockResolvedValue([]);
+    mockListLocalImagesWithArch.mockResolvedValue([{ tag: DEFAULT_LOCAL_AMD64_IMAGE, arch: 'amd64' }]);
     mockGetOpenShiftImageAllowlist.mockResolvedValue('');
     mockGetDefaultSoftwareRenderCpus.mockResolvedValue(8);
-    // Keep the default image (avoids exercising simulationImageTag here).
+    // getSimulationConfig rejected — image seeds from the first local amd64 image instead.
     mockGetSimulationConfig.mockRejectedValue(new Error('no config'));
     mockListOpenShiftDeployments.mockResolvedValue([]);
     mockSpawnRobotInOpenShift.mockResolvedValue(undefined);
@@ -265,9 +268,59 @@ describe('OpenShiftSimulation', () => {
       mockListLocalImagesWithArch.mockResolvedValue([]);
       render(DeployOpenShift);
 
-      await screen.findByLabelText('Image (amd64, cluster-pullable)');
+      const input = (await screen.findByLabelText('Image (amd64, cluster-pullable)')) as HTMLInputElement;
+      expect(input.value).toBe('');
       expect(screen.getByText(/e\.g\. quay\.io/)).toBeTruthy();
       expect(screen.queryByText(/Click to browse local amd64 images/)).toBeNull();
+    });
+  });
+
+  describe('Image default seeding (APPENG-6302)', () => {
+    it('seeds the sim-config amd64 tag when that image is present locally', async () => {
+      mockGetSimulationConfig.mockResolvedValue({
+        robot: 'turtlebot3',
+        distro: 'jazzy',
+        middleware: 'dds',
+        engine: 'gazebo',
+        baseImage: 'jazzy-noble',
+      });
+      mockListLocalImagesWithArch.mockResolvedValue([{ tag: DEFAULT_LOCAL_AMD64_IMAGE, arch: 'amd64' }]);
+      render(DeployOpenShift);
+
+      const input = (await screen.findByLabelText('Image (amd64, cluster-pullable)')) as HTMLInputElement;
+      expect(input.value).toBe(DEFAULT_LOCAL_AMD64_IMAGE);
+    });
+
+    it('falls back to the first local amd64 image when the sim-config tag is absent', async () => {
+      const humbleConfigTag = 'quay.io/sgahlot-pd-extn/ros2-humble-turtlebot3:sloretz-amd64';
+      mockGetSimulationConfig.mockResolvedValue({
+        robot: 'turtlebot3',
+        distro: 'humble',
+        middleware: 'dds',
+        engine: 'gazebo',
+        baseImage: 'sloretz',
+      });
+      mockListLocalImagesWithArch.mockResolvedValue([{ tag: DEFAULT_LOCAL_AMD64_IMAGE, arch: 'amd64' }]);
+      render(DeployOpenShift);
+
+      const input = (await screen.findByLabelText('Image (amd64, cluster-pullable)')) as HTMLInputElement;
+      expect(input.value).toBe(DEFAULT_LOCAL_AMD64_IMAGE);
+      expect(input.value).not.toBe(humbleConfigTag);
+    });
+
+    it('leaves the Image field empty when no local amd64 images are found', async () => {
+      mockGetSimulationConfig.mockResolvedValue({
+        robot: 'turtlebot3',
+        distro: 'jazzy',
+        middleware: 'dds',
+        engine: 'gazebo',
+        baseImage: 'jazzy-noble',
+      });
+      mockListLocalImagesWithArch.mockResolvedValue([]);
+      render(DeployOpenShift);
+
+      const input = (await screen.findByLabelText('Image (amd64, cluster-pullable)')) as HTMLInputElement;
+      expect(input.value).toBe('');
     });
   });
 

@@ -58,7 +58,7 @@ let showSystemProjects = false;
 let selectedContext = '';
 let loggedIn = true;
 let loginMessage = '';
-let image = 'quay.io/ecosystem-appeng/ros2-jazzy-sim:noble-amd64';
+let image = '';
 /**
  * Local images tagged `-amd64` (the suffix Image Builder applies whenever a build targets
  * amd64, see archTagSuffix) — the natural candidates for an OpenShift deploy, which always
@@ -79,10 +79,9 @@ let imageMenuOpen = false;
 let imageHighlight = -1;
 let imageBlurTimeout: ReturnType<typeof setTimeout> | undefined;
 /** True once the user has typed since the menu last opened. Before that, focusing shows
- * the full candidate list rather than filtering by the current value — the field starts
- * pre-filled with a specific seeded tag (see onMount), which wouldn't substring-match any
- * other candidate, so filtering by it immediately would show zero suggestions on first
- * focus and defeat the whole point of the picker. */
+ * the full candidate list rather than filtering by the current value — when onMount seeds
+ * a specific local tag, filtering by it immediately would hide every other candidate on
+ * first focus and defeat the whole point of the picker. */
 let imageFilterActive = false;
 let useGpu = false;
 /**
@@ -357,6 +356,19 @@ async function refreshLocalAmd64Images() {
   }
 }
 
+/** Pick the initial Image field value from images actually present locally (APPENG-6302).
+ * Prefer the sim-config tag when it exists on disk; otherwise the first local amd64
+ * candidate; otherwise leave the field empty for free-text entry. */
+function seedImageFromLocal(configTag: string | undefined) {
+  if (configTag && localAmd64Images.includes(configTag)) {
+    image = configTag;
+  } else if (localAmd64Images.length > 0) {
+    image = localAmd64Images[0];
+  } else {
+    image = '';
+  }
+}
+
 function handleImageFocus() {
   if (imageBlurTimeout) clearTimeout(imageBlurTimeout);
   imageFilterActive = false;
@@ -436,16 +448,15 @@ onMount(async () => {
   } catch {
     // keep the built-in default
   }
-  // Default the image to the current sim config's amd64 tag, when resolvable.
+  // Default the image from local amd64 images — only use the sim-config tag when present.
   try {
     const ns = await physicalAiClient.getDefaultNamespace();
     const simConfig = await physicalAiClient.getSimulationConfig();
     const amd64Config = { ...simConfig, targetArch: 'amd64' } as SimulationConfig;
-    const tag = simulationImageTag(ns, amd64Config);
-    if (tag) image = tag;
+    seedImageFromLocal(simulationImageTag(ns, amd64Config));
     middleware = simConfig.middleware;
   } catch {
-    // keep the placeholder default
+    seedImageFromLocal(undefined);
   }
   loading = false;
   refreshWorkloads();
