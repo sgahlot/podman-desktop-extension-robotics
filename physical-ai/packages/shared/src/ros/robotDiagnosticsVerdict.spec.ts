@@ -3,6 +3,8 @@ import {
   tfTreeVerdict,
   costmapVerdict,
   laserScanVerdict,
+  imuVerdict,
+  sensorDiagnosticVerdict,
   MOSTLY_UNEXPLORED_PCT,
   HIGH_OCCUPIED_PCT,
   NAN_DEGRADED_RATIO,
@@ -10,8 +12,10 @@ import {
 } from './robotDiagnosticsVerdict';
 import type {
   CostmapSummaryResult,
+  ImuSummary,
   LaserScanSummary,
   OccupancyGridSummary,
+  SensorDiagnosticEntry,
   TfTreeResult,
 } from '../types/RobotDiagnostics';
 
@@ -188,5 +192,57 @@ describe('laserScanVerdict', () => {
     const verdict = laserScanVerdict(laserScan());
     expect(verdict.level).toBe('ok');
     expect(verdict.headline).toMatch(/normal/i);
+  });
+});
+
+function imu(overrides: Partial<ImuSummary> = {}): ImuSummary {
+  return {
+    topic: '/robot_1/imu',
+    orientation: { x: 0, y: 0, z: 0, w: 1 },
+    angularVelocity: { x: 0, y: 0, z: 0 },
+    linearAcceleration: { x: 0, y: 0, z: 9.81 },
+    capturedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+describe('imuVerdict', () => {
+  it('is ok for a normal IMU snapshot', () => {
+    const verdict = imuVerdict(imu());
+    expect(verdict.level).toBe('ok');
+    expect(verdict.headline).toMatch(/normal/i);
+  });
+
+  it('warns when the quaternion is not normalized', () => {
+    const verdict = imuVerdict(imu({ orientation: { x: 0, y: 0, z: 0, w: 0.5 } }));
+    expect(verdict.level).toBe('warning');
+    expect(verdict.headline).toMatch(/not normalized/i);
+  });
+});
+
+describe('sensorDiagnosticVerdict', () => {
+  it('returns a listed-only verdict for unsupported sensor types', () => {
+    const entry: SensorDiagnosticEntry = {
+      topic: '/robot_1/camera/image_raw',
+      type: 'sensor_msgs/msg/Image',
+      publishers: 1,
+      peekSupported: false,
+    };
+    const verdict = sensorDiagnosticVerdict(entry);
+    expect(verdict.level).toBe('ok');
+    expect(verdict.headline).toMatch(/not yet supported/i);
+  });
+
+  it('delegates to laserScanVerdict when a laser peek is present', () => {
+    const entry: SensorDiagnosticEntry = {
+      topic: '/robot_1/scan',
+      type: 'sensor_msgs/msg/LaserScan',
+      publishers: 1,
+      peekSupported: true,
+      laserScan: laserScan(),
+    };
+    const verdict = sensorDiagnosticVerdict(entry);
+    expect(verdict.level).toBe('ok');
+    expect(verdict.headline).toMatch(/Laser scan/i);
   });
 });

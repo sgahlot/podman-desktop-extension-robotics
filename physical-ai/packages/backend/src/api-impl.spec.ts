@@ -2273,6 +2273,80 @@ ranges: [0.3, 0.5, .inf, .nan]
     });
   });
 
+  describe('getRobotSensorDiagnostics', () => {
+    const CONTAINER_ID = 'abc123def456';
+    const TOPIC_LIST = `/robot_1/imu [sensor_msgs/msg/Imu]
+/robot_1/scan [sensor_msgs/msg/LaserScan]
+/robot_1/camera/image_raw [sensor_msgs/msg/Image]
+`;
+    const SCAN_ECHO = `angle_min: 0.0
+angle_max: 6.28
+angle_increment: 0.017
+range_min: 0.1
+range_max: 20.0
+ranges: [0.3, 0.5]
+`;
+    const IMU_ECHO = `orientation:
+  x: 0.0
+  y: 0.0
+  z: 0.0
+  w: 1.0
+angular_velocity:
+  x: 0.0
+  y: 0.0
+  z: 0.0
+linear_acceleration:
+  x: 0.0
+  y: 0.0
+  z: 9.81
+`;
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as unknown as extensionApi.ContainerInfo[]);
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue(5),
+        update: vi.fn(),
+      } as unknown as extensionApi.Configuration);
+    });
+
+    it('discovers sensor topics and peeks supported types', async () => {
+      vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+        const script = (args as string[]).find(a => typeof a === 'string' && a.includes('topic list -t'));
+        if (script !== undefined || (args as string[]).some(a => a === 'ros2 topic list -t')) {
+          return { stdout: TOPIC_LIST, stderr: '', command: 'podman' } as extensionApi.RunResult;
+        }
+        const topicArg = (args as string[]).find(a => typeof a === 'string' && a.startsWith('/robot_1/'));
+        if (topicArg === '/robot_1/scan') {
+          return { stdout: SCAN_ECHO, stderr: '', command: 'podman' } as extensionApi.RunResult;
+        }
+        if (topicArg === '/robot_1/imu') {
+          return { stdout: IMU_ECHO, stderr: '', command: 'podman' } as extensionApi.RunResult;
+        }
+        return { stdout: '', stderr: '', command: 'podman' } as extensionApi.RunResult;
+      });
+
+      const result = await api.getRobotSensorDiagnostics(CONTAINER_ID, 'robot_1');
+      expect(result.robotNamespace).toBe('robot_1');
+      expect(result.sensors.map(s => s.topic)).toEqual(['/robot_1/camera/image_raw', '/robot_1/imu', '/robot_1/scan']);
+      const scan = result.sensors.find(s => s.topic === '/robot_1/scan');
+      expect(scan?.laserScan?.finiteCount).toBe(2);
+      const imu = result.sensors.find(s => s.topic === '/robot_1/imu');
+      expect(imu?.imu?.orientation.w).toBe(1);
+      const image = result.sensors.find(s => s.topic === '/robot_1/camera/image_raw');
+      expect(image?.peekSupported).toBe(false);
+      expect(image?.laserScan).toBeUndefined();
+    });
+
+    it('rejects an invalid robot name before exec', async () => {
+      await expect(api.getRobotSensorDiagnostics(CONTAINER_ID, 'robot; rm -rf /')).rejects.toThrow(
+        /Invalid robot name/,
+      );
+      expect(extensionApi.process.exec).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getTopicPeekTimeoutSeconds / setTopicPeekTimeoutSeconds', () => {
     it('returns default when unset', async () => {
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({

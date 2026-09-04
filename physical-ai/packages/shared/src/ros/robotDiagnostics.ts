@@ -194,6 +194,79 @@ export function parseLaserScanEcho(text: string): ParsedLaserScan | undefined {
   };
 }
 
+/** ROS 2 type prefix for sensor message topics included in dynamic Diagnostics discovery. */
+export const SENSOR_MSG_TYPE_PREFIX = 'sensor_msgs/msg/';
+
+/** Sensor types with a one-shot peek parser in this extension (APPENG-6292). */
+export const PEEK_SUPPORTED_SENSOR_TYPES: ReadonlySet<string> = new Set([
+  'sensor_msgs/msg/LaserScan',
+  'sensor_msgs/msg/Imu',
+]);
+
+export function isSensorMsgType(type: string): boolean {
+  return type.startsWith(SENSOR_MSG_TYPE_PREFIX);
+}
+
+export function isPeekSupportedSensorType(type: string): boolean {
+  return PEEK_SUPPORTED_SENSOR_TYPES.has(type);
+}
+
+/** `sensor_msgs/msg/LaserScan` → `LaserScan` for compact UI labels. */
+export function sensorTypeShortLabel(type: string): string {
+  return type.startsWith(SENSOR_MSG_TYPE_PREFIX) ? type.slice(SENSOR_MSG_TYPE_PREFIX.length) : type;
+}
+
+/**
+ * Filters an already-polled topic list to `sensor_msgs/*` topics under `/{robotName}/…`,
+ * sorted by topic name. Used by Diagnostics dynamic sensor cards (APPENG-6292).
+ */
+export function discoverRobotSensorTopics(topics: TopicInfo[], robotName: string): TopicInfo[] {
+  const prefix = `/${robotName}/`;
+  return topics
+    .filter(topic => topic.name.startsWith(prefix) && isSensorMsgType(topic.type))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export interface ParsedImu {
+  orientation: { x: number; y: number; z: number; w: number };
+  angularVelocity: { x: number; y: number; z: number };
+  linearAcceleration: { x: number; y: number; z: number };
+}
+
+const VECTOR3_BLOCK_RE = (field: string) =>
+  new RegExp(
+    `${field}:\\s*\\n\\s*x:\\s*([-\\d.eE+]+)\\s*\\n\\s*y:\\s*([-\\d.eE+]+)\\s*\\n\\s*z:\\s*([-\\d.eE+]+)`,
+    'm',
+  );
+
+const QUATERNION_BLOCK_RE =
+  /orientation:\s*\n\s*x:\s*([-\d.eE+]+)\s*\n\s*y:\s*([-\d.eE+]+)\s*\n\s*z:\s*([-\d.eE+]+)\s*\n\s*w:\s*([-\d.eE+]+)/m;
+
+function parseVector3(text: string, field: string): { x: number; y: number; z: number } | undefined {
+  const match = text.match(VECTOR3_BLOCK_RE(field));
+  if (!match) return undefined;
+  return { x: Number(match[1]), y: Number(match[2]), z: Number(match[3]) };
+}
+
+/** Parses `sensor_msgs/Imu` echo text from `ros2 topic echo --once`. */
+export function parseImuEcho(text: string): ParsedImu | undefined {
+  const orientationMatch = text.match(QUATERNION_BLOCK_RE);
+  const angularVelocity = parseVector3(text, 'angular_velocity');
+  const linearAcceleration = parseVector3(text, 'linear_acceleration');
+  if (!orientationMatch || !angularVelocity || !linearAcceleration) return undefined;
+
+  return {
+    orientation: {
+      x: Number(orientationMatch[1]),
+      y: Number(orientationMatch[2]),
+      z: Number(orientationMatch[3]),
+      w: Number(orientationMatch[4]),
+    },
+    angularVelocity,
+    linearAcceleration,
+  };
+}
+
 const ROBOT_NAMESPACE_TOPIC_RE = /^\/([^/]+)\/(scan|local_costmap\/costmap|global_costmap\/costmap|tf|tf_static)$/;
 
 /** Distinct robot namespaces inferred from already-polled topic names, sorted. */

@@ -88,12 +88,18 @@ import {
   parseTfEchoOutput,
   parseOccupancyGridEcho,
   parseLaserScanEcho,
+  parseImuEcho,
+  discoverRobotSensorTopics,
+  isPeekSupportedSensorType,
 } from '/@shared/src/ros/robotDiagnostics';
 import type {
   TfTreeResult,
   CostmapSummaryResult,
   OccupancyGridSummary,
   LaserScanSummary,
+  ImuSummary,
+  RobotSensorDiagnosticsResult,
+  SensorDiagnosticEntry,
 } from '/@shared/src/types/RobotDiagnostics';
 import { parseSpawnedRobotNames } from '/@shared/src/ros/robotNodeList';
 import { parseRosTopicListDump, parseRosTopicListTypes, ROS_TOPIC_LIST_INFO_SCRIPT } from '/@shared/src/ros/topicList';
@@ -1866,12 +1872,27 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return this.#laserScanSummaryFor(target, distro, safeRobot);
   }
 
+  async getRobotSensorDiagnostics(containerId: string, robotName: string): Promise<RobotSensorDiagnosticsResult> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    const safeRobot = assertRobotName(robotName);
+    const distro = await this.#detectRosDistro(id);
+    const target = { kind: 'podman', id } as const;
+    return this.#robotSensorDiagnosticsFor(target, distro, safeRobot);
+  }
+
   async #laserScanSummaryFor(
     target: ExecTarget,
     distro: SupportedRosDistro,
     safeRobot: string,
   ): Promise<LaserScanSummary> {
-    const topic = `/${safeRobot}/scan`;
+    return this.#laserScanSummaryForTopic(target, distro, `/${safeRobot}/scan`);
+  }
+
+  async #laserScanSummaryForTopic(
+    target: ExecTarget,
+    distro: SupportedRosDistro,
+    topic: string,
+  ): Promise<LaserScanSummary> {
     const capturedAt = new Date().toISOString();
 
     let timeoutSec: number;
@@ -1937,6 +1958,93 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
 
     return zero({ error: stderr || `Failed to peek ${topic} (exit ${result.exitCode})` });
+  }
+
+  async #imuSummaryForTopic(target: ExecTarget, distro: SupportedRosDistro, topic: string): Promise<ImuSummary> {
+    const capturedAt = new Date().toISOString();
+
+    const zero = (extra: Partial<ImuSummary>): ImuSummary => ({
+      topic,
+      orientation: { x: 0, y: 0, z: 0, w: 1 },
+      angularVelocity: { x: 0, y: 0, z: 0 },
+      linearAcceleration: { x: 0, y: 0, z: 0 },
+      capturedAt,
+      ...extra,
+    });
+
+    let timeoutSec: number;
+    try {
+      timeoutSec = await this.getTopicPeekTimeoutSeconds();
+    } catch (e) {
+      return zero({ error: e instanceof Error ? e.message : String(e) });
+    }
+
+    const result = await this.#execRosBash(
+      target,
+      distro,
+      'timeout "$1" ros2 topic echo --once --full-length --flow-style "$2" 2>&1',
+      [String(timeoutSec), topic],
+    );
+    const stdout = (result.stdout ?? '').trim();
+    const stderr = (result.stderr ?? '').trim();
+
+    const parsed = stdout ? parseImuEcho(stdout) : undefined;
+    if (parsed) {
+      return {
+        topic,
+        orientation: parsed.orientation,
+        angularVelocity: parsed.angularVelocity,
+        linearAcceleration: parsed.linearAcceleration,
+        capturedAt,
+      };
+    }
+
+    if (result.exitCode !== 0) {
+      return zero({
+        timedOut: true,
+        error: `No message on ${topic} within ${timeoutSec}s. The topic may be idle — try one with active publishers.`,
+      });
+    }
+
+    return zero({ error: stderr || `Failed to peek ${topic} (exit ${result.exitCode})` });
+  }
+
+  async #listSensorTopicsFor(target: ExecTarget, distro: SupportedRosDistro): Promise<TopicInfo[]> {
+    const listResult = await this.#execRosBash(target, distro, 'ros2 topic list -t');
+    if (listResult.exitCode !== 0 || !listResult.stdout.trim()) {
+      return [];
+    }
+    return parseRosTopicListTypes(listResult.stdout);
+  }
+
+  async #robotSensorDiagnosticsFor(
+    target: ExecTarget,
+    distro: SupportedRosDistro,
+    safeRobot: string,
+  ): Promise<RobotSensorDiagnosticsResult> {
+    const topics = await this.#listSensorTopicsFor(target, distro);
+    const discovered = discoverRobotSensorTopics(topics, safeRobot);
+    const capturedAt = new Date().toISOString();
+    const sensors: SensorDiagnosticEntry[] = [];
+
+    for (const topic of discovered) {
+      const entry: SensorDiagnosticEntry = {
+        topic: topic.name,
+        type: topic.type,
+        publishers: topic.publishers,
+        peekSupported: isPeekSupportedSensorType(topic.type),
+      };
+
+      if (topic.type === 'sensor_msgs/msg/LaserScan') {
+        entry.laserScan = await this.#laserScanSummaryForTopic(target, distro, topic.name);
+      } else if (topic.type === 'sensor_msgs/msg/Imu') {
+        entry.imu = await this.#imuSummaryForTopic(target, distro, topic.name);
+      }
+
+      sensors.push(entry);
+    }
+
+    return { robotNamespace: safeRobot, sensors, capturedAt };
   }
 
   async #isNav2BringupRunning(target: ExecTarget, robotName: string, distro: SupportedRosDistro): Promise<boolean> {
@@ -2676,6 +2784,23 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
     const target = { kind: 'oc', pod, namespace: ns, context } as const;
     return this.#laserScanSummaryFor(target, distro, safeRobot);
+  }
+
+  /** OpenShift counterpart of getRobotSensorDiagnostics — see #robotSensorDiagnosticsFor. */
+  async getRobotSensorDiagnosticsInOpenShift(
+    namespace: string,
+    name: string,
+    robotName: string,
+    context?: string,
+  ): Promise<RobotSensorDiagnosticsResult> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeRobot = assertRobotName(robotName);
+    const image = await this.#openShiftDeploymentImage(ns, safeName, context);
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    const target = { kind: 'oc', pod, namespace: ns, context } as const;
+    return this.#robotSensorDiagnosticsFor(target, distro, safeRobot);
   }
 
   /** Name of a Running pod for the deployment (selected by the `app=<name>` label). */
