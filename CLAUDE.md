@@ -18,6 +18,22 @@
 - Requires Node.js >= 24.0.0 and npm >= 11.0.0 (matches Podman Desktop's own requirement; node/npm should be available on PATH)
 - Team members may use any Node version manager (fnm, nvm, brew, etc.) — the project has no dependency on a specific one
 
+## Documentation Rules
+- **Three README/doc roles, don't blur them:**
+  1. `physical-ai/packages/backend/README.md` — the **canonical user doc**. All
+     extension-user-facing content (features, usage, sizing/settings guidance,
+     troubleshooting for people running the extension) goes here, and only here.
+  2. `physical-ai/README.md` — a **slim dev README**. Install-from-source, build
+     prerequisites, project structure, tech stack, packaging, and dev-environment
+     troubleshooting only. It gets a short intro plus an explicit pointer
+     (`See physical-ai/packages/backend/README.md for usage/feature docs`) — never
+     duplicate user-facing prose here.
+  3. `physical-ai/packages/frontend/src/Help.svelte` — the in-app Help content shown
+     inside Podman Desktop.
+- When operational/user-facing guidance changes (a new feature, a changed default, a
+  troubleshooting tip), update **the backend README and Help together** — they're the two
+  surfaces a user actually sees. Do not put that content in the slim dev README instead.
+
 ## Workflow Rules
 - Always reference the Jira key (e.g., APPENG-5768) when working on a task. **If not told
   which ticket to work on, infer it from the current branch name** — worktree branches are
