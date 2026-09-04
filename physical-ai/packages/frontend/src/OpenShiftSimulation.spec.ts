@@ -301,8 +301,31 @@ describe('OpenShiftSimulation', () => {
 
     await waitFor(() => {
       expect(mockDeployToOpenShift).toHaveBeenCalledWith(
-        expect.objectContaining({ useGpu: true, gpuToleration: 'g5-gpu=true:NoSchedule' }),
+        expect.objectContaining({
+          useGpu: true,
+          gpuToleration: 'g5-gpu=true:NoSchedule',
+          cpu: 7,
+        }),
       );
+    });
+  });
+
+  it('passes a lowered CPU count on the GPU path when the user dials it down', async () => {
+    mockDeployToOpenShift.mockResolvedValue({
+      name: 'ros2-jazzy-sim',
+      namespace: 'sgahlot-pd-extn',
+      applied: ['Deployment', 'Service', 'Route'],
+      message: 'Deployed',
+    });
+    render(DeployOpenShift);
+
+    await fireEvent.click(await screen.findByRole('checkbox', { name: /Cluster has a GPU/ }));
+    const cpuInput = (await screen.findByLabelText('Guaranteed CPUs (sim container)')) as HTMLInputElement;
+    await fireEvent.input(cpuInput, { target: { value: '6' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+
+    await waitFor(() => {
+      expect(mockDeployToOpenShift).toHaveBeenCalledWith(expect.objectContaining({ useGpu: true, cpu: 6 }));
     });
   });
 
@@ -321,6 +344,19 @@ describe('OpenShiftSimulation', () => {
       expect(mockDeployToOpenShift).toHaveBeenCalledWith(
         expect.objectContaining({ useGpu: false, gpuToleration: undefined }),
       );
+    });
+  });
+
+  it('shows the backend error detail when deploy fails', async () => {
+    mockDeployToOpenShift.mockRejectedValue(
+      'Failed to apply manifests to namespace sgahlot-pd-extn: admission webhook denied the request',
+    );
+    render(DeployOpenShift);
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/admission webhook denied the request/)).toBeTruthy();
     });
   });
 

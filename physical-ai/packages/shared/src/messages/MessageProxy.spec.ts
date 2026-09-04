@@ -256,7 +256,7 @@ describe('RpcBrowser', () => {
         }),
       );
 
-      await expect(promise).rejects.toBe('fail');
+      await expect(promise).rejects.toThrow('fail');
     });
 
     it('rejects on timeout', async () => {

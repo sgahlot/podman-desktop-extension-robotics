@@ -174,13 +174,15 @@ describe('buildOpenShiftManifests', () => {
     expect(() => buildOpenShiftManifests({ ...config, cpu: 128 })).toThrow();
   });
 
-  it('ignores the configurable CPU count under GPU (uses the fixed GPU-pod CPU)', () => {
-    // The user CPU field is software-render only; the GPU pod's CPU is bounded by
-    // the GPU node size, not preference, so config.cpu is ignored here.
-    const [deployment] = buildOpenShiftManifests({ ...config, useGpu: true, cpu: 16 });
-    const container = (deployment as unknown as DeploymentManifest).spec.template.spec.containers[0];
-    expect(container.resources.requests.cpu).toBe('7');
-    expect(container.resources.limits.cpu).toBe('7');
+  it('honors a custom CPU count on the GPU path (default remains GPU_POD_CPU)', () => {
+    const [deploymentDefault] = buildOpenShiftManifests({ ...config, useGpu: true });
+    const [deploymentCustom] = buildOpenShiftManifests({ ...config, useGpu: true, cpu: 6 });
+    const defaultCpu = (deploymentDefault as unknown as DeploymentManifest).spec.template.spec.containers[0].resources
+      .requests.cpu;
+    const customCpu = (deploymentCustom as unknown as DeploymentManifest).spec.template.spec.containers[0].resources
+      .requests.cpu;
+    expect(defaultCpu).toBe('7');
+    expect(customCpu).toBe('6');
   });
 
   it('requests a GPU and uses hardware rendering when useGpu is set', () => {
