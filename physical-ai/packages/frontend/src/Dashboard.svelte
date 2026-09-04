@@ -30,6 +30,7 @@ import { physicalAiClient } from './api/client';
 import { onMount } from 'svelte';
 import { router } from 'tinro';
 import LayoutSwitcher from './lib/LayoutSwitcher.svelte';
+import { resolveOpenShiftNamespace } from './lib/resolveOpenShiftNamespace';
 
 export let layout: 'sidebar' | 'tabs' | 'cards' = 'cards';
 export let onLayoutChange: ((next: 'sidebar' | 'tabs' | 'cards') => void) | undefined = undefined;
@@ -37,8 +38,10 @@ export let onLayoutChange: ((next: 'sidebar' | 'tabs' | 'cards') => void) | unde
 let status = 'Loading...';
 let localRos2ImageCount = 0;
 let localImagesLoaded = false;
-let runningSimCount = 0;
-let simCountLoaded = false;
+let localSimCount = 0;
+let localSimCountLoaded = false;
+let openShiftSimCount = 0;
+let openShiftSimCountLoaded = false;
 
 /** Last path segment before any tag/digest, e.g. `quay.io/ns/ros2-jazzy-sim:noble` -> `ros2-jazzy-sim`. */
 function imageName(ref: string): string {
@@ -69,11 +72,26 @@ onMount(async () => {
 
   try {
     const containers = await physicalAiClient.listSimulationContainers();
-    runningSimCount = containers.length;
+    localSimCount = containers.length;
   } catch {
-    runningSimCount = 0;
+    localSimCount = 0;
   } finally {
-    simCountLoaded = true;
+    localSimCountLoaded = true;
+  }
+
+  try {
+    const resolved = await resolveOpenShiftNamespace();
+    if (resolved?.namespace) {
+      const workloads = await physicalAiClient.listOpenShiftDeployments(
+        resolved.namespace,
+        resolved.context,
+      );
+      openShiftSimCount = workloads.length;
+    }
+  } catch {
+    openShiftSimCount = 0;
+  } finally {
+    openShiftSimCountLoaded = true;
   }
 });
 </script>
@@ -186,12 +204,22 @@ onMount(async () => {
         <div class="text-xs pai-text-muted mt-1">Local ROS 2 images</div>
       </button>
       <button
+        aria-label="Local simulations"
         on:click={() => router.goto('/simulation')}
         class="pai-card-interactive rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 min-w-[10rem] text-left cursor-pointer">
         <div class="text-2xl font-semibold text-[var(--pd-content-header)]">
-          {simCountLoaded ? runningSimCount : '…'}
+          {localSimCountLoaded ? localSimCount : '…'}
         </div>
-        <div class="text-xs pai-text-muted mt-1">Running simulations</div>
+        <div class="text-xs pai-text-muted mt-1">local</div>
+      </button>
+      <button
+        aria-label="OpenShift simulations"
+        on:click={() => router.goto('/simulation/openshift')}
+        class="pai-card-interactive rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 min-w-[10rem] text-left cursor-pointer">
+        <div class="text-2xl font-semibold text-[var(--pd-content-header)]">
+          {openShiftSimCountLoaded ? openShiftSimCount : '…'}
+        </div>
+        <div class="text-xs pai-text-muted mt-1">OpenShift</div>
       </button>
     </div>
   </div>
