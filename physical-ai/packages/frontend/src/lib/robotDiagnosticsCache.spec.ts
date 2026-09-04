@@ -15,8 +15,8 @@ const SNAPSHOT: CachedDiagnosticsSnapshot = {
   costmapResult: null,
   costmapError: '',
   // eslint-disable-next-line no-null/no-null -- matches CachedDiagnosticsSnapshot's declared `| null` contract
-  laserResult: null,
-  laserError: '',
+  sensorResult: null,
+  sensorError: '',
 };
 
 describe('robotDiagnosticsCache', () => {

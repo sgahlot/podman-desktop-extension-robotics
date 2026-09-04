@@ -224,8 +224,10 @@ import { navigationLayout } from './lib/navigationLayout';
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Diagnostics</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
         <div>
-          <strong>Overview</strong> — A health-check panel for a selected spawned robot (local or OpenShift): TF tree status,
-          costmap topic, and laser/lidar topic — useful for confirming Nav2 is actually ready before you hit Navigate.
+          <strong>Overview</strong> — A health-check panel for a selected spawned robot (local or OpenShift): TF tree
+          status, costmap topic, and a dynamic list of the robot's <span class="font-mono">sensor_msgs</span> topics. LaserScan
+          and Imu sensors get a one-shot peek on refresh; other sensor types are listed with type and publisher count. Useful
+          for confirming Nav2 is actually ready before you hit Navigate.
         </div>
         <div>
           <strong>Access</strong> — Click <strong>Diagnose</strong> next to a spawned robot on the Simulation or OpenShift

@@ -1,12 +1,16 @@
-import type { TfTreeResult, CostmapSummaryResult, LaserScanSummary } from '/@shared/src/types/RobotDiagnostics';
+import type {
+  TfTreeResult,
+  CostmapSummaryResult,
+  RobotSensorDiagnosticsResult,
+} from '/@shared/src/types/RobotDiagnostics';
 
 export interface CachedDiagnosticsSnapshot {
   tfResult: TfTreeResult | null;
   tfError: string;
   costmapResult: CostmapSummaryResult | null;
   costmapError: string;
-  laserResult: LaserScanSummary | null;
-  laserError: string;
+  sensorResult: RobotSensorDiagnosticsResult | null;
+  sensorError: string;
 }
 
 /**

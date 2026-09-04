@@ -4,7 +4,10 @@ import {
   parseTfEchoOutput,
   parseOccupancyGridEcho,
   parseLaserScanEcho,
+  parseImuEcho,
   deriveRobotNamespaces,
+  discoverRobotSensorTopics,
+  sensorTypeShortLabel,
 } from './robotDiagnostics';
 import type { TopicInfo } from '../types/TopicInfo';
 
@@ -221,5 +224,67 @@ describe('deriveRobotNamespaces', () => {
       topic('/robot_1/scan'),
     ];
     expect(deriveRobotNamespaces(topics)).toEqual(['robot_1']);
+  });
+});
+
+describe('parseImuEcho', () => {
+  it('parses orientation, angular velocity, and linear acceleration', () => {
+    const text = `header:
+  stamp:
+    sec: 1
+    nanosec: 0
+  frame_id: imu_link
+orientation:
+  x: 0.0
+  y: 0.0
+  z: 0.014
+  w: 0.999
+angular_velocity:
+  x: 0.01
+  y: -0.02
+  z: 0.03
+linear_acceleration:
+  x: 0.1
+  y: 0.2
+  z: 9.81
+`;
+    const result = parseImuEcho(text);
+    expect(result).toMatchObject({
+      orientation: { x: 0, y: 0, z: 0.014, w: 0.999 },
+      angularVelocity: { x: 0.01, y: -0.02, z: 0.03 },
+      linearAcceleration: { x: 0.1, y: 0.2, z: 9.81 },
+    });
+  });
+
+  it('returns undefined when required blocks are missing', () => {
+    expect(parseImuEcho('orientation:\n  x: 0\n  y: 0\n  z: 0\n  w: 1\n')).toBeUndefined();
+  });
+});
+
+describe('discoverRobotSensorTopics', () => {
+  function topic(name: string, type: string): TopicInfo {
+    return { name, type, publishers: 1, subscribers: 0 };
+  }
+
+  it('returns sensor_msgs topics under the robot namespace, sorted by name', () => {
+    const topics = [
+      topic('/robot_1/imu', 'sensor_msgs/msg/Imu'),
+      topic('/robot_1/scan', 'sensor_msgs/msg/LaserScan'),
+      topic('/robot_2/scan', 'sensor_msgs/msg/LaserScan'),
+      topic('/robot_1/tf', 'tf2_msgs/msg/TFMessage'),
+      topic('/robot_1/camera/image_raw', 'sensor_msgs/msg/Image'),
+    ];
+    expect(discoverRobotSensorTopics(topics, 'robot_1').map(t => t.name)).toEqual([
+      '/robot_1/camera/image_raw',
+      '/robot_1/imu',
+      '/robot_1/scan',
+    ]);
+  });
+});
+
+describe('sensorTypeShortLabel', () => {
+  it('strips the sensor_msgs/msg/ prefix', () => {
+    expect(sensorTypeShortLabel('sensor_msgs/msg/LaserScan')).toBe('LaserScan');
+    expect(sensorTypeShortLabel('std_msgs/msg/String')).toBe('std_msgs/msg/String');
   });
 });

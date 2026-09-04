@@ -1,4 +1,10 @@
-import type { CostmapSummaryResult, LaserScanSummary, TfTreeResult } from '../types/RobotDiagnostics';
+import type {
+  CostmapSummaryResult,
+  ImuSummary,
+  LaserScanSummary,
+  SensorDiagnosticEntry,
+  TfTreeResult,
+} from '../types/RobotDiagnostics';
 
 export type VerdictLevel = 'ok' | 'warning' | 'error';
 
@@ -134,4 +140,44 @@ export function laserScanVerdict(result: LaserScanSummary): DiagnosticVerdict {
     };
   }
   return { level: 'ok', headline: 'Laser scan looks normal.' };
+}
+
+/**
+ * Plain-language read of an Imu snapshot. Checks that orientation is a roughly unit quaternion
+ * and that all components are finite — a coarse sanity check, not a calibration audit.
+ */
+export function imuVerdict(result: ImuSummary): DiagnosticVerdict {
+  if (result.timedOut) {
+    return {
+      level: 'warning',
+      headline: 'No IMU message received yet — the topic may be idle.',
+      detail: result.error,
+    };
+  }
+  if (result.error) {
+    return { level: 'error', headline: 'Could not read the IMU.', detail: result.error };
+  }
+
+  const { x, y, z, w } = result.orientation;
+  const values = [x, y, z, w, ...Object.values(result.angularVelocity), ...Object.values(result.linearAcceleration)];
+  if (values.some(v => !Number.isFinite(v))) {
+    return { level: 'error', headline: 'IMU message contains non-finite values.' };
+  }
+
+  const norm = Math.sqrt(x * x + y * y + z * z + w * w);
+  if (norm < 0.9 || norm > 1.1) {
+    return { level: 'warning', headline: 'IMU orientation quaternion is not normalized.' };
+  }
+
+  return { level: 'ok', headline: 'IMU looks normal.' };
+}
+
+/** Dispatches to the right verdict for a dynamic sensor card (APPENG-6292). */
+export function sensorDiagnosticVerdict(entry: SensorDiagnosticEntry): DiagnosticVerdict {
+  if (!entry.peekSupported) {
+    return { level: 'ok', headline: 'Listed — peek not yet supported for this type.' };
+  }
+  if (entry.laserScan) return laserScanVerdict(entry.laserScan);
+  if (entry.imu) return imuVerdict(entry.imu);
+  return { level: 'warning', headline: 'No snapshot captured for this sensor.' };
 }

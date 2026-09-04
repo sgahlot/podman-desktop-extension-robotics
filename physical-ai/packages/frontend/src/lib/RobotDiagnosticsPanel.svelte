@@ -1,12 +1,17 @@
 <script lang="ts">
 import { onMount } from 'svelte';
 import { physicalAiClient } from '../api/client';
-import type { TfTreeResult, CostmapSummaryResult, LaserScanSummary } from '/@shared/src/types/RobotDiagnostics';
-import { deriveRobotNamespaces } from '/@shared/src/ros/robotDiagnostics';
+import type {
+  TfTreeResult,
+  CostmapSummaryResult,
+  RobotSensorDiagnosticsResult,
+  SensorDiagnosticEntry,
+} from '/@shared/src/types/RobotDiagnostics';
+import { deriveRobotNamespaces, sensorTypeShortLabel } from '/@shared/src/ros/robotDiagnostics';
 import {
   tfTreeVerdict,
   costmapVerdict,
-  laserScanVerdict,
+  sensorDiagnosticVerdict,
   type VerdictLevel,
 } from '/@shared/src/ros/robotDiagnosticsVerdict';
 import type { DiagnosticsTarget } from './RobotDiagnosticsPanel.types';
@@ -27,8 +32,8 @@ let tfResult: TfTreeResult | null = null;
 let tfError = '';
 let costmapResult: CostmapSummaryResult | null = null;
 let costmapError = '';
-let laserResult: LaserScanSummary | null = null;
-let laserError = '';
+let sensorResult: RobotSensorDiagnosticsResult | null = null;
+let sensorError = '';
 /** True when the currently-shown results came from robotDiagnosticsCache (the last snapshot
  * from an earlier "Refresh diagnostics"), false once a fresh refresh completes — drives the
  * "last known snapshot" banner so older data is never mistaken for current. */
@@ -106,8 +111,8 @@ function clearResults(): void {
   tfError = '';
   costmapResult = null;
   costmapError = '';
-  laserResult = null;
-  laserError = '';
+  sensorResult = null;
+  sensorError = '';
 }
 
 /**
@@ -127,8 +132,8 @@ $: {
       tfError = cached.tfError;
       costmapResult = cached.costmapResult;
       costmapError = cached.costmapError;
-      laserResult = cached.laserResult;
-      laserError = cached.laserError;
+      sensorResult = cached.sensorResult;
+      sensorError = cached.sensorError;
       isCachedSnapshot = true;
     } else {
       clearResults();
@@ -161,13 +166,15 @@ function verdictClass(level: VerdictLevel): string {
 
 $: tfVerdict = tfResult ? tfTreeVerdict(tfResult) : null;
 $: costmapVerdictResult = costmapResult ? costmapVerdict(costmapResult) : null;
-$: laserVerdict = laserResult ? laserScanVerdict(laserResult) : null;
+
+function sensorVerdict(entry: SensorDiagnosticEntry) {
+  return sensorDiagnosticVerdict(entry);
+}
 
 /**
- * Fans out to three independent blocking execs (Promise.allSettled, not Promise.all) so one
- * idle/failing topic (e.g. the costmap before Navigate has run) never blanks the other two
- * cards. Manual only — no auto-poll: a refresh is up to 6 blocking execs (4 TF pairs run
- * sequentially + 2 costmaps) plus the scan peek, too heavy to fire automatically.
+ * Fans out to independent blocking execs (Promise.allSettled, not Promise.all) so one
+ * idle/failing topic (e.g. the costmap before Navigate has run) never blanks the other
+ * cards. Manual only — no auto-poll: a refresh runs TF, costmap, and per-sensor peeks.
  */
 async function refreshDiagnostics(): Promise<void> {
   if (!robotName || refreshing) return;
@@ -176,12 +183,12 @@ async function refreshDiagnostics(): Promise<void> {
   const targetRobot = robotName;
   refreshing = true;
 
-  const calls: [Promise<TfTreeResult>, Promise<CostmapSummaryResult>, Promise<LaserScanSummary>] =
+  const calls: [Promise<TfTreeResult>, Promise<CostmapSummaryResult>, Promise<RobotSensorDiagnosticsResult>] =
     targetSnapshot.kind === 'podman'
       ? [
           physicalAiClient.getTfTreeStatus(targetSnapshot.containerId, targetRobot),
           physicalAiClient.getCostmapSummary(targetSnapshot.containerId, targetRobot),
-          physicalAiClient.getLaserScanSummary(targetSnapshot.containerId, targetRobot),
+          physicalAiClient.getRobotSensorDiagnostics(targetSnapshot.containerId, targetRobot),
         ]
       : [
           physicalAiClient.getTfTreeStatusInOpenShift(
@@ -196,7 +203,7 @@ async function refreshDiagnostics(): Promise<void> {
             targetRobot,
             targetSnapshot.context,
           ),
-          physicalAiClient.getLaserScanSummaryInOpenShift(
+          physicalAiClient.getRobotSensorDiagnosticsInOpenShift(
             targetSnapshot.namespace,
             targetSnapshot.workload,
             targetRobot,
@@ -204,7 +211,7 @@ async function refreshDiagnostics(): Promise<void> {
           ),
         ];
 
-  const [tfSettled, costmapSettled, laserSettled] = await Promise.allSettled(calls);
+  const [tfSettled, costmapSettled, sensorSettled] = await Promise.allSettled(calls);
 
   if (targetKey(target) !== snapshotKey || robotName !== targetRobot) {
     refreshing = false;
@@ -227,12 +234,12 @@ async function refreshDiagnostics(): Promise<void> {
     costmapError = errorMessage(costmapSettled.reason);
   }
 
-  if (laserSettled.status === 'fulfilled') {
-    laserResult = laserSettled.value;
-    laserError = '';
+  if (sensorSettled.status === 'fulfilled') {
+    sensorResult = sensorSettled.value;
+    sensorError = '';
   } else {
-    laserResult = null;
-    laserError = errorMessage(laserSettled.reason);
+    sensorResult = null;
+    sensorError = errorMessage(sensorSettled.reason);
   }
 
   setCachedDiagnostics(snapshotKey, targetRobot, {
@@ -240,8 +247,8 @@ async function refreshDiagnostics(): Promise<void> {
     tfError,
     costmapResult,
     costmapError,
-    laserResult,
-    laserError,
+    sensorResult,
+    sensorError,
   });
   isCachedSnapshot = false;
   refreshing = false;
@@ -290,7 +297,7 @@ async function refreshDiagnostics(): Promise<void> {
       </div>
     {/if}
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 min-w-0">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0">
       <!-- TF Tree -->
       <div
         class="min-w-0 rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3 flex flex-col gap-2">
@@ -403,46 +410,85 @@ async function refreshDiagnostics(): Promise<void> {
           </details>
         {/if}
       </div>
+    </div>
 
-      <!-- Sensor (LaserScan) -->
-      <div
-        class="min-w-0 rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3 flex flex-col gap-2">
-        <div class="text-sm font-medium text-[var(--pd-content-header)]">Sensor (LaserScan)</div>
-        {#if laserError}
-          <div class="text-xs pai-text-error">{laserError}</div>
-        {:else if !laserResult || !laserVerdict}
-          <div class="text-xs pai-text-muted">No snapshot yet.</div>
-        {:else}
-          <div class="text-sm font-medium {verdictClass(laserVerdict.level)}">{laserVerdict.headline}</div>
-          {#if laserVerdict.detail}
-            <div class="text-xs pai-text-muted break-all">{laserVerdict.detail}</div>
-          {/if}
-          {#if !laserResult.error}
-            <details>
-              <summary class="text-xs pai-link cursor-pointer w-fit">Details</summary>
-              <div class="flex flex-col gap-1 mt-1">
-                <div class="text-xs pai-text-muted">Captured {formatCapturedAt(laserResult.capturedAt)}</div>
-                <div class="text-xs font-mono text-[var(--pd-content-text)] break-all">{laserResult.topic}</div>
-                <div class="text-xs pai-text-muted">
-                  Angle: [{laserResult.angleMinRad.toFixed(3)}, {laserResult.angleMaxRad.toFixed(3)}] rad, step {laserResult.angleIncrementRad.toFixed(
-                    4,
-                  )}
-                </div>
-                <div class="text-xs pai-text-muted">
-                  Range bounds: [{laserResult.rangeMinMeters.toFixed(2)}, {laserResult.rangeMaxMeters.toFixed(2)}] m
-                </div>
-                <div class="text-xs text-[var(--pd-content-text)]">
-                  min {laserResult.minRange?.toFixed(3) ?? 'n/a'} / max {laserResult.maxRange?.toFixed(3) ?? 'n/a'} / mean
-                  {laserResult.meanRange?.toFixed(3) ?? 'n/a'} m
-                </div>
-                <div class="text-xs pai-text-muted">
-                  {laserResult.finiteCount} finite, {laserResult.infCount} inf, {laserResult.nanCount} nan (of {laserResult.totalCount})
-                </div>
+    <div class="flex flex-col gap-2 min-w-0">
+      <div class="text-sm font-medium text-[var(--pd-content-header)]">Sensors</div>
+      {#if sensorError}
+        <div class="text-xs pai-text-error">{sensorError}</div>
+      {:else if !sensorResult}
+        <div class="text-xs pai-text-muted">No snapshot yet.</div>
+      {:else if sensorResult.sensors.length === 0}
+        <div class="text-xs pai-text-muted">No sensor_msgs topics found for this robot.</div>
+      {:else}
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 min-w-0">
+          {#each sensorResult.sensors as sensor (sensor.topic)}
+            {@const verdict = sensorVerdict(sensor)}
+            <div
+              class="min-w-0 rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3 flex flex-col gap-2">
+              <div class="text-sm font-medium text-[var(--pd-content-header)]">
+                {sensorTypeShortLabel(sensor.type)}
               </div>
-            </details>
-          {/if}
-        {/if}
-      </div>
+              <div class="text-xs font-mono text-[var(--pd-content-text)] break-all">{sensor.topic}</div>
+              <div class="text-xs pai-text-muted">
+                {sensor.publishers} publisher{sensor.publishers === 1 ? '' : 's'}
+              </div>
+              <div class="text-sm font-medium {verdictClass(verdict.level)}">{verdict.headline}</div>
+              {#if verdict.detail}
+                <div class="text-xs pai-text-muted break-all">{verdict.detail}</div>
+              {/if}
+              {#if sensor.laserScan && !sensor.laserScan.error}
+                <details>
+                  <summary class="text-xs pai-link cursor-pointer w-fit">Details</summary>
+                  <div class="flex flex-col gap-1 mt-1">
+                    <div class="text-xs pai-text-muted">Captured {formatCapturedAt(sensor.laserScan.capturedAt)}</div>
+                    <div class="text-xs pai-text-muted">
+                      Angle: [{sensor.laserScan.angleMinRad.toFixed(3)}, {sensor.laserScan.angleMaxRad.toFixed(3)}] rad
+                    </div>
+                    <div class="text-xs pai-text-muted">
+                      Range bounds: [{sensor.laserScan.rangeMinMeters.toFixed(2)}, {sensor.laserScan.rangeMaxMeters.toFixed(
+                        2,
+                      )}] m
+                    </div>
+                    <div class="text-xs text-[var(--pd-content-text)]">
+                      min {sensor.laserScan.minRange?.toFixed(3) ?? 'n/a'} / max {sensor.laserScan.maxRange?.toFixed(
+                        3,
+                      ) ?? 'n/a'} / mean {sensor.laserScan.meanRange?.toFixed(3) ?? 'n/a'} m
+                    </div>
+                    <div class="text-xs pai-text-muted">
+                      {sensor.laserScan.finiteCount} finite, {sensor.laserScan.infCount} inf, {sensor.laserScan
+                        .nanCount}
+                      nan (of {sensor.laserScan.totalCount})
+                    </div>
+                  </div>
+                </details>
+              {:else if sensor.imu && !sensor.imu.error}
+                <details>
+                  <summary class="text-xs pai-link cursor-pointer w-fit">Details</summary>
+                  <div class="flex flex-col gap-1 mt-1">
+                    <div class="text-xs pai-text-muted">Captured {formatCapturedAt(sensor.imu.capturedAt)}</div>
+                    <div class="text-xs font-mono text-[var(--pd-content-text)] break-all">
+                      orientation: [{sensor.imu.orientation.x.toFixed(3)}, {sensor.imu.orientation.y.toFixed(3)}, {sensor.imu.orientation.z.toFixed(
+                        3,
+                      )}, {sensor.imu.orientation.w.toFixed(3)}]
+                    </div>
+                    <div class="text-xs font-mono pai-text-muted break-all">
+                      ω: [{sensor.imu.angularVelocity.x.toFixed(3)}, {sensor.imu.angularVelocity.y.toFixed(3)}, {sensor.imu.angularVelocity.z.toFixed(
+                        3,
+                      )}]
+                    </div>
+                    <div class="text-xs font-mono pai-text-muted break-all">
+                      a: [{sensor.imu.linearAcceleration.x.toFixed(3)}, {sensor.imu.linearAcceleration.y.toFixed(3)}, {sensor.imu.linearAcceleration.z.toFixed(
+                        3,
+                      )}]
+                    </div>
+                  </div>
+                </details>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
     </div>
   {/if}
 </div>

@@ -953,7 +953,7 @@ under an existing Story, a direct small commit, or a dedicated new doc.
 | S10-15 | Hummingbird registry-path audit (quay.io → registry.access.redhat.com) | Research/audit | Filed as [APPENG-6263](https://redhat.atlassian.net/browse/APPENG-6263) under APPENG-6225, merged ([eb30622](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/eb306223f1f46141fa287d6e4f5d72f281e3646c)), Closed — scope grew to all Hummingbird apps uniformly, not just the originally-verified subset |
 | S10-16 | Hummingbird showcase: syft external-scan + cosign bundled-tool demo | Feature | Filed as [APPENG-6264](https://redhat.atlassian.net/browse/APPENG-6264) under APPENG-6225 |
 | S10-17 | Topic Monitor slow/reload with many topics | Perf/UX | Filed as [APPENG-6291](https://redhat.atlassian.net/browse/APPENG-6291) under APPENG-6290, merged ([32f6dd1](https://github.com/sgahlot/podman-desktop-extension-robotics/commit/32f6dd173f12df74a0e51826fdfd53dc131d4928)), Closed |
-| S10-18 | Diagnostics dynamic/full sensor list | Feature | This doc |
+| S10-18 | Diagnostics dynamic/full sensor list | Feature | Filed as [APPENG-6292](https://redhat.atlassian.net/browse/APPENG-6292) under APPENG-6290 — branch `feature/APPENG-6292-diagnostics-dynamic-sensors`, in progress |
 | S10-19 | Docker Desktop compatibility investigation | Research | This doc |
 | S10-20 | Zenoh streaming as alternative remote-viewing mechanism | Feature (research; depends on S10-13's transport work) | This doc |
 | — | OpenShift deploy UX polish (GPU-path CPU dial, deploy error surfacing, Help) | Polish | Filed as [APPENG-6303](https://redhat.atlassian.net/browse/APPENG-6303) under APPENG-6290 — branch `feature/APPENG-6303-openshift-deploy-ux`, in progress |

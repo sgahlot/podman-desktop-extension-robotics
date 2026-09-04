@@ -9,22 +9,22 @@ import { localTargetKey } from './diagnosticsTargetKey';
 
 const mockGetTfTreeStatus = vi.fn();
 const mockGetCostmapSummary = vi.fn();
-const mockGetLaserScanSummary = vi.fn();
+const mockGetRobotSensorDiagnostics = vi.fn();
 const mockListSpawnedRobotsInSimulation = vi.fn();
 const mockGetTfTreeStatusInOpenShift = vi.fn();
 const mockGetCostmapSummaryInOpenShift = vi.fn();
-const mockGetLaserScanSummaryInOpenShift = vi.fn();
+const mockGetRobotSensorDiagnosticsInOpenShift = vi.fn();
 const mockListSpawnedRobotsInOpenShift = vi.fn();
 
 vi.mock('../api/client', () => ({
   physicalAiClient: {
     getTfTreeStatus: (...args: unknown[]) => mockGetTfTreeStatus(...args),
     getCostmapSummary: (...args: unknown[]) => mockGetCostmapSummary(...args),
-    getLaserScanSummary: (...args: unknown[]) => mockGetLaserScanSummary(...args),
+    getRobotSensorDiagnostics: (...args: unknown[]) => mockGetRobotSensorDiagnostics(...args),
     listSpawnedRobotsInSimulation: (...args: unknown[]) => mockListSpawnedRobotsInSimulation(...args),
     getTfTreeStatusInOpenShift: (...args: unknown[]) => mockGetTfTreeStatusInOpenShift(...args),
     getCostmapSummaryInOpenShift: (...args: unknown[]) => mockGetCostmapSummaryInOpenShift(...args),
-    getLaserScanSummaryInOpenShift: (...args: unknown[]) => mockGetLaserScanSummaryInOpenShift(...args),
+    getRobotSensorDiagnosticsInOpenShift: (...args: unknown[]) => mockGetRobotSensorDiagnosticsInOpenShift(...args),
     listSpawnedRobotsInOpenShift: (...args: unknown[]) => mockListSpawnedRobotsInOpenShift(...args),
   },
 }));
@@ -108,6 +108,20 @@ const LASER_RESULT = {
   capturedAt: new Date().toISOString(),
 };
 
+const SENSOR_RESULT = {
+  robotNamespace: 'robot_1',
+  capturedAt: new Date().toISOString(),
+  sensors: [
+    {
+      topic: '/robot_1/scan',
+      type: 'sensor_msgs/msg/LaserScan',
+      publishers: 1,
+      peekSupported: true,
+      laserScan: LASER_RESULT,
+    },
+  ],
+};
+
 describe('RobotDiagnosticsPanel', () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -115,11 +129,11 @@ describe('RobotDiagnosticsPanel', () => {
     spawnedRobotsByTarget.set({});
     mockGetTfTreeStatus.mockResolvedValue(TF_RESULT);
     mockGetCostmapSummary.mockResolvedValue(COSTMAP_RESULT);
-    mockGetLaserScanSummary.mockResolvedValue(LASER_RESULT);
+    mockGetRobotSensorDiagnostics.mockResolvedValue(SENSOR_RESULT);
     mockListSpawnedRobotsInSimulation.mockResolvedValue([]);
     mockGetTfTreeStatusInOpenShift.mockResolvedValue(TF_RESULT);
     mockGetCostmapSummaryInOpenShift.mockResolvedValue(COSTMAP_RESULT);
-    mockGetLaserScanSummaryInOpenShift.mockResolvedValue(LASER_RESULT);
+    mockGetRobotSensorDiagnosticsInOpenShift.mockResolvedValue(SENSOR_RESULT);
     mockListSpawnedRobotsInOpenShift.mockResolvedValue([]);
   });
 
@@ -173,19 +187,19 @@ describe('RobotDiagnosticsPanel', () => {
     expect(select.value).toBe('robot_9');
   });
 
-  it('fetches all three diagnostics for the selected robot on Refresh and renders all three cards', async () => {
+  it('fetches TF, costmap, and sensor diagnostics on Refresh and renders the cards', async () => {
     render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
 
     // No auto-fetch on mount/robot-selection — diagnostics are manual-refresh only, never polled.
     expect(mockGetTfTreeStatus).not.toHaveBeenCalled();
     expect(mockGetCostmapSummary).not.toHaveBeenCalled();
-    expect(mockGetLaserScanSummary).not.toHaveBeenCalled();
+    expect(mockGetRobotSensorDiagnostics).not.toHaveBeenCalled();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Refresh diagnostics' }));
 
     expect(mockGetTfTreeStatus).toHaveBeenCalledWith('c1', 'robot_1');
     expect(mockGetCostmapSummary).toHaveBeenCalledWith('c1', 'robot_1');
-    expect(mockGetLaserScanSummary).toHaveBeenCalledWith('c1', 'robot_1');
+    expect(mockGetRobotSensorDiagnostics).toHaveBeenCalledWith('c1', 'robot_1');
 
     // Verdict headlines render above the (collapsed) raw details.
     expect(await screen.findByText(/odom.*base_footprint is missing/)).toBeTruthy();
@@ -207,13 +221,13 @@ describe('RobotDiagnosticsPanel', () => {
 
     vi.mocked(mockGetTfTreeStatus).mockClear();
     vi.mocked(mockGetCostmapSummary).mockClear();
-    vi.mocked(mockGetLaserScanSummary).mockClear();
+    vi.mocked(mockGetRobotSensorDiagnostics).mockClear();
 
     render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
     expect(screen.getByText(/Laser scan looks normal/)).toBeTruthy();
     expect(mockGetTfTreeStatus).not.toHaveBeenCalled();
     expect(mockGetCostmapSummary).not.toHaveBeenCalled();
-    expect(mockGetLaserScanSummary).not.toHaveBeenCalled();
+    expect(mockGetRobotSensorDiagnostics).not.toHaveBeenCalled();
   });
 
   it('does not blank the other cards when one RPC rejects (allSettled behavior)', async () => {
@@ -263,11 +277,11 @@ describe('RobotDiagnosticsPanel', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
 
     await waitFor(() => expect(mockListSpawnedRobotsInSimulation).toHaveBeenCalledTimes(2));
-    // "Check again" only re-checks for a spawned robot — it must never fire the TF/costmap/scan
+    // "Check again" only re-checks for a spawned robot — it must never fire the TF/costmap/sensor
     // RPCs, which stay explicit-Refresh-only everywhere in this feature.
     expect(mockGetTfTreeStatus).not.toHaveBeenCalled();
     expect(mockGetCostmapSummary).not.toHaveBeenCalled();
-    expect(mockGetLaserScanSummary).not.toHaveBeenCalled();
+    expect(mockGetRobotSensorDiagnostics).not.toHaveBeenCalled();
   });
 
   it('shows the remembered-snapshot banner after a remount that hydrates from cache, and hides it after a fresh Refresh', async () => {
@@ -299,7 +313,12 @@ describe('RobotDiagnosticsPanel', () => {
 
       expect(mockGetTfTreeStatusInOpenShift).toHaveBeenCalledWith('ns1', 'ros2-jazzy-sim', 'robot_1', 'my-context');
       expect(mockGetCostmapSummaryInOpenShift).toHaveBeenCalledWith('ns1', 'ros2-jazzy-sim', 'robot_1', 'my-context');
-      expect(mockGetLaserScanSummaryInOpenShift).toHaveBeenCalledWith('ns1', 'ros2-jazzy-sim', 'robot_1', 'my-context');
+      expect(mockGetRobotSensorDiagnosticsInOpenShift).toHaveBeenCalledWith(
+        'ns1',
+        'ros2-jazzy-sim',
+        'robot_1',
+        'my-context',
+      );
       expect(mockGetTfTreeStatus).not.toHaveBeenCalled();
 
       expect(await screen.findByText(/odom.*base_footprint is missing/)).toBeTruthy();

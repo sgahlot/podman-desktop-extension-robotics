@@ -52,3 +52,30 @@ export interface LaserScanSummary {
   timedOut?: boolean;
   error?: string;
 }
+
+export interface ImuSummary {
+  topic: string;
+  orientation: { x: number; y: number; z: number; w: number };
+  angularVelocity: { x: number; y: number; z: number };
+  linearAcceleration: { x: number; y: number; z: number };
+  capturedAt: string;
+  timedOut?: boolean;
+  error?: string;
+}
+
+/** One sensor topic discovered under a robot namespace, with an optional one-shot peek. */
+export interface SensorDiagnosticEntry {
+  topic: string;
+  type: string;
+  publishers: number;
+  /** True when this message type has a peek parser (LaserScan, Imu, …). */
+  peekSupported: boolean;
+  laserScan?: LaserScanSummary;
+  imu?: ImuSummary;
+}
+
+export interface RobotSensorDiagnosticsResult {
+  robotNamespace: string;
+  sensors: SensorDiagnosticEntry[];
+  capturedAt: string;
+}
