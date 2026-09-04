@@ -82,10 +82,7 @@ onMount(async () => {
   try {
     const resolved = await resolveOpenShiftNamespace();
     if (resolved?.namespace) {
-      const workloads = await physicalAiClient.listOpenShiftDeployments(
-        resolved.namespace,
-        resolved.context,
-      );
+      const workloads = await physicalAiClient.listOpenShiftDeployments(resolved.namespace, resolved.context);
       openShiftSimCount = workloads.length;
     }
   } catch {

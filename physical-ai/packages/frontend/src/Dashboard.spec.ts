@@ -42,7 +42,16 @@ describe('Dashboard', () => {
     ]);
     mockGetOpenShiftContext.mockResolvedValue({ context: 'ctx1', kubeconfigPath: '/x', namespace: 'team-ns' });
     mockListOpenShiftDeployments.mockResolvedValue([
-      { name: 'ros2-jazzy-sim', namespace: 'team-ns', replicas: 1, readyReplicas: 1, ready: true, image: 'img', routeUrl: 'https://x', hasHummingbirdSidecar: false },
+      {
+        name: 'ros2-jazzy-sim',
+        namespace: 'team-ns',
+        replicas: 1,
+        readyReplicas: 1,
+        ready: true,
+        image: 'img',
+        routeUrl: 'https://x',
+        hasHummingbirdSidecar: false,
+      },
     ]);
     mockGetDefaultOpenShiftNamespace.mockResolvedValue('');
     mockOpenUrlInBrowser.mockResolvedValue(undefined);

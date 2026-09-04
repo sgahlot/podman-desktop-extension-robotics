@@ -8,7 +8,7 @@ import { lastOpenShiftSelection } from './simSelection';
  * Simulation page (lastOpenShiftSelection); (b) the current kube context, if it's bound to a
  * real (non-'default') namespace; (c) the configured default namespace setting; (d) none.
  */
-export async function resolveOpenShiftNamespace(): Promise<{ namespace: string; context?: string } | null> {
+export async function resolveOpenShiftNamespace(): Promise<{ namespace: string; context?: string } | undefined> {
   const stored = get(lastOpenShiftSelection);
   if (stored) return { namespace: stored.namespace, context: stored.context };
 
@@ -29,5 +29,5 @@ export async function resolveOpenShiftNamespace(): Promise<{ namespace: string; 
     // Fail soft — callers show empty/zero state instead of surfacing the error.
   }
 
-  return null;
+  return undefined;
 }
