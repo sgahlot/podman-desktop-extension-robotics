@@ -4,10 +4,8 @@
 - Building a Podman Desktop extension for Physical AI robotics development
 - Epic: APPENG-5763
 - MVP target: ROSCon Toronto demo, September 2026
-- Plan doc: `docs/podman-extension-plan.md`
 - Design doc: `docs/design.adoc`
-- Story docs: `docs/stories/`
-- `.internal/` is git-ignored (private files, not pushed to public repo)
+- Private backlog: `.internal/` (stories, plans, historical plan doc — git-ignored; Jira is public tracking)
 
 ## Tech Stack
 - Podman Desktop extension framework

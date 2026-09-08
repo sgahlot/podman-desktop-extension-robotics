@@ -18,9 +18,7 @@ For features, screenshots, and end-user quick start, see link:physical-ai/packag
 podman-work/                            <1>
 ├── README.adoc                         # This file — repo landing page
 ├── docs/                               <2>
-│   ├── podman-extension-plan.md        # Plan, work breakdown, progress
-│   ├── design.adoc                     # Architecture and design
-│   └── stories/                        # Per-story status tracking
+│   └── design.adoc                     # Architecture and design
 └── physical-ai/                        <3>
     ├── README.md                       # Developer README — build, load, contribute
     ├── Containerfile                   # OCI image build for extension packaging
@@ -31,7 +29,7 @@ podman-work/                            <1>
         └── cli/                        # Standalone CLI
 ----
 <1> Git repository root
-<2> Shared project docs (plan, design, stories) — outside the extension workspace
+<2> Shared project docs — `docs/design.adoc` only; planning/backlog in private `.internal/` (not in repo)
 <3> Extension source (npm workspaces) — start here to build or hack on the extension
 
 == Develop the extension
@@ -42,9 +40,9 @@ End-user documentation (Navigate, OpenShift, GPU/CPU sizing, settings): link:phy
 
 == Documentation
 
-* link:docs/podman-extension-plan.md[Plan doc] — work breakdown, progress, strategic drivers, dependency analysis
 * link:docs/design.adoc[Design doc] — architecture, component design, data flow
-* link:docs/stories/[Story docs] — per-story status tracking
+
+Work tracking: Jira epic link:https://redhat.atlassian.net/browse/APPENG-5763[APPENG-5763].
 
 == License
 
