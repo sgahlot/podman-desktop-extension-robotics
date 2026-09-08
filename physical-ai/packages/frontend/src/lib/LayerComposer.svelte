@@ -382,8 +382,8 @@ onDestroy(() => {
         This maps to the tested <span class="font-medium"
           >Ubuntu + ROS 2 {presetDistro} {wantsSim ? '+ Gazebo simulation' : ''}</span>
         preset — the full runnable recipe (entrypoints, worlds{wantsSim ? ', noVNC' : ''}, VirtualGL).{#if needsHardened}
-          Bake-in Hummingbird tools build a separate <span class="font-medium">hardened image</span> (step 2) on top
-          of the base, so the base image stays stable.{/if}
+          Bake-in Hummingbird tools build a separate <span class="font-medium">hardened image</span> (step 2) on top of the
+          base, so the base image stays stable.{/if}
         The generated Containerfile preview above is informational for this stack.
       </div>
 
@@ -393,8 +393,7 @@ onDestroy(() => {
           tagInputId="layer-base-tag"
           tag={presetBaseTag}
           tagPlaceholder="e.g. quay.io/org/ros2-base:latest"
-          buildImage={t =>
-            physicalAiClient.buildBaseImage(t, presetConfig, { layerPlan: layerCachePlanBase })}
+          buildImage={t => physicalAiClient.buildBaseImage(t, presetConfig, { layerPlan: layerCachePlanBase })}
           onBuildComplete={() => {
             void refreshLocalImages();
             onBuildComplete?.({ watchForSbom: false });

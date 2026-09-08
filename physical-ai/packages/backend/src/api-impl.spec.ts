@@ -69,7 +69,7 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 import * as extensionApi from '@podman-desktop/api';
-import { readFile, writeFile, mkdtemp, mkdir, rename, rm, cp } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
 
 const MOCK_CONTEXT = {
   extensionUri: { fsPath: '/fake/extension/path' },
@@ -644,7 +644,7 @@ describe('PhysicalAiApiImpl', () => {
     beforeEach(() => {
       vi.mocked(mkdir).mockResolvedValue(undefined);
       vi.mocked(writeFile).mockResolvedValue(undefined);
-      vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
+      mockPresetContainerfileRead();
       vi.mocked(mkdtemp).mockResolvedValue('/tmp/physical-ai-layer-build-hist');
       vi.mocked(rm).mockResolvedValue(undefined);
       mockConfigWithBuildHistoryLimit(undefined);
@@ -1379,9 +1379,9 @@ RUN apt-get install -y ros-jazzy-desktop
     });
 
     it('throws when no bake-in tools are provided', async () => {
-      await expect(
-        api.buildHardenedImage('hardened:latest', hardenedConfig, { hummingbirdTools: [] }),
-      ).rejects.toThrow(/no bake-in Hummingbird tools/);
+      await expect(api.buildHardenedImage('hardened:latest', hardenedConfig, { hummingbirdTools: [] })).rejects.toThrow(
+        /no bake-in Hummingbird tools/,
+      );
     });
 
     it('builds from a generated Containerfile with LOCAL_BASE_IMAGE', async () => {

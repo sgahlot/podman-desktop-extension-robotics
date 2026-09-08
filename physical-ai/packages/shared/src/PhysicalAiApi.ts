@@ -23,6 +23,8 @@ import type {
   OpenShiftContext,
   OpenShiftWorkload,
 } from './types/OpenShiftDeploy';
+import type { LayerCacheBuildOptions } from './types/buildLayerCache';
+import type { HardenedApp } from './types/layerCompatibility';
 
 export abstract class PhysicalAiApi {
   abstract getStatus(): Promise<string>;
@@ -36,15 +38,15 @@ export abstract class PhysicalAiApi {
   /** Local images with their reported CPU architecture, for finding genuinely-amd64 images
    * regardless of tag naming (see LocalImageInfo). */
   abstract listLocalImagesWithArch(): Promise<LocalImageInfo[]>;
-  abstract buildBaseImage(tag: string, config: SimulationConfig, options?: import('./types/buildLayerCache').LayerCacheBuildOptions): Promise<void>;
+  abstract buildBaseImage(tag: string, config: SimulationConfig, options?: LayerCacheBuildOptions): Promise<void>;
   abstract buildHardenedImage(
     tag: string,
     config: SimulationConfig,
-    options: import('./types/buildLayerCache').LayerCacheBuildOptions & {
-      hummingbirdTools: import('./types/layerCompatibility').HardenedApp[];
+    options: LayerCacheBuildOptions & {
+      hummingbirdTools: HardenedApp[];
     },
   ): Promise<void>;
-  abstract buildSimulationImage(tag: string, config: SimulationConfig, options?: import('./types/buildLayerCache').LayerCacheBuildOptions): Promise<void>;
+  abstract buildSimulationImage(tag: string, config: SimulationConfig, options?: LayerCacheBuildOptions): Promise<void>;
   /** Build an image from an in-memory Containerfile (layer-composition wizard). The
    * Containerfile is written to a throwaway build context; no bundled asset dir is used.
    * `options.generateSbom` (only meaningful here — the base/sim build paths never set it)

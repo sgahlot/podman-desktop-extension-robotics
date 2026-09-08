@@ -113,7 +113,7 @@ export function generatePresetHardenedContainerfile(tools: HardenedApp[]): strin
 
   for (const tool of tools) {
     const opt = optionById.get(tool);
-    if (!opt || opt.kind !== 'tool') continue;
+    if (opt?.kind !== 'tool') continue;
     const binPath = opt.binPath ?? `/usr/bin/${tool}`;
     lines.push(`COPY --from=${hummingbirdImageRef(tool)} ${binPath} /usr/local/bin/${tool}`);
   }
@@ -286,13 +286,8 @@ export class BuildCacheStreamParser {
   private readonly stepOutcomes: StepOutcome[] = [];
   private currentStepIndex = -1;
 
-  constructor(
-    containerfile: string,
-    options?: { kind?: LayerCacheParseKind; plan?: LayerCachePlanEntry[] },
-  ) {
-    this.kind =
-      options?.kind ??
-      (isLayerCompositionContainerfile(containerfile) ? 'composition' : 'preset-base');
+  constructor(containerfile: string, options?: { kind?: LayerCacheParseKind; plan?: LayerCachePlanEntry[] }) {
+    this.kind = options?.kind ?? (isLayerCompositionContainerfile(containerfile) ? 'composition' : 'preset-base');
     this.plan = options?.plan ?? [];
     this.stepLayerIds =
       this.kind === 'composition' || this.kind === 'preset-base'
@@ -301,8 +296,7 @@ export class BuildCacheStreamParser {
           : parsePresetBaseStepLayerIds(containerfile)
         : [];
     this.presetSimStepKinds = this.kind === 'preset-sim' ? parsePresetSimStepKinds(containerfile) : [];
-    this.presetHardenedStepKinds =
-      this.kind === 'preset-hardened' ? parsePresetHardenedStepKinds(containerfile) : [];
+    this.presetHardenedStepKinds = this.kind === 'preset-hardened' ? parsePresetHardenedStepKinds(containerfile) : [];
     this.layerLabels = parseLayerLabelsFromContainerfile(containerfile);
   }
 
@@ -456,15 +450,11 @@ export class BuildCacheStreamParser {
   #aggregateLayerStatus(): LayerCacheStatusEntry[] {
     const result: LayerCacheStatusEntry[] = [];
     const planIds =
-      this.plan.length > 0
-        ? this.plan.map(p => p.layerId)
-        : LAYER_ORDER.filter(id => this.stepLayerIds.includes(id));
+      this.plan.length > 0 ? this.plan.map(p => p.layerId) : LAYER_ORDER.filter(id => this.stepLayerIds.includes(id));
 
     for (const layerId of planIds) {
       const planEntry = this.plan.find(p => p.layerId === layerId);
-      const stepIndices = this.stepLayerIds
-        .map((id, idx) => (id === layerId ? idx : -1))
-        .filter(idx => idx >= 0);
+      const stepIndices = this.stepLayerIds.map((id, idx) => (id === layerId ? idx : -1)).filter(idx => idx >= 0);
       if (stepIndices.length === 0) continue;
 
       const outcomes = stepIndices.map(idx => this.stepOutcomes[idx] ?? 'rebuilt');
