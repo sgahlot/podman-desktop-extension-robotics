@@ -18,6 +18,8 @@ export interface SimulationProfile {
   assetDir?: string;
   /** Simulation image repository name (without registry/namespace/tag) */
   imageName?: string;
+  /** Optional middle-layer image for bake-in Hummingbird tools (Layers wizard 3-step preset). */
+  hardenedImageName?: string;
   label: string;
 }
 
@@ -31,6 +33,7 @@ export const SIMULATION_PROFILES: readonly SimulationProfile[] = [
     baseImageName: 'ros2-humble-base',
     assetDir: 'ros2-humble-turtlebot3',
     imageName: 'ros2-humble-turtlebot3',
+    hardenedImageName: 'ros2-humble-hardened',
     label: 'ROS2 Humble + TurtleBot3 + Gazebo (DDS)',
   },
   {
@@ -42,6 +45,7 @@ export const SIMULATION_PROFILES: readonly SimulationProfile[] = [
     baseImageName: 'ros2-jazzy-base',
     assetDir: 'ros2-jazzy-sim',
     imageName: 'ros2-jazzy-sim',
+    hardenedImageName: 'ros2-jazzy-hardened',
     label: 'ROS2 Jazzy + TurtleBot3 + Gazebo + noVNC',
   },
   {
@@ -56,6 +60,7 @@ export const SIMULATION_PROFILES: readonly SimulationProfile[] = [
     baseImageName: 'ros2-jazzy-base',
     assetDir: 'ros2-jazzy-sim',
     imageName: 'ros2-jazzy-sim',
+    hardenedImageName: 'ros2-jazzy-hardened',
     label: 'ROS2 Jazzy + TurtleBot3 + Gazebo + noVNC (Zenoh)',
   },
 ];
@@ -106,4 +111,12 @@ export function simulationImageTag(namespace: string, config: SimulationConfig):
   if (!profile?.imageName) return undefined;
   const base = resolveSimulationBaseImage(config.baseImage);
   return `quay.io/${namespace}/${profile.imageName}:${base.imageTag}${archTagSuffix(config.targetArch)}`;
+}
+
+/** Tag for the optional Hardened middle-layer image (bake-in Hummingbird tools only). */
+export function hardenedImageTag(namespace: string, config: SimulationConfig): string | undefined {
+  const profile = resolveSimulationProfile(config);
+  if (!profile?.hardenedImageName) return undefined;
+  const base = resolveSimulationBaseImage(config.baseImage);
+  return `quay.io/${namespace}/${profile.hardenedImageName}:${base.imageTag}${archTagSuffix(config.targetArch)}`;
 }

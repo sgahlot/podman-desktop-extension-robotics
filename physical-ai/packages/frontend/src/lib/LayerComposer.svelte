@@ -13,9 +13,11 @@ import {
   type HardenedApp,
   type LayerSelection,
 } from '/@shared/src/types/layerCompatibility';
+import { layerCachePlanForPresetPhase, layerCachePlanFromSelection } from '/@shared/src/types/buildLayerCache';
 import { SBOM_FORMAT_DEFAULT, type SbomFormat } from '/@shared/src/types/BuildHistory';
 import {
   baseImageTag,
+  hardenedImageTag,
   simulationImageTag,
   platformForArch,
   archTagSuffix,
@@ -84,19 +86,21 @@ $: if (selection.hardened !== 'hummingbird-app' && (selection.hummingbirdApps?.l
 }
 
 // --- Build mode -----------------------------------------------------------------
-// Mode A ("preset"): an Ubuntu + ROS [+ Sim] stack maps to a tested preset, so we build
-// the real, runnable image with the bundled asset recipe (entrypoints, worlds, noVNC)
-// via buildBaseImage/buildSimulationImage. Selecting a bake-in tool forces the generated
-// Containerfile path so the COPY --from actually lands in the image.
-// Mode B ("containerfile"): everything else (bootc bases, attempt-anyway, tool bake-in)
-// builds from the generated Containerfile — it either succeeds as a plain image or fails
-// for real, exactly as the compatibility verdict predicts.
+// Mode A ("preset"): Ubuntu + ROS [+ Sim] on the tested asset recipe. Bake-in Hummingbird
+// tools use a separate hardened middle image (step 2 of 3) so the base image stays stable.
+// Mode B ("containerfile"): bootc bases, attempt-anyway, and other non-preset stacks.
 $: isPresetStack =
   selection.baseOs === 'ubuntu-noble' &&
   (selection.ros === 'ros2-jazzy' || selection.ros === 'ros2-humble') &&
   (selection.sim === 'none' || selection.sim === 'gazebo-nav2-tb3');
-$: hasBakeInTools = (selection.hummingbirdApps ?? []).some(a => HUMMINGBIRD_TOOL_OPTIONS.some(o => o.id === a));
-$: buildMode = isPresetStack && !hasBakeInTools ? 'preset' : 'containerfile';
+$: bakeInTools = (selection.hummingbirdApps ?? []).filter((a: HardenedApp) =>
+  HUMMINGBIRD_TOOL_OPTIONS.some(o => o.id === a),
+);
+$: buildMode = isPresetStack ? 'preset' : 'containerfile';
+$: layerCachePlan = layerCachePlanFromSelection(selection);
+$: layerCachePlanBase = layerCachePlanForPresetPhase(selection, 'base');
+$: layerCachePlanHardened = layerCachePlanForPresetPhase(selection, 'hardened');
+$: layerCachePlanSim = layerCachePlanForPresetPhase(selection, 'sim');
 
 $: presetDistro = selection.ros === 'ros2-humble' ? 'humble' : 'jazzy';
 $: presetConfig = {
@@ -108,9 +112,13 @@ $: presetConfig = {
   targetArch,
 } as SimulationConfig;
 $: presetBaseTag = ns ? (baseImageTag(ns, presetConfig) ?? '') : '';
+$: presetHardenedTag = needsHardened && ns ? (hardenedImageTag(ns, presetConfig) ?? '') : '';
 $: presetSimTag = ns ? (simulationImageTag(ns, presetConfig) ?? '') : '';
 $: wantsSim = selection.sim !== 'none';
+$: needsHardened = bakeInTools.length > 0;
 $: baseImageExists = !!presetBaseTag && localImages.includes(presetBaseTag);
+$: hardenedImageExists = !!presetHardenedTag && localImages.includes(presetHardenedTag);
+$: simParentReady = baseImageExists && (!needsHardened || hardenedImageExists);
 $: containerfileTag = `${ns ? `quay.io/${ns}/` : ''}pai-layer-${selection.baseOs}:latest${archTagSuffix(targetArch)}`;
 
 // --- Images this stack pulls -----------------------------------------------------
@@ -373,8 +381,10 @@ onDestroy(() => {
       <div class="text-sm p-3 rounded pai-banner-info">
         This maps to the tested <span class="font-medium"
           >Ubuntu + ROS 2 {presetDistro} {wantsSim ? '+ Gazebo simulation' : ''}</span>
-        preset — building it uses the full tested recipe (entrypoints, worlds{wantsSim ? ', noVNC' : ''}), not the naive
-        Containerfile above.
+        preset — the full runnable recipe (entrypoints, worlds{wantsSim ? ', noVNC' : ''}, VirtualGL).{#if needsHardened}
+          Bake-in Hummingbird tools build a separate <span class="font-medium">hardened image</span> (step 2) on top
+          of the base, so the base image stays stable.{/if}
+        The generated Containerfile preview above is informational for this stack.
       </div>
 
       <div class="flex flex-col gap-1">
@@ -383,31 +393,66 @@ onDestroy(() => {
           tagInputId="layer-base-tag"
           tag={presetBaseTag}
           tagPlaceholder="e.g. quay.io/org/ros2-base:latest"
-          buildImage={t => physicalAiClient.buildBaseImage(t, presetConfig)}
+          buildImage={t =>
+            physicalAiClient.buildBaseImage(t, presetConfig, { layerPlan: layerCachePlanBase })}
           onBuildComplete={() => {
             void refreshLocalImages();
             onBuildComplete?.({ watchForSbom: false });
           }} />
       </div>
 
-      {#if wantsSim}
+      {#if needsHardened}
         <div class="flex flex-col gap-1">
-          <span class="text-xs font-medium text-[var(--pd-content-text)]">2. Simulation image</span>
+          <span class="text-xs font-medium text-[var(--pd-content-text)]">2. Hardened image</span>
           {#if !baseImageExists}
             <p class="text-sm p-3 rounded pai-banner-warning">
-              Build the base image (Step 1) first — the simulation image depends on it.
+              Build the base image (step 1) first — the hardened image layers on top of it.
+            </p>
+          {/if}
+          <BuildPushPanel
+            tagInputId="layer-hardened-tag"
+            tag={presetHardenedTag}
+            tagPlaceholder="e.g. quay.io/org/ros2-jazzy-hardened:noble"
+            buildImage={t =>
+              physicalAiClient.buildHardenedImage(t, presetConfig, {
+                layerPlan: layerCachePlanHardened,
+                hummingbirdTools: bakeInTools,
+              })}
+            onBuildComplete={() => {
+              void refreshLocalImages();
+              onBuildComplete?.({ watchForSbom: false });
+            }}
+            disabled={!baseImageExists} />
+        </div>
+      {/if}
+
+      {#if wantsSim}
+        <div class="flex flex-col gap-1">
+          <span class="text-xs font-medium text-[var(--pd-content-text)]"
+            >{needsHardened ? '3' : '2'}. Simulation image</span>
+          {#if !simParentReady}
+            <p class="text-sm p-3 rounded pai-banner-warning">
+              {#if needsHardened && !hardenedImageExists}
+                Build the hardened image (step 2) first — the simulation image layers on top of it.
+              {:else}
+                Build the base image (step 1) first — the simulation image depends on it.
+              {/if}
             </p>
           {/if}
           <BuildPushPanel
             tagInputId="layer-sim-tag"
             tag={presetSimTag}
             tagPlaceholder="e.g. quay.io/org/ros2-sim:latest"
-            buildImage={t => physicalAiClient.buildSimulationImage(t, presetConfig)}
+            buildImage={t =>
+              physicalAiClient.buildSimulationImage(t, presetConfig, {
+                layerPlan: layerCachePlanSim,
+                parentImageTag: needsHardened ? presetHardenedTag : undefined,
+              })}
             onBuildComplete={() => {
               void refreshLocalImages();
               onBuildComplete?.({ watchForSbom: false });
             }}
-            disabled={!baseImageExists} />
+            disabled={!simParentReady} />
         </div>
       {/if}
     {:else}

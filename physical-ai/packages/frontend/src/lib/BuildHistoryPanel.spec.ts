@@ -52,6 +52,30 @@ describe('BuildHistoryPanel', () => {
     expect(screen.getByText('✅')).toBeTruthy();
   });
 
+  it('shows per-layer cache summary when layerCacheStatus is present', async () => {
+    const entry: BuildHistoryEntry = {
+      tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
+      arch: 'arm64',
+      startedAt: Date.now(),
+      durationMs: 49_000,
+      success: true,
+      layerCacheStatus: [
+        { layer: 'Base OS', cached: true },
+        { layer: 'Hummingbird app', cached: true },
+        { layer: 'ROS Jazzy', cached: true },
+        { layer: 'Gazebo + Nav2 + TurtleBot3', cached: false },
+      ],
+    };
+    mockGetBuildHistory.mockResolvedValue([entry]);
+
+    render(BuildHistoryPanel);
+
+    expect(await screen.findByText('Gazebo + Nav2 + TurtleBot3')).toBeTruthy();
+    expect(screen.getByText('↻ rebuilt')).toBeTruthy();
+    expect(screen.getAllByText('✓ cached').length).toBe(3);
+    expect(screen.queryByRole('button', { name: /Layer cache/ })).toBeNull();
+  });
+
   it('formats a duration over a minute as minutes and seconds', async () => {
     const entry: BuildHistoryEntry = {
       tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64',

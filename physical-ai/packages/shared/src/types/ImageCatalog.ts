@@ -1,3 +1,5 @@
+import type { LayerCacheStatusEntry } from './BuildHistory';
+
 export interface QuayRepository {
   namespace: string;
   name: string;
@@ -50,6 +52,8 @@ export interface BuildProgress {
   startedAt?: number;
   /** Epoch ms when the build finished (success, error, or cancel). */
   finishedAt?: number;
+  /** Live + final per-layer cache summary for Layers-wizard containerfile builds. */
+  layerCacheStatus?: LayerCacheStatusEntry[];
 }
 
 export interface PushProgress {

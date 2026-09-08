@@ -11,6 +11,7 @@ const mockListLocalImages = vi.fn();
 const mockPullImageByRef = vi.fn();
 const mockGetPullProgress = vi.fn();
 const mockBuildBaseImage = vi.fn();
+const mockBuildHardenedImage = vi.fn();
 const mockBuildSimulationImage = vi.fn();
 const mockBuildFromContainerfile = vi.fn();
 const mockGetImageTags = vi.fn();
@@ -27,6 +28,7 @@ vi.mock('../api/client', () => ({
     pullImageByRef: (...args: unknown[]) => mockPullImageByRef(...args),
     getPullProgress: (...args: unknown[]) => mockGetPullProgress(...args),
     buildBaseImage: (...args: unknown[]) => mockBuildBaseImage(...args),
+    buildHardenedImage: (...args: unknown[]) => mockBuildHardenedImage(...args),
     buildSimulationImage: (...args: unknown[]) => mockBuildSimulationImage(...args),
     buildFromContainerfile: (...args: unknown[]) => mockBuildFromContainerfile(...args),
     getImageTags: (...args: unknown[]) => mockGetImageTags(...args),
@@ -119,8 +121,8 @@ describe('LayerComposer', () => {
     expect(document.body.textContent).toContain('registry.access.redhat.com/hi/nginx');
   });
 
-  it('selecting the syft tool passes generateSbom: true to buildFromContainerfile on build, and reports watchForSbom: true on completion', async () => {
-    mockBuildFromContainerfile.mockResolvedValue(undefined);
+  it('selecting the syft tool on a preset stack builds the hardened middle image', async () => {
+    mockBuildHardenedImage.mockResolvedValue(undefined);
     mockGetBuildProgress.mockResolvedValue({ tag: 'x', status: 'Complete', logs: [], done: true });
     const onBuildComplete = vi.fn();
     render(LayerComposer, { props: { onBuildComplete } });
@@ -131,24 +133,29 @@ describe('LayerComposer', () => {
     expect(syftCheckbox).toBeTruthy();
     await fireEvent.click(syftCheckbox as HTMLInputElement);
 
-    const buildButton = screen.getByRole('button', { name: 'Build' });
-    await fireEvent.click(buildButton);
+    expect(screen.getByText('2. Hardened image')).toBeTruthy();
 
     await waitFor(() => {
-      expect(mockBuildFromContainerfile).toHaveBeenCalledWith(expect.any(String), expect.any(String), undefined, {
-        generateSbom: true,
-        sbomFormat: 'cyclonedx-json',
-      });
+      const buttons = screen.getAllByRole('button', { name: 'Build' }) as HTMLButtonElement[];
+      expect(buttons[0].disabled).toBe(false);
     });
-    // A syft-enabled build's SBOM attaches asynchronously after completion (APPENG-6265) —
-    // the parent needs to know to keep watching Recent Builds for it.
+    const buildButtons = screen.getAllByRole('button', { name: 'Build' });
+    await fireEvent.click(buildButtons[1]);
+
     await waitFor(() => {
-      expect(onBuildComplete).toHaveBeenCalledWith({ watchForSbom: true });
+      expect(mockBuildHardenedImage).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Object),
+        expect.objectContaining({ hummingbirdTools: ['syft'] }),
+      );
+    });
+    await waitFor(() => {
+      expect(onBuildComplete).toHaveBeenCalledWith({ watchForSbom: false });
     });
   });
 
-  it('building without syft selected passes generateSbom: false, and reports watchForSbom: false on completion', async () => {
-    mockBuildFromContainerfile.mockResolvedValue(undefined);
+  it('selecting cosign on a preset stack builds the hardened middle image, not the base', async () => {
+    mockBuildHardenedImage.mockResolvedValue(undefined);
     mockGetBuildProgress.mockResolvedValue({ tag: 'x', status: 'Complete', logs: [], done: true });
     const onBuildComplete = vi.fn();
     render(LayerComposer, { props: { onBuildComplete } });
@@ -159,15 +166,21 @@ describe('LayerComposer', () => {
     expect(cosignCheckbox).toBeTruthy();
     await fireEvent.click(cosignCheckbox as HTMLInputElement);
 
-    const buildButton = screen.getByRole('button', { name: 'Build' });
-    await fireEvent.click(buildButton);
+    await waitFor(() => {
+      const buttons = screen.getAllByRole('button', { name: 'Build' }) as HTMLButtonElement[];
+      expect(buttons[0].disabled).toBe(false);
+    });
+    const buildButtons = screen.getAllByRole('button', { name: 'Build' });
+    await fireEvent.click(buildButtons[1]);
 
     await waitFor(() => {
-      expect(mockBuildFromContainerfile).toHaveBeenCalledWith(expect.any(String), expect.any(String), undefined, {
-        generateSbom: false,
-        sbomFormat: 'cyclonedx-json',
-      });
+      expect(mockBuildHardenedImage).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Object),
+        expect.objectContaining({ hummingbirdTools: ['cosign'] }),
+      );
     });
+    expect(mockBuildBaseImage).not.toHaveBeenCalled();
     await waitFor(() => {
       expect(onBuildComplete).toHaveBeenCalledWith({ watchForSbom: false });
     });
@@ -213,6 +226,8 @@ describe('LayerComposer', () => {
   it('selecting SPDX passes sbomFormat: "spdx-json" to buildFromContainerfile on build', async () => {
     mockBuildFromContainerfile.mockResolvedValue(undefined);
     render(LayerComposer);
+    const baseOsSelect = screen.getByLabelText('Base OS');
+    await fireEvent.change(baseOsSelect, { target: { value: 'centos-bootc-stream10' } });
     const hardenedSelect = screen.getByLabelText('Hardened app');
     await fireEvent.change(hardenedSelect, { target: { value: 'hummingbird-app' } });
 

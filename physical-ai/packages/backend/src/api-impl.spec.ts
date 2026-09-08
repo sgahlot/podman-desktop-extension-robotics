@@ -65,10 +65,11 @@ vi.mock('node:fs/promises', () => ({
   mkdir: vi.fn(),
   rename: vi.fn(),
   rm: vi.fn(),
+  cp: vi.fn(),
 }));
 
 import * as extensionApi from '@podman-desktop/api';
-import { readFile, writeFile, mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, mkdir, rename, rm, cp } from 'node:fs/promises';
 
 const MOCK_CONTEXT = {
   extensionUri: { fsPath: '/fake/extension/path' },
@@ -140,6 +141,15 @@ function mockStatefulBuildHistoryFile(): void {
   vi.mocked(readFile).mockImplementation(async path => {
     if (String(path).endsWith('build-history.json') && stored !== undefined) {
       return stored as unknown as Awaited<ReturnType<typeof readFile>>;
+    }
+    throw new Error('ENOENT');
+  });
+}
+
+function mockPresetContainerfileRead(content = 'ARG X\nFROM scratch\nRUN echo base\nCOPY f /f\n'): void {
+  vi.mocked(readFile).mockImplementation(async path => {
+    if (String(path).endsWith('Containerfile')) {
+      return content as unknown as Awaited<ReturnType<typeof readFile>>;
     }
     throw new Error('ENOENT');
   });
@@ -1042,6 +1052,10 @@ describe('PhysicalAiApiImpl', () => {
       baseImage: 'sloretz' as const,
     };
 
+    beforeEach(() => {
+      mockPresetContainerfileRead();
+    });
+
     it('throws when no Podman connection found', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([]);
 
@@ -1150,6 +1164,71 @@ describe('PhysicalAiApiImpl', () => {
       expect(progress!.totalSteps).toBe(8);
       expect(progress!.status).toBe('Building... Step 3/8');
       expect(progress!.logs.some(l => l.includes('STEP 3/8: RUN apt-get update'))).toBe(true);
+    });
+
+    it('records per-layer cache status for layer-composition containerfile builds', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(mkdtemp).mockResolvedValue('/tmp/physical-ai-layer-build-cache');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+
+      const containerfile = `# Layer 1 — Base OS: Ubuntu Noble
+FROM ubuntu:24.04
+
+# Layer 3 — ROS: ROS2 Jazzy
+RUN apt-get install -y ros-jazzy-desktop
+`;
+
+      let buildCallback: Parameters<typeof extensionApi.containerEngine.buildImage>[1];
+      vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation((_ctx, cb, _opts) => {
+        buildCallback = cb;
+        return new Promise(() => {});
+      });
+
+      await api.buildFromContainerfile('layer-cache:latest', containerfile);
+      buildCallback!('stream', 'STEP 1/2: FROM ubuntu:24.04');
+      buildCallback!('stream', '--> Using cache');
+      buildCallback!('stream', 'STEP 2/2: RUN apt-get install -y ros-jazzy-desktop');
+
+      const progress = await api.getBuildProgress('layer-cache:latest');
+      expect(progress!.layerCacheStatus).toBeUndefined();
+
+      buildCallback!('finish', 'Successfully tagged layer-cache:latest');
+
+      const done = await api.getBuildProgress('layer-cache:latest');
+      expect(done!.layerCacheStatus).toEqual([
+        { layer: 'Base OS', cached: true },
+        { layer: 'ROS Jazzy', cached: false },
+      ]);
+    });
+
+    it('records per-layer cache status for preset base image builds', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({
+        fsPath: '/fake/assets/ros2-jazzy-base',
+      } as unknown as extensionApi.Uri);
+      mockPresetContainerfileRead('FROM docker.io/ros:jazzy\nRUN apt-get\nCOPY f /f\n');
+
+      let buildCallback: Parameters<typeof extensionApi.containerEngine.buildImage>[1];
+      vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation((_ctx, cb, _opts) => {
+        buildCallback = cb;
+        return new Promise(() => {});
+      });
+
+      await api.buildBaseImage('preset-base:latest', { ...baseConfig, distro: 'jazzy', baseImage: 'jazzy' });
+      buildCallback!('stream', 'STEP 1/3: FROM docker.io/ros:jazzy');
+      buildCallback!('stream', '--> Using cache');
+      buildCallback!('stream', 'STEP 2/3: RUN apt-get');
+      buildCallback!('finish', 'Successfully tagged preset-base:latest');
+
+      const done = await api.getBuildProgress('preset-base:latest');
+      expect(done!.layerCacheStatus).toEqual([
+        { layer: 'Base OS', cached: true },
+        { layer: 'ROS Jazzy', cached: false },
+      ]);
     });
 
     it('records error events', async () => {
@@ -1283,6 +1362,50 @@ describe('PhysicalAiApiImpl', () => {
     });
   });
 
+  describe('buildHardenedImage', () => {
+    const hardenedConfig = {
+      robot: 'turtlebot3',
+      distro: 'jazzy',
+      middleware: 'dds',
+      engine: 'gazebo',
+      baseImage: 'jazzy-noble' as const,
+    };
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue('ecosystem-appeng'),
+        update: vi.fn(),
+      } as unknown as extensionApi.Configuration);
+    });
+
+    it('throws when no bake-in tools are provided', async () => {
+      await expect(
+        api.buildHardenedImage('hardened:latest', hardenedConfig, { hummingbirdTools: [] }),
+      ).rejects.toThrow(/no bake-in Hummingbird tools/);
+    });
+
+    it('builds from a generated Containerfile with LOCAL_BASE_IMAGE', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(mkdtemp).mockResolvedValue('/tmp/physical-ai-hardened-build');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
+
+      await api.buildHardenedImage('hardened:latest', hardenedConfig, {
+        hummingbirdTools: ['cosign'],
+      });
+
+      expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
+        '/tmp/physical-ai-hardened-build',
+        expect.any(Function),
+        expect.objectContaining({
+          buildargs: { LOCAL_BASE_IMAGE: 'quay.io/ecosystem-appeng/ros2-jazzy-base:noble' },
+        }),
+      );
+    });
+  });
+
   describe('buildSimulationImage', () => {
     const supportedConfig = {
       robot: 'turtlebot3',
@@ -1291,6 +1414,10 @@ describe('PhysicalAiApiImpl', () => {
       engine: 'gazebo',
       baseImage: 'sloretz' as const,
     };
+
+    beforeEach(() => {
+      mockPresetContainerfileRead('ARG LOCAL_BASE_IMAGE\nFROM ${LOCAL_BASE_IMAGE}\nRUN apt-get\n');
+    });
 
     it('builds from the turtlebot3 simulation asset directory with LOCAL_BASE_IMAGE build-arg', async () => {
       const mockConnection = createMockConnection();

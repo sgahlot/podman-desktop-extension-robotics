@@ -62,8 +62,8 @@
         },
         "physical-ai.simulation.distro": {
           "type": "string",
-          "default": "humble",
-          "description": "ROS distro for simulation (humble: TurtleBot3 sim; jazzy: sim + noVNC via jazzy-noble preset)"
+          "default": "jazzy",
+          "description": "ROS distro for simulation (jazzy: sim + noVNC via jazzy-noble preset; humble: legacy TurtleBot3 sim)"
         },
         "physical-ai.simulation.middleware": {
           "type": "string",
@@ -89,7 +89,7 @@
             "docker.io/library/ros:jazzy-ros-base on Ubuntu Noble (multi-arch Quick Start)",
             "docker.io/ros official Jazzy base (amd64 preset, tag :latest)"
           ],
-          "default": "sloretz",
+          "default": "jazzy-noble",
           "description": "Base image preset for Image Builder builds"
         },
         "physical-ai.simulation.gpuPassthrough": {
