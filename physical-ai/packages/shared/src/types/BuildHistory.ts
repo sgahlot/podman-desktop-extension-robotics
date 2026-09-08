@@ -25,6 +25,11 @@ export interface LayerCacheStatusEntry {
   layer: string;
   /** True when every Containerfile step for this layer was a Podman cache hit. */
   cached: boolean;
+  /**
+   * True when this layer came from the parent image (`FROM` local base/hardened) and was
+   * not built by the Dockerfile for this build step (preset hardened/sim middle images).
+   */
+  reused?: boolean;
 }
 
 export interface BuildHistoryEntry {

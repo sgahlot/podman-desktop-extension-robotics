@@ -405,7 +405,6 @@ export class BuildCacheStreamParser {
   }
 
   #aggregatePresetSimStatus(): LayerCacheStatusEntry[] {
-    const lowerStackCached = this.stepOutcomes[0] === 'cached';
     const simStepIndices = this.presetSimStepKinds
       .map((kind, idx) => (kind === 'sim' ? idx : -1))
       .filter(idx => idx >= 0);
@@ -419,7 +418,8 @@ export class BuildCacheStreamParser {
       if (entry.layerId === 'sim') {
         result.push({ layer: entry.label, cached: simCached });
       } else {
-        result.push({ layer: entry.label, cached: lowerStackCached });
+        // Base / hardened / ROS live in the parent image — this sim Dockerfile only FROMs it.
+        result.push({ layer: entry.label, cached: true, reused: true });
       }
     }
 
@@ -427,7 +427,6 @@ export class BuildCacheStreamParser {
   }
 
   #aggregatePresetHardenedStatus(): LayerCacheStatusEntry[] {
-    const lowerStackCached = this.stepOutcomes[0] === 'cached';
     const hardenedStepIndices = this.presetHardenedStepKinds
       .map((kind, idx) => (kind === 'hardened' ? idx : -1))
       .filter(idx => idx >= 0);
@@ -447,7 +446,7 @@ export class BuildCacheStreamParser {
       if (entry.layerId === 'hardened') {
         result.push({ layer: entry.label, cached: hardenedCached });
       } else {
-        result.push({ layer: entry.label, cached: lowerStackCached });
+        result.push({ layer: entry.label, cached: true, reused: true });
       }
     }
 
@@ -481,11 +480,15 @@ export class BuildCacheStreamParser {
   }
 }
 
-/** Compact one-line summary for build history cards and post-build banners. */
+/** Compact label for one layer in the cache summary / layer cake. */
+export function layerCacheOutcomeLabel(entry: LayerCacheStatusEntry): string {
+  if (entry.reused) return '✓ reused';
+  return entry.cached ? '✓ cached' : '↻ rebuilt';
+}
+
+/** Compact flow summary for aria-labels and programmatic use. */
 export function formatLayerCacheSummary(entries: LayerCacheStatusEntry[]): string {
-  return entries
-    .map(e => `${e.layer} ${e.cached ? '✓ cached' : '↻ rebuilt'}`)
-    .join(' · ');
+  return entries.map(e => `${e.layer} ${layerCacheOutcomeLabel(e)}`).join(' → ');
 }
 
 /** True for Podman stream lines that indicate a cache hit (for log highlighting). */

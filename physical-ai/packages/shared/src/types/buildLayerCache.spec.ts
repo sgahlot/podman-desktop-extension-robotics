@@ -58,7 +58,7 @@ describe('buildLayerCache', () => {
       { layer: 'Gazebo + Nav2 + TurtleBot3', cached: false },
     ]);
     expect(formatLayerCacheSummary(status)).toBe(
-      'Base OS ✓ cached · Hummingbird app ✓ cached · ROS Jazzy ✓ cached · Gazebo + Nav2 + TurtleBot3 ↻ rebuilt',
+      'Base OS ✓ cached → Hummingbird app ✓ cached → ROS Jazzy ✓ cached → Gazebo + Nav2 + TurtleBot3 ↻ rebuilt',
     );
   });
 
@@ -137,8 +137,8 @@ describe('buildLayerCache', () => {
     parser.processLine('--> Using cache');
 
     expect(parser.finalize()).toEqual([
-      { layer: 'Base OS', cached: true },
-      { layer: 'ROS Jazzy', cached: true },
+      { layer: 'Base OS', cached: true, reused: true },
+      { layer: 'ROS Jazzy', cached: true, reused: true },
       { layer: 'Gazebo + Nav2 + TurtleBot3', cached: true },
     ]);
   });
@@ -157,8 +157,34 @@ describe('buildLayerCache', () => {
     parser.processLine('--> Using cache');
 
     expect(parser.finalize()).toEqual([
-      { layer: 'Base OS', cached: true },
+      { layer: 'Base OS', cached: true, reused: true },
       { layer: 'Hummingbird app', cached: true },
     ]);
+  });
+
+  it('marks sim-only layers rebuilt while parent stack is reused on preset sim rebuilds', () => {
+    const presetSim = `ARG LOCAL_BASE_IMAGE\nFROM \${LOCAL_BASE_IMAGE}\nRUN apt-get\nCOPY worlds /w\n`;
+    const plan = [
+      { layerId: 'base-os' as const, label: 'Base OS' },
+      { layerId: 'hardened' as const, label: 'Hummingbird app' },
+      { layerId: 'ros' as const, label: 'ROS Jazzy' },
+      { layerId: 'sim' as const, label: 'Gazebo + Nav2 + TurtleBot3' },
+    ];
+    const parser = new BuildCacheStreamParser(presetSim, { kind: 'preset-sim', plan });
+
+    parser.processLine('STEP 1/3: FROM quay.io/org/ros2-jazzy-hardened:noble');
+    parser.processLine('STEP 2/3: RUN apt-get');
+    parser.processLine('STEP 3/3: COPY worlds /w');
+
+    const status = parser.finalize();
+    expect(status).toEqual([
+      { layer: 'Base OS', cached: true, reused: true },
+      { layer: 'Hummingbird app', cached: true, reused: true },
+      { layer: 'ROS Jazzy', cached: true, reused: true },
+      { layer: 'Gazebo + Nav2 + TurtleBot3', cached: false },
+    ]);
+    expect(formatLayerCacheSummary(status)).toBe(
+      'Base OS ✓ reused → Hummingbird app ✓ reused → ROS Jazzy ✓ reused → Gazebo + Nav2 + TurtleBot3 ↻ rebuilt',
+    );
   });
 });

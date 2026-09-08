@@ -18,7 +18,7 @@ import { onMount, onDestroy } from 'svelte';
 import { formatDurationSeconds } from './formatDuration';
 import type { LayerCacheStatusEntry } from '/@shared/src/types/BuildHistory';
 import { isBuildCacheHitLogLine } from '/@shared/src/types/buildLayerCache';
-import LayerCacheCompare from './LayerCacheCompare.svelte';
+import LayerCacheCake from './LayerCacheCake.svelte';
 
 /** Called to start a build for the current tag (fire-and-forget; progress via polling). */
 export let buildImage: (tag: string) => Promise<void>;
@@ -455,7 +455,7 @@ $: pushDurationSec =
               {/if}
             </div>
           {:else}
-            <div class="flex flex-col gap-1">
+            <div class="flex flex-col gap-1 flex-1 min-w-0">
               <div class="text-sm pai-text-success">
                 Image built successfully: <span class="font-mono">{inputValue}</span>
                 {#if buildDurationSec !== undefined}
@@ -463,7 +463,7 @@ $: pushDurationSec =
                 {/if}
               </div>
               {#if layerCacheStatus.length > 0}
-                <LayerCacheCompare entries={layerCacheStatus} />
+                <LayerCacheCake entries={layerCacheStatus} />
               {/if}
             </div>
           {/if}

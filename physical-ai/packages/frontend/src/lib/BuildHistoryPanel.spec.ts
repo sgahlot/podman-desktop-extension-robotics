@@ -70,14 +70,10 @@ describe('BuildHistoryPanel', () => {
 
     render(BuildHistoryPanel);
 
-    expect(await screen.findByText('Option A — summary line')).toBeTruthy();
-    expect(screen.getByText('Option B — layer cake')).toBeTruthy();
-    expect(
-      screen.getByText(
-        /Base OS ✓ cached · Hummingbird app ✓ cached · ROS Jazzy ✓ cached · Gazebo \+ Nav2 \+ TurtleBot3 ↻ rebuilt/,
-      ),
-    ).toBeTruthy();
-    expect(screen.getByText('Gazebo + Nav2 + TurtleBot3')).toBeTruthy();
+    expect(await screen.findByText('Gazebo + Nav2 + TurtleBot3')).toBeTruthy();
+    expect(screen.getByText('↻ rebuilt')).toBeTruthy();
+    expect(screen.getAllByText('✓ cached').length).toBe(3);
+    expect(screen.queryByRole('button', { name: /Layer cache/ })).toBeNull();
   });
 
   it('formats a duration over a minute as minutes and seconds', async () => {
