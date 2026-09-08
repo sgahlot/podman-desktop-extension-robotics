@@ -3,6 +3,7 @@ import { generateLayerContainerfile } from './layerCompatibility';
 import {
   BuildCacheStreamParser,
   formatLayerCacheSummary,
+  generatePresetHardenedContainerfile,
   isBuildCacheHitLogLine,
   isLayerCompositionContainerfile,
   parseBuildStepLayerIds,
@@ -139,6 +140,25 @@ describe('buildLayerCache', () => {
       { layer: 'Base OS', cached: true },
       { layer: 'ROS Jazzy', cached: true },
       { layer: 'Gazebo + Nav2 + TurtleBot3', cached: true },
+    ]);
+  });
+
+  it('aggregates preset hardened middle-layer builds', () => {
+    const hardened = generatePresetHardenedContainerfile(['cosign']);
+    const plan = [
+      { layerId: 'base-os' as const, label: 'Base OS' },
+      { layerId: 'hardened' as const, label: 'Hummingbird app' },
+    ];
+    const parser = new BuildCacheStreamParser(hardened, { kind: 'preset-hardened', plan });
+
+    parser.processLine('STEP 1/2: FROM quay.io/org/ros2-jazzy-base:noble');
+    parser.processLine('--> Using cache');
+    parser.processLine('STEP 2/2: COPY --from=registry.access.redhat.com/hi/cosign:latest');
+    parser.processLine('--> Using cache');
+
+    expect(parser.finalize()).toEqual([
+      { layer: 'Base OS', cached: true },
+      { layer: 'Hummingbird app', cached: true },
     ]);
   });
 });

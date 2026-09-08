@@ -1362,6 +1362,50 @@ RUN apt-get install -y ros-jazzy-desktop
     });
   });
 
+  describe('buildHardenedImage', () => {
+    const hardenedConfig = {
+      robot: 'turtlebot3',
+      distro: 'jazzy',
+      middleware: 'dds',
+      engine: 'gazebo',
+      baseImage: 'jazzy-noble' as const,
+    };
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue('ecosystem-appeng'),
+        update: vi.fn(),
+      } as unknown as extensionApi.Configuration);
+    });
+
+    it('throws when no bake-in tools are provided', async () => {
+      await expect(
+        api.buildHardenedImage('hardened:latest', hardenedConfig, { hummingbirdTools: [] }),
+      ).rejects.toThrow(/no bake-in Hummingbird tools/);
+    });
+
+    it('builds from a generated Containerfile with LOCAL_BASE_IMAGE', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(mkdtemp).mockResolvedValue('/tmp/physical-ai-hardened-build');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
+
+      await api.buildHardenedImage('hardened:latest', hardenedConfig, {
+        hummingbirdTools: ['cosign'],
+      });
+
+      expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
+        '/tmp/physical-ai-hardened-build',
+        expect.any(Function),
+        expect.objectContaining({
+          buildargs: { LOCAL_BASE_IMAGE: 'quay.io/ecosystem-appeng/ros2-jazzy-base:noble' },
+        }),
+      );
+    });
+  });
+
   describe('buildSimulationImage', () => {
     const supportedConfig = {
       robot: 'turtlebot3',

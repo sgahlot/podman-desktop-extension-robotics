@@ -11,6 +11,7 @@ const mockListLocalImages = vi.fn();
 const mockPullImageByRef = vi.fn();
 const mockGetPullProgress = vi.fn();
 const mockBuildBaseImage = vi.fn();
+const mockBuildHardenedImage = vi.fn();
 const mockBuildSimulationImage = vi.fn();
 const mockBuildFromContainerfile = vi.fn();
 const mockGetImageTags = vi.fn();
@@ -27,6 +28,7 @@ vi.mock('../api/client', () => ({
     pullImageByRef: (...args: unknown[]) => mockPullImageByRef(...args),
     getPullProgress: (...args: unknown[]) => mockGetPullProgress(...args),
     buildBaseImage: (...args: unknown[]) => mockBuildBaseImage(...args),
+    buildHardenedImage: (...args: unknown[]) => mockBuildHardenedImage(...args),
     buildSimulationImage: (...args: unknown[]) => mockBuildSimulationImage(...args),
     buildFromContainerfile: (...args: unknown[]) => mockBuildFromContainerfile(...args),
     getImageTags: (...args: unknown[]) => mockGetImageTags(...args),
@@ -119,8 +121,8 @@ describe('LayerComposer', () => {
     expect(document.body.textContent).toContain('registry.access.redhat.com/hi/nginx');
   });
 
-  it('selecting the syft tool on a preset stack bakes it into the base image build', async () => {
-    mockBuildBaseImage.mockResolvedValue(undefined);
+  it('selecting the syft tool on a preset stack builds the hardened middle image', async () => {
+    mockBuildHardenedImage.mockResolvedValue(undefined);
     mockGetBuildProgress.mockResolvedValue({ tag: 'x', status: 'Complete', logs: [], done: true });
     const onBuildComplete = vi.fn();
     render(LayerComposer, { props: { onBuildComplete } });
@@ -131,15 +133,17 @@ describe('LayerComposer', () => {
     expect(syftCheckbox).toBeTruthy();
     await fireEvent.click(syftCheckbox as HTMLInputElement);
 
+    expect(screen.getByText('2. Hardened image')).toBeTruthy();
+
     await waitFor(() => {
       const buttons = screen.getAllByRole('button', { name: 'Build' }) as HTMLButtonElement[];
       expect(buttons[0].disabled).toBe(false);
     });
     const buildButtons = screen.getAllByRole('button', { name: 'Build' });
-    await fireEvent.click(buildButtons[0]);
+    await fireEvent.click(buildButtons[1]);
 
     await waitFor(() => {
-      expect(mockBuildBaseImage).toHaveBeenCalledWith(
+      expect(mockBuildHardenedImage).toHaveBeenCalledWith(
         expect.any(String),
         expect.any(Object),
         expect.objectContaining({ hummingbirdTools: ['syft'] }),
@@ -150,8 +154,8 @@ describe('LayerComposer', () => {
     });
   });
 
-  it('selecting cosign on a preset stack bakes it into the base image build', async () => {
-    mockBuildBaseImage.mockResolvedValue(undefined);
+  it('selecting cosign on a preset stack builds the hardened middle image, not the base', async () => {
+    mockBuildHardenedImage.mockResolvedValue(undefined);
     mockGetBuildProgress.mockResolvedValue({ tag: 'x', status: 'Complete', logs: [], done: true });
     const onBuildComplete = vi.fn();
     render(LayerComposer, { props: { onBuildComplete } });
@@ -167,15 +171,16 @@ describe('LayerComposer', () => {
       expect(buttons[0].disabled).toBe(false);
     });
     const buildButtons = screen.getAllByRole('button', { name: 'Build' });
-    await fireEvent.click(buildButtons[0]);
+    await fireEvent.click(buildButtons[1]);
 
     await waitFor(() => {
-      expect(mockBuildBaseImage).toHaveBeenCalledWith(
+      expect(mockBuildHardenedImage).toHaveBeenCalledWith(
         expect.any(String),
         expect.any(Object),
         expect.objectContaining({ hummingbirdTools: ['cosign'] }),
       );
     });
+    expect(mockBuildBaseImage).not.toHaveBeenCalled();
     await waitFor(() => {
       expect(onBuildComplete).toHaveBeenCalledWith({ watchForSbom: false });
     });

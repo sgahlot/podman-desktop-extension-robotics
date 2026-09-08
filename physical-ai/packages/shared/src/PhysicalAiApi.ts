@@ -37,6 +37,13 @@ export abstract class PhysicalAiApi {
    * regardless of tag naming (see LocalImageInfo). */
   abstract listLocalImagesWithArch(): Promise<LocalImageInfo[]>;
   abstract buildBaseImage(tag: string, config: SimulationConfig, options?: import('./types/buildLayerCache').LayerCacheBuildOptions): Promise<void>;
+  abstract buildHardenedImage(
+    tag: string,
+    config: SimulationConfig,
+    options: import('./types/buildLayerCache').LayerCacheBuildOptions & {
+      hummingbirdTools: import('./types/layerCompatibility').HardenedApp[];
+    },
+  ): Promise<void>;
   abstract buildSimulationImage(tag: string, config: SimulationConfig, options?: import('./types/buildLayerCache').LayerCacheBuildOptions): Promise<void>;
   /** Build an image from an in-memory Containerfile (layer-composition wizard). The
    * Containerfile is written to a throwaway build context; no bundled asset dir is used.

@@ -23,7 +23,7 @@ const DEFAULT_LAYER_LABELS: Record<CompositionLayerId, string> = {
   sim: 'Simulation',
 };
 
-export type LayerCacheParseKind = 'composition' | 'preset-base' | 'preset-sim';
+export type LayerCacheParseKind = 'composition' | 'preset-base' | 'preset-hardened' | 'preset-sim';
 
 /** Ordered layer labels shown in the cache summary / layer cake (from wizard or preset config). */
 export interface LayerCachePlanEntry {
@@ -31,11 +31,13 @@ export interface LayerCachePlanEntry {
   label: string;
 }
 
-/** Optional context for preset base/sim builds so cache UX matches the Layers wizard. */
+/** Optional context for preset image builds so cache UX matches the Layers wizard. */
 export interface LayerCacheBuildOptions {
   layerPlan?: LayerCachePlanEntry[];
-  /** Hardened CLI tools baked into the preset base image via COPY --from. */
+  /** Bake-in Hummingbird CLI tools for the hardened middle-layer image (step 2 of 3). */
   hummingbirdTools?: HardenedApp[];
+  /** Parent image tag for a sim build (hardened image when step 2 ran; otherwise the base). */
+  parentImageTag?: string;
 }
 
 /** True when the Containerfile was produced by the Layers wizard (`generateLayerContainerfile`). */
@@ -67,6 +69,17 @@ export function layerCachePlanFromSelection(sel: LayerSelection): LayerCachePlan
   return plan;
 }
 
+/** Layer labels shown on each preset build step (base / hardened / sim). */
+export function layerCachePlanForPresetPhase(
+  sel: LayerSelection,
+  phase: 'base' | 'hardened' | 'sim',
+): LayerCachePlanEntry[] {
+  const full = layerCachePlanFromSelection(sel);
+  if (phase === 'base') return full.filter(p => p.layerId === 'base-os' || p.layerId === 'ros');
+  if (phase === 'hardened') return full.filter(p => p.layerId === 'base-os' || p.layerId === 'hardened');
+  return full;
+}
+
 /** Layer labels for pipeline/guided preset builds (Image Builder outside Layers tab). */
 export function layerCachePlanFromSimulationConfig(
   config: SimulationConfig,
@@ -87,40 +100,25 @@ export function layerCachePlanFromSimulationConfig(
 }
 
 /**
- * Bake Hummingbird tool CLIs into a preset base Containerfile (after the first FROM).
- * Keeps the tested preset recipe while allowing optional hardened tools on the same path.
+ * Containerfile for the preset hardened middle-layer image (step 2 of 3).
+ * FROM the local base image; COPY --from each bake-in Hummingbird tool.
  */
-export function injectHummingbirdToolsIntoPresetBase(containerfile: string, tools: HardenedApp[]): string {
-  if (tools.length === 0) return containerfile;
-
+export function generatePresetHardenedContainerfile(tools: HardenedApp[]): string {
   const optionById = new Map(HUMMINGBIRD_APP_OPTIONS.map(o => [o.id, o]));
-  const copyLines: string[] = [];
+  const lines = [
+    '# Layer 2 — Hardened application layer: Hummingbird app (baked in)',
+    'ARG LOCAL_BASE_IMAGE',
+    'FROM ${LOCAL_BASE_IMAGE}',
+  ];
+
   for (const tool of tools) {
     const opt = optionById.get(tool);
     if (!opt || opt.kind !== 'tool') continue;
     const binPath = opt.binPath ?? `/usr/bin/${tool}`;
-    copyLines.push(`COPY --from=${hummingbirdImageRef(tool)} ${binPath} /usr/local/bin/${tool}`);
+    lines.push(`COPY --from=${hummingbirdImageRef(tool)} ${binPath} /usr/local/bin/${tool}`);
   }
-  if (copyLines.length === 0) return containerfile;
 
-  const lines = containerfile.split('\n');
-  let insertAt = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (/^FROM\s+/i.test(lines[i].trim())) {
-      insertAt = i + 1;
-      break;
-    }
-  }
-  if (insertAt < 0) return containerfile;
-
-  lines.splice(
-    insertAt,
-    0,
-    '',
-    '# Layer 2 — Hardened application layer: Hummingbird app (baked in)',
-    ...copyLines,
-  );
-  return lines.join('\n');
+  return lines.join('\n') + '\n';
 }
 
 /**
@@ -189,6 +187,7 @@ function parsePresetBaseStepLayerIds(containerfile: string): CompositionLayerId[
 }
 
 type PresetSimStepKind = 'lower-stack' | 'sim';
+type PresetHardenedStepKind = 'lower-stack' | 'hardened';
 
 function parsePresetSimStepKinds(containerfile: string): PresetSimStepKind[] {
   const kinds: PresetSimStepKind[] = [];
@@ -203,6 +202,25 @@ function parsePresetSimStepKinds(containerfile: string): PresetSimStepKind[] {
     }
     if (/^(COPY|RUN|WORKDIR|ENTRYPOINT|CMD|ENV|EXPOSE|LABEL)\s+/i.test(line)) {
       kinds.push('sim');
+    }
+  }
+
+  return kinds;
+}
+
+function parsePresetHardenedStepKinds(containerfile: string): PresetHardenedStepKind[] {
+  const kinds: PresetHardenedStepKind[] = [];
+
+  for (const rawLine of containerfile.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || /^ARG\s+/i.test(line)) continue;
+
+    if (/^FROM\s+/i.test(line)) {
+      kinds.push('lower-stack');
+      continue;
+    }
+    if (/^COPY\s+--from=/i.test(line)) {
+      kinds.push('hardened');
     }
   }
 
@@ -263,6 +281,7 @@ export class BuildCacheStreamParser {
   private readonly plan: LayerCachePlanEntry[];
   private readonly stepLayerIds: CompositionLayerId[];
   private readonly presetSimStepKinds: PresetSimStepKind[];
+  private readonly presetHardenedStepKinds: PresetHardenedStepKind[];
   private readonly layerLabels: Map<CompositionLayerId, string>;
   private readonly stepOutcomes: StepOutcome[] = [];
   private currentStepIndex = -1;
@@ -282,11 +301,16 @@ export class BuildCacheStreamParser {
           : parsePresetBaseStepLayerIds(containerfile)
         : [];
     this.presetSimStepKinds = this.kind === 'preset-sim' ? parsePresetSimStepKinds(containerfile) : [];
+    this.presetHardenedStepKinds =
+      this.kind === 'preset-hardened' ? parsePresetHardenedStepKinds(containerfile) : [];
     this.layerLabels = parseLayerLabelsFromContainerfile(containerfile);
   }
 
   get hasLayerPlan(): boolean {
     if (this.kind === 'preset-sim') return this.presetSimStepKinds.length > 0 && this.plan.length > 0;
+    if (this.kind === 'preset-hardened') {
+      return this.presetHardenedStepKinds.length > 0 && this.plan.length > 0;
+    }
     return this.stepLayerIds.length > 0;
   }
 
@@ -320,10 +344,15 @@ export class BuildCacheStreamParser {
       this.#inferBaseOsFromDownstreamCache();
     } else if (this.kind === 'preset-sim') {
       this.#inferLowerStackFromDownstreamCache();
+    } else if (this.kind === 'preset-hardened') {
+      this.#inferHardenedLowerStackFromDownstreamCache();
     }
 
     if (this.kind === 'preset-sim') {
       return this.#aggregatePresetSimStatus();
+    }
+    if (this.kind === 'preset-hardened') {
+      return this.#aggregatePresetHardenedStatus();
     }
 
     return this.#aggregateLayerStatus();
@@ -356,6 +385,18 @@ export class BuildCacheStreamParser {
     }
   }
 
+  /** Preset hardened builds FROM the local base — infer base cached when all COPY steps hit cache. */
+  #inferHardenedLowerStackFromDownstreamCache(): void {
+    if (this.presetHardenedStepKinds[0] !== 'lower-stack') return;
+    if (this.stepOutcomes[0] !== 'rebuilt') return;
+    const hardenedOutcomes = this.presetHardenedStepKinds
+      .map((kind, idx) => (kind === 'hardened' ? this.stepOutcomes[idx] : undefined))
+      .filter((o): o is StepOutcome => o !== undefined);
+    if (hardenedOutcomes.length > 0 && hardenedOutcomes.every(o => o === 'cached')) {
+      this.stepOutcomes[0] = 'cached';
+    }
+  }
+
   #finalizeCurrentStep(): void {
     if (this.currentStepIndex < 0) return;
     if (this.stepOutcomes[this.currentStepIndex] === 'pending') {
@@ -377,6 +418,34 @@ export class BuildCacheStreamParser {
     for (const entry of plan) {
       if (entry.layerId === 'sim') {
         result.push({ layer: entry.label, cached: simCached });
+      } else {
+        result.push({ layer: entry.label, cached: lowerStackCached });
+      }
+    }
+
+    return result;
+  }
+
+  #aggregatePresetHardenedStatus(): LayerCacheStatusEntry[] {
+    const lowerStackCached = this.stepOutcomes[0] === 'cached';
+    const hardenedStepIndices = this.presetHardenedStepKinds
+      .map((kind, idx) => (kind === 'hardened' ? idx : -1))
+      .filter(idx => idx >= 0);
+    const hardenedOutcomes = hardenedStepIndices.map(idx => this.stepOutcomes[idx] ?? 'rebuilt');
+    const hardenedCached = hardenedOutcomes.length > 0 && hardenedOutcomes.every(o => o === 'cached');
+
+    const plan =
+      this.plan.length > 0
+        ? this.plan
+        : [
+            { layerId: 'base-os' as CompositionLayerId, label: 'Base OS' },
+            { layerId: 'hardened' as CompositionLayerId, label: 'Hummingbird app' },
+          ];
+    const result: LayerCacheStatusEntry[] = [];
+
+    for (const entry of plan) {
+      if (entry.layerId === 'hardened') {
+        result.push({ layer: entry.label, cached: hardenedCached });
       } else {
         result.push({ layer: entry.label, cached: lowerStackCached });
       }

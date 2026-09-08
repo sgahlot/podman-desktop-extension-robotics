@@ -41,7 +41,7 @@ import {
   PART_OF_VALUE,
   HUMMINGBIRD_NGINX_CONTAINER_NAME,
 } from '/@shared/src/openshift/manifests';
-import { readFile, writeFile, mkdtemp, mkdir, rename, rm, cp } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join as pathJoin } from 'node:path';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
@@ -54,11 +54,12 @@ import {
 } from '/@shared/src/types/BuildHistory';
 import {
   BuildCacheStreamParser,
-  injectHummingbirdToolsIntoPresetBase,
+  generatePresetHardenedContainerfile,
   isLayerCompositionContainerfile,
   layerCachePlanFromSimulationConfig,
   type LayerCacheBuildOptions,
 } from '/@shared/src/types/buildLayerCache';
+import type { HardenedApp } from '/@shared/src/types/layerCompatibility';
 import type {
   TopicInfo,
   TopicDetailInfo,
@@ -495,20 +496,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     // Fail fast if there's no running Podman, before resolving the asset context dir.
     this.#getRunningPodmanConnection();
     const assetPath = extensionApi.Uri.joinPath(this.extensionContext.extensionUri, 'assets', assetDir).fsPath;
-    let contextDir = assetPath;
-    let containerfileContent = await readFile(pathJoin(assetPath, 'Containerfile'), 'utf8');
-    let onSettled: (() => void) | undefined;
-
-    const tools = cacheOptions?.hummingbirdTools ?? [];
-    if (tools.length > 0) {
-      containerfileContent = injectHummingbirdToolsIntoPresetBase(containerfileContent, tools);
-      contextDir = await mkdtemp(pathJoin(tmpdir(), 'physical-ai-preset-build-'));
-      await cp(assetPath, contextDir, { recursive: true });
-      await writeFile(pathJoin(contextDir, 'Containerfile'), containerfileContent, 'utf8');
-      onSettled = () => {
-        void rm(contextDir, { recursive: true, force: true }).catch(() => {});
-      };
-    }
+    const contextDir = assetPath;
+    const containerfileContent = await readFile(pathJoin(assetPath, 'Containerfile'), 'utf8');
 
     const kind = cacheOptions?.kind ?? 'preset-base';
     const layerPlan = cacheOptions?.layerPlan ?? [];
@@ -522,7 +511,6 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       platform,
       undefined,
       layerCacheParser,
-      onSettled,
     );
   }
 
@@ -982,9 +970,64 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       {
         kind: 'preset-base',
         layerPlan: options?.layerPlan ?? layerCachePlanFromSimulationConfig(config, { includeSim: false }),
-        hummingbirdTools: options?.hummingbirdTools,
       },
     );
+  }
+
+  async buildHardenedImage(
+    tag: string,
+    config: SimulationConfig,
+    options: LayerCacheBuildOptions & { hummingbirdTools: HardenedApp[] },
+  ): Promise<void> {
+    const profile = resolveSimulationProfile(config);
+    if (!profile) {
+      throw new Error(
+        `No base image profile for ${formatSimulationConfig(config)}. ` +
+          'Supported: humble/turtlebot3/dds/gazebo and jazzy/turtlebot3/dds/gazebo.',
+      );
+    }
+    if (!options.hummingbirdTools?.length) {
+      throw new Error('Cannot build hardened image: no bake-in Hummingbird tools were selected.');
+    }
+
+    const ns = await this.getDefaultNamespace();
+    const baseImage = resolveSimulationBaseImage(config.baseImage);
+    const localBaseTag = `quay.io/${ns}/${profile.baseImageName}:${baseImage.imageTag}${archTagSuffix(config.targetArch)}`;
+
+    const containerfile = generatePresetHardenedContainerfile(options.hummingbirdTools);
+    this.#assertCanStartOp(this.activeBuilds, tag, 'build');
+    this.#getRunningPodmanConnection();
+
+    const contextDir = await mkdtemp(pathJoin(tmpdir(), 'physical-ai-hardened-build-'));
+    try {
+      await writeFile(pathJoin(contextDir, 'Containerfile'), containerfile, 'utf8');
+    } catch (err) {
+      await rm(contextDir, { recursive: true, force: true }).catch(() => {});
+      throw err;
+    }
+
+    const layerCacheParser = new BuildCacheStreamParser(containerfile, {
+      kind: 'preset-hardened',
+      plan: options.layerPlan ?? [],
+    });
+
+    try {
+      this.#runContainerBuild(
+        tag,
+        contextDir,
+        'Containerfile',
+        { LOCAL_BASE_IMAGE: localBaseTag },
+        platformForArch(config.targetArch),
+        undefined,
+        layerCacheParser,
+        () => {
+          void rm(contextDir, { recursive: true, force: true }).catch(() => {});
+        },
+      );
+    } catch (err) {
+      await rm(contextDir, { recursive: true, force: true }).catch(() => {});
+      throw err;
+    }
   }
 
   async buildSimulationImage(tag: string, config: SimulationConfig, options?: LayerCacheBuildOptions): Promise<void> {
@@ -1003,12 +1046,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
     const ns = await this.getDefaultNamespace();
     const baseImage = resolveSimulationBaseImage(config.baseImage);
-    // The Phase 1 base carries the same arch suffix, so point FROM at it.
     const localBaseTag = `quay.io/${ns}/${profile.baseImageName}:${baseImage.imageTag}${archTagSuffix(config.targetArch)}`;
+    const parentTag = options?.parentImageTag ?? localBaseTag;
     await this.#startImageBuild(
       tag,
       profile.assetDir,
-      { LOCAL_BASE_IMAGE: localBaseTag },
+      { LOCAL_BASE_IMAGE: parentTag },
       platformForArch(config.targetArch),
       {
         kind: 'preset-sim',

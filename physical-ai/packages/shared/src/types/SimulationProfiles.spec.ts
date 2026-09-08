@@ -3,6 +3,7 @@ import {
   resolveSimulationProfile,
   hasSimulationSupport,
   simulationImageTag,
+  hardenedImageTag,
   baseImageTag,
   formatSimulationConfig,
   SIMULATION_PROFILES,
@@ -106,6 +107,13 @@ describe('SimulationProfiles', () => {
         baseImage: 'jazzy-noble',
       }),
     ).toBe('quay.io/ecosystem-appeng/ros2-jazzy-base:noble');
+    expect(
+      hardenedImageTag('ecosystem-appeng', {
+        ...supported,
+        distro: 'jazzy',
+        baseImage: 'jazzy-noble',
+      }),
+    ).toBe('quay.io/ecosystem-appeng/ros2-jazzy-hardened:noble');
     // Same image as the dds jazzy profile (APPENG-5775) — zenoh is a runtime
     // middleware choice, not a separate build, so both tags match.
     expect(
