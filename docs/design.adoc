@@ -222,9 +222,9 @@ export abstract class PhysicalAiApi {
 | File | Contents
 
 | `types/ImageCatalog.ts` | `QuayRepository`, `QuayTag`, `PullProgress`, `BuildProgress`, `PushProgress`
-| `types/SimulationConfig.ts` | `SimulationConfig` — persisted wizard selections (robot, distro, middleware, engine, baseImage)
+| `types/SimulationConfig.ts` | `SimulationConfig` — persisted wizard selections (robot, distro, middleware, engine, base-image selection, optional custom parent reference)
 | `types/SimulationProfiles.ts` | `SimulationProfile`, `SIMULATION_PROFILES`, `resolveSimulationProfile()`, `simulationImageTag()`
-| `types/SimulationBaseImages.ts` | `SimulationBaseImageId`, presets (sloretz, osrf, jazzy-noble), `resolveSimulationBaseImage()`
+| `types/SimulationBaseImages.ts` | `SimulationBaseImageSelection`, curated presets (sloretz, osrf, jazzy-noble), Custom parent-image selection, and resolver helpers
 | `types/SimulationContainer.ts` | `SimLaunchOptions`, `SimContainerInfo`, `ExecResult`, container label constants
 | `types/CatalogCurated.ts` | `DEFAULT_CURATED_ALLOWLIST`, `parseCuratedAllowlist()`, `repoMatchesAllowlist()`, `filterCuratedRepos()` — wildcard pattern matching for curated allowlist
 | `types/TopicInfo.ts` | `TopicInfo` — name, type, publishers, subscribers for ROS2 topic monitoring
@@ -280,6 +280,14 @@ User clicks "Cancel push" ──► Frontend calls cancelPush(tag) ──► Bac
 Registry presence ──► Frontend calls getImageTags for quay.io/ns/name:tag (public API)
                        Shows "exists in registry" / "not found" / "unavailable" (private/error)
 ----
+
+For a Phase 1 build, the Base image selection is either a curated preset or a
+persisted Custom parent OCI reference. The Custom reference is passed as the
+`ROS_BASE_IMAGE` build argument and is deliberately distinct from the Build
+panel's output tag. Its OS, architecture, and ROS-distro compatibility cannot
+be verified by the extension; the existing preset simulation recipe remains
+the supported Ubuntu/Jazzy path. APPENG-6313 adds the separate non-preset
+simulation-layer path for compatible custom ROS parents.
 
 Build calls explicitly pass `rm: true` and `forcerm: true` so successful and failed
 builds remove intermediate Buildah containers. The Podman Desktop build API does
