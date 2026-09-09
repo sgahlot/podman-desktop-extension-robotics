@@ -7,6 +7,7 @@ import {
   isBuildCacheHitLogLine,
   isLayerCompositionContainerfile,
   parseBuildStepLayerIds,
+  layerCachePlanFromSimulationConfig,
 } from './buildLayerCache';
 
 describe('buildLayerCache', () => {
@@ -52,13 +53,13 @@ describe('buildLayerCache', () => {
 
     const status = parser.finalize();
     expect(status).toEqual([
-      { layer: 'Base OS', cached: true },
+      { layer: 'Base OS · Ubuntu Noble', cached: true },
       { layer: 'Hummingbird app', cached: true },
       { layer: 'ROS Jazzy', cached: true },
       { layer: 'Gazebo + Nav2 + TurtleBot3', cached: false },
     ]);
     expect(formatLayerCacheSummary(status)).toBe(
-      'Base OS ✓ cached → Hummingbird app ✓ cached → ROS Jazzy ✓ cached → Gazebo + Nav2 + TurtleBot3 ↻ rebuilt',
+      'Base OS · Ubuntu Noble ✓ cached → Hummingbird app ✓ cached → ROS Jazzy ✓ cached → Gazebo + Nav2 + TurtleBot3 ↻ rebuilt',
     );
   });
 
@@ -96,14 +97,14 @@ describe('buildLayerCache', () => {
     parser.processLine('--> Using cache');
 
     const status = parser.finalize();
-    expect(status[0]).toEqual({ layer: 'Base OS', cached: true });
+    expect(status[0]).toEqual({ layer: 'Base OS · Ubuntu Noble', cached: true });
     expect(status.every(s => s.cached)).toBe(true);
   });
 
   it('aggregates preset base image builds with the same layer labels as the wizard', () => {
     const presetBase = `ARG ROS_BASE_IMAGE=docker.io/ros:jazzy\nFROM \${ROS_BASE_IMAGE}\nRUN apt-get\nCOPY f /f\n`;
     const plan = [
-      { layerId: 'base-os' as const, label: 'Base OS' },
+      { layerId: 'base-os' as const, label: 'Base OS · ros:jazzy-ros-base' },
       { layerId: 'ros' as const, label: 'ROS Jazzy' },
     ];
     const parser = new BuildCacheStreamParser(presetBase, { kind: 'preset-base', plan });
@@ -115,15 +116,44 @@ describe('buildLayerCache', () => {
     parser.processLine('STEP 3/3: COPY f /f');
 
     expect(parser.finalize()).toEqual([
-      { layer: 'Base OS', cached: true },
+      { layer: 'Base OS · ros:jazzy-ros-base', cached: true },
       { layer: 'ROS Jazzy', cached: false },
     ]);
+  });
+
+  it('includes the resolved base image in preset-build cache labels', () => {
+    expect(
+      layerCachePlanFromSimulationConfig(
+        {
+          robot: 'turtlebot3',
+          distro: 'jazzy',
+          middleware: 'dds',
+          engine: 'gazebo',
+          baseImage: 'jazzy-noble',
+        },
+        { includeSim: false },
+      )[0],
+    ).toEqual({ layerId: 'base-os', label: 'Base OS · ros:jazzy-ros-base' });
+
+    expect(
+      layerCachePlanFromSimulationConfig(
+        {
+          robot: 'turtlebot3',
+          distro: 'jazzy',
+          middleware: 'dds',
+          engine: 'gazebo',
+          baseImage: 'custom',
+          customBaseImage: 'quay.io/example/robot-base:latest',
+        },
+        { includeSim: false },
+      )[0],
+    ).toEqual({ layerId: 'base-os', label: 'Base OS · example/robot-base:latest' });
   });
 
   it('aggregates preset sim builds across the full wizard layer plan', () => {
     const presetSim = `ARG LOCAL_BASE_IMAGE\nFROM \${LOCAL_BASE_IMAGE}\nRUN apt-get\nCOPY worlds /w\n`;
     const plan = [
-      { layerId: 'base-os' as const, label: 'Base OS' },
+      { layerId: 'base-os' as const, label: 'Base OS · ros:jazzy-ros-base' },
       { layerId: 'ros' as const, label: 'ROS Jazzy' },
       { layerId: 'sim' as const, label: 'Gazebo + Nav2 + TurtleBot3' },
     ];
@@ -137,7 +167,7 @@ describe('buildLayerCache', () => {
     parser.processLine('--> Using cache');
 
     expect(parser.finalize()).toEqual([
-      { layer: 'Base OS', cached: true, reused: true },
+      { layer: 'Base OS · ros:jazzy-ros-base', cached: true, reused: true },
       { layer: 'ROS Jazzy', cached: true, reused: true },
       { layer: 'Gazebo + Nav2 + TurtleBot3', cached: true },
     ]);
@@ -146,7 +176,7 @@ describe('buildLayerCache', () => {
   it('aggregates preset hardened middle-layer builds', () => {
     const hardened = generatePresetHardenedContainerfile(['cosign']);
     const plan = [
-      { layerId: 'base-os' as const, label: 'Base OS' },
+      { layerId: 'base-os' as const, label: 'Base OS · Ubuntu Noble' },
       { layerId: 'hardened' as const, label: 'Hummingbird app' },
     ];
     const parser = new BuildCacheStreamParser(hardened, { kind: 'preset-hardened', plan });
@@ -157,7 +187,7 @@ describe('buildLayerCache', () => {
     parser.processLine('--> Using cache');
 
     expect(parser.finalize()).toEqual([
-      { layer: 'Base OS', cached: true, reused: true },
+      { layer: 'Base OS · Ubuntu Noble', cached: true, reused: true },
       { layer: 'Hummingbird app', cached: true },
     ]);
   });
@@ -165,7 +195,7 @@ describe('buildLayerCache', () => {
   it('marks sim-only layers rebuilt while parent stack is reused on preset sim rebuilds', () => {
     const presetSim = `ARG LOCAL_BASE_IMAGE\nFROM \${LOCAL_BASE_IMAGE}\nRUN apt-get\nCOPY worlds /w\n`;
     const plan = [
-      { layerId: 'base-os' as const, label: 'Base OS' },
+      { layerId: 'base-os' as const, label: 'Base OS · Ubuntu Noble' },
       { layerId: 'hardened' as const, label: 'Hummingbird app' },
       { layerId: 'ros' as const, label: 'ROS Jazzy' },
       { layerId: 'sim' as const, label: 'Gazebo + Nav2 + TurtleBot3' },
@@ -178,13 +208,13 @@ describe('buildLayerCache', () => {
 
     const status = parser.finalize();
     expect(status).toEqual([
-      { layer: 'Base OS', cached: true, reused: true },
+      { layer: 'Base OS · Ubuntu Noble', cached: true, reused: true },
       { layer: 'Hummingbird app', cached: true, reused: true },
       { layer: 'ROS Jazzy', cached: true, reused: true },
       { layer: 'Gazebo + Nav2 + TurtleBot3', cached: false },
     ]);
     expect(formatLayerCacheSummary(status)).toBe(
-      'Base OS ✓ reused → Hummingbird app ✓ reused → ROS Jazzy ✓ reused → Gazebo + Nav2 + TurtleBot3 ↻ rebuilt',
+      'Base OS · Ubuntu Noble ✓ reused → Hummingbird app ✓ reused → ROS Jazzy ✓ reused → Gazebo + Nav2 + TurtleBot3 ↻ rebuilt',
     );
   });
 });

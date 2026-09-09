@@ -77,6 +77,16 @@ describe('LayerComposer', () => {
     expect((buildButton as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it('shows a custom base image input and uses it in the preview', async () => {
+    render(LayerComposer);
+    await fireEvent.change(screen.getByLabelText('Base OS'), { target: { value: 'custom' } });
+
+    const input = screen.getByLabelText('Custom base image') as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: 'quay.io/example/robot-base:latest' } });
+
+    expect(document.body.textContent).toContain('FROM quay.io/example/robot-base:latest');
+  });
+
   it('checking "Attempt anyway" re-enables the Build button while blocked', async () => {
     render(LayerComposer);
     const baseOsSelect = screen.getByLabelText('Base OS');

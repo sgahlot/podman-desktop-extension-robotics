@@ -20,6 +20,19 @@ function sel(overrides: Partial<LayerSelection>): LayerSelection {
 }
 
 describe('evaluateStack', () => {
+  it('requires a reference for a custom base OS', () => {
+    const result = evaluateStack(sel({ baseOs: 'custom', ros: 'none', sim: 'none' }));
+    expect(result.level).toBe('blocked');
+    expect(result.messages[0].text).toContain('custom base image reference is required');
+  });
+
+  it('accepts a custom Debian-compatible base OS for ROS and simulation layers', () => {
+    const result = evaluateStack(
+      sel({ baseOs: 'custom', customBaseImage: 'docker.io/library/ubuntu:24.04', ros: 'ros2-jazzy', sim: 'none' }),
+    );
+    expect(result.buildable).toBe(true);
+  });
+
   it('ubuntu + jazzy + sim is a known-good combination', () => {
     const result = evaluateStack(sel({ baseOs: 'ubuntu-noble', ros: 'ros2-jazzy', sim: 'gazebo-nav2-tb3' }));
     expect(result.level).toBe('ok');
@@ -148,6 +161,13 @@ describe('evaluateStack', () => {
 });
 
 describe('generateLayerContainerfile', () => {
+  it('uses the custom base image reference in the FROM line', () => {
+    const containerfile = generateLayerContainerfile(
+      sel({ baseOs: 'custom', customBaseImage: 'quay.io/example/robot-base:latest' }),
+    );
+    expect(containerfile).toContain('FROM quay.io/example/robot-base:latest');
+  });
+
   it('ubuntu + jazzy + sim contains the ubuntu FROM ref and the nav2 RUN line', () => {
     const containerfile = generateLayerContainerfile(
       sel({ baseOs: 'ubuntu-noble', ros: 'ros2-jazzy', sim: 'gazebo-nav2-tb3' }),
@@ -164,7 +184,38 @@ describe('generateLayerContainerfile', () => {
   it('ubuntu + ros adds the ROS 2 apt repository before installing any ros-* package', () => {
     const containerfile = generateLayerContainerfile(sel({ baseOs: 'ubuntu-noble', ros: 'ros2-jazzy' }));
     expect(containerfile).toContain('/etc/apt/sources.list.d/ros2.list');
+    expect(containerfile).toContain(
+      "if ! grep -Rqs 'packages.ros.org/ros2/ubuntu' /etc/apt/sources.list /etc/apt/sources.list.d",
+    );
     expect(containerfile.indexOf('ros2.list')).toBeLessThan(containerfile.indexOf('ros-jazzy-desktop'));
+  });
+
+  it('uses system curl for ROS setup when a hardened curl tool is baked in', () => {
+    const containerfile = generateLayerContainerfile(
+      sel({
+        baseOs: 'custom',
+        customBaseImage: 'docker.io/library/ros:jazzy-ros-base',
+        ros: 'ros2-jazzy',
+        hardened: 'hummingbird-app',
+        hummingbirdApps: ['curl', 'cosign'],
+      }),
+    );
+    expect(containerfile).toContain('/usr/bin/curl -sSL');
+    expect(containerfile).toContain('COPY --from=registry.access.redhat.com/hi/curl:latest');
+  });
+
+  it('guards ROS repository setup for a custom image that may already provide ROS apt sources', () => {
+    const containerfile = generateLayerContainerfile(
+      sel({
+        baseOs: 'custom',
+        customBaseImage: 'docker.io/library/ros:jazzy-ros-base',
+        ros: 'ros2-jazzy',
+      }),
+    );
+    expect(containerfile).toContain(
+      "if ! grep -Rqs 'packages.ros.org/ros2/ubuntu' /etc/apt/sources.list /etc/apt/sources.list.d",
+    );
+    expect(containerfile).toContain('ros-jazzy-desktop');
   });
 
   it('dnf-based bootc base never adds the (irrelevant) apt ROS repository', () => {

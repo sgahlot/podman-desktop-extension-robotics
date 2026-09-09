@@ -1198,7 +1198,7 @@ RUN apt-get install -y ros-jazzy-desktop
 
       const done = await api.getBuildProgress('layer-cache:latest');
       expect(done!.layerCacheStatus).toEqual([
-        { layer: 'Base OS', cached: true },
+        { layer: 'Base OS · Ubuntu Noble', cached: true },
         { layer: 'ROS Jazzy', cached: false },
       ]);
     });
@@ -1226,7 +1226,7 @@ RUN apt-get install -y ros-jazzy-desktop
 
       const done = await api.getBuildProgress('preset-base:latest');
       expect(done!.layerCacheStatus).toEqual([
-        { layer: 'Base OS', cached: true },
+        { layer: 'Base OS · ros:jazzy-ros-base', cached: true },
         { layer: 'ROS Jazzy', cached: false },
       ]);
     });

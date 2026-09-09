@@ -1,6 +1,7 @@
 import type { LayerCacheStatusEntry } from './BuildHistory';
 import type { HardenedApp, LayerSelection } from './layerCompatibility';
 import {
+  BASE_OS_OPTIONS,
   HUMMINGBIRD_APP_OPTIONS,
   HUMMINGBIRD_TOOL_OPTIONS,
   hummingbirdImageRef,
@@ -10,6 +11,12 @@ import {
 } from './layerCompatibility';
 import type { SimulationConfig } from './SimulationConfig';
 import { resolveSimulationProfile } from './SimulationProfiles';
+import {
+  CUSTOM_SIMULATION_BASE_IMAGE,
+  customBaseImageRef,
+  resolveSimulationBaseImage,
+  shortImageRef,
+} from './SimulationBaseImages';
 
 /** Wizard composition layers that map to Containerfile sections (APPENG-6298 / S10-4). */
 export type CompositionLayerId = 'base-os' | 'hardened' | 'ros' | 'sim';
@@ -47,7 +54,11 @@ export function isLayerCompositionContainerfile(containerfile: string): boolean 
 
 /** Layer labels for a Layers-wizard selection — same names in preset and containerfile builds. */
 export function layerCachePlanFromSelection(sel: LayerSelection): LayerCachePlanEntry[] {
-  const plan: LayerCachePlanEntry[] = [{ layerId: 'base-os', label: 'Base OS' }];
+  const baseLabel =
+    sel.baseOs === 'custom' && sel.customBaseImage?.trim()
+      ? shortImageRef(sel.customBaseImage)
+      : labelForBaseOsSelection(sel);
+  const plan: LayerCachePlanEntry[] = [{ layerId: 'base-os', label: `Base OS · ${baseLabel}` }];
 
   const bakeInTools =
     sel.hardened === 'hummingbird-app'
@@ -69,6 +80,11 @@ export function layerCachePlanFromSelection(sel: LayerSelection): LayerCachePlan
   return plan;
 }
 
+function labelForBaseOsSelection(sel: LayerSelection): string {
+  if (sel.baseOs === 'custom') return 'Custom image reference';
+  return labelFor(BASE_OS_OPTIONS, sel.baseOs);
+}
+
 /** Layer labels shown on each preset build step (base / hardened / sim). */
 export function layerCachePlanForPresetPhase(
   sel: LayerSelection,
@@ -85,7 +101,12 @@ export function layerCachePlanFromSimulationConfig(
   config: SimulationConfig,
   opts: { includeSim: boolean },
 ): LayerCachePlanEntry[] {
-  const plan: LayerCachePlanEntry[] = [{ layerId: 'base-os', label: 'Base OS' }];
+  const baseRef =
+    config.baseImage === CUSTOM_SIMULATION_BASE_IMAGE
+      ? customBaseImageRef(config.customBaseImage)
+      : resolveSimulationBaseImage(config.baseImage).imageRef;
+  const baseLabel = baseRef ? `Base OS · ${shortImageRef(baseRef)}` : 'Base OS';
+  const plan: LayerCachePlanEntry[] = [{ layerId: 'base-os', label: baseLabel }];
   const profile = resolveSimulationProfile(config);
   if (!profile) return plan;
 
@@ -243,7 +264,7 @@ export function parseLayerLabelsFromContainerfile(containerfile: string): Map<Co
     if (!layerId) continue;
 
     if (layerId === 'base-os') {
-      labels.set(layerId, 'Base OS');
+      labels.set(layerId, name ? `Base OS · ${shortImageRef(name)}` : 'Base OS');
     } else if (layerId === 'hardened') {
       labels.set(layerId, name ?? 'Hardened');
     } else if (layerId === 'ros') {

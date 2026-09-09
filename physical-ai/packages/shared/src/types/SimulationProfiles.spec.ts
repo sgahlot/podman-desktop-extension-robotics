@@ -134,6 +134,23 @@ describe('SimulationProfiles', () => {
     ).toBe('quay.io/ecosystem-appeng/ros2-jazzy-base:noble');
   });
 
+  it('uses a stable custom suffix for arbitrary base image builds', () => {
+    expect(
+      baseImageTag('ecosystem-appeng', {
+        ...supported,
+        baseImage: 'custom',
+        customBaseImage: 'quay.io/example/ros:jazzy',
+      }),
+    ).toBe('quay.io/ecosystem-appeng/ros2-humble-base:custom');
+    expect(
+      simulationImageTag('ecosystem-appeng', {
+        ...supported,
+        baseImage: 'custom',
+        customBaseImage: 'quay.io/example/ros:jazzy',
+      }),
+    ).toBe('quay.io/ecosystem-appeng/ros2-humble-turtlebot3:custom');
+  });
+
   it('formats config for error messages', () => {
     expect(formatSimulationConfig(supported)).toBe('humble/turtlebot3/dds/gazebo/sloretz');
   });

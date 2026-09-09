@@ -5,6 +5,8 @@
  * Preset ids are short so Podman Desktop Settings enum dropdowns don't truncate.
  */
 export type SimulationBaseImageId = 'sloretz' | 'osrf' | 'jazzy' | 'jazzy-noble';
+export const CUSTOM_SIMULATION_BASE_IMAGE = 'custom' as const;
+export type SimulationBaseImageSelection = SimulationBaseImageId | typeof CUSTOM_SIMULATION_BASE_IMAGE;
 
 export interface SimulationBaseImagePreset {
   id: SimulationBaseImageId;
@@ -80,6 +82,26 @@ export function resolveSimulationBaseImage(id: string | undefined | null): Simul
   const normalized = id ? (LEGACY_BASE_IMAGE_IDS[id] ?? id) : undefined;
   const preset = SIMULATION_BASE_IMAGES.find(p => p.id === normalized);
   return preset ?? SIMULATION_BASE_IMAGES.find(p => p.id === DEFAULT_SIMULATION_BASE_IMAGE)!;
+}
+
+/** Returns the configured parent image reference, or undefined for a preset. */
+export function customBaseImageRef(value: string | undefined | null): string | undefined {
+  const ref = value?.trim();
+  if (!ref) return undefined;
+  return ref;
+}
+
+/** Compact an OCI image reference for labels while retaining registry/repository identity. */
+export function shortImageRef(imageRef: string): string {
+  const withoutDigest = imageRef.trim().split('@', 1)[0];
+  const parts = withoutDigest.split('/').filter(Boolean);
+  if (parts.length === 0) return imageRef.trim();
+
+  const first = parts[0];
+  const hasRegistry = first === 'localhost' || first.includes('.') || first.includes(':');
+  const repositoryParts = hasRegistry ? parts.slice(1) : parts;
+  const withoutLibrary = repositoryParts[0] === 'library' ? repositoryParts.slice(1) : repositoryParts;
+  return withoutLibrary.slice(-2).join('/') || withoutDigest;
 }
 
 export function baseImagesForDistro(distro: string): readonly SimulationBaseImagePreset[] {
