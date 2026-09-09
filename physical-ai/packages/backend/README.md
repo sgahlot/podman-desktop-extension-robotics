@@ -90,6 +90,12 @@ On Jazzy sim images, each spawned robot has **Navigate** (target X/Y in the map 
 - **Default guaranteed CPUs** — seeds the **Guaranteed CPUs (sim container)** field on the OpenShift tab (1–64, default 8 for software-render deploys).
 - Image Builder wizard defaults (robot, distro, middleware, engine, base preset)
 
+### Custom Phase 1 parent image
+
+In **Image Builder → Configure**, choose **Custom image…** in the Base image selector and enter the parent OCI image reference, for example `quay.io/org/ros2:jazzy-desktop`. This input controls the `FROM` image used for the Phase 1 build. It is distinct from the output tag in the Build panel, which names the image you are building or pushing. The custom parent reference is saved with the Image Builder preferences.
+
+The extension does not verify an arbitrary parent image’s architecture, operating system, or ROS distribution. A custom image must be compatible with the selected Phase 1 recipe; the existing simulation-layer path remains the supported Ubuntu/Jazzy workflow. For private registries, authenticate Podman to the registry before building. An image that cannot be pulled, or is incompatible with the recipe, fails in the normal build log.
+
 ## Golden images to publish
 
 Pre-built images to push to your Quay.io namespace so that users can pull and run without building locally. For a quick showcase, push just the Jazzy base + sim pair — users pull the sim image directly instead of building for ~20 minutes.
