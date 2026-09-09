@@ -184,6 +184,9 @@ describe('generateLayerContainerfile', () => {
   it('ubuntu + ros adds the ROS 2 apt repository before installing any ros-* package', () => {
     const containerfile = generateLayerContainerfile(sel({ baseOs: 'ubuntu-noble', ros: 'ros2-jazzy' }));
     expect(containerfile).toContain('/etc/apt/sources.list.d/ros2.list');
+    expect(containerfile).toContain(
+      "if ! grep -Rqs 'packages.ros.org/ros2/ubuntu' /etc/apt/sources.list /etc/apt/sources.list.d",
+    );
     expect(containerfile.indexOf('ros2.list')).toBeLessThan(containerfile.indexOf('ros-jazzy-desktop'));
   });
 
@@ -199,6 +202,20 @@ describe('generateLayerContainerfile', () => {
     );
     expect(containerfile).toContain('/usr/bin/curl -sSL');
     expect(containerfile).toContain('COPY --from=registry.access.redhat.com/hi/curl:latest');
+  });
+
+  it('guards ROS repository setup for a custom image that may already provide ROS apt sources', () => {
+    const containerfile = generateLayerContainerfile(
+      sel({
+        baseOs: 'custom',
+        customBaseImage: 'docker.io/library/ros:jazzy-ros-base',
+        ros: 'ros2-jazzy',
+      }),
+    );
+    expect(containerfile).toContain(
+      "if ! grep -Rqs 'packages.ros.org/ros2/ubuntu' /etc/apt/sources.list /etc/apt/sources.list.d",
+    );
+    expect(containerfile).toContain('ros-jazzy-desktop');
   });
 
   it('dnf-based bootc base never adds the (irrelevant) apt ROS repository', () => {
