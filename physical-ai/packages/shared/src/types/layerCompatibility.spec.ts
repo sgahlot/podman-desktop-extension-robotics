@@ -187,6 +187,20 @@ describe('generateLayerContainerfile', () => {
     expect(containerfile.indexOf('ros2.list')).toBeLessThan(containerfile.indexOf('ros-jazzy-desktop'));
   });
 
+  it('uses system curl for ROS setup when a hardened curl tool is baked in', () => {
+    const containerfile = generateLayerContainerfile(
+      sel({
+        baseOs: 'custom',
+        customBaseImage: 'docker.io/library/ros:jazzy-ros-base',
+        ros: 'ros2-jazzy',
+        hardened: 'hummingbird-app',
+        hummingbirdApps: ['curl', 'cosign'],
+      }),
+    );
+    expect(containerfile).toContain('/usr/bin/curl -sSL');
+    expect(containerfile).toContain('COPY --from=registry.access.redhat.com/hi/curl:latest');
+  });
+
   it('dnf-based bootc base never adds the (irrelevant) apt ROS repository', () => {
     const containerfile = generateLayerContainerfile(sel({ baseOs: 'centos-bootc-stream9', ros: 'ros2-jazzy' }));
     expect(containerfile).not.toContain('sources.list.d/ros2.list');
