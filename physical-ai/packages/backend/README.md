@@ -69,6 +69,16 @@ To check or change Podman Machine resources: open **Settings → Resources → P
 
 Idle noVNC tabs may show Disconnected; reconnect or refresh — the simulation is still running. Lidar/IMU topics are available after spawn when using a current sim image; **Navigate** on Jazzy sim uses Nav2 (`navigate_to_pose`) with obstacle-aware planning (Humble images still use open-loop `cmd_vel`).
 
+### Build storage cleanup
+
+Builds explicitly remove intermediate Buildah containers on normal success and failure. Podman Desktop's build API does not expose the identifiers needed to remove containers left behind when a build is cancelled, so check storage after cancelling a long-running build. If external Buildah containers accumulate or Podman reports no space left on device, stop all builds and run this user-confirmed recovery command:
+
+```bash
+podman system prune --build --force
+```
+
+This removes build containers and related untagged build layers. It does not remove volumes. Review the command's scope before running it if other tools are actively building with the same Podman machine; the extension does not run this cleanup automatically.
+
 ## Navigate (Jazzy)
 
 On Jazzy sim images, each spawned robot has **Navigate** (target X/Y in the map frame). The extension launches Nav2 if needed and sends a `navigate_to_pose` goal with lidar-based obstacle avoidance.

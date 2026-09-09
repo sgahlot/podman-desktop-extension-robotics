@@ -68,6 +68,10 @@ let pushFinishedAt: number | undefined;
 let pollTimer: number | null = null;
 let logContainer: HTMLDivElement;
 
+const BUILD_CANCEL_WARNING =
+  'Cancelling may leave temporary Buildah containers and intermediate image layers in Podman storage. ' +
+  'Disk space may not be reclaimed automatically. Continue?';
+
 /**
  * Recognizable signatures of a transient upstream package-mirror failure (apt fetch
  * 404s, "Unable to fetch some archives", DNS blips) rather than a real config/code
@@ -137,6 +141,13 @@ async function checkRegistryImage(imageTag: string = inputValue, gen: number = i
   }
 }
 
+function clearTagStatus() {
+  imageCheckGen++;
+  imageExistsLocally = false;
+  imageExistsInRegistry = null;
+  registryCheckError = false;
+}
+
 function commitTag() {
   lastSyncedTag = inputValue;
   tag = inputValue;
@@ -173,6 +184,7 @@ async function startBuild() {
 
 async function cancelBuild() {
   if (!inputValue || cancelling || !building) return;
+  if (!window.confirm(BUILD_CANCEL_WARNING)) return;
   cancelling = true;
   try {
     await physicalAiClient.cancelBuild(inputValue);
@@ -362,6 +374,7 @@ $: pushDurationSec =
         bind:value={inputValue}
         disabled={building || pushing || disabled}
         on:change={commitTag}
+        on:input={clearTagStatus}
         class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] w-96"
         placeholder={tagPlaceholder} />
     </div>

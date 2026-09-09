@@ -101,6 +101,13 @@ import { navigationLayout } from './lib/navigationLayout';
           show as unavailable).
         </div>
         <div>
+          <strong>Build storage cleanup</strong> — Successful and failed builds remove their intermediate Buildah
+          containers. A cancelled build may leave external Buildah containers because the Podman Desktop build API does
+          not expose a safe per-build cleanup identifier. If storage accumulates or Podman reports no space left on
+          device, stop all builds and run <span class="font-mono">podman system prune --build --force</span> after reviewing
+          its scope. This does not remove volumes, and the extension does not run it automatically.
+        </div>
+        <div>
           <strong>Layers layout</strong> — Compose an image from Base OS, hardened app, ROS, and simulation layers, with
           a live compatibility verdict as you pick. Pull the layer images (base OS + any selected Hummingbird images)
           right from the wizard — a <span class="font-mono">&#10003; Local</span> badge marks the ones you already have
