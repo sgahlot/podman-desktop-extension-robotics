@@ -318,9 +318,12 @@ const BASE_OS_CAPABILITY: Record<BaseOsLayer, BaseOsCapability> = {
 };
 
 function labelForBaseOs(baseOs: BaseOsLayer, customBaseImage?: string): string {
-  return baseOs === 'custom'
-    ? customBaseImage?.trim() || 'Custom image reference'
-    : (BASE_OS_OPTIONS.find(o => o.id === baseOs)?.label ?? baseOs);
+  if (baseOs === 'custom') {
+    const imageRef = customBaseImage?.trim();
+    return imageRef && imageRef.length > 0 ? imageRef : 'Custom image reference';
+  }
+
+  return BASE_OS_OPTIONS.find(o => o.id === baseOs)?.label ?? baseOs;
 }
 
 const LEVEL_RANK: Record<CompatMessage['level'], number> = { info: 0, warn: 1, error: 2 };
