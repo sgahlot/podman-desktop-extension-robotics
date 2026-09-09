@@ -278,8 +278,17 @@ User clicks "Cancel push" ──► Frontend calls cancelPush(tag) ──► Bac
                                                                   Progress marked done immediately
 
 Registry presence ──► Frontend calls getImageTags for quay.io/ns/name:tag (public API)
-                      Shows "exists in registry" / "not found" / "unavailable" (private/error)
+                       Shows "exists in registry" / "not found" / "unavailable" (private/error)
 ----
+
+Build calls explicitly pass `rm: true` and `forcerm: true` so successful and failed
+builds remove intermediate Buildah containers. The Podman Desktop build API does
+not return a build ID, Buildah container ID, or ownership handle. Therefore an
+aborted build may leave external Buildah containers that cannot be removed safely
+by the extension without risking artifacts owned by another build or tool. The
+frontend warns before cancellation, and recovery remains an explicit user action
+using `podman system prune --build --force` after all builds stop; the extension
+does not prune automatically.
 
 === Image Builder (wizard + build)
 
