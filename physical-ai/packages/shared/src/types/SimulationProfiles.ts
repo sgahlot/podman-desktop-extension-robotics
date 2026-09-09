@@ -1,5 +1,5 @@
 import type { SimulationConfig } from './SimulationConfig';
-import { resolveSimulationBaseImage } from './SimulationBaseImages';
+import { CUSTOM_SIMULATION_BASE_IMAGE, resolveSimulationBaseImage } from './SimulationBaseImages';
 
 /**
  * Maps a wizard selection to a bundled Containerfile asset.
@@ -98,8 +98,11 @@ export function platformForArch(targetArch?: string): string | undefined {
 export function baseImageTag(namespace: string, config: SimulationConfig): string | undefined {
   const profile = resolveSimulationProfile(config);
   if (!profile) return undefined;
-  const base = resolveSimulationBaseImage(config.baseImage);
-  return `quay.io/${namespace}/${profile.baseImageName}:${base.imageTag}${archTagSuffix(config.targetArch)}`;
+  const tag =
+    config.baseImage === CUSTOM_SIMULATION_BASE_IMAGE
+      ? 'custom'
+      : resolveSimulationBaseImage(config.baseImage).imageTag;
+  return `quay.io/${namespace}/${profile.baseImageName}:${tag}${archTagSuffix(config.targetArch)}`;
 }
 
 export function hasSimulationSupport(profile: SimulationProfile): boolean {
@@ -109,14 +112,20 @@ export function hasSimulationSupport(profile: SimulationProfile): boolean {
 export function simulationImageTag(namespace: string, config: SimulationConfig): string | undefined {
   const profile = resolveSimulationProfile(config);
   if (!profile?.imageName) return undefined;
-  const base = resolveSimulationBaseImage(config.baseImage);
-  return `quay.io/${namespace}/${profile.imageName}:${base.imageTag}${archTagSuffix(config.targetArch)}`;
+  const tag =
+    config.baseImage === CUSTOM_SIMULATION_BASE_IMAGE
+      ? 'custom'
+      : resolveSimulationBaseImage(config.baseImage).imageTag;
+  return `quay.io/${namespace}/${profile.imageName}:${tag}${archTagSuffix(config.targetArch)}`;
 }
 
 /** Tag for the optional Hardened middle-layer image (bake-in Hummingbird tools only). */
 export function hardenedImageTag(namespace: string, config: SimulationConfig): string | undefined {
   const profile = resolveSimulationProfile(config);
   if (!profile?.hardenedImageName) return undefined;
-  const base = resolveSimulationBaseImage(config.baseImage);
-  return `quay.io/${namespace}/${profile.hardenedImageName}:${base.imageTag}${archTagSuffix(config.targetArch)}`;
+  const tag =
+    config.baseImage === CUSTOM_SIMULATION_BASE_IMAGE
+      ? 'custom'
+      : resolveSimulationBaseImage(config.baseImage).imageTag;
+  return `quay.io/${namespace}/${profile.hardenedImageName}:${tag}${archTagSuffix(config.targetArch)}`;
 }

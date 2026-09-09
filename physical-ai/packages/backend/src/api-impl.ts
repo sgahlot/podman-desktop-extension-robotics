@@ -23,7 +23,11 @@ import {
   archTagSuffix,
   platformForArch,
 } from '/@shared/src/types/SimulationProfiles';
-import { resolveSimulationBaseImage } from '/@shared/src/types/SimulationBaseImages';
+import {
+  CUSTOM_SIMULATION_BASE_IMAGE,
+  customBaseImageRef,
+  resolveSimulationBaseImage,
+} from '/@shared/src/types/SimulationBaseImages';
 import type {
   OpenShiftDeployConfig,
   OpenShiftDeployResult,
@@ -953,11 +957,16 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
           'Supported: humble/turtlebot3/dds/gazebo and jazzy/turtlebot3/dds/gazebo.',
       );
     }
+    const customRef =
+      config.baseImage === CUSTOM_SIMULATION_BASE_IMAGE ? customBaseImageRef(config.customBaseImage) : undefined;
+    if (config.baseImage === CUSTOM_SIMULATION_BASE_IMAGE && !customRef) {
+      throw new Error('A custom base image reference is required.');
+    }
     const baseImage = resolveSimulationBaseImage(config.baseImage);
     await this.#startImageBuild(
       tag,
       profile.baseAssetDir,
-      { ROS_BASE_IMAGE: baseImage.imageRef },
+      { ROS_BASE_IMAGE: customRef ?? baseImage.imageRef },
       platformForArch(config.targetArch),
       {
         kind: 'preset-base',
@@ -984,7 +993,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
     const ns = await this.getDefaultNamespace();
     const baseImage = resolveSimulationBaseImage(config.baseImage);
-    const localBaseTag = `quay.io/${ns}/${profile.baseImageName}:${baseImage.imageTag}${archTagSuffix(config.targetArch)}`;
+    const localBaseTag = `quay.io/${ns}/${profile.baseImageName}:${config.baseImage === CUSTOM_SIMULATION_BASE_IMAGE ? 'custom' : baseImage.imageTag}${archTagSuffix(config.targetArch)}`;
 
     const containerfile = generatePresetHardenedContainerfile(options.hummingbirdTools);
     this.#assertCanStartOp(this.activeBuilds, tag, 'build');
@@ -1038,7 +1047,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
     const ns = await this.getDefaultNamespace();
     const baseImage = resolveSimulationBaseImage(config.baseImage);
-    const localBaseTag = `quay.io/${ns}/${profile.baseImageName}:${baseImage.imageTag}${archTagSuffix(config.targetArch)}`;
+    const localBaseTag = `quay.io/${ns}/${profile.baseImageName}:${config.baseImage === CUSTOM_SIMULATION_BASE_IMAGE ? 'custom' : baseImage.imageTag}${archTagSuffix(config.targetArch)}`;
     const parentTag = options?.parentImageTag ?? localBaseTag;
     await this.#startImageBuild(
       tag,
@@ -1162,13 +1171,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   async getSimulationConfig(): Promise<SimulationConfig> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
     const rawBase = config.get<string>('simulation.baseImage');
-    const baseImage = resolveSimulationBaseImage(rawBase).id;
+    const baseImage =
+      rawBase === CUSTOM_SIMULATION_BASE_IMAGE ? CUSTOM_SIMULATION_BASE_IMAGE : resolveSimulationBaseImage(rawBase).id;
     return {
       robot: config.get<string>('simulation.robot') ?? 'turtlebot3',
       distro: config.get<string>('simulation.distro') ?? 'jazzy',
       middleware: config.get<string>('simulation.middleware') ?? 'dds',
       engine: config.get<string>('simulation.engine') ?? 'gazebo',
       baseImage,
+      customBaseImage: config.get<string>('simulation.customBaseImage') ?? undefined,
     };
   }
 
@@ -1179,6 +1190,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     await pdConfig.update('simulation.middleware', config.middleware);
     await pdConfig.update('simulation.engine', config.engine);
     await pdConfig.update('simulation.baseImage', config.baseImage);
+    await pdConfig.update('simulation.customBaseImage', config.customBaseImage ?? '');
   }
 
   async #getEngineId(imageTag?: string): Promise<string> {

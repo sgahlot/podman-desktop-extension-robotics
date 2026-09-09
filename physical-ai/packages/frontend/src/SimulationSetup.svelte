@@ -15,18 +15,20 @@ import {
 } from '/@shared/src/types/SimulationProfiles';
 import {
   resolveSimulationBaseImage,
+  CUSTOM_SIMULATION_BASE_IMAGE,
   DEFAULT_SIMULATION_BASE_IMAGE,
   baseImagesForDistro,
   defaultBaseImageForDistro,
 } from '/@shared/src/types/SimulationBaseImages';
-import type { SimulationBaseImageId } from '/@shared/src/types/SimulationBaseImages';
+import type { SimulationBaseImageSelection } from '/@shared/src/types/SimulationBaseImages';
 import type { SimulationConfig, TargetArch } from '/@shared/src/types/SimulationConfig';
 
 let robot = 'turtlebot3';
 let distro = 'jazzy';
 let middleware = 'dds';
 let engine = 'gazebo';
-let baseImage: SimulationBaseImageId = DEFAULT_SIMULATION_BASE_IMAGE;
+let baseImage: SimulationBaseImageSelection = DEFAULT_SIMULATION_BASE_IMAGE;
+let customBaseImage = '';
 // Single source of truth for the build target architecture — owned by the
 // Target toggle. The Customize form no longer has its own targetArch control.
 let targetArch: TargetArch = 'amd64';
@@ -60,7 +62,7 @@ const QUICK_START_PRESET = {
   distro: 'jazzy',
   middleware: 'dds',
   engine: 'gazebo',
-  baseImage: 'jazzy-noble' as SimulationBaseImageId,
+  baseImage: 'jazzy-noble' as SimulationBaseImageSelection,
 };
 const QUICK_START_SUMMARY = 'TurtleBot3 · Jazzy · DDS · gazebo · Ubuntu Noble';
 
@@ -79,7 +81,7 @@ $: if (simBusy) simLogsExpanded = true;
 // Collapse the completed Step 1 (base) logs once Step 2 (sim) starts building —
 // the base build is already done by then, so its logs just take up space.
 $: if (simBusy) baseLogsExpanded = false;
-$: currentConfig = { robot, distro, middleware, engine, baseImage, targetArch } as SimulationConfig;
+$: currentConfig = { robot, distro, middleware, engine, baseImage, customBaseImage, targetArch } as SimulationConfig;
 $: crossArch = targetArch !== hostArch;
 $: otherArch = (hostArch === 'amd64' ? 'arm64' : 'amd64') as TargetArch;
 $: otherArchLabel = otherArch === 'amd64' ? 'amd64 (for OpenShift)' : `${otherArch} (cross-build)`;
@@ -95,7 +97,7 @@ $: availableBaseImages = baseImagesForDistro(distro);
 $: basePreset = resolveSimulationBaseImage(baseImage);
 $: {
   const validForDistro = availableBaseImages.find(p => p.id === baseImage);
-  if (!validForDistro && !buildBusy) {
+  if (!validForDistro && baseImage !== CUSTOM_SIMULATION_BASE_IMAGE && !buildBusy) {
     baseImage = defaultBaseImageForDistro(distro);
   }
 }
@@ -162,6 +164,7 @@ onMount(async () => {
     middleware = config.middleware;
     engine = config.engine;
     baseImage = config.baseImage ?? DEFAULT_SIMULATION_BASE_IMAGE;
+    customBaseImage = config.customBaseImage ?? '';
     if (config.targetArch) targetArch = config.targetArch;
   } catch {
     // defaults are fine
@@ -441,9 +444,24 @@ function cancelQuickStart() {
               {#each availableBaseImages as preset}
                 <option value={preset.id}>{preset.label}</option>
               {/each}
+              <option value={CUSTOM_SIMULATION_BASE_IMAGE}>Custom image reference</option>
             </select>
-            <span class="text-xs text-[var(--pd-content-text)] opacity-80">{basePreset.description}</span>
-            {#if !basePreset.architectures.includes(targetArch)}
+            {#if baseImage === CUSTOM_SIMULATION_BASE_IMAGE}
+              <input
+                id="customBaseImage"
+                bind:value={customBaseImage}
+                disabled={buildBusy}
+                placeholder="e.g. quay.io/org/ros:jazzy"
+                class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]" />
+              <span class="text-xs text-[var(--pd-content-text)] opacity-80"
+                >Any pullable OCI image reference. It becomes the parent FROM image.</span>
+              {#if !customBaseImage.trim()}
+                <span class="text-xs pai-text-warning">Enter a custom image reference before building.</span>
+              {/if}
+            {:else}
+              <span class="text-xs text-[var(--pd-content-text)] opacity-80">{basePreset.description}</span>
+            {/if}
+            {#if baseImage !== CUSTOM_SIMULATION_BASE_IMAGE && !basePreset.architectures.includes(targetArch)}
               <span class="text-xs pai-text-warning">
                 Warning: this preset does not support {targetArch}. The build may fail or use slow emulation.
               </span>
@@ -600,7 +618,10 @@ function cancelQuickStart() {
                 bind:tag={simTag}
                 bind:busy={simBusy}
                 bind:buildLogsExpanded={simLogsExpanded}
-                buildImage={t => physicalAiClient.buildSimulationImage(t, currentConfig)}
+                buildImage={t =>
+                  baseImage === CUSTOM_SIMULATION_BASE_IMAGE
+                    ? physicalAiClient.buildSimulationImage(t, currentConfig, { parentImageTag: baseTag })
+                    : physicalAiClient.buildSimulationImage(t, currentConfig)}
                 onBuildComplete={() => {
                   simImageExists = true;
                   refreshImageExistence(existsCheckKey);

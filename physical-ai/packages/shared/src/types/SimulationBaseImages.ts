@@ -5,6 +5,8 @@
  * Preset ids are short so Podman Desktop Settings enum dropdowns don't truncate.
  */
 export type SimulationBaseImageId = 'sloretz' | 'osrf' | 'jazzy' | 'jazzy-noble';
+export const CUSTOM_SIMULATION_BASE_IMAGE = 'custom' as const;
+export type SimulationBaseImageSelection = SimulationBaseImageId | typeof CUSTOM_SIMULATION_BASE_IMAGE;
 
 export interface SimulationBaseImagePreset {
   id: SimulationBaseImageId;
@@ -80,6 +82,13 @@ export function resolveSimulationBaseImage(id: string | undefined | null): Simul
   const normalized = id ? (LEGACY_BASE_IMAGE_IDS[id] ?? id) : undefined;
   const preset = SIMULATION_BASE_IMAGES.find(p => p.id === normalized);
   return preset ?? SIMULATION_BASE_IMAGES.find(p => p.id === DEFAULT_SIMULATION_BASE_IMAGE)!;
+}
+
+/** Returns the configured parent image reference, or undefined for a preset. */
+export function customBaseImageRef(value: string | undefined | null): string | undefined {
+  const ref = value?.trim();
+  if (!ref) return undefined;
+  return ref;
 }
 
 export function baseImagesForDistro(distro: string): readonly SimulationBaseImagePreset[] {

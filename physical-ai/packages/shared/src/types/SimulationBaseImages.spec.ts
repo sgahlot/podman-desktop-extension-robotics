@@ -5,6 +5,8 @@ import {
   DEFAULT_SIMULATION_BASE_IMAGE,
   baseImagesForDistro,
   defaultBaseImageForDistro,
+  CUSTOM_SIMULATION_BASE_IMAGE,
+  customBaseImageRef,
 } from './SimulationBaseImages';
 
 describe('SimulationBaseImages', () => {
@@ -79,5 +81,11 @@ describe('SimulationBaseImages', () => {
     expect(defaultBaseImageForDistro('humble')).toBe('sloretz');
     expect(defaultBaseImageForDistro('jazzy')).toBe('jazzy-noble');
     expect(defaultBaseImageForDistro('rolling')).toBe(DEFAULT_SIMULATION_BASE_IMAGE);
+  });
+
+  it('normalizes a custom base image reference without changing it', () => {
+    expect(CUSTOM_SIMULATION_BASE_IMAGE).toBe('custom');
+    expect(customBaseImageRef('  quay.io/example/ros:jazzy  ')).toBe('quay.io/example/ros:jazzy');
+    expect(customBaseImageRef('  ')).toBeUndefined();
   });
 });

@@ -1,6 +1,6 @@
 {
-  "name": "physical-ai",
-  "displayName": "Physical AI",
+  "name": "physical-ai-appeng-6293",
+  "displayName": "Physical AI (APPENG-6293)",
   "description": "Podman Desktop extension for Physical AI robotics development",
   "version": "0.1.0",
   "icon": "icon.png",
@@ -81,16 +81,23 @@
             "sloretz",
             "osrf",
             "jazzy-noble",
-            "jazzy"
+            "jazzy",
+            "custom"
           ],
           "enumDescriptions": [
             "ghcr.io/sloretz multi-arch Humble desktop (recommended on Apple Silicon)",
             "docker.io/osrf official Humble desktop (amd64 only)",
             "docker.io/library/ros:jazzy-ros-base on Ubuntu Noble (multi-arch Quick Start)",
-            "docker.io/ros official Jazzy base (amd64 preset, tag :latest)"
+            "docker.io/ros official Jazzy base (amd64 preset, tag :latest)",
+            "Use the custom image reference field"
           ],
           "default": "jazzy-noble",
           "description": "Base image preset for Image Builder builds"
+        },
+        "physical-ai.simulation.customBaseImage": {
+          "type": "string",
+          "default": "",
+          "description": "Arbitrary parent image reference used when the Custom base image is selected"
         },
         "physical-ai.simulation.gpuPassthrough": {
           "type": "boolean",
