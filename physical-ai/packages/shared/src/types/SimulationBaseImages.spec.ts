@@ -7,6 +7,7 @@ import {
   defaultBaseImageForDistro,
   CUSTOM_SIMULATION_BASE_IMAGE,
   customBaseImageRef,
+  shortImageRef,
 } from './SimulationBaseImages';
 
 describe('SimulationBaseImages', () => {
@@ -87,5 +88,11 @@ describe('SimulationBaseImages', () => {
     expect(CUSTOM_SIMULATION_BASE_IMAGE).toBe('custom');
     expect(customBaseImageRef('  quay.io/example/ros:jazzy  ')).toBe('quay.io/example/ros:jazzy');
     expect(customBaseImageRef('  ')).toBeUndefined();
+  });
+
+  it('shortens image references for cache-layer labels', () => {
+    expect(shortImageRef('docker.io/library/ros:jazzy-ros-base')).toBe('ros:jazzy-ros-base');
+    expect(shortImageRef('ghcr.io/sloretz/ros:humble-desktop@sha256:abc')).toBe('sloretz/ros:humble-desktop');
+    expect(shortImageRef('quay.io/example/robot-base:latest')).toBe('example/robot-base:latest');
   });
 });

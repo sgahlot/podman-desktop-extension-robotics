@@ -7,6 +7,7 @@ import {
   isBuildCacheHitLogLine,
   isLayerCompositionContainerfile,
   parseBuildStepLayerIds,
+  layerCachePlanFromSimulationConfig,
 } from './buildLayerCache';
 
 describe('buildLayerCache', () => {
@@ -118,6 +119,35 @@ describe('buildLayerCache', () => {
       { layer: 'Base OS', cached: true },
       { layer: 'ROS Jazzy', cached: false },
     ]);
+  });
+
+  it('includes the resolved base image in preset-build cache labels', () => {
+    expect(
+      layerCachePlanFromSimulationConfig(
+        {
+          robot: 'turtlebot3',
+          distro: 'jazzy',
+          middleware: 'dds',
+          engine: 'gazebo',
+          baseImage: 'jazzy-noble',
+        },
+        { includeSim: false },
+      )[0],
+    ).toEqual({ layerId: 'base-os', label: 'Base OS · ros:jazzy-ros-base' });
+
+    expect(
+      layerCachePlanFromSimulationConfig(
+        {
+          robot: 'turtlebot3',
+          distro: 'jazzy',
+          middleware: 'dds',
+          engine: 'gazebo',
+          baseImage: 'custom',
+          customBaseImage: 'quay.io/example/robot-base:latest',
+        },
+        { includeSim: false },
+      )[0],
+    ).toEqual({ layerId: 'base-os', label: 'Base OS · example/robot-base:latest' });
   });
 
   it('aggregates preset sim builds across the full wizard layer plan', () => {

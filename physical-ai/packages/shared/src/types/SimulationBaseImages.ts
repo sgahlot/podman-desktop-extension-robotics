@@ -91,6 +91,19 @@ export function customBaseImageRef(value: string | undefined | null): string | u
   return ref;
 }
 
+/** Compact an OCI image reference for labels while retaining registry/repository identity. */
+export function shortImageRef(imageRef: string): string {
+  const withoutDigest = imageRef.trim().split('@', 1)[0];
+  const parts = withoutDigest.split('/').filter(Boolean);
+  if (parts.length === 0) return imageRef.trim();
+
+  const first = parts[0];
+  const hasRegistry = first === 'localhost' || first.includes('.') || first.includes(':');
+  const repositoryParts = hasRegistry ? parts.slice(1) : parts;
+  const withoutLibrary = repositoryParts[0] === 'library' ? repositoryParts.slice(1) : repositoryParts;
+  return withoutLibrary.slice(-2).join('/') || withoutDigest;
+}
+
 export function baseImagesForDistro(distro: string): readonly SimulationBaseImagePreset[] {
   return SIMULATION_BASE_IMAGES.filter(p => p.distro === distro);
 }

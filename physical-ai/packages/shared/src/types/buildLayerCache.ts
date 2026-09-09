@@ -10,6 +10,12 @@ import {
 } from './layerCompatibility';
 import type { SimulationConfig } from './SimulationConfig';
 import { resolveSimulationProfile } from './SimulationProfiles';
+import {
+  CUSTOM_SIMULATION_BASE_IMAGE,
+  customBaseImageRef,
+  resolveSimulationBaseImage,
+  shortImageRef,
+} from './SimulationBaseImages';
 
 /** Wizard composition layers that map to Containerfile sections (APPENG-6298 / S10-4). */
 export type CompositionLayerId = 'base-os' | 'hardened' | 'ros' | 'sim';
@@ -85,7 +91,12 @@ export function layerCachePlanFromSimulationConfig(
   config: SimulationConfig,
   opts: { includeSim: boolean },
 ): LayerCachePlanEntry[] {
-  const plan: LayerCachePlanEntry[] = [{ layerId: 'base-os', label: 'Base OS' }];
+  const baseRef =
+    config.baseImage === CUSTOM_SIMULATION_BASE_IMAGE
+      ? customBaseImageRef(config.customBaseImage)
+      : resolveSimulationBaseImage(config.baseImage).imageRef;
+  const baseLabel = baseRef ? `Base OS · ${shortImageRef(baseRef)}` : 'Base OS';
+  const plan: LayerCachePlanEntry[] = [{ layerId: 'base-os', label: baseLabel }];
   const profile = resolveSimulationProfile(config);
   if (!profile) return plan;
 
