@@ -590,7 +590,7 @@ describe('PhysicalAiApiImpl', () => {
       expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
         '/tmp/physical-ai-layer-build-abc',
         expect.any(Function),
-        expect.objectContaining({ containerFile: 'Containerfile', tag: 'my-layer:latest' }),
+        expect.objectContaining({ containerFile: 'Containerfile', tag: 'my-layer:latest', rm: true, forcerm: true }),
       );
     });
 
@@ -1300,6 +1300,8 @@ RUN apt-get install -y ros-jazzy-desktop
         expect.objectContaining({
           containerFile: 'Containerfile',
           tag: 'my-tag:latest',
+          rm: true,
+          forcerm: true,
           provider: mockConnection.connection,
           abortController: expect.any(AbortController),
           buildargs: {

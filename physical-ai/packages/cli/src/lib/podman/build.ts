@@ -20,7 +20,7 @@ export interface BuildImageOptions {
  */
 export async function buildImage(options: BuildImageOptions, onOutput: (line: string) => void): Promise<void> {
   const containerFilePath = path.join(options.contextDir, options.containerFile);
-  const args = ['build', '--file', containerFilePath, '--tag', options.tag];
+  const args = ['build', '--rm', '--force-rm', '--file', containerFilePath, '--tag', options.tag];
   for (const [key, value] of Object.entries(options.buildArgs ?? {})) {
     args.push('--build-arg', `${key}=${value}`);
   }

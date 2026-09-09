@@ -26,6 +26,8 @@ describe('buildImage', () => {
     expect(spawnPodman).toHaveBeenCalledWith(
       [
         'build',
+        '--rm',
+        '--force-rm',
         '--file',
         '/ctx/Containerfile',
         '--tag',
@@ -43,7 +45,7 @@ describe('buildImage', () => {
   it('omits --build-arg and --platform when not given', async () => {
     await buildImage({ contextDir: '/ctx', containerFile: 'Containerfile', tag: 'tag' }, vi.fn());
     expect(spawnPodman).toHaveBeenCalledWith(
-      ['build', '--file', '/ctx/Containerfile', '--tag', 'tag', '/ctx'],
+      ['build', '--rm', '--force-rm', '--file', '/ctx/Containerfile', '--tag', 'tag', '/ctx'],
       expect.any(Function),
     );
   });
@@ -51,7 +53,7 @@ describe('buildImage', () => {
   it('joins a nested containerFile path under contextDir, not the CLI process cwd', async () => {
     await buildImage({ contextDir: '/ctx', containerFile: 'sub/Containerfile.custom', tag: 'tag' }, vi.fn());
     expect(spawnPodman).toHaveBeenCalledWith(
-      ['build', '--file', '/ctx/sub/Containerfile.custom', '--tag', 'tag', '/ctx'],
+      ['build', '--rm', '--force-rm', '--file', '/ctx/sub/Containerfile.custom', '--tag', 'tag', '/ctx'],
       expect.any(Function),
     );
   });

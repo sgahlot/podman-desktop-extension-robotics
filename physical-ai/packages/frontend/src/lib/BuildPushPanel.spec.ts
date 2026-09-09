@@ -56,6 +56,7 @@ describe('BuildPushPanel', () => {
 
   it('shows Rebuild when image exists locally', async () => {
     mockListLocalImages.mockResolvedValue([TAG]);
+    mockGetImageTags.mockResolvedValue([{ name: 'noble' }]);
 
     render(BuildPushPanel, {
       props: {
@@ -67,6 +68,29 @@ describe('BuildPushPanel', () => {
 
     expect(await screen.findByRole('button', { name: 'Rebuild' })).toBeTruthy();
     expect(await screen.findByText(/Image exists locally/)).toBeTruthy();
+    expect(await screen.findByText(/Image exists in registry/)).toBeTruthy();
+  });
+
+  it('clears old image status immediately when the tag is edited', async () => {
+    mockListLocalImages.mockResolvedValue([TAG]);
+    mockGetImageTags.mockResolvedValue([{ name: 'noble' }]);
+
+    render(BuildPushPanel, {
+      props: {
+        buildImage,
+        tag: TAG,
+        tagInputId: 'phase1-tag',
+      },
+    });
+
+    expect(await screen.findByText(/Image exists locally/)).toBeTruthy();
+    expect(await screen.findByText(/Image exists in registry/)).toBeTruthy();
+
+    const input = screen.getByLabelText('Image tag');
+    await fireEvent.input(input, { target: { value: 'quay.io/ns/ros2-jazzy-base:new-tag' } });
+
+    expect(screen.queryByText(/Image exists locally/)).toBeNull();
+    expect(screen.queryByText(/Image exists in registry/)).toBeNull();
   });
 
   it('starts build and shows Cancel while in progress', async () => {
@@ -103,6 +127,7 @@ describe('BuildPushPanel', () => {
   });
 
   it('cancels an in-flight build', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     buildImage.mockImplementation(() => new Promise(() => {}));
     mockGetBuildProgress.mockResolvedValue({
       tag: TAG,
@@ -126,6 +151,36 @@ describe('BuildPushPanel', () => {
       expect(mockCancelBuild).toHaveBeenCalledWith(TAG);
     });
     expect(await screen.findByText(/Build cancelled/)).toBeTruthy();
+    expect(confirmSpy).toHaveBeenCalledWith(
+      expect.stringContaining('may leave temporary Buildah containers and intermediate image layers'),
+    );
+    confirmSpy.mockRestore();
+  });
+
+  it('keeps an in-flight build running when cancellation is dismissed', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    buildImage.mockImplementation(() => new Promise(() => {}));
+    mockGetBuildProgress.mockResolvedValue({
+      tag: TAG,
+      status: 'Building...',
+      logs: [],
+    });
+
+    render(BuildPushPanel, {
+      props: {
+        buildImage,
+        tag: TAG,
+        tagInputId: 'phase1-tag',
+      },
+    });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Build' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    expect(mockCancelBuild).not.toHaveBeenCalled();
+    expect(await screen.findByRole('button', { name: 'Cancel' })).toBeTruthy();
+    confirmSpy.mockRestore();
   });
 
   it('shows build duration and the build logs toggle once done', async () => {

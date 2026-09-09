@@ -611,6 +611,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         {
           containerFile: containerFileName,
           tag,
+          rm: true,
+          forcerm: true,
           provider: podmanConnection.connection,
           abortController,
           ...(buildargs ? { buildargs } : {}),
