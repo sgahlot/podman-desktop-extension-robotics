@@ -10,6 +10,7 @@
  */
 
 export type BaseOsLayer =
+  | 'custom'
   | 'ubuntu-noble'
   | 'centos-bootc-stream9'
   | 'centos-bootc-stream10'
@@ -47,6 +48,8 @@ export type HummingbirdKind = 'companion' | 'tool';
 
 export interface LayerSelection {
   baseOs: BaseOsLayer;
+  /** OCI image reference used when baseOs is `custom`. */
+  customBaseImage?: string;
   hardened: HardenedLayer;
   ros: RosLayer;
   sim: SimLayer;
@@ -105,6 +108,7 @@ export function hummingbirdImageRef(app: HardenedApp): string {
 }
 
 export const BASE_OS_OPTIONS: readonly LayerOption<BaseOsLayer>[] = [
+  { id: 'custom', label: 'Custom image reference', note: 'Assumes a Debian/Ubuntu-compatible image' },
   { id: 'ubuntu-noble', label: 'Ubuntu Noble', note: 'ROS-ready (current default)' },
   {
     id: 'centos-bootc-stream9',
@@ -239,6 +243,14 @@ interface BaseOsCapability {
 }
 
 const BASE_OS_CAPABILITY: Record<BaseOsLayer, BaseOsCapability> = {
+  custom: {
+    isBootc: false,
+    packaging: 'apt',
+    requiresSubscription: false,
+    supportsRos: true,
+    supportsSim: true,
+    hasRosRepo: true,
+  },
   'ubuntu-noble': {
     isBootc: false,
     packaging: 'apt',
@@ -305,8 +317,10 @@ const BASE_OS_CAPABILITY: Record<BaseOsLayer, BaseOsCapability> = {
   },
 };
 
-function labelForBaseOs(baseOs: BaseOsLayer): string {
-  return BASE_OS_OPTIONS.find(o => o.id === baseOs)?.label ?? baseOs;
+function labelForBaseOs(baseOs: BaseOsLayer, customBaseImage?: string): string {
+  return baseOs === 'custom'
+    ? customBaseImage?.trim() || 'Custom image reference'
+    : (BASE_OS_OPTIONS.find(o => o.id === baseOs)?.label ?? baseOs);
 }
 
 const LEVEL_RANK: Record<CompatMessage['level'], number> = { info: 0, warn: 1, error: 2 };
@@ -320,11 +334,16 @@ const LEVEL_RANK: Record<CompatMessage['level'], number> = { info: 0, warn: 1, e
 export function evaluateStack(sel: LayerSelection): CompatResult {
   const messages: CompatMessage[] = [];
   const cap = BASE_OS_CAPABILITY[sel.baseOs];
-  const baseLabel = labelForBaseOs(sel.baseOs);
+  const baseLabel = labelForBaseOs(sel.baseOs, sel.customBaseImage);
   const wantsRos = sel.ros !== 'none';
   const wantsSim = sel.sim !== 'none';
 
   let failsAtStep: string | undefined;
+
+  if (sel.baseOs === 'custom' && !sel.customBaseImage?.trim()) {
+    messages.push({ level: 'error', text: 'A custom base image reference is required before building.' });
+    failsAtStep = 'base-os';
+  }
 
   // (1) Build-feasibility — a selected layer the base can't satisfy fails at build time.
   if (wantsRos && !cap.supportsRos) {
@@ -402,7 +421,7 @@ export function evaluateStack(sel: LayerSelection): CompatResult {
   };
 }
 
-const BASE_OS_IMAGE_REF: Record<BaseOsLayer, string> = {
+const BASE_OS_IMAGE_REF: Record<Exclude<BaseOsLayer, 'custom'>, string> = {
   'ubuntu-noble': 'docker.io/library/ubuntu:24.04',
   'centos-bootc-stream9': 'quay.io/centos-bootc/centos-bootc:stream9',
   'centos-bootc-stream10': 'quay.io/centos-bootc/centos-bootc:stream10',
@@ -414,8 +433,8 @@ const BASE_OS_IMAGE_REF: Record<BaseOsLayer, string> = {
 };
 
 /** Full image reference this wizard would pull/FROM for a given base OS layer. */
-export function baseOsImageRef(baseOs: BaseOsLayer): string {
-  return BASE_OS_IMAGE_REF[baseOs];
+export function baseOsImageRef(baseOs: BaseOsLayer, customBaseImage?: string): string {
+  return baseOs === 'custom' ? (customBaseImage?.trim() ?? '') : BASE_OS_IMAGE_REF[baseOs];
 }
 
 const ROS_DISTRO: Record<Exclude<RosLayer, 'none'>, string> = {
@@ -436,7 +455,9 @@ export function labelFor<TId extends string>(options: readonly LayerOption<TId>[
 export function generateLayerContainerfile(sel: LayerSelection): string {
   const sections: string[] = [];
 
-  sections.push(`# Layer 1 — Base OS: ${labelFor(BASE_OS_OPTIONS, sel.baseOs)}\nFROM ${BASE_OS_IMAGE_REF[sel.baseOs]}`);
+  sections.push(
+    `# Layer 1 — Base OS: ${labelForBaseOs(sel.baseOs, sel.customBaseImage)}\nFROM ${baseOsImageRef(sel.baseOs, sel.customBaseImage)}`,
+  );
 
   if (sel.hardened !== 'none') {
     const lines = [`# Layer 2 — Hardened application layer: ${labelFor(HARDENED_OPTIONS, sel.hardened)}`];

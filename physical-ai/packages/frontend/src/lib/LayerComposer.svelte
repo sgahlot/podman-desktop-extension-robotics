@@ -22,7 +22,7 @@ import {
   platformForArch,
   archTagSuffix,
 } from '/@shared/src/types/SimulationProfiles';
-import { defaultBaseImageForDistro } from '/@shared/src/types/SimulationBaseImages';
+import { defaultBaseImageForDistro, shortImageRef } from '/@shared/src/types/SimulationBaseImages';
 import type { SimulationConfig, TargetArch } from '/@shared/src/types/SimulationConfig';
 import { physicalAiClient } from '../api/client';
 import { onMount, onDestroy } from 'svelte';
@@ -30,6 +30,7 @@ import BuildPushPanel from './BuildPushPanel.svelte';
 
 let selection: LayerSelection = {
   baseOs: 'ubuntu-noble',
+  customBaseImage: '',
   hardened: 'none',
   ros: 'ros2-jazzy',
   sim: 'gazebo-nav2-tb3',
@@ -64,7 +65,12 @@ $: baseOsNote = BASE_OS_OPTIONS.find(o => o.id === selection.baseOs)?.note ?? ''
 $: hardenedNote = HARDENED_OPTIONS.find(o => o.id === selection.hardened)?.note ?? '';
 $: rosNote = ROS_OPTIONS.find(o => o.id === selection.ros)?.note ?? '';
 $: simNote = SIM_OPTIONS.find(o => o.id === selection.sim)?.note ?? '';
-$: baseOsLabel = BASE_OS_OPTIONS.find(o => o.id === selection.baseOs)?.label ?? selection.baseOs;
+$: baseOsLabel =
+  selection.baseOs === 'custom'
+    ? selection.customBaseImage?.trim()
+      ? shortImageRef(selection.customBaseImage)
+      : 'Custom image reference'
+    : (BASE_OS_OPTIONS.find(o => o.id === selection.baseOs)?.label ?? selection.baseOs);
 $: bannerClass =
   result.level === 'ok' ? 'pai-banner-success' : result.level === 'warn' ? 'pai-banner-warning' : 'pai-banner-error';
 $: bannerHeadline =
@@ -128,7 +134,7 @@ $: containerfileTag = `${ns ? `quay.io/${ns}/` : ''}pai-layer-${selection.baseOs
 $: selectedHbApps = selection.hardened === 'hummingbird-app' ? (selection.hummingbirdApps ?? []) : [];
 $: pullTargets = [
   ...(buildMode === 'containerfile'
-    ? [{ ref: baseOsImageRef(selection.baseOs), label: `Base OS — ${baseOsLabel}` }]
+    ? [{ ref: baseOsImageRef(selection.baseOs, selection.customBaseImage), label: `Base OS — ${baseOsLabel}` }]
     : []),
   ...selectedHbApps.map((a: HardenedApp) => ({ ref: hummingbirdImageRef(a), label: `Hummingbird — ${a}` })),
 ];
@@ -225,6 +231,14 @@ onDestroy(() => {
             <option value={o.id}>{o.label}</option>
           {/each}
         </select>
+        {#if selection.baseOs === 'custom'}
+          <input
+            id="layer-custom-base-image"
+            aria-label="Custom base image"
+            bind:value={selection.customBaseImage}
+            placeholder="e.g. docker.io/library/ubuntu:24.04"
+            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]" />
+        {/if}
         <span class="text-xs pai-text-muted">{baseOsNote}</span>
       </div>
 

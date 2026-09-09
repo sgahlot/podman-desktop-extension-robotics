@@ -136,7 +136,11 @@ describe('SimulationProfiles', () => {
 
   it('uses a stable custom suffix for arbitrary base image builds', () => {
     expect(
-      baseImageTag('ecosystem-appeng', { ...supported, baseImage: 'custom', customBaseImage: 'quay.io/example/ros:jazzy' }),
+      baseImageTag('ecosystem-appeng', {
+        ...supported,
+        baseImage: 'custom',
+        customBaseImage: 'quay.io/example/ros:jazzy',
+      }),
     ).toBe('quay.io/ecosystem-appeng/ros2-humble-base:custom');
     expect(
       simulationImageTag('ecosystem-appeng', {

@@ -20,6 +20,19 @@ function sel(overrides: Partial<LayerSelection>): LayerSelection {
 }
 
 describe('evaluateStack', () => {
+  it('requires a reference for a custom base OS', () => {
+    const result = evaluateStack(sel({ baseOs: 'custom', ros: 'none', sim: 'none' }));
+    expect(result.level).toBe('blocked');
+    expect(result.messages[0].text).toContain('custom base image reference is required');
+  });
+
+  it('accepts a custom Debian-compatible base OS for ROS and simulation layers', () => {
+    const result = evaluateStack(
+      sel({ baseOs: 'custom', customBaseImage: 'docker.io/library/ubuntu:24.04', ros: 'ros2-jazzy', sim: 'none' }),
+    );
+    expect(result.buildable).toBe(true);
+  });
+
   it('ubuntu + jazzy + sim is a known-good combination', () => {
     const result = evaluateStack(sel({ baseOs: 'ubuntu-noble', ros: 'ros2-jazzy', sim: 'gazebo-nav2-tb3' }));
     expect(result.level).toBe('ok');
@@ -148,6 +161,13 @@ describe('evaluateStack', () => {
 });
 
 describe('generateLayerContainerfile', () => {
+  it('uses the custom base image reference in the FROM line', () => {
+    const containerfile = generateLayerContainerfile(
+      sel({ baseOs: 'custom', customBaseImage: 'quay.io/example/robot-base:latest' }),
+    );
+    expect(containerfile).toContain('FROM quay.io/example/robot-base:latest');
+  });
+
   it('ubuntu + jazzy + sim contains the ubuntu FROM ref and the nav2 RUN line', () => {
     const containerfile = generateLayerContainerfile(
       sel({ baseOs: 'ubuntu-noble', ros: 'ros2-jazzy', sim: 'gazebo-nav2-tb3' }),
