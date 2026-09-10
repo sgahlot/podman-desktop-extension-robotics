@@ -330,8 +330,8 @@ function cancelQuickStart() {
       </div>
     </div>
 
-    {#if layout === 'presets'}
-      <!-- Target arch toggle — first-class, single source of truth for targetArch -->
+    {#if layout === 'layers'}
+      <!-- Target arch toggle — only for Customize where layers are composed independently -->
       <div
         class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-md flex flex-col gap-2">
         <span class="text-sm font-medium text-[var(--pd-content-header)]">Target</span>

@@ -97,12 +97,16 @@ describe('SimulationSetup (Image Builder)', () => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
     expect(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' })).toBeTruthy();
-    expect(screen.getByRole('radio', { name: /This machine \(arm64\)/ })).toBeTruthy();
-    expect(screen.getByRole('radio', { name: /amd64 \(for OpenShift\)/ })).toBeTruthy();
 
-    // Switch to Layers to verify detailed controls are available
+    // Target toggle is not in Presets layout anymore, only in Customize layout
+    expect(screen.queryByRole('radio', { name: /This machine \(arm64\)/ })).toBeNull();
+    expect(screen.queryByRole('radio', { name: /amd64 \(for OpenShift\)/ })).toBeNull();
+
+    // Switch to Customize to verify detailed controls and Target toggle are available
     await fireEvent.click(screen.getByRole('radio', { name: 'Customize' }));
     expect(screen.getByLabelText('Base OS')).toBeTruthy();
+    expect(screen.getByRole('radio', { name: /This machine \(arm64\)/ })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: /amd64 \(for OpenShift\)/ })).toBeTruthy();
   });
 
   it('loads preferences into the form', async () => {
@@ -152,13 +156,15 @@ describe('SimulationSetup (Image Builder)', () => {
     });
   });
 
-  it('toggling Target to amd64 then Quick Start saves jazzy config targeting amd64', async () => {
+  it('toggling Target to amd64 in Customize then Quick Start saves jazzy config targeting amd64', async () => {
     Element.prototype.scrollIntoView = vi.fn();
+    mockGetImageBuilderLayout.mockResolvedValue('layers');
     render(SimulationSetup);
     await waitFor(() => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
 
+    // Target toggle is in Customize (layers) layout now
     await fireEvent.click(screen.getByRole('radio', { name: /amd64 \(for OpenShift\)/ }));
     await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
     await fireEvent.click(await screen.findByRole('button', { name: 'Apply Quick Start' }));
@@ -178,13 +184,13 @@ describe('SimulationSetup (Image Builder)', () => {
   });
 
   it('APPENG-6241: base image arch warning checks the target, not the host — amd64-only preset + amd64 target is fine on an arm64 host', async () => {
-    mockGetImageBuilderLayout.mockResolvedValue('presets');
+    mockGetImageBuilderLayout.mockResolvedValue('layers');
     render(SimulationSetup);
     await waitFor(() => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
 
-    // Presets layout has Target toggle; Layers does not
+    // Target toggle is in Customize (layers) layout
     await fireEvent.click(screen.getByRole('radio', { name: /amd64 \(for OpenShift\)/ }));
     await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
 
@@ -194,17 +200,18 @@ describe('SimulationSetup (Image Builder)', () => {
 
   it('APPENG-6241: warns when the amd64-only preset is paired with an arm64 target, even on an amd64 host', async () => {
     mockGetHostArch.mockResolvedValue('amd64');
-    mockGetImageBuilderLayout.mockResolvedValue('presets');
+    mockGetImageBuilderLayout.mockResolvedValue('layers');
     render(SimulationSetup);
     await waitFor(() => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
 
+    // Target toggle is in Customize (layers) layout
     // On an amd64 host, the "other arch" target toggle is for arm64 (cross-build)
     await fireEvent.click(screen.getByRole('radio', { name: /arm64 \(cross-build\)/ }));
     await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
 
-    // Presets don't have arch warnings; this test verifies the behavior for the default preset
+    // Verify the behavior for the default preset
     expect(screen.queryByText(/does not support/)).toBeNull();
   });
 
