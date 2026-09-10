@@ -103,7 +103,7 @@ describe('SimulationSetup (Image Builder)', () => {
     expect(screen.queryByRole('radio', { name: /amd64 \(for OpenShift\)/ })).toBeNull();
 
     // Switch to Customize to verify detailed controls and Target toggle are available
-    await fireEvent.click(screen.getByRole('radio', { name: 'Customize' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Customize' }));
     expect(screen.getByLabelText('Base OS')).toBeTruthy();
     expect(screen.getByRole('radio', { name: /This machine \(arm64\)/ })).toBeTruthy();
     expect(screen.getByRole('radio', { name: /amd64 \(for OpenShift\)/ })).toBeTruthy();
@@ -123,7 +123,7 @@ describe('SimulationSetup (Image Builder)', () => {
     await waitFor(() => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
-    await fireEvent.click(screen.getByRole('radio', { name: 'Customize' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Customize' }));
     await waitFor(() => {
       expect(screen.getByLabelText('Base OS')).toBeTruthy();
     });
@@ -271,7 +271,7 @@ describe('SimulationSetup (Image Builder)', () => {
     });
 
     // Switch from Presets to Layers which has save button
-    await fireEvent.click(screen.getByRole('radio', { name: 'Customize' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Customize' }));
     // The Layers view doesn't have a "Save" button in the traditional sense for config
     // This test might need to be updated to match actual UI behavior
     expect(screen.queryByText('prefs locked')).toBeNull();
@@ -431,8 +431,8 @@ describe('SimulationSetup (Image Builder)', () => {
       expect(mockGetImageBuilderLayout).toHaveBeenCalled();
       expect(screen.getByText(/Step 1.*Base image/)).toBeTruthy();
       expect(screen.getByText(/Step 2.*Simulation image/)).toBeTruthy();
-      expect(screen.getByRole('radio', { name: 'Presets' })).toBeTruthy();
-      expect(screen.getByRole('radio', { name: 'Customize' })).toBeTruthy();
+      expect(screen.getByRole('tab', { name: 'Presets' })).toBeTruthy();
+      expect(screen.getByRole('tab', { name: 'Customize' })).toBeTruthy();
     });
 
     it('clicking the Customize layout switcher persists the preference', async () => {
@@ -442,7 +442,7 @@ describe('SimulationSetup (Image Builder)', () => {
         expect(screen.queryByText('Loading configuration...')).toBeNull();
       });
 
-      await fireEvent.click(screen.getByRole('radio', { name: 'Customize' }));
+      await fireEvent.click(screen.getByRole('tab', { name: 'Customize' }));
 
       await waitFor(() => {
         expect(mockSetImageBuilderLayout).toHaveBeenCalledWith('layers');
@@ -461,7 +461,7 @@ describe('SimulationSetup (Image Builder)', () => {
       expect(screen.queryByLabelText('Base OS')).toBeNull();
 
       // Switch to Customize and verify detailed controls appear
-      await fireEvent.click(screen.getByRole('radio', { name: 'Customize' }));
+      await fireEvent.click(screen.getByRole('tab', { name: 'Customize' }));
       expect(await screen.findByLabelText('Base OS')).toBeTruthy();
     });
   });

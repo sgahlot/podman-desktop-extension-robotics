@@ -316,35 +316,24 @@ function cancelQuickStart() {
   {#if loading}
     <div class="text-sm text-[var(--pd-content-text)]">Loading configuration...</div>
   {:else}
-    <!-- Shared layout switcher. Quick Starts and target controls remain available in every layout. -->
-    <div class="flex flex-row items-center gap-2 max-w-md">
-      <span class="text-xs text-[var(--pd-content-text)]">Layout:</span>
-      <div class="flex flex-row gap-2" role="radiogroup" aria-label="Image Builder layout">
-        <button
-          type="button"
-          role="radio"
-          aria-checked={layout === 'presets'}
-          on:click={() => setLayout('presets')}
-          disabled={buildBusy}
-          class="px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {layout ===
-          'presets'
-            ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
-            : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
-          Presets
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={layout === 'layers'}
-          on:click={() => setLayout('layers')}
-          disabled={buildBusy}
-          class="px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {layout ===
-          'layers'
-            ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
-            : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
-          Customize
-        </button>
-      </div>
+    <!-- Layout switcher using tab styling like Simulation page -->
+    <div class="flex flex-row gap-1 border-b border-[var(--pd-content-card-border)]">
+      <button
+        role="tab"
+        aria-selected={layout === 'presets'}
+        on:click={() => setLayout('presets')}
+        disabled={buildBusy}
+        class="px-5 py-2 text-sm pai-tab {layout === 'presets' ? 'pai-tab-active' : ''}">
+        Presets
+      </button>
+      <button
+        role="tab"
+        aria-selected={layout === 'layers'}
+        on:click={() => setLayout('layers')}
+        disabled={buildBusy}
+        class="px-5 py-2 text-sm pai-tab {layout === 'layers' ? 'pai-tab-active' : ''}">
+        Customize
+      </button>
     </div>
 
     {#if layout === 'layers'}
