@@ -111,11 +111,7 @@ $: quickStartDescription =
   selectedQuickStart?.id === 'openshift-jazzy-amd64'
     ? 'Ubuntu Noble + ROS 2 Jazzy + Gazebo/Nav2/TurtleBot3 simulation (amd64 for OpenShift)'
     : 'Ubuntu Noble + ROS 2 Jazzy + Gazebo/Nav2/TurtleBot3 simulation';
-$: quickStartMatchesCurrent =
-  baseImage === DEFAULT_SIMULATION_BASE_IMAGE &&
-  distro === 'jazzy' &&
-  robot === 'turtlebot3' &&
-  targetArch === hostArch;
+$: quickStartAlreadyApplied = selectedQuickStartId === appliedQuickStartId;
 $: profile = resolveSimulationProfile(currentConfig);
 $: simSupported = profile ? hasSimulationSupport(profile) : false;
 $: customSimulationTemplate =
@@ -198,6 +194,17 @@ onMount(async () => {
     customSimulationTemplateId = config.customSimulationTemplateId ?? customSimulationTemplateId;
     customSimulationMode = config.customSimulationMode ?? 'preset';
     if (config.targetArch) targetArch = config.targetArch;
+    // If loaded config matches a quick start, mark it as already applied
+    if (
+      baseImage === 'jazzy-noble' &&
+      robot === 'turtlebot3' &&
+      distro === 'jazzy' &&
+      middleware === 'dds' &&
+      engine === 'gazebo'
+    ) {
+      appliedQuickStartId =
+        (config.targetArch ?? targetArch) === 'amd64' ? 'openshift-jazzy-amd64' : 'local-jazzy';
+    }
   } catch {
     // defaults are fine
   }
@@ -277,8 +284,8 @@ async function applyQuickStart(id: QuickStartId = 'local-jazzy') {
 function onQuickStartClick(id: QuickStartId = 'local-jazzy') {
   selectedQuickStartId = id;
   pendingQuickStartId = id;
-  if (id === 'local-jazzy' && quickStartMatchesCurrent) {
-    // Nothing would change — apply immediately, no confirmation needed.
+  if (id === appliedQuickStartId) {
+    // Already applied — no change needed.
     void applyQuickStart(id);
   } else {
     showQuickStartConfirm = true;
