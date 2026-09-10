@@ -354,25 +354,29 @@ onDestroy(() => {
         </select>
         <span class="text-xs pai-text-muted">{simNote}</span>
         {#if selection.sim === 'custom-template'}
-          <label for="layer-simulation-template" class="text-xs text-[var(--pd-content-text)]"
-            >Registered simulation template</label>
-          <select
-            id="layer-simulation-template"
-            bind:value={selection.customSimulationTemplateId}
-            aria-label="Simulation template"
-            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-            {#each CUSTOM_SIMULATION_TEMPLATES as template}
-              <option value={template.id}>{template.label}</option>
-            {/each}
-          </select>
-          <span class="text-xs pai-text-warning"
-            >{selectedCustomTemplate.capability}: {selectedCustomTemplate.packages.join(', ')}</span>
-          <span class="text-xs text-[var(--pd-content-text)] opacity-80">
-            Required parent: {selectedCustomTemplate.osFamily}
-            {selectedCustomTemplate.osVersion} · ROS 2
-            {selectedCustomTemplate.rosDistro} · {selectedCustomTemplate.packageManager}. ROS is provided by the custom
-            parent.
-          </span>
+          <div class="flex flex-col gap-3 mt-1 pl-3 border-l border-[var(--pd-content-card-border)]">
+            <div class="flex flex-col gap-1">
+              <label for="layer-simulation-template" class="text-xs text-[var(--pd-content-text)]"
+                >Registered simulation template</label>
+              <select
+                id="layer-simulation-template"
+                bind:value={selection.customSimulationTemplateId}
+                aria-label="Simulation template"
+                class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+                {#each CUSTOM_SIMULATION_TEMPLATES as template}
+                  <option value={template.id}>{template.label}</option>
+                {/each}
+              </select>
+              <span class="text-xs pai-text-warning"
+                >{selectedCustomTemplate.capability}: {selectedCustomTemplate.packages.join(', ')}</span>
+              <span class="text-xs text-[var(--pd-content-text)] opacity-80">
+                Required parent: {selectedCustomTemplate.osFamily}
+                {selectedCustomTemplate.osVersion} · ROS 2
+                {selectedCustomTemplate.rosDistro} · {selectedCustomTemplate.packageManager}. ROS is provided by the
+                custom parent.
+              </span>
+            </div>
+          </div>
         {/if}
       </div>
 
