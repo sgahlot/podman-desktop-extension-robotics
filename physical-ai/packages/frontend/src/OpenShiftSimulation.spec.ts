@@ -357,7 +357,7 @@ describe('OpenShiftSimulation', () => {
         expect.objectContaining({
           useGpu: true,
           gpuToleration: 'g5-gpu=true:NoSchedule',
-          cpu: 7,
+          cpu: 6,
         }),
       );
     });
