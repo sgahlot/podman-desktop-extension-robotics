@@ -568,24 +568,9 @@ function cancelQuickStart() {
               {:else}
                 <span class="text-xs text-[var(--pd-content-text)] opacity-80">{basePreset.description}</span>
               {/if}
-            </div>
-
-            <div class="flex flex-col gap-1">
-              <label for="targetArch" class="text-xs text-[var(--pd-content-text)]">Target architecture</label>
-              <select
-                id="targetArch"
-                bind:value={targetArch}
-                disabled={buildBusy}
-                class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-                <option value="amd64">amd64 (OpenShift)</option>
-                <option value="arm64">arm64 (this machine)</option>
-              </select>
-              <span class="text-xs text-[var(--pd-content-text)] opacity-80">
-                Controls the image build platform. OpenShift requires amd64. Choose arm64 for your local machine.
-              </span>
               {#if baseImage === CUSTOM_SIMULATION_BASE_IMAGE && customBaseImage.trim()}
                 <span class="text-xs text-[var(--pd-content-text)] opacity-80">
-                  Ensure your custom image reference supports {targetArch}.
+                  Ensure your custom image reference supports the selected target architecture.
                 </span>
               {/if}
             </div>
