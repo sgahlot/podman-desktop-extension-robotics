@@ -526,6 +526,39 @@ function cancelQuickStart() {
                 {#if !customBaseImage.trim()}
                   <span class="text-xs pai-text-warning">Enter a custom image reference before building.</span>
                 {/if}
+                <div class="flex flex-col gap-1 mt-3 pt-3 border-t border-[var(--pd-content-card-border)]">
+                  <span class="text-xs text-[var(--pd-content-text)] font-medium"
+                    >Target architecture for your custom image</span>
+                  <div class="flex flex-row gap-2" role="radiogroup" aria-label="Target architecture">
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={targetArch === hostArch}
+                      on:click={() => (targetArch = hostArch)}
+                      disabled={buildBusy}
+                      class="flex-1 px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {targetArch ===
+                      hostArch
+                        ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
+                        : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
+                      {hostArch}
+                    </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={targetArch === otherArch}
+                      on:click={() => (targetArch = otherArch)}
+                      disabled={buildBusy}
+                      class="flex-1 px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {targetArch ===
+                      otherArch
+                        ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
+                        : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
+                      {otherArchLabel}
+                    </button>
+                  </div>
+                  <span class="text-xs text-[var(--pd-content-text)] opacity-80">
+                    Must match your custom image's architecture. OpenShift requires amd64.
+                  </span>
+                </div>
                 <label for="customSimulationMode" class="text-xs text-[var(--pd-content-text)]"
                   >Simulation layer source</label>
                 <select
@@ -567,11 +600,6 @@ function cancelQuickStart() {
                 {/if}
               {:else}
                 <span class="text-xs text-[var(--pd-content-text)] opacity-80">{basePreset.description}</span>
-              {/if}
-              {#if baseImage === CUSTOM_SIMULATION_BASE_IMAGE && customBaseImage.trim()}
-                <span class="text-xs text-[var(--pd-content-text)] opacity-80">
-                  Ensure your custom image reference supports the selected target architecture.
-                </span>
               {/if}
             </div>
 
