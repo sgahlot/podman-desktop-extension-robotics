@@ -112,7 +112,10 @@ $: quickStartDescription =
     ? 'Ubuntu Noble + ROS 2 Jazzy + Gazebo/Nav2/TurtleBot3 simulation (amd64 for OpenShift)'
     : 'Ubuntu Noble + ROS 2 Jazzy + Gazebo/Nav2/TurtleBot3 simulation';
 $: quickStartMatchesCurrent =
-  baseImage === DEFAULT_SIMULATION_BASE_IMAGE && distro === 'jazzy' && robot === 'turtlebot3';
+  baseImage === DEFAULT_SIMULATION_BASE_IMAGE &&
+  distro === 'jazzy' &&
+  robot === 'turtlebot3' &&
+  targetArch === hostArch;
 $: profile = resolveSimulationProfile(currentConfig);
 $: simSupported = profile ? hasSimulationSupport(profile) : false;
 $: customSimulationTemplate =
