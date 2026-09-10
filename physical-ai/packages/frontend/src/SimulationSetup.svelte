@@ -336,54 +336,6 @@ function cancelQuickStart() {
       </button>
     </div>
 
-    {#if layout === 'layers'}
-      <!-- Target arch toggle — only for Customize where layers are composed independently -->
-      <div
-        class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-md flex flex-col gap-2">
-        <span class="text-sm font-medium text-[var(--pd-content-header)]">Target</span>
-        <div class="flex flex-row gap-2" role="radiogroup" aria-label="Target architecture">
-          <button
-            type="button"
-            role="radio"
-            aria-checked={targetArch === hostArch}
-            on:click={() => (targetArch = hostArch)}
-            disabled={buildBusy}
-            class="flex-1 px-3 py-2 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {targetArch ===
-            hostArch
-              ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
-              : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
-            This machine ({hostArch})
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={targetArch === otherArch}
-            on:click={() => (targetArch = otherArch)}
-            disabled={buildBusy}
-            class="flex-1 px-3 py-2 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {targetArch ===
-            otherArch
-              ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
-              : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
-            {otherArchLabel}
-          </button>
-        </div>
-        <span class="text-xs text-[var(--pd-content-text)] opacity-80">
-          Host is {hostArch}. Deploying to OpenShift needs an <span class="font-mono">amd64</span> image.
-        </span>
-        {#if crossArch && targetArch === 'amd64'}
-          <span class="text-xs pai-text-muted">
-            &#8505; Building an <span class="font-mono">amd64</span> image for OpenShift on a {hostArch} host uses QEMU emulation
-            — this is expected and the build will be slower. Images are tagged
-            <span class="font-mono">-amd64</span>.
-          </span>
-        {:else if crossArch}
-          <span class="text-xs pai-text-warning">
-            &#9888; Cross-building {targetArch} on a {hostArch} host uses QEMU emulation — expect a significantly slower build.
-            Images are tagged <span class="font-mono">-{targetArch}</span>.
-          </span>
-        {/if}
-      </div>
-    {/if}
 
     <!-- Single Quick Start preset -->
     <div

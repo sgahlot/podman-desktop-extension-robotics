@@ -98,15 +98,11 @@ describe('SimulationSetup (Image Builder)', () => {
     });
     expect(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' })).toBeTruthy();
 
-    // Target toggle is not in Presets layout anymore, only in Customize layout
-    expect(screen.queryByRole('radio', { name: /This machine \(arm64\)/ })).toBeNull();
-    expect(screen.queryByRole('radio', { name: /amd64 \(for OpenShift\)/ })).toBeNull();
-
-    // Switch to Customize to verify detailed controls and Target toggle are available
+    // Switch to Customize to verify detailed controls are available
+    // (including Target architecture dropdown in LayerComposer)
     await fireEvent.click(screen.getByRole('tab', { name: 'Customize' }));
     expect(screen.getByLabelText('Base OS')).toBeTruthy();
-    expect(screen.getByRole('radio', { name: /This machine \(arm64\)/ })).toBeTruthy();
-    expect(screen.getByRole('radio', { name: /amd64 \(for OpenShift\)/ })).toBeTruthy();
+    expect(screen.getByLabelText('Target architecture')).toBeTruthy();
   });
 
   it('loads preferences into the form', async () => {
@@ -164,8 +160,9 @@ describe('SimulationSetup (Image Builder)', () => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
 
-    // Target toggle is in Customize (layers) layout now
-    await fireEvent.click(screen.getByRole('radio', { name: /amd64 \(for OpenShift\)/ }));
+    // Target architecture dropdown is in LayerComposer
+    const targetSelect = screen.getByLabelText('Target architecture') as HTMLSelectElement;
+    await fireEvent.change(targetSelect, { target: { value: 'amd64' } });
     await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
     await fireEvent.click(await screen.findByRole('button', { name: 'Apply Quick Start' }));
 
@@ -190,8 +187,9 @@ describe('SimulationSetup (Image Builder)', () => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
 
-    // Target toggle is in Customize (layers) layout
-    await fireEvent.click(screen.getByRole('radio', { name: /amd64 \(for OpenShift\)/ }));
+    // Target architecture dropdown is in LayerComposer
+    const targetSelect = screen.getByLabelText('Target architecture') as HTMLSelectElement;
+    await fireEvent.change(targetSelect, { target: { value: 'amd64' } });
     await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
 
     // Should not show a warning when amd64-only preset is paired with amd64 target
@@ -206,9 +204,10 @@ describe('SimulationSetup (Image Builder)', () => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
 
-    // Target toggle is in Customize (layers) layout
-    // On an amd64 host, the "other arch" target toggle is for arm64 (cross-build)
-    await fireEvent.click(screen.getByRole('radio', { name: /arm64 \(cross-build\)/ }));
+    // Target architecture dropdown is in LayerComposer
+    // On an amd64 host, the option for arm64 is for cross-build
+    const targetSelect = screen.getByLabelText('Target architecture') as HTMLSelectElement;
+    await fireEvent.change(targetSelect, { target: { value: 'arm64' } });
     await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
 
     // Verify the behavior for the default preset
