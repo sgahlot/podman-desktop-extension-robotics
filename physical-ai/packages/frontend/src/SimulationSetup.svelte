@@ -75,12 +75,11 @@ let showQuickStartConfirm = false;
 let appliedQuickStartId: QuickStartId | undefined;
 let pendingQuickStartId: QuickStartId = 'local-jazzy';
 
-let layout: 'presets' | 'customize' | 'layers' = 'presets';
+let layout: 'presets' | 'layers' = 'presets';
 let buildChoice: 'base' | 'sim' | 'both' | undefined = undefined;
 let buildHistoryPanel: BuildHistoryPanel;
 
 $: buildBusy = baseBusy || simBusy;
-$: if (layout === 'customize') optionsExpanded = true;
 // Auto-expand a panel's own logs whenever ITS OWN build (re)starts — otherwise, once
 // collapsed by the rule below, a fresh build under that same panel would stay collapsed
 // forever with no way back short of manually clicking the toggle.
@@ -145,10 +144,10 @@ $: {
     refreshImageExistence(key);
   }
 }
-// Presets and Customize share the same build sequence. Layers owns its advanced
+// Presets and Layers both show the build sequence — Layers owns its advanced
 // sequence inside LayerComposer while the page shell keeps Quick Starts/target state.
-$: showStep1 = layout !== 'layers';
-$: showStep2 = layout !== 'layers';
+$: showStep1 = layout === 'presets';
+$: showStep2 = layout === 'presets';
 
 async function refreshImageExistence(key: string) {
   try {
@@ -194,7 +193,10 @@ onMount(async () => {
     // defaults are fine
   }
   try {
-    layout = await physicalAiClient.getImageBuilderLayout();
+    const savedLayout = await physicalAiClient.getImageBuilderLayout();
+    if (savedLayout === 'presets' || savedLayout === 'layers') {
+      layout = savedLayout;
+    }
   } catch {
     // default 'presets' is fine
   } finally {
@@ -202,7 +204,7 @@ onMount(async () => {
   }
 });
 
-function setLayout(next: 'presets' | 'customize' | 'layers') {
+function setLayout(next: 'presets' | 'layers') {
   layout = next;
   void physicalAiClient.setImageBuilderLayout(next);
 }
@@ -316,18 +318,6 @@ function cancelQuickStart() {
         <button
           type="button"
           role="radio"
-          aria-checked={layout === 'customize'}
-          on:click={() => setLayout('customize')}
-          disabled={buildBusy}
-          class="px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {layout ===
-          'customize'
-            ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
-            : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
-          Customize
-        </button>
-        <button
-          type="button"
-          role="radio"
           aria-checked={layout === 'layers'}
           on:click={() => setLayout('layers')}
           disabled={buildBusy}
@@ -340,7 +330,7 @@ function cancelQuickStart() {
       </div>
     </div>
 
-    {#if layout !== 'layers'}
+    {#if layout === 'presets'}
       <!-- Target arch toggle — first-class, single source of truth for targetArch -->
       <div
         class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-md flex flex-col gap-2">
@@ -428,259 +418,18 @@ function cancelQuickStart() {
       {/if}
     </div>
 
-    {#if layout === 'customize'}
-      <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] max-w-md">
-        <button
-          on:click={() => (optionsExpanded = !optionsExpanded)}
-          class="w-full text-left p-3 flex flex-row items-center gap-3 hover:bg-[var(--pd-content-bg)] rounded-lg cursor-pointer">
-          <span class="text-xs text-[var(--pd-content-text)]">{optionsExpanded ? '▼' : '▶'}</span>
-          <span class="text-sm font-medium text-[var(--pd-content-header)]">Customize</span>
-        </button>
-        {#if optionsExpanded}
-          <div class="flex flex-col gap-4 p-4 pt-0">
-            <div class="flex flex-col gap-1">
-              <label for="robot" class="text-xs text-[var(--pd-content-text)]">Robot type</label>
-              <select
-                id="robot"
-                bind:value={robot}
-                disabled={buildBusy || !simSupported}
-                class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-                <option value="turtlebot3">TurtleBot3</option>
-              </select>
-              {#if !simSupported}
-                <span class="text-xs pai-text-muted">Not applicable — simulation not available for {distro}</span>
-              {/if}
-            </div>
-
-            <div class="flex flex-col gap-1">
-              <label for="distro" class="text-xs text-[var(--pd-content-text)]">ROS distro</label>
-              <select
-                id="distro"
-                bind:value={distro}
-                disabled={buildBusy}
-                class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-                <option value="humble">Humble (simulation/desktop)</option>
-                <option value="jazzy">Jazzy (simulation)</option>
-                {#if baseImage === CUSTOM_SIMULATION_BASE_IMAGE && customSimulationMode === 'packages'}
-                  <option value="lyrical">Lyrical (provided by custom parent)</option>
-                {/if}
-              </select>
-            </div>
-
-            <div class="flex flex-col gap-1">
-              <label for="middleware" class="text-xs text-[var(--pd-content-text)]">Middleware</label>
-              <select
-                id="middleware"
-                bind:value={middleware}
-                disabled={buildBusy || !simSupported}
-                class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-                <option value="dds">DDS (default)</option>
-                <option value="zenoh">Zenoh</option>
-              </select>
-              {#if !simSupported}
-                <span class="text-xs pai-text-muted">Not applicable — simulation not available for {distro}</span>
-              {/if}
-            </div>
-
-            <div class="flex flex-col gap-1">
-              <label for="engine" class="text-xs text-[var(--pd-content-text)]">Simulation engine</label>
-              <select
-                id="engine"
-                bind:value={engine}
-                disabled={buildBusy || !simSupported}
-                class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-                <option value="gazebo">Gazebo</option>
-              </select>
-              {#if !simSupported}
-                <span class="text-xs pai-text-muted">Not applicable — simulation not available for {distro}</span>
-              {/if}
-            </div>
-
-            <div class="flex flex-col gap-1">
-              <label for="baseImage" class="text-xs text-[var(--pd-content-text)]">Base image</label>
-              <select
-                id="baseImage"
-                bind:value={baseImage}
-                disabled={buildBusy}
-                class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-                {#each availableBaseImages as preset}
-                  <option value={preset.id}>{preset.label}</option>
-                {/each}
-                <option value={CUSTOM_SIMULATION_BASE_IMAGE}>Custom image reference</option>
-              </select>
-              {#if baseImage !== CUSTOM_SIMULATION_BASE_IMAGE && !basePreset.architectures.includes(targetArch)}
-                <span class="text-xs pai-text-warning">
-                  Warning: this preset does not support {targetArch}. The build may fail or use slow emulation.
-                </span>
-              {/if}
-
-              {#if baseImage === CUSTOM_SIMULATION_BASE_IMAGE}
-                <input
-                  id="customBaseImage"
-                  bind:value={customBaseImage}
-                  disabled={buildBusy}
-                  placeholder="e.g. quay.io/org/ros:jazzy"
-                  class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]" />
-                <span class="text-xs text-[var(--pd-content-text)] opacity-80"
-                  >Any pullable OCI image reference. It becomes the parent FROM image.</span>
-                {#if !customBaseImage.trim()}
-                  <span class="text-xs pai-text-warning">Enter a custom image reference before building.</span>
-                {/if}
-                <div class="flex flex-col gap-1 mt-3 pt-3 border-t border-[var(--pd-content-card-border)]">
-                  <span class="text-xs text-[var(--pd-content-text)] font-medium"
-                    >Target architecture for your custom image</span>
-                  <div class="flex flex-row gap-2" role="radiogroup" aria-label="Target architecture">
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={targetArch === hostArch}
-                      on:click={() => (targetArch = hostArch)}
-                      disabled={buildBusy}
-                      class="flex-1 px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {targetArch ===
-                      hostArch
-                        ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
-                        : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
-                      {hostArch}
-                    </button>
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={targetArch === otherArch}
-                      on:click={() => (targetArch = otherArch)}
-                      disabled={buildBusy}
-                      class="flex-1 px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {targetArch ===
-                      otherArch
-                        ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
-                        : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
-                      {otherArchLabel}
-                    </button>
-                  </div>
-                  <span class="text-xs text-[var(--pd-content-text)] opacity-80">
-                    Must match your custom image's architecture. OpenShift requires amd64.
-                  </span>
-                </div>
-                <label for="customSimulationMode" class="text-xs text-[var(--pd-content-text)]"
-                  >Simulation layer source</label>
-                <select
-                  id="customSimulationMode"
-                  bind:value={customSimulationMode}
-                  on:change={handleCustomSimulationModeChange}
-                  disabled={buildBusy}
-                  class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-                  <option value="preset">Use the existing preset simulation recipe</option>
-                  <option value="packages">Registered simulation template</option>
-                </select>
-                {#if customSimulationMode === 'packages'}
-                  <label for="customSimulationTemplate" class="text-xs text-[var(--pd-content-text)]"
-                    >Simulation package template</label>
-                  <select
-                    id="customSimulationTemplate"
-                    bind:value={customSimulationTemplateId}
-                    on:change={handleCustomSimulationTemplateChange}
-                    disabled={buildBusy}
-                    class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-                    {#each CUSTOM_SIMULATION_TEMPLATES as template}
-                      <option value={template.id}>{template.label}</option>
-                    {/each}
-                  </select>
-                  <span class="text-xs pai-text-warning">
-                    Packages-only BYO image: {customSimulationTemplate.packages.join(', ')}. It does not provide managed
-                    extension-managed noVNC, Navigate, diagnostics, or OpenShift deployment support.
-                  </span>
-                  <span class="text-xs text-[var(--pd-content-text)] opacity-80">
-                    Required parent: {customSimulationTemplate.osFamily}
-                    {customSimulationTemplate.osVersion} · ROS 2
-                    {customSimulationTemplate.rosDistro} · {customSimulationTemplate.packageManager}. The parent
-                    provides ROS; this template adds only the simulation packages.
-                  </span>
-                {:else}
-                  <span class="text-xs text-[var(--pd-content-text)] opacity-80">
-                    Uses the APPENG-6293 custom-parent workflow. No simulation package template is required.
-                  </span>
-                {/if}
-              {:else}
-                <span class="text-xs text-[var(--pd-content-text)] opacity-80">{basePreset.description}</span>
-              {/if}
-            </div>
-
-            <div class="flex flex-row items-center gap-3 mt-2">
-              <button on:click={save} disabled={saving || buildBusy} class="pai-btn pai-btn-primary">
-                {saving ? 'Saving...' : 'Save'}
-              </button>
-
-              {#if saveSuccess}
-                <span class="text-sm pai-text-success">Configuration saved</span>
-              {/if}
-              {#if saveError}
-                <span class="text-sm pai-text-error">{saveError}</span>
-              {/if}
-            </div>
-          </div>
-        {/if}
-      </div>
-    {/if}
-
     <hr class="border-[var(--pd-content-card-border)] my-2" />
 
     <!-- Image Builder pipeline: Step 1 (base) + Step 2 (simulation), each with a
          live built/not-built status driven by the reactive existence check above. -->
-    {#if layout !== 'layers'}
+    {#if layout === 'presets'}
       <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
         <div class="flex flex-row items-center justify-between flex-wrap gap-2 mb-2">
-          <h2 class="text-xl text-[var(--pd-content-header)]">
-            {layout === 'presets' ? 'Preset Image Builder' : 'Custom Image Builder'}
-          </h2>
+          <h2 class="text-xl text-[var(--pd-content-header)]">Preset Image Builder</h2>
           <span class="text-xs text-[var(--pd-content-text)] opacity-80 font-mono">
             {robot} &middot; {distro} &middot; {middleware} &middot; {engine} &middot; {basePreset.label}
           </span>
         </div>
-
-        {#if layout === 'customize'}
-          <div class="flex flex-col gap-2 pb-3 mb-1 border-b border-[var(--pd-content-card-border)]">
-            <span class="text-sm font-medium text-[var(--pd-content-header)]">What do you want to build?</span>
-            <div class="flex flex-row gap-2 flex-wrap" role="radiogroup" aria-label="What to build">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={buildChoice === 'base'}
-                on:click={() => (buildChoice = 'base')}
-                disabled={buildBusy}
-                class="px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {buildChoice ===
-                'base'
-                  ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
-                  : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
-                Base image only
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={buildChoice === 'sim'}
-                on:click={() => (buildChoice = 'sim')}
-                disabled={buildBusy}
-                class="px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {buildChoice ===
-                'sim'
-                  ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
-                  : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
-                Simulation image
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={buildChoice === 'both'}
-                on:click={() => (buildChoice = 'both')}
-                disabled={buildBusy}
-                class="px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {buildChoice ===
-                'both'
-                  ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
-                  : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
-                Both
-              </button>
-            </div>
-            {#if !buildChoice}
-              <span class="text-xs pai-text-muted">Choose what to build to continue.</span>
-            {/if}
-          </div>
-        {/if}
 
         {#if showStep1}
           <div id="step1-build" class="flex flex-col gap-3 pt-3 border-t border-[var(--pd-content-card-border)]">

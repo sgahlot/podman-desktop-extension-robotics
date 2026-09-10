@@ -377,6 +377,22 @@ onDestroy(() => {
       </div>
 
       <div class="flex flex-col gap-1">
+        <label for="layer-ros" class="text-xs text-[var(--pd-content-text)]">
+          {selection.sim === 'custom-template' ? 'ROS source (derived from template)' : 'ROS'}
+        </label>
+        <select
+          id="layer-ros"
+          bind:value={selection.ros}
+          disabled={selection.sim === 'custom-template'}
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] disabled:opacity-70">
+          {#each ROS_OPTIONS as o}
+            <option value={o.id}>{o.label}</option>
+          {/each}
+        </select>
+        <span class="text-xs pai-text-muted">{rosNote}</span>
+      </div>
+
+      <div class="flex flex-col gap-1">
         <label for="layer-target-arch" class="text-xs text-[var(--pd-content-text)]">Target architecture</label>
         <select
           id="layer-target-arch"
@@ -395,22 +411,6 @@ onDestroy(() => {
             before building.
           </span>
         {/if}
-      </div>
-
-      <div class="flex flex-col gap-1">
-        <label for="layer-ros" class="text-xs text-[var(--pd-content-text)]">
-          {selection.sim === 'custom-template' ? 'ROS source (derived from template)' : 'ROS'}
-        </label>
-        <select
-          id="layer-ros"
-          bind:value={selection.ros}
-          disabled={selection.sim === 'custom-template'}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] disabled:opacity-70">
-          {#each ROS_OPTIONS as o}
-            <option value={o.id}>{o.label}</option>
-          {/each}
-        </select>
-        <span class="text-xs pai-text-muted">{rosNote}</span>
       </div>
     </div>
   </div>
