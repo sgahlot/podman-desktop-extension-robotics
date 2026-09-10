@@ -270,14 +270,21 @@ onDestroy(() => {
           {/each}
         </select>
         {#if selection.baseOs === 'custom'}
-          <input
-            id="layer-custom-base-image"
-            aria-label="Custom base image"
-            bind:value={selection.customBaseImage}
-            placeholder="e.g. docker.io/library/ubuntu:24.04"
-            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]" />
+          <div class="flex flex-col gap-3 mt-1 pl-3 border-l border-[var(--pd-content-card-border)]">
+            <div class="flex flex-col gap-1">
+              <input
+                id="layer-custom-base-image"
+                aria-label="Custom base image"
+                bind:value={selection.customBaseImage}
+                placeholder="e.g. docker.io/library/ubuntu:24.04"
+                class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]" />
+              <span class="text-xs pai-text-muted">{baseOsNote}</span>
+            </div>
+          </div>
         {/if}
-        <span class="text-xs pai-text-muted">{baseOsNote}</span>
+        {#if selection.baseOs !== 'custom'}
+          <span class="text-xs pai-text-muted">{baseOsNote}</span>
+        {/if}
       </div>
 
       <div class="flex flex-col gap-1">
