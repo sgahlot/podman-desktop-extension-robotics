@@ -144,7 +144,7 @@ $: {
     refreshImageExistence(key);
   }
 }
-// Presets and Layers both show the build sequence — Layers owns its advanced
+// Presets and Customize both show the build sequence — Customize owns its advanced
 // sequence inside LayerComposer while the page shell keeps Quick Starts/target state.
 $: showStep1 = layout === 'presets';
 $: showStep2 = layout === 'presets';
@@ -325,7 +325,7 @@ function cancelQuickStart() {
           'layers'
             ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
             : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
-          Layers
+          Customize
         </button>
       </div>
     </div>

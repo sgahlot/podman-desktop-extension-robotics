@@ -101,7 +101,7 @@ describe('SimulationSetup (Image Builder)', () => {
     expect(screen.getByRole('radio', { name: /amd64 \(for OpenShift\)/ })).toBeTruthy();
 
     // Switch to Layers to verify detailed controls are available
-    await fireEvent.click(screen.getByRole('radio', { name: 'Layers' }));
+    await fireEvent.click(screen.getByRole('radio', { name: 'Customize' }));
     expect(screen.getByLabelText('Base OS')).toBeTruthy();
   });
 
@@ -119,7 +119,7 @@ describe('SimulationSetup (Image Builder)', () => {
     await waitFor(() => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
-    await fireEvent.click(screen.getByRole('radio', { name: 'Layers' }));
+    await fireEvent.click(screen.getByRole('radio', { name: 'Customize' }));
     await waitFor(() => {
       expect(screen.getByLabelText('Base OS')).toBeTruthy();
     });
@@ -264,7 +264,7 @@ describe('SimulationSetup (Image Builder)', () => {
     });
 
     // Switch from Presets to Layers which has save button
-    await fireEvent.click(screen.getByRole('radio', { name: 'Layers' }));
+    await fireEvent.click(screen.getByRole('radio', { name: 'Customize' }));
     // The Layers view doesn't have a "Save" button in the traditional sense for config
     // This test might need to be updated to match actual UI behavior
     expect(screen.queryByText('prefs locked')).toBeNull();
@@ -425,24 +425,24 @@ describe('SimulationSetup (Image Builder)', () => {
       expect(screen.getByText(/Step 1.*Base image/)).toBeTruthy();
       expect(screen.getByText(/Step 2.*Simulation image/)).toBeTruthy();
       expect(screen.getByRole('radio', { name: 'Presets' })).toBeTruthy();
-      expect(screen.getByRole('radio', { name: 'Layers' })).toBeTruthy();
+      expect(screen.getByRole('radio', { name: 'Customize' })).toBeTruthy();
     });
 
-    it('clicking the Layers layout switcher persists the preference', async () => {
+    it('clicking the Customize layout switcher persists the preference', async () => {
       mockGetImageBuilderLayout.mockResolvedValue('presets');
       render(SimulationSetup);
       await waitFor(() => {
         expect(screen.queryByText('Loading configuration...')).toBeNull();
       });
 
-      await fireEvent.click(screen.getByRole('radio', { name: 'Layers' }));
+      await fireEvent.click(screen.getByRole('radio', { name: 'Customize' }));
 
       await waitFor(() => {
         expect(mockSetImageBuilderLayout).toHaveBeenCalledWith('layers');
       });
     });
 
-    it('Layers shows detailed controls, Presets does not', async () => {
+    it('Customize shows detailed controls, Presets does not', async () => {
       mockGetImageBuilderLayout.mockResolvedValue('presets');
 
       render(SimulationSetup);
@@ -453,8 +453,8 @@ describe('SimulationSetup (Image Builder)', () => {
       // Presets layout should not show layer controls
       expect(screen.queryByLabelText('Base OS')).toBeNull();
 
-      // Switch to Layers and verify detailed controls appear
-      await fireEvent.click(screen.getByRole('radio', { name: 'Layers' }));
+      // Switch to Customize and verify detailed controls appear
+      await fireEvent.click(screen.getByRole('radio', { name: 'Customize' }));
       expect(await screen.findByLabelText('Base OS')).toBeTruthy();
     });
   });
