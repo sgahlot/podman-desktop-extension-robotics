@@ -64,6 +64,11 @@ import {
   type LayerCacheBuildOptions,
 } from '/@shared/src/types/buildLayerCache';
 import type { HardenedApp } from '/@shared/src/types/layerCompatibility';
+import {
+  assertCustomBaseImageRef,
+  generateCustomSimulationContainerfile,
+  resolveCustomSimulationTemplate,
+} from '/@shared/src/types/CustomSimulationTemplates';
 import type {
   TopicInfo,
   TopicDetailInfo,
@@ -494,7 +499,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     assetDir: string,
     buildargs?: { [key: string]: string },
     platform?: string,
-    cacheOptions?: LayerCacheBuildOptions & { kind: 'preset-base' | 'preset-sim' },
+    cacheOptions?: LayerCacheBuildOptions & { kind: 'preset-base' | 'preset-sim' | 'custom-sim' },
   ): Promise<void> {
     this.#assertCanStartOp(this.activeBuilds, tag, 'build');
     // Fail fast if there's no running Podman, before resolving the asset context dir.
@@ -1063,11 +1068,60 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     );
   }
 
+  async buildCustomSimulationImage(
+    tag: string,
+    baseImage: string,
+    templateId: string,
+    targetArch?: 'amd64' | 'arm64',
+    baseMetadata?: { osFamily: string; osVersion: string; rosDistro: string },
+  ): Promise<void> {
+    const ref = assertCustomBaseImageRef(baseImage);
+    const template = resolveCustomSimulationTemplate(templateId);
+    if (!template) {
+      throw new Error(`Unknown custom simulation template: ${templateId}`);
+    }
+    if (
+      baseMetadata?.osFamily.trim().toLowerCase() !== template.osFamily.toLowerCase() ||
+      baseMetadata.osVersion.trim() !== template.osVersion ||
+      baseMetadata.rosDistro.trim().toLowerCase() !== template.rosDistro.toLowerCase()
+    ) {
+      throw new Error(`Custom parent metadata must match ${template.label}.`);
+    }
+    const containerfile = generateCustomSimulationContainerfile(ref, template);
+    this.#assertCanStartOp(this.activeBuilds, tag, 'build');
+    this.#getRunningPodmanConnection();
+    const contextDir = await mkdtemp(pathJoin(tmpdir(), 'physical-ai-custom-sim-build-'));
+    try {
+      await writeFile(pathJoin(contextDir, 'Containerfile'), containerfile, 'utf8');
+      this.#runContainerBuild(
+        tag,
+        contextDir,
+        'Containerfile',
+        undefined,
+        platformForArch(targetArch),
+        containerfile,
+        new BuildCacheStreamParser(containerfile, {
+          plan: [
+            { layerId: 'base-os', label: `Base OS · ${template.osFamily} ${template.osVersion}`, reused: true },
+            { layerId: 'ros', label: `ROS ${template.rosDistro} · provided by parent`, reused: true },
+            { layerId: 'sim', label: `Simulation · ${template.label}` },
+          ],
+        }),
+        () => {
+          void rm(contextDir, { recursive: true, force: true }).catch(() => {});
+        },
+      );
+    } catch (err) {
+      await rm(contextDir, { recursive: true, force: true }).catch(() => {});
+      throw err;
+    }
+  }
+
   async buildFromContainerfile(
     tag: string,
     containerfile: string,
     platform?: string,
-    options?: { generateSbom?: boolean; sbomFormat?: SbomFormat },
+    options?: { generateSbom?: boolean; sbomFormat?: SbomFormat; layerPlan?: LayerCacheBuildOptions['layerPlan'] },
   ): Promise<void> {
     if (!containerfile?.trim()) {
       throw new Error('Cannot build: the Containerfile is empty.');
@@ -1091,7 +1145,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         undefined,
         platform,
         containerfile,
-        undefined,
+        new BuildCacheStreamParser(containerfile, { plan: options?.layerPlan }),
         () => {
           void rm(contextDir, { recursive: true, force: true }).catch(() => {});
         },
@@ -1132,15 +1186,18 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     await config.update('catalog.viewMode', mode);
   }
 
-  async getImageBuilderLayout(): Promise<'pipeline' | 'guided' | 'layers'> {
+  async getImageBuilderLayout(): Promise<'presets' | 'customize' | 'layers'> {
     const config = extensionApi.configuration.getConfiguration('physical-ai');
     const layout = config.get<string>('build.layout');
-    return layout === 'pipeline' || layout === 'layers' ? layout : 'guided';
+    if (layout === 'layers' || layout === 'presets' || layout === 'customize') return layout;
+    // Migrate the old persisted names without breaking existing installations.
+    if (layout === 'pipeline') return 'customize';
+    return 'presets';
   }
 
-  async setImageBuilderLayout(layout: 'pipeline' | 'guided' | 'layers'): Promise<void> {
-    if (layout !== 'pipeline' && layout !== 'guided' && layout !== 'layers') {
-      throw new Error(`Invalid image builder layout "${String(layout)}". Use "pipeline", "guided", or "layers".`);
+  async setImageBuilderLayout(layout: 'presets' | 'customize' | 'layers'): Promise<void> {
+    if (layout !== 'presets' && layout !== 'customize' && layout !== 'layers') {
+      throw new Error(`Invalid image builder layout "${String(layout)}". Use "presets", "customize", or "layers".`);
     }
     const config = extensionApi.configuration.getConfiguration('physical-ai');
     await config.update('build.layout', layout);
@@ -1182,6 +1239,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       engine: config.get<string>('simulation.engine') ?? 'gazebo',
       baseImage,
       customBaseImage: config.get<string>('simulation.customBaseImage') ?? undefined,
+      customBaseOsFamily: config.get<string>('simulation.customBaseOsFamily') ?? undefined,
+      customBaseOsVersion: config.get<string>('simulation.customBaseOsVersion') ?? undefined,
+      customBaseRosDistro: config.get<string>('simulation.customBaseRosDistro') ?? undefined,
+      customSimulationTemplateId: config.get<string>('simulation.customSimulationTemplateId') ?? undefined,
+      customSimulationMode:
+        config.get<string>('simulation.customSimulationMode') === 'packages' ? 'packages' : 'preset',
     };
   }
 
@@ -1193,6 +1256,11 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     await pdConfig.update('simulation.engine', config.engine);
     await pdConfig.update('simulation.baseImage', config.baseImage);
     await pdConfig.update('simulation.customBaseImage', config.customBaseImage ?? '');
+    await pdConfig.update('simulation.customBaseOsFamily', config.customBaseOsFamily ?? '');
+    await pdConfig.update('simulation.customBaseOsVersion', config.customBaseOsVersion ?? '');
+    await pdConfig.update('simulation.customBaseRosDistro', config.customBaseRosDistro ?? '');
+    await pdConfig.update('simulation.customSimulationTemplateId', config.customSimulationTemplateId ?? '');
+    await pdConfig.update('simulation.customSimulationMode', config.customSimulationMode ?? 'preset');
   }
 
   async #getEngineId(imageTag?: string): Promise<string> {

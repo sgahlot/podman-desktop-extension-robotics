@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { generateLayerContainerfile } from './layerCompatibility';
+import { CUSTOM_SIMULATION_TEMPLATES, generateCustomSimulationContainerfile } from './CustomSimulationTemplates';
 import {
   BuildCacheStreamParser,
   formatLayerCacheSummary,
@@ -35,6 +36,29 @@ describe('buildLayerCache', () => {
   it('maps build steps to composition layers', () => {
     expect(parseBuildStepLayerIds(fullStack)).toEqual(['base-os', 'hardened', 'ros', 'ros', 'sim']);
     expect(parseBuildStepLayerIds(noSimStack)).toEqual(['base-os', 'hardened', 'ros', 'ros']);
+  });
+
+  it('reports custom-template base and ROS as reused and simulation cache separately', () => {
+    const containerfile = generateCustomSimulationContainerfile(
+      'quay.io/lrossett/ros2:f43-full-desktop',
+      CUSTOM_SIMULATION_TEMPLATES[0],
+    );
+    const parser = new BuildCacheStreamParser(containerfile, {
+      plan: [
+        { layerId: 'base-os', label: 'Base OS · Fedora 43', reused: true },
+        { layerId: 'ros', label: 'ROS Lyrical · provided by parent', reused: true },
+        { layerId: 'sim', label: 'Simulation · Fedora/Lyrical' },
+      ],
+    });
+    for (let step = 1; step <= 10; step++) {
+      parser.processLine(`STEP ${step}/10: generated instruction`);
+      if (step > 1) parser.processLine('--> Using cache');
+    }
+    expect(parser.finalize()).toEqual([
+      { layer: 'Base OS · Fedora 43', cached: true, reused: true },
+      { layer: 'ROS Lyrical · provided by parent', cached: true, reused: true },
+      { layer: 'Simulation · Fedora/Lyrical', cached: true },
+    ]);
   });
 
   it('aggregates cache hits per layer from Podman stream lines', () => {

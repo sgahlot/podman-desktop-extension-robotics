@@ -10,6 +10,7 @@ import {
   SIM_OPTIONS,
 } from './layerCompatibility';
 import type { SimulationConfig } from './SimulationConfig';
+import { resolveCustomSimulationTemplate } from './CustomSimulationTemplates';
 import { resolveSimulationProfile } from './SimulationProfiles';
 import {
   CUSTOM_SIMULATION_BASE_IMAGE,
@@ -30,12 +31,14 @@ const DEFAULT_LAYER_LABELS: Record<CompositionLayerId, string> = {
   sim: 'Simulation',
 };
 
-export type LayerCacheParseKind = 'composition' | 'preset-base' | 'preset-hardened' | 'preset-sim';
+export type LayerCacheParseKind = 'composition' | 'preset-base' | 'preset-hardened' | 'preset-sim' | 'custom-sim';
 
 /** Ordered layer labels shown in the cache summary / layer cake (from wizard or preset config). */
 export interface LayerCachePlanEntry {
   layerId: CompositionLayerId;
   label: string;
+  /** Layer came from the selected parent rather than a Containerfile build step. */
+  reused?: boolean;
 }
 
 /** Optional context for preset image builds so cache UX matches the Layers wizard. */
@@ -58,7 +61,8 @@ export function layerCachePlanFromSelection(sel: LayerSelection): LayerCachePlan
     sel.baseOs === 'custom' && sel.customBaseImage?.trim()
       ? shortImageRef(sel.customBaseImage)
       : labelForBaseOsSelection(sel);
-  const plan: LayerCachePlanEntry[] = [{ layerId: 'base-os', label: `Base OS · ${baseLabel}` }];
+  const templateBuild = sel.sim === 'custom-template';
+  const plan: LayerCachePlanEntry[] = [{ layerId: 'base-os', label: `Base OS · ${baseLabel}`, reused: templateBuild }];
 
   const bakeInTools =
     sel.hardened === 'hummingbird-app'
@@ -70,11 +74,17 @@ export function layerCachePlanFromSelection(sel: LayerSelection): LayerCachePlan
 
   if (sel.ros !== 'none') {
     const rosLabel = labelFor(ROS_OPTIONS, sel.ros);
-    plan.push({ layerId: 'ros', label: rosLabel.replace(/^ROS2\b/, 'ROS') });
+    plan.push({
+      layerId: 'ros',
+      label: rosLabel.replace(/^ROS2\b/, 'ROS'),
+      reused: sel.ros === 'provided-by-parent',
+    });
   }
 
   if (sel.sim !== 'none') {
-    plan.push({ layerId: 'sim', label: labelFor(SIM_OPTIONS, sel.sim) });
+    const template =
+      sel.sim === 'custom-template' ? resolveCustomSimulationTemplate(sel.customSimulationTemplateId ?? '') : undefined;
+    plan.push({ layerId: 'sim', label: template ? `Simulation · ${template.label}` : labelFor(SIM_OPTIONS, sel.sim) });
   }
 
   return plan;
@@ -176,7 +186,7 @@ export function parseBuildStepLayerIds(containerfile: string): CompositionLayerI
       continue;
     }
 
-    if (/^(FROM|COPY|RUN)\s+/i.test(line)) {
+    if (/^(FROM|COPY|RUN|LABEL)\s+/i.test(line)) {
       stepLayers.push(currentLayer);
     }
   }
@@ -475,6 +485,10 @@ export class BuildCacheStreamParser {
 
     for (const layerId of planIds) {
       const planEntry = this.plan.find(p => p.layerId === layerId);
+      if (planEntry?.reused) {
+        result.push({ layer: planEntry.label, cached: true, reused: true });
+        continue;
+      }
       const stepIndices = this.stepLayerIds.map((id, idx) => (id === layerId ? idx : -1)).filter(idx => idx >= 0);
       if (stepIndices.length === 0) continue;
 

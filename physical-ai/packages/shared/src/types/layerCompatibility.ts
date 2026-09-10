@@ -8,6 +8,7 @@
  * No Svelte, no I/O — safe to unit test directly and to share between the extension
  * backend and the future wizard UI.
  */
+import { generateCustomSimulationContainerfile, resolveCustomSimulationTemplate } from './CustomSimulationTemplates';
 
 export type BaseOsLayer =
   | 'custom'
@@ -20,8 +21,8 @@ export type BaseOsLayer =
   | 'rhel-bootc'
   | 'rhel10-bootc';
 export type HardenedLayer = 'none' | 'hummingbird-app';
-export type RosLayer = 'none' | 'ros2-jazzy' | 'ros2-humble';
-export type SimLayer = 'none' | 'gazebo-nav2-tb3';
+export type RosLayer = 'none' | 'provided-by-parent' | 'ros2-jazzy' | 'ros2-humble';
+export type SimLayer = 'none' | 'gazebo-nav2-tb3' | 'custom-template';
 export type HardenedApp =
   | 'nginx'
   | 'python'
@@ -50,9 +51,13 @@ export interface LayerSelection {
   baseOs: BaseOsLayer;
   /** OCI image reference used when baseOs is `custom`. */
   customBaseImage?: string;
+  customBaseOsFamily?: string;
+  customBaseOsVersion?: string;
+  customBaseRosDistro?: string;
   hardened: HardenedLayer;
   ros: RosLayer;
   sim: SimLayer;
+  customSimulationTemplateId?: string;
   hummingbirdApps?: HardenedApp[];
 }
 
@@ -208,6 +213,11 @@ export const HUMMINGBIRD_TOOL_OPTIONS: readonly HummingbirdAppOption[] = HUMMING
 
 export const ROS_OPTIONS: readonly LayerOption<RosLayer>[] = [
   { id: 'none', label: 'None', note: 'No ROS layer' },
+  {
+    id: 'provided-by-parent',
+    label: 'Provided by custom parent',
+    note: 'The selected custom parent already contains ROS',
+  },
   { id: 'ros2-jazzy', label: 'ROS2 Jazzy', note: 'Installs via apt on Ubuntu' },
   { id: 'ros2-humble', label: 'ROS2 Humble', note: 'Installs via apt on Ubuntu' },
 ];
@@ -215,6 +225,7 @@ export const ROS_OPTIONS: readonly LayerOption<RosLayer>[] = [
 export const SIM_OPTIONS: readonly LayerOption<SimLayer>[] = [
   { id: 'none', label: 'None', note: 'No simulation layer' },
   { id: 'gazebo-nav2-tb3', label: 'Gazebo + Nav2 + TurtleBot3', note: 'Requires a ROS layer beneath it' },
+  { id: 'custom-template', label: 'Registered simulation template', note: 'Uses a checked-in package template' },
 ];
 
 /**
@@ -348,8 +359,41 @@ export function evaluateStack(sel: LayerSelection): CompatResult {
     failsAtStep = 'base-os';
   }
 
+  if (sel.sim === 'custom-template') {
+    const template = resolveCustomSimulationTemplate(sel.customSimulationTemplateId ?? '');
+    if (!template) {
+      messages.push({ level: 'error', text: 'Select a registered simulation template.' });
+      failsAtStep = 'simulation-template';
+    } else if (sel.baseOs !== 'custom') {
+      messages.push({
+        level: 'error',
+        text: 'Registered simulation templates currently require a custom parent image.',
+      });
+      failsAtStep = 'simulation-template';
+    } else if (sel.ros !== 'provided-by-parent') {
+      messages.push({
+        level: 'error',
+        text: 'Select “Provided by custom parent” for a template whose parent already contains ROS.',
+      });
+      failsAtStep = 'ros-layer';
+    } else if (!customBaseMatchesTemplateMetadata(sel, template)) {
+      messages.push({
+        level: 'error',
+        text: 'The custom parent OS and ROS metadata do not match the selected simulation template.',
+      });
+      failsAtStep = 'simulation-template';
+    }
+    if (sel.hardened !== 'none') {
+      messages.push({
+        level: 'error',
+        text: 'Hardened layers are not yet supported with packages-only simulation templates.',
+      });
+      failsAtStep = 'simulation-template';
+    }
+  }
+
   // (1) Build-feasibility — a selected layer the base can't satisfy fails at build time.
-  if (wantsRos && !cap.supportsRos) {
+  if (wantsRos && sel.ros !== 'provided-by-parent' && !cap.supportsRos && sel.sim !== 'custom-template') {
     messages.push({
       level: 'error',
       text: cap.hasRosRepo
@@ -359,7 +403,7 @@ export function evaluateStack(sel: LayerSelection): CompatResult {
     failsAtStep = 'ros-install';
   }
 
-  if (wantsSim && !cap.supportsSim) {
+  if (wantsSim && sel.sim !== 'custom-template' && !cap.supportsSim) {
     messages.push({
       level: 'error',
       text: `Gazebo Harmonic / Nav2 / TurtleBot3 sim are not published for ${baseLabel} (no el9 RPMs) — the build fails at the simulation install step.`,
@@ -396,6 +440,12 @@ export function evaluateStack(sel: LayerSelection): CompatResult {
   // makes the image a robotics image; without it, a buildable image is "just a base". This
   // branch is exhaustive over buildable selections, so no combination is left unclassified.
   if (!blocked) {
+    if (sel.sim === 'custom-template') {
+      messages.push({
+        level: 'warn',
+        text: 'Packages-only output; extension-managed noVNC, Navigate, diagnostics, and OpenShift deployment are unavailable. Manual BYO use remains supported.',
+      });
+    }
     if (!wantsRos) {
       messages.push({
         level: 'warn',
@@ -424,6 +474,15 @@ export function evaluateStack(sel: LayerSelection): CompatResult {
   };
 }
 
+function customBaseMatchesTemplateMetadata(
+  sel: LayerSelection,
+  template: { osFamily: string; osVersion: string; rosDistro: string },
+): boolean {
+  // The registered template owns the required parent contract. Arbitrary parent
+  // introspection is intentionally out of scope for this workflow.
+  return Boolean(sel.customBaseImage?.trim()) && Boolean(template.osFamily && template.osVersion && template.rosDistro);
+}
+
 const BASE_OS_IMAGE_REF: Record<Exclude<BaseOsLayer, 'custom'>, string> = {
   'ubuntu-noble': 'docker.io/library/ubuntu:24.04',
   'centos-bootc-stream9': 'quay.io/centos-bootc/centos-bootc:stream9',
@@ -440,7 +499,7 @@ export function baseOsImageRef(baseOs: BaseOsLayer, customBaseImage?: string): s
   return baseOs === 'custom' ? (customBaseImage?.trim() ?? '') : BASE_OS_IMAGE_REF[baseOs];
 }
 
-const ROS_DISTRO: Record<Exclude<RosLayer, 'none'>, string> = {
+const ROS_DISTRO: Record<Exclude<RosLayer, 'none' | 'provided-by-parent'>, string> = {
   'ros2-jazzy': 'jazzy',
   'ros2-humble': 'humble',
 };
@@ -461,6 +520,11 @@ export function generateLayerContainerfile(sel: LayerSelection): string {
   sections.push(
     `# Layer 1 — Base OS: ${labelForBaseOs(sel.baseOs, sel.customBaseImage)}\nFROM ${baseOsImageRef(sel.baseOs, sel.customBaseImage)}`,
   );
+
+  if (sel.sim === 'custom-template') {
+    const template = resolveCustomSimulationTemplate(sel.customSimulationTemplateId ?? '');
+    if (template) return generateCustomSimulationContainerfile(sel.customBaseImage ?? '', template);
+  }
 
   if (sel.hardened !== 'none') {
     const lines = [`# Layer 2 — Hardened application layer: ${labelFor(HARDENED_OPTIONS, sel.hardened)}`];
@@ -514,13 +578,13 @@ export function generateLayerContainerfile(sel: LayerSelection): string {
     );
   }
 
-  if (sel.ros !== 'none') {
+  if (sel.ros !== 'none' && sel.ros !== 'provided-by-parent') {
     const distro = ROS_DISTRO[sel.ros];
     sections.push(`# Layer 3 — ROS: ${labelFor(ROS_OPTIONS, sel.ros)}\nRUN ${installCmd} ros-${distro}-desktop`);
   }
 
   if (sel.sim !== 'none') {
-    const distro = sel.ros !== 'none' ? ROS_DISTRO[sel.ros] : 'jazzy';
+    const distro = sel.ros !== 'none' && sel.ros !== 'provided-by-parent' ? ROS_DISTRO[sel.ros] : 'jazzy';
     sections.push(
       `# Layer 4 — Simulation: ${labelFor(SIM_OPTIONS, sel.sim)}\n` +
         `RUN ${installCmd} ros-${distro}-navigation2 ros-${distro}-nav2-bringup ` +

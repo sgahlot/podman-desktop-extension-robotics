@@ -47,6 +47,13 @@ export abstract class PhysicalAiApi {
     },
   ): Promise<void>;
   abstract buildSimulationImage(tag: string, config: SimulationConfig, options?: LayerCacheBuildOptions): Promise<void>;
+  abstract buildCustomSimulationImage(
+    tag: string,
+    baseImage: string,
+    templateId: string,
+    targetArch?: 'amd64' | 'arm64',
+    baseMetadata?: { osFamily: string; osVersion: string; rosDistro: string },
+  ): Promise<void>;
   /** Build an image from an in-memory Containerfile (layer-composition wizard). The
    * Containerfile is written to a throwaway build context; no bundled asset dir is used.
    * `options.generateSbom` (only meaningful here — the base/sim build paths never set it)
@@ -57,7 +64,7 @@ export abstract class PhysicalAiApi {
     tag: string,
     containerfile: string,
     platform?: string,
-    options?: { generateSbom?: boolean; sbomFormat?: SbomFormat },
+    options?: { generateSbom?: boolean; sbomFormat?: SbomFormat; layerPlan?: LayerCacheBuildOptions['layerPlan'] },
   ): Promise<void>;
   abstract cancelBuild(tag: string): Promise<void>;
   abstract getBuildProgress(tag: string): Promise<BuildProgress | undefined>;
@@ -81,8 +88,8 @@ export abstract class PhysicalAiApi {
   abstract getHostArch(): Promise<string>;
   abstract getCatalogViewMode(): Promise<'all' | 'curated'>;
   abstract setCatalogViewMode(mode: 'all' | 'curated'): Promise<void>;
-  abstract getImageBuilderLayout(): Promise<'pipeline' | 'guided' | 'layers'>;
-  abstract setImageBuilderLayout(layout: 'pipeline' | 'guided' | 'layers'): Promise<void>;
+  abstract getImageBuilderLayout(): Promise<'presets' | 'customize' | 'layers'>;
+  abstract setImageBuilderLayout(layout: 'presets' | 'customize' | 'layers'): Promise<void>;
   abstract getNavigationLayout(): Promise<'sidebar' | 'tabs' | 'cards'>;
   abstract setNavigationLayout(layout: 'sidebar' | 'tabs' | 'cards'): Promise<void>;
   abstract getCatalogCuratedAllowlist(): Promise<string>;

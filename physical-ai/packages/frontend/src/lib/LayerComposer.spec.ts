@@ -57,6 +57,7 @@ describe('LayerComposer', () => {
     expect(screen.getByLabelText('Hardened app')).toBeTruthy();
     expect(screen.getByLabelText('ROS')).toBeTruthy();
     expect(screen.getByLabelText('Simulation')).toBeTruthy();
+    expect(screen.getByLabelText('Target architecture')).toBeTruthy();
 
     const banner = screen.getByRole('status');
     expect(banner.textContent).toContain('Ready — builds and runs today');
@@ -251,10 +252,12 @@ describe('LayerComposer', () => {
     await fireEvent.click(buildButton);
 
     await waitFor(() => {
-      expect(mockBuildFromContainerfile).toHaveBeenCalledWith(expect.any(String), expect.any(String), undefined, {
-        generateSbom: true,
-        sbomFormat: 'spdx-json',
-      });
+      expect(mockBuildFromContainerfile).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        undefined,
+        expect.objectContaining({ generateSbom: true, sbomFormat: 'spdx-json', layerPlan: expect.any(Array) }),
+      );
     });
   });
 
@@ -307,10 +310,12 @@ describe('LayerComposer', () => {
       await fireEvent.click(buildButton);
 
       await waitFor(() => {
-        expect(mockBuildFromContainerfile).toHaveBeenCalledWith(expect.any(String), expect.any(String), 'linux/amd64', {
-          generateSbom: false,
-          sbomFormat: 'cyclonedx-json',
-        });
+        expect(mockBuildFromContainerfile).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.any(String),
+          'linux/amd64',
+          expect.objectContaining({ generateSbom: false, sbomFormat: 'cyclonedx-json', layerPlan: expect.any(Array) }),
+        );
       });
     });
   });
