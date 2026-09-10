@@ -74,6 +74,7 @@ let optionsExpanded = false;
 let showQuickStartConfirm = false;
 let appliedQuickStartId: QuickStartId | undefined;
 let pendingQuickStartId: QuickStartId = 'local-jazzy';
+let selectedQuickStartId: QuickStartId = 'local-jazzy';
 
 let layout: 'presets' | 'layers' = 'presets';
 let buildChoice: 'base' | 'sim' | 'both' | undefined = undefined;
@@ -105,6 +106,11 @@ $: currentConfig = {
 $: crossArch = targetArch !== hostArch;
 $: otherArch = (hostArch === 'amd64' ? 'arm64' : 'amd64') as TargetArch;
 $: otherArchLabel = otherArch === 'amd64' ? 'amd64 (for OpenShift)' : `${otherArch} (cross-build)`;
+$: selectedQuickStart = QUICK_STARTS.find(qs => qs.id === selectedQuickStartId);
+$: quickStartDescription =
+  selectedQuickStart?.id === 'openshift-jazzy-amd64'
+    ? 'Ubuntu Noble + ROS 2 Jazzy + Gazebo/Nav2/TurtleBot3 simulation (amd64 for OpenShift)'
+    : 'Ubuntu Noble + ROS 2 Jazzy + Gazebo/Nav2/TurtleBot3 simulation';
 $: quickStartMatchesCurrent =
   baseImage === DEFAULT_SIMULATION_BASE_IMAGE && distro === 'jazzy' && robot === 'turtlebot3';
 $: profile = resolveSimulationProfile(currentConfig);
@@ -266,6 +272,7 @@ async function applyQuickStart(id: QuickStartId = 'local-jazzy') {
 }
 
 function onQuickStartClick(id: QuickStartId = 'local-jazzy') {
+  selectedQuickStartId = id;
   pendingQuickStartId = id;
   if (id === 'local-jazzy' && quickStartMatchesCurrent) {
     // Nothing would change — apply immediately, no confirmation needed.
@@ -384,24 +391,26 @@ function cancelQuickStart() {
       class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-md flex flex-col gap-2">
       <h2 class="text-sm font-medium text-[var(--pd-content-header)]">Quick Start</h2>
       <p class="text-xs text-[var(--pd-content-text)]">
-        TurtleBot3 + Jazzy — the recommended configuration for the simulation demo. Use the Target toggle above to
-        choose this machine or amd64 (for OpenShift).
+        TurtleBot3 + Jazzy — the recommended configuration for the simulation demo. Applies the recommended
+        configuration. If you've changed anything in Customize, Quick Start will overwrite it.
       </p>
-      <span class="text-xs pai-text-muted">
-        Applies the recommended configuration. If you've changed anything in Customize, Quick Start will overwrite it.
-      </span>
-      <div class="flex flex-col gap-3">
+      <div class="flex flex-row gap-2 flex-wrap">
         {#each QUICK_STARTS as quickStart}
           <button
             on:click={() => onQuickStartClick(quickStart.id)}
             disabled={buildBusy || saving}
             aria-label={quickStart.label}
-            class="self-start flex flex-col gap-1 px-3 py-2 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] cursor-pointer hover:border-[var(--pd-content-header)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-left">
-            <span class="font-medium">{quickStart.label}</span>
-            <span class="text-xs pai-text-muted">{quickStart.description}</span>
+            class="px-3 py-1.5 text-sm rounded border cursor-pointer hover:border-[var(--pd-content-header)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed {selectedQuickStartId ===
+            quickStart.id
+              ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
+              : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
+            {quickStart.label}
           </button>
         {/each}
       </div>
+      <span class="text-xs text-[var(--pd-content-text)] opacity-80">
+        {quickStartDescription}
+      </span>
       {#if showQuickStartConfirm}
         <div class="flex flex-col gap-2 mt-1 p-2 rounded border border-[var(--pd-content-card-border)]">
           <span class="text-xs pai-text-warning">
