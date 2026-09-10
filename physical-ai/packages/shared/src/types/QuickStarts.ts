@@ -6,6 +6,7 @@ export type QuickStartId = 'local-jazzy' | 'openshift-jazzy-amd64';
 export interface QuickStartDefinition {
   id: QuickStartId;
   label: string;
+  description: string;
   /** Undefined means preserve the page's host-native/current target. */
   targetArch?: SupportedArchitecture;
   recipe: Pick<ImageBuilderRecipe, 'base' | 'simulation' | 'hardenedTools' | 'generateSbom'>;
@@ -15,6 +16,7 @@ export const QUICK_STARTS: readonly QuickStartDefinition[] = [
   {
     id: 'local-jazzy',
     label: 'TurtleBot3 Sim (Jazzy)',
+    description: 'Ubuntu Noble + ROS 2 Jazzy + Gazebo/Nav2/TurtleBot3 simulation',
     recipe: {
       base: { kind: 'preset', presetId: 'jazzy-noble' },
       simulation: { kind: 'preset', profileId: 'turtlebot3-jazzy-dds-gazebo' },
@@ -25,6 +27,7 @@ export const QUICK_STARTS: readonly QuickStartDefinition[] = [
   {
     id: 'openshift-jazzy-amd64',
     label: 'TurtleBot3 Sim (Jazzy · amd64)',
+    description: 'Ubuntu Noble + ROS 2 Jazzy + Gazebo/Nav2/TurtleBot3 simulation (amd64 for OpenShift)',
     targetArch: 'amd64',
     recipe: {
       base: { kind: 'preset', presetId: 'jazzy-noble' },

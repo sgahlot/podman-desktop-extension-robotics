@@ -99,7 +99,12 @@ $: if (selection.baseOs === 'custom' && selection.sim === 'custom-template' && s
 }
 
 function syncSimulationSource(): void {
-  if (selection.sim === 'custom-template') selection.ros = 'provided-by-parent';
+  if (selection.sim === 'custom-template') {
+    selection.ros = 'provided-by-parent';
+  } else {
+    // Reset to default when switching away from custom-template
+    selection.ros = 'ros2-jazzy';
+  }
 }
 $: baseOsLabel =
   selection.baseOs === 'custom'
@@ -360,7 +365,7 @@ onDestroy(() => {
           {/each}
         </select>
         <span class="text-xs pai-text-muted">{simNote}</span>
-        {#if selection.sim === 'custom-template'}
+        {#if selection.sim === 'custom-template' && selection.baseOs === 'custom'}
           <div class="flex flex-col gap-3 mt-1 pl-3 border-l border-[var(--pd-content-card-border)]">
             <div class="flex flex-col gap-1">
               <label for="layer-simulation-template" class="text-xs text-[var(--pd-content-text)]"

@@ -390,13 +390,15 @@ function cancelQuickStart() {
       <span class="text-xs pai-text-muted">
         Applies the recommended configuration. If you've changed anything in Customize, Quick Start will overwrite it.
       </span>
-      <div class="flex flex-row gap-2 flex-wrap">
+      <div class="flex flex-col gap-3">
         {#each QUICK_STARTS as quickStart}
           <button
             on:click={() => onQuickStartClick(quickStart.id)}
             disabled={buildBusy || saving}
-            class="self-start px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] cursor-pointer hover:border-[var(--pd-content-header)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-            {quickStart.label}
+            aria-label={quickStart.label}
+            class="self-start flex flex-col gap-1 px-3 py-2 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] cursor-pointer hover:border-[var(--pd-content-header)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-left">
+            <span class="font-medium">{quickStart.label}</span>
+            <span class="text-xs pai-text-muted">{quickStart.description}</span>
           </button>
         {/each}
       </div>
@@ -405,6 +407,12 @@ function cancelQuickStart() {
           <span class="text-xs pai-text-warning">
             This will replace the current builder configuration with the selected Quick Start.
           </span>
+          {#if pendingQuickStartId === 'openshift-jazzy-amd64'}
+            <span class="text-xs pai-text-warning">
+              &#9888; amd64 is required for OpenShift deployment. Cross-building on a {hostArch} host uses QEMU emulation
+              — expect a slower build.
+            </span>
+          {/if}
           <div class="flex flex-row gap-2">
             <button
               on:click={() => applyQuickStart(pendingQuickStartId)}
