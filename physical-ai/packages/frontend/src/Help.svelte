@@ -72,10 +72,6 @@ import { navigationLayout } from './lib/navigationLayout';
           Silicon host this cross-builds via emulation and is slower — expected).
         </div>
         <div>
-          <strong>Configure</strong> — Select ROS distro (Humble or Jazzy), robot, middleware, engine, and base preset.
-          Save persists to Preferences. Humble is <strong>not currently verified working</strong> — use Jazzy.
-        </div>
-        <div>
           <strong>Phase 1: Base Image</strong> — Humble: <span class="font-mono">sloretz</span> (<span class="font-mono"
             >:sloretz</span
           >) or <span class="font-mono">osrf</span> (<span class="font-mono">:osrf</span>). Jazzy: Ubuntu Noble preset
@@ -116,10 +112,10 @@ import { navigationLayout } from './lib/navigationLayout';
           its scope. This does not remove volumes, and the extension does not run it automatically.
         </div>
         <div>
-          <strong>Presets / Customize / Layers</strong> — Quick Starts are available in every Image Builder layout.
-          Presets are known-good recipes; Customize independently selects the base and simulation-layer sources; Layers
-          composes Base OS, hardened app, ROS, and simulation layers, with a live compatibility verdict as you pick.
-          Pull the layer images (base OS + any selected Hummingbird images) right from the wizard — a
+          <strong>Presets / Customize</strong> — Quick Starts are available in every Image Builder layout.
+          <strong>Presets</strong> are known-good recipes (Ubuntu + ROS Jazzy + Simulation). <strong>Customize</strong>
+          composes Base OS, hardened app, ROS, and simulation layers, with a live compatibility verdict as you pick. Pull
+          the layer images (base OS + any selected Hummingbird images) right from the wizard — a
           <span class="font-mono">&#10003; Local</span>
           badge marks the ones you already have — then build the composed image: a tested Ubuntu + ROS [+ Sim] stack builds
           the full runnable image, and any other combination builds from the generated Containerfile (an
