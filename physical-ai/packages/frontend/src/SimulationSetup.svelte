@@ -252,28 +252,28 @@ function handleCustomSimulationTemplateChange(): void {
 }
 
 async function applyQuickStart(id: QuickStartId = 'local-jazzy') {
+  // Quick Start applies the current configuration (from dropdowns above) and updates
+  // targetArch based on the Quick Start selection (local → native, openshift → amd64).
+  const profileId = `${robot}-${distro}-${middleware}-${engine}`;
   const selected = applyRecipeQuickStart(
     {
       targetArch,
       base: { kind: 'preset', presetId: baseImage },
-      simulation: { kind: 'preset', profileId: 'turtlebot3-jazzy-dds-gazebo' },
+      simulation: { kind: 'preset', profileId },
       hardenedTools: [],
       generateSbom: false,
     } satisfies ImageBuilderRecipe,
     id,
   );
-  robot = 'turtlebot3';
-  distro = 'jazzy';
-  middleware = 'dds';
-  engine = 'gazebo';
+  // Update baseImage from Quick Start selection (may override based on arch)
   baseImage =
     selected.base.kind === 'preset'
       ? (selected.base.presetId as SimulationBaseImageSelection)
       : DEFAULT_SIMULATION_BASE_IMAGE;
+  // Update targetArch based on Quick Start (local-jazzy → native, openshift-jazzy-amd64 → amd64)
   if (selected.targetArch) targetArch = selected.targetArch;
   appliedQuickStartId = id;
   showQuickStartConfirm = false;
-  // Target arch comes from the Target toggle, not from Quick Start.
   // Let reactive tags update before save
   await tick();
   await save();
@@ -336,15 +336,91 @@ function cancelQuickStart() {
       </button>
     </div>
 
+    <!-- Preset configuration controls (Presets layout only) -->
+    {#if layout === 'presets'}
+      <div
+        class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-md flex flex-col gap-3">
+        <h2 class="text-sm font-medium text-[var(--pd-content-header)]">Configuration</h2>
+
+        <!-- Robot type (single option for now) -->
+        <div class="flex flex-col gap-1">
+          <label for="robot-preset" class="text-xs text-[var(--pd-content-text)]">Robot type</label>
+          <select
+            id="robot-preset"
+            bind:value={robot}
+            disabled={buildBusy}
+            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+            <option value="turtlebot3">TurtleBot3</option>
+          </select>
+        </div>
+
+        <!-- ROS distro -->
+        <div class="flex flex-col gap-1">
+          <label for="distro-preset" class="text-xs text-[var(--pd-content-text)]">ROS distro</label>
+          <select
+            id="distro-preset"
+            bind:value={distro}
+            disabled={buildBusy}
+            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+            <option value="humble">Humble (simulation/desktop)</option>
+            <option value="jazzy">Jazzy (simulation)</option>
+          </select>
+        </div>
+
+        <!-- Middleware -->
+        <div class="flex flex-col gap-1">
+          <label for="middleware-preset" class="text-xs text-[var(--pd-content-text)]">Middleware</label>
+          <select
+            id="middleware-preset"
+            bind:value={middleware}
+            disabled={buildBusy || !simSupported}
+            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+            <option value="dds">DDS (default)</option>
+            <option value="zenoh">Zenoh</option>
+          </select>
+          {#if !simSupported}
+            <span class="text-xs pai-text-muted">Not applicable — simulation not available for {distro}</span>
+          {/if}
+        </div>
+
+        <!-- Simulation engine (single option) -->
+        <div class="flex flex-col gap-1">
+          <label for="engine-preset" class="text-xs text-[var(--pd-content-text)]">Simulation engine</label>
+          <select
+            id="engine-preset"
+            bind:value={engine}
+            disabled={buildBusy}
+            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+            <option value="gazebo">Gazebo</option>
+          </select>
+        </div>
+
+        <!-- Base image -->
+        <div class="flex flex-col gap-1">
+          <label for="baseImage-preset" class="text-xs text-[var(--pd-content-text)]">Base image</label>
+          <select
+            id="baseImage-preset"
+            bind:value={baseImage}
+            disabled={buildBusy}
+            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+            {#each availableBaseImages as img}
+              <option value={img.id}>{img.label}</option>
+            {/each}
+            <option value={CUSTOM_SIMULATION_BASE_IMAGE}>Custom base OS</option>
+          </select>
+          <span class="text-xs text-[var(--pd-content-text)] opacity-80">
+            {basePreset.label}
+          </span>
+        </div>
+      </div>
+    {/if}
+
     <!-- Quick Start only in Presets layout -->
     {#if layout === 'presets'}
       <div
         class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-md flex flex-col gap-2">
         <h2 class="text-sm font-medium text-[var(--pd-content-header)]">Quick Start</h2>
-        <p class="text-xs text-[var(--pd-content-text)]">
-          TurtleBot3 + Jazzy — the recommended configuration for the simulation demo. Applies the recommended
-          configuration to the preset.
-        </p>
+        <p class="text-xs text-[var(--pd-content-text)]">Apply the current configuration above and start building.</p>
         <div class="flex flex-row gap-2 flex-wrap">
           {#each QUICK_STARTS as quickStart}
             <button
@@ -533,6 +609,41 @@ function cancelQuickStart() {
     {/if}
 
     {#if layout === 'layers'}
+      <!-- Customize (Layers) layout: top-level controls for Distro + Middleware, then composition -->
+      <div
+        class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-md flex flex-col gap-3">
+        <h2 class="text-sm font-medium text-[var(--pd-content-header)]">Simulation preferences</h2>
+
+        <!-- ROS distro (for composition layers) -->
+        <div class="flex flex-col gap-1">
+          <label for="distro-layers" class="text-xs text-[var(--pd-content-text)]">ROS distro</label>
+          <select
+            id="distro-layers"
+            bind:value={distro}
+            disabled={buildBusy}
+            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+            <option value="humble">Humble (simulation/desktop)</option>
+            <option value="jazzy">Jazzy (simulation)</option>
+          </select>
+        </div>
+
+        <!-- Middleware -->
+        <div class="flex flex-col gap-1">
+          <label for="middleware-layers" class="text-xs text-[var(--pd-content-text)]">Middleware</label>
+          <select
+            id="middleware-layers"
+            bind:value={middleware}
+            disabled={buildBusy || !simSupported}
+            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+            <option value="dds">DDS (default)</option>
+            <option value="zenoh">Zenoh</option>
+          </select>
+          {#if !simSupported}
+            <span class="text-xs pai-text-muted">Not applicable — simulation not available for {distro}</span>
+          {/if}
+        </div>
+      </div>
+
       <LayerComposer
         bind:targetArch={targetArch}
         hostArch={hostArch}
