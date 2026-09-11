@@ -356,7 +356,7 @@ function cancelQuickStart() {
               class="px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {selectedQuickStartId ===
               quickStart.id
                 ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
-                : 'border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] hover:border-[var(--pd-content-header)]'}">
+                : 'border-[var(--pd-content-text)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] hover:border-[var(--pd-content-header)]'}">
               {quickStart.label}
             </button>
           {/each}
@@ -389,7 +389,9 @@ function cancelQuickStart() {
       </div>
     {/if}
 
-    <hr class="border-[var(--pd-content-card-border)] my-2" />
+    {#if layout === 'presets'}
+      <hr class="border-[var(--pd-content-card-border)] my-2" />
+    {/if}
 
     <!-- Image Builder pipeline: Step 1 (base) + Step 2 (simulation), each with a
          live built/not-built status driven by the reactive existence check above. -->
