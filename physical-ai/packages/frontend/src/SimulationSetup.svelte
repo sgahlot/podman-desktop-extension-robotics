@@ -70,6 +70,7 @@ let simImageExists = false;
 let existsCheckKey = '';
 
 let optionsExpanded = false;
+let configurationExpanded = false;
 
 let showQuickStartConfirm = false;
 let appliedQuickStartId: QuickStartId | undefined;
@@ -384,6 +385,77 @@ function cancelQuickStart() {
               </button>
               <button on:click={cancelQuickStart} disabled={buildBusy || saving} class="pai-btn"> Cancel </button>
             </div>
+          </div>
+        {/if}
+      </div>
+    {/if}
+
+    <!-- Configuration panel (Presets layout only), collapsed by default -->
+    {#if layout === 'presets'}
+      <div
+        class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-md flex flex-col gap-3">
+        <button
+          on:click={() => (configurationExpanded = !configurationExpanded)}
+          disabled={buildBusy}
+          class="flex flex-row items-center justify-between text-sm font-medium text-[var(--pd-content-header)] hover:opacity-80 disabled:opacity-50">
+          <span>Configuration</span>
+          <span class="text-xs">{configurationExpanded ? '▼' : '▶'}</span>
+        </button>
+
+        {#if configurationExpanded}
+          <!-- Robot type (single option for now) -->
+          <div class="flex flex-col gap-1">
+            <label for="robot-preset" class="text-xs text-[var(--pd-content-text)]">Robot type</label>
+            <select
+              id="robot-preset"
+              bind:value={robot}
+              disabled={buildBusy}
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+              <option value="turtlebot3">TurtleBot3</option>
+            </select>
+          </div>
+
+          <!-- ROS distro -->
+          <div class="flex flex-col gap-1">
+            <label for="distro-preset" class="text-xs text-[var(--pd-content-text)]">ROS distro</label>
+            <select
+              id="distro-preset"
+              bind:value={distro}
+              disabled={buildBusy}
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+              <option value="humble">Humble (simulation/desktop)</option>
+              <option value="jazzy">Jazzy (simulation)</option>
+            </select>
+          </div>
+
+          <!-- Simulation engine (single option) -->
+          <div class="flex flex-col gap-1">
+            <label for="engine-preset" class="text-xs text-[var(--pd-content-text)]">Simulation engine</label>
+            <select
+              id="engine-preset"
+              bind:value={engine}
+              disabled={buildBusy}
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+              <option value="gazebo">Gazebo</option>
+            </select>
+          </div>
+
+          <!-- Base image -->
+          <div class="flex flex-col gap-1">
+            <label for="baseImage-preset" class="text-xs text-[var(--pd-content-text)]">Base image</label>
+            <select
+              id="baseImage-preset"
+              bind:value={baseImage}
+              disabled={buildBusy}
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+              {#each availableBaseImages as img}
+                <option value={img.id}>{img.label}</option>
+              {/each}
+              <option value={CUSTOM_SIMULATION_BASE_IMAGE}>Custom base OS</option>
+            </select>
+            <span class="text-xs text-[var(--pd-content-text)] opacity-80">
+              {basePreset.label}
+            </span>
           </div>
         {/if}
       </div>

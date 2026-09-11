@@ -125,8 +125,7 @@ async function launchSim() {
     // selecting zenoh is just an extra env var — entrypoint-gazebo.sh starts the Zenoh
     // router (rmw_zenohd) when it sees this set. Keep passing undefined for the
     // dds/default case so existing behavior (and its test snapshot) is unchanged.
-    const launchOptions =
-      selectedMiddleware === 'zenoh' ? { env: { RMW_IMPLEMENTATION: 'rmw_zenoh_cpp' } } : undefined;
+    const launchOptions = selectedMiddleware === 'zenoh' ? { env: { RMW_IMPLEMENTATION: 'rmw_zenoh_cpp' } } : undefined;
     await physicalAiClient.launchSimulation(selectedImage, '', launchOptions);
     spawnedRobots = [];
     await pollContainers();
