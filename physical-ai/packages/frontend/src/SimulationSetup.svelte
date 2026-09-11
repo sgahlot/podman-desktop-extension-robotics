@@ -86,6 +86,7 @@ let appliedQuickStartId: QuickStartId | undefined;
 let pendingQuickStartId: QuickStartId = 'local-jazzy';
 let selectedQuickStartId: QuickStartId = 'local-jazzy';
 let quickStartChanges: string[] = [];
+let lastAppliedConfig = { ...QUICK_START_DEFAULTS };
 
 let layout: 'presets' | 'layers' = 'presets';
 let buildChoice: 'base' | 'sim' | 'both' | undefined = undefined;
@@ -273,9 +274,6 @@ function getQuickStartChanges(): string[] {
   return changes;
 }
 
-// Compute quick start changes whenever config changes
-$: quickStartChanges = getQuickStartChanges();
-
 async function applyQuickStart(id: QuickStartId = 'local-jazzy') {
   const selected = applyRecipeQuickStart(
     {
@@ -298,6 +296,8 @@ async function applyQuickStart(id: QuickStartId = 'local-jazzy') {
   if (selected.targetArch) targetArch = selected.targetArch;
   appliedQuickStartId = id;
   showQuickStartConfirm = false;
+  // Record what we just applied
+  lastAppliedConfig = { robot, distro, middleware, engine, baseImage };
   // Target arch comes from the Target toggle, not from Quick Start.
   // Let reactive tags update before save
   await tick();
@@ -308,10 +308,21 @@ async function applyQuickStart(id: QuickStartId = 'local-jazzy') {
 function onQuickStartClick(id: QuickStartId = 'local-jazzy') {
   selectedQuickStartId = id;
   pendingQuickStartId = id;
-  if (id === appliedQuickStartId && quickStartChanges.length === 0) {
-    // Already applied and config matches defaults — no change needed.
+
+  const currentConfig = { robot, distro, middleware, engine, baseImage };
+  const configChanged =
+    currentConfig.robot !== lastAppliedConfig.robot ||
+    currentConfig.distro !== lastAppliedConfig.distro ||
+    currentConfig.middleware !== lastAppliedConfig.middleware ||
+    currentConfig.engine !== lastAppliedConfig.engine ||
+    currentConfig.baseImage !== lastAppliedConfig.baseImage;
+
+  if (!configChanged) {
+    // Config matches what was last applied — apply directly without confirmation
     void applyQuickStart(id);
   } else {
+    // Config differs — show confirmation with what will change
+    quickStartChanges = getQuickStartChanges();
     showQuickStartConfirm = true;
   }
 }
