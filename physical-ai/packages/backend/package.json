@@ -1,6 +1,6 @@
 {
-  "name": "physical-ai-appeng-6313",
-  "displayName": "Physical AI (APPENG-6313)",
+  "name": "physical-ai",
+  "displayName": "Physical AI",
   "description": "Podman Desktop extension for Physical AI robotics development",
   "version": "0.1.0",
   "icon": "icon.png",
