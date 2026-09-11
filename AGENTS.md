@@ -21,6 +21,17 @@ is the source of truth for project documentation and private planning material.
   runtime supports delegation; otherwise perform the work directly and report
   the limitation.
 
+## Output brevity
+
+- Keep each visible progress, command, patch, diff, test-result, and other
+  execution section to a 2–3 line preview whenever the runtime permits; users
+  can expand sections for full details.
+- Prefer quiet/concise command and reporter modes. Do not dump successful logs
+  or large diffs into chat; show detailed output only when needed to diagnose a
+  failure or provide requested evidence.
+- Keep commentary and final summaries similarly compact unless the user asks
+  for detail or the task requires a longer explanation.
+
 ## Chat roles and shorthand
 
 Use the worktree folder to choose the chat:
