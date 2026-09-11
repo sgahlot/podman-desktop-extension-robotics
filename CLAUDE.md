@@ -97,7 +97,9 @@
      `physical-ai/node_modules` (npm workspace symlinks are relative, so this is safe
      across sibling worktrees at the same depth) — much faster than a from-scratch
      install — then run `npm install` once to reconcile any branch-specific dependency
-     drift.
+     drift. **WORKAROUND for Haiku model:** if `npm run clean && npm run build` fails
+     with module resolution errors, delete `node_modules` entirely and run a fresh
+     `npm install` from scratch instead of the copy-and-reconcile approach.
   2. Symlink `.internal` in from `main/`: `ln -s ../main/.internal .internal` (run from the
      worktree root). `.internal/` is private and git-ignored, and lives ONLY in `main/` —
      never copy or regenerate it elsewhere. The symlink is invisible to git under the same
