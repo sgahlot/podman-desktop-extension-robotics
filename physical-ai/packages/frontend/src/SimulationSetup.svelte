@@ -202,8 +202,7 @@ onMount(async () => {
       middleware === 'dds' &&
       engine === 'gazebo'
     ) {
-      appliedQuickStartId =
-        (config.targetArch ?? targetArch) === 'amd64' ? 'openshift-jazzy-amd64' : 'local-jazzy';
+      appliedQuickStartId = (config.targetArch ?? targetArch) === 'amd64' ? 'openshift-jazzy-amd64' : 'local-jazzy';
     }
   } catch {
     // defaults are fine
@@ -336,7 +335,6 @@ function cancelQuickStart() {
         Customize
       </button>
     </div>
-
 
     <!-- Quick Start only in Presets layout -->
     {#if layout === 'presets'}
