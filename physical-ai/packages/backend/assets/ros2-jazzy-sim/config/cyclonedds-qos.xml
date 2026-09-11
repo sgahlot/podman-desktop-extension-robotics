@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CycloneDDS QoS configuration for robust clock synchronization (APPENG-6344).
+
+  The ros_gz_bridge publishes Gazebo's /clock at 1000 Hz (1ms stepping) and ROS2
+  nodes publish velocity commands at high frequency. Under render bottleneck
+  conditions (llvmpipe on Mac M1), messages can queue faster than Gazebo can
+  process them, causing buffer overflow ("A message was lost!!!") and clock skew.
+
+  This config:
+  1. Increases DDS history depth (default 1) to buffer multiple messages
+  2. Sets reliability to RELIABLE (ensures retransmit on loss)
+  3. Tunes deadline/latency_budget for time-sensitive topics like /clock
+  4. Raises DDSI thread pool to handle burst message rates
+-->
+<CycloneDDS xmlns="https://cdds.io/config" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
+  <Domain>
+    <!-- DDSI/DDS communication layer tuning -->
+    <DDSI>
+      <!-- Fragment reassembly buffer: larger fragments arrive out-of-order under
+           contention; increase buffer to avoid drops during bridge message bursts. -->
+      <FragmentationThreshold>65536</FragmentationThreshold>
+
+      <!-- Thread pool for DDSI I/O and data path. Default is # CPUs / 2 (capped at 4).
+           Under high message rate (1000 Hz /clock + velocity commands), multiple threads
+           reduce contention and allow better interleaving with Gazebo's own stepping. -->
+      <Threads>
+        <Pool priority="default" scheduling="default">
+          <Count min="2" max="4"/>
+        </Pool>
+      </Threads>
+
+      <!-- SPDP (Simple Participant Discovery): participant announcements.
+           Increase history/buffer to handle join/discovery under high-rate traffic. -->
+      <SPDPInterval>30000000000</SPDPInterval>
+    </DDSI>
+
+    <!-- DataReaderDefaultQosPolicy: per-topic overrides applied to clock/command subscribers -->
+    <DataReaderDefaultQosPolicy>
+      <!-- History: store recent messages (KEEP_LAST = drop oldest when full).
+           /clock at 1000 Hz means 10 samples = 10ms buffer. This keeps burst
+           velocity commands from getting dropped if Gazebo stalls for a frame. -->
+      <History kind="KEEP_LAST">
+        <Depth>20</Depth>
+      </History>
+
+      <!-- Reliability: BEST_EFFORT (lossy) → RELIABLE (retransmit on loss).
+           Critical for /clock so every step is seen; velocity command loss is tolerable. -->
+      <Reliability kind="RELIABLE">
+        <MaxBlockingTime>100ms</MaxBlockingTime>
+      </Reliability>
+
+      <!-- Durability: volatile (default) means no transient storage; sufficient for
+           live subscriptions (no late joiners), but could use TRANSIENT_LOCAL for
+           Nav2 nodes joining mid-simulation (future tuning). -->
+      <Durability kind="VOLATILE"/>
+
+      <!-- Deadline & LatencyBudget: soft bounds on delivery.
+           /clock is time-critical; 50ms latency budget = max acceptable staleness. -->
+      <Deadline>
+        <Period>100ms</Period>
+      </Deadline>
+      <LatencyBudget>
+        <Duration>50ms</Duration>
+      </LatencyBudget>
+    </DataReaderDefaultQosPolicy>
+
+    <!-- DataWriterDefaultQosPolicy: per-topic overrides applied to clock/command publishers -->
+    <DataWriterDefaultQosPolicy>
+      <!-- History: /clock publisher keeps multiple samples so late-binding subscribers
+           get recent state; Nav2 commands are transient-local friendly. -->
+      <History kind="KEEP_LAST">
+        <Depth>20</Depth>
+      </History>
+
+      <!-- Reliability: RELIABLE ensures every /clock tick reaches all subscribers.
+           Retransmit timeouts tuned below to not delay high-rate topics too much. -->
+      <Reliability kind="RELIABLE">
+        <MaxBlockingTime>100ms</MaxBlockingTime>
+      </Reliability>
+
+      <!-- Durability: volatile (live only); could use TRANSIENT_LOCAL to help
+           mid-simulation node joins (e.g., Nav2 restart), but adds latency overhead. -->
+      <Durability kind="VOLATILE"/>
+
+      <!-- Lifespan: how long a sample stays valid before expiry.
+           /clock: 100ms (next 100 clocks at 1000 Hz). Stale clock is worse than no clock. -->
+      <Lifespan>
+        <Duration>100ms</Duration>
+      </Lifespan>
+
+      <!-- OwnershipStrength: not used; DDS ownership = publisher priority (default 0). -->
+    </DataWriterDefaultQosPolicy>
+
+    <!-- NetworkInterfaces: ensure DDSI binds to the container's network interface.
+         Leave empty to auto-detect (localhost loopback in most dev/test setups). -->
+    <!-- <NetworkInterfaces>
+      <Interface name="eth0"/>
+    </NetworkInterfaces> -->
+
+    <!-- Transport: UDP (default, fast) vs TCP (reliable but slower).
+         Keep UDP; DDSI reliable mode handles retransmit at DDS level. -->
+  </Domain>
+</CycloneDDS>

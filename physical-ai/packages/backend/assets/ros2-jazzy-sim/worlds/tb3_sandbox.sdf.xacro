@@ -5,8 +5,12 @@
 -->
 <sdf version="1.8">
   <world name="tb3_sandbox">
-    <physics name="1ms" type="ignored">
-      <max_step_size>0.001</max_step_size>
+    <!-- Physics stepping tuned for clock sync robustness (APPENG-6344):
+         2ms steps (0.002) instead of 1ms reduces solver overhead and stepping
+         message throughput while keeping simulation fidelity high for navigation.
+         Gazebo interpolates within steps, so the real-time factor stays ~1.0. -->
+    <physics name="2ms" type="ignored">
+      <max_step_size>0.002</max_step_size>
       <real_time_factor>1.0</real_time_factor>
     </physics>
 
