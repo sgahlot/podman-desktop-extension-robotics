@@ -451,7 +451,6 @@ function cancelQuickStart() {
               {#each availableBaseImages as img}
                 <option value={img.id}>{img.label}</option>
               {/each}
-              <option value={CUSTOM_SIMULATION_BASE_IMAGE}>Custom base OS</option>
             </select>
             <span class="text-xs text-[var(--pd-content-text)] opacity-80">
               {basePreset.label}
