@@ -31,6 +31,15 @@ import {
   QUICK_STARTS,
   type QuickStartId,
 } from '/@shared/src/types/QuickStarts';
+
+// Quick Start defaults — all quick starts apply these same values
+const QUICK_START_DEFAULTS = {
+  robot: 'turtlebot3',
+  distro: 'jazzy',
+  middleware: 'dds',
+  engine: 'gazebo',
+  baseImage: 'jazzy-noble' as SimulationBaseImageSelection,
+};
 import type { ImageBuilderRecipe } from '/@shared/src/types/ImageBuilderRecipe';
 import { customSimulationImageTag } from '/@shared/src/types/imageBuilderPlan';
 
@@ -255,16 +264,17 @@ function handleCustomSimulationTemplateChange(): void {
 
 function getQuickStartChanges(): string[] {
   const changes: string[] = [];
-  if (robot !== 'turtlebot3') changes.push(`Robot: ${robot} → TurtleBot3`);
-  if (distro !== 'jazzy') changes.push(`ROS distro: ${distro} → Jazzy`);
-  if (middleware !== 'dds') changes.push(`Middleware: ${middleware} → DDS`);
-  if (engine !== 'gazebo') changes.push(`Engine: ${engine} → Gazebo`);
+  if (robot !== QUICK_START_DEFAULTS.robot) changes.push(`Robot: ${robot} → TurtleBot3`);
+  if (distro !== QUICK_START_DEFAULTS.distro) changes.push(`ROS distro: ${distro} → Jazzy`);
+  if (middleware !== QUICK_START_DEFAULTS.middleware) changes.push(`Middleware: ${middleware} → DDS`);
+  if (engine !== QUICK_START_DEFAULTS.engine) changes.push(`Engine: ${engine} → Gazebo`);
+  if (baseImage !== QUICK_START_DEFAULTS.baseImage)
+    changes.push(`Base image: ${basePreset.label} → Ubuntu 24.04 Noble (multi-arch)`);
   return changes;
 }
 
-$: if (showQuickStartConfirm) {
-  quickStartChanges = getQuickStartChanges();
-}
+// Compute quick start changes whenever config changes
+$: quickStartChanges = getQuickStartChanges();
 
 async function applyQuickStart(id: QuickStartId = 'local-jazzy') {
   const selected = applyRecipeQuickStart(
@@ -298,8 +308,8 @@ async function applyQuickStart(id: QuickStartId = 'local-jazzy') {
 function onQuickStartClick(id: QuickStartId = 'local-jazzy') {
   selectedQuickStartId = id;
   pendingQuickStartId = id;
-  if (id === appliedQuickStartId) {
-    // Already applied — no change needed.
+  if (id === appliedQuickStartId && quickStartChanges.length === 0) {
+    // Already applied and config matches defaults — no change needed.
     void applyQuickStart(id);
   } else {
     showQuickStartConfirm = true;
