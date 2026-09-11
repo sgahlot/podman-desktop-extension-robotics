@@ -294,6 +294,7 @@ function onQuickStartClick(id: QuickStartId = 'local-jazzy') {
 
 function cancelQuickStart() {
   showQuickStartConfirm = false;
+  selectedQuickStartId = appliedQuickStartId ?? 'local-jazzy';
 }
 </script>
 
@@ -337,54 +338,56 @@ function cancelQuickStart() {
     </div>
 
 
-    <!-- Single Quick Start preset -->
-    <div
-      class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-md flex flex-col gap-2">
-      <h2 class="text-sm font-medium text-[var(--pd-content-header)]">Quick Start</h2>
-      <p class="text-xs text-[var(--pd-content-text)]">
-        TurtleBot3 + Jazzy — the recommended configuration for the simulation demo. Applies the recommended
-        configuration. If you've changed anything in Customize, Quick Start will overwrite it.
-      </p>
-      <div class="flex flex-row gap-2 flex-wrap">
-        {#each QUICK_STARTS as quickStart}
-          <button
-            on:click={() => onQuickStartClick(quickStart.id)}
-            disabled={buildBusy || saving}
-            aria-label={quickStart.label}
-            class="px-3 py-1.5 text-sm rounded border cursor-pointer hover:border-[var(--pd-content-header)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed {selectedQuickStartId ===
-            quickStart.id
-              ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
-              : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
-            {quickStart.label}
-          </button>
-        {/each}
-      </div>
-      <span class="text-xs text-[var(--pd-content-text)] opacity-80">
-        {quickStartDescription}
-      </span>
-      {#if showQuickStartConfirm}
-        <div class="flex flex-col gap-2 mt-1 p-2 rounded border border-[var(--pd-content-card-border)]">
-          <span class="text-xs pai-text-warning">
-            This will replace the current builder configuration with the selected Quick Start.
-          </span>
-          {#if pendingQuickStartId === 'openshift-jazzy-amd64'}
-            <span class="text-xs pai-text-warning">
-              &#9888; amd64 is required for OpenShift deployment. Cross-building on a {hostArch} host uses QEMU emulation
-              — expect a slower build.
-            </span>
-          {/if}
-          <div class="flex flex-row gap-2">
+    <!-- Quick Start only in Presets layout -->
+    {#if layout === 'presets'}
+      <div
+        class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-md flex flex-col gap-2">
+        <h2 class="text-sm font-medium text-[var(--pd-content-header)]">Quick Start</h2>
+        <p class="text-xs text-[var(--pd-content-text)]">
+          TurtleBot3 + Jazzy — the recommended configuration for the simulation demo. Applies the recommended
+          configuration to the preset.
+        </p>
+        <div class="flex flex-row gap-2 flex-wrap">
+          {#each QUICK_STARTS as quickStart}
             <button
-              on:click={() => applyQuickStart(pendingQuickStartId)}
+              on:click={() => onQuickStartClick(quickStart.id)}
               disabled={buildBusy || saving}
-              class="pai-btn pai-btn-primary">
-              Apply Quick Start
+              aria-label={quickStart.label}
+              class="px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {selectedQuickStartId ===
+              quickStart.id
+                ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
+                : 'border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] hover:border-[var(--pd-content-header)]'}">
+              {quickStart.label}
             </button>
-            <button on:click={cancelQuickStart} disabled={buildBusy || saving} class="pai-btn"> Cancel </button>
-          </div>
+          {/each}
         </div>
-      {/if}
-    </div>
+        <span class="text-xs text-[var(--pd-content-text)] opacity-80">
+          {quickStartDescription}
+        </span>
+        {#if showQuickStartConfirm}
+          <div class="flex flex-col gap-2 mt-1 p-2 rounded border border-[var(--pd-content-card-border)]">
+            <span class="text-xs pai-text-warning">
+              This will replace the current builder configuration with the selected Quick Start.
+            </span>
+            {#if pendingQuickStartId === 'openshift-jazzy-amd64'}
+              <span class="text-xs pai-text-warning">
+                &#9888; amd64 is required for OpenShift deployment. Cross-building on a {hostArch} host uses QEMU emulation
+                — expect a slower build.
+              </span>
+            {/if}
+            <div class="flex flex-row gap-2">
+              <button
+                on:click={() => applyQuickStart(pendingQuickStartId)}
+                disabled={buildBusy || saving}
+                class="pai-btn pai-btn-primary">
+                Apply Quick Start
+              </button>
+              <button on:click={cancelQuickStart} disabled={buildBusy || saving} class="pai-btn"> Cancel </button>
+            </div>
+          </div>
+        {/if}
+      </div>
+    {/if}
 
     <hr class="border-[var(--pd-content-card-border)] my-2" />
 

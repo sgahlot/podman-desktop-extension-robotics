@@ -160,9 +160,10 @@ describe('SimulationSetup (Image Builder)', () => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
 
-    // Target architecture dropdown is in LayerComposer
+    // Change target arch in Customize, then switch to Presets to apply Quick Start
     const targetSelect = screen.getByLabelText('Target architecture') as HTMLSelectElement;
     await fireEvent.change(targetSelect, { target: { value: 'amd64' } });
+    await fireEvent.click(screen.getByRole('tab', { name: 'Presets' }));
     await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
     await fireEvent.click(await screen.findByRole('button', { name: 'Apply Quick Start' }));
 
@@ -187,10 +188,9 @@ describe('SimulationSetup (Image Builder)', () => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
 
-    // Target architecture dropdown is in LayerComposer
+    // Target architecture and base image are in LayerComposer
     const targetSelect = screen.getByLabelText('Target architecture') as HTMLSelectElement;
     await fireEvent.change(targetSelect, { target: { value: 'amd64' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
 
     // Should not show a warning when amd64-only preset is paired with amd64 target
     expect(screen.queryByText(/does not support/)).toBeNull();
@@ -208,7 +208,6 @@ describe('SimulationSetup (Image Builder)', () => {
     // On an amd64 host, the option for arm64 is for cross-build
     const targetSelect = screen.getByLabelText('Target architecture') as HTMLSelectElement;
     await fireEvent.change(targetSelect, { target: { value: 'arm64' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
 
     // Verify the behavior for the default preset
     expect(screen.queryByText(/does not support/)).toBeNull();
