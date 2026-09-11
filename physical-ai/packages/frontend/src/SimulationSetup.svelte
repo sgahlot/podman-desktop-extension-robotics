@@ -76,6 +76,7 @@ let showQuickStartConfirm = false;
 let appliedQuickStartId: QuickStartId | undefined;
 let pendingQuickStartId: QuickStartId = 'local-jazzy';
 let selectedQuickStartId: QuickStartId = 'local-jazzy';
+let quickStartChanges: string[] = [];
 
 let layout: 'presets' | 'layers' = 'presets';
 let buildChoice: 'base' | 'sim' | 'both' | undefined = undefined;
@@ -252,6 +253,19 @@ function handleCustomSimulationTemplateChange(): void {
   if (customSimulationMode === 'packages') distro = customSimulationTemplate.rosDistro;
 }
 
+function getQuickStartChanges(): string[] {
+  const changes: string[] = [];
+  if (robot !== 'turtlebot3') changes.push(`Robot: ${robot} → TurtleBot3`);
+  if (distro !== 'jazzy') changes.push(`ROS distro: ${distro} → Jazzy`);
+  if (middleware !== 'dds') changes.push(`Middleware: ${middleware} → DDS`);
+  if (engine !== 'gazebo') changes.push(`Engine: ${engine} → Gazebo`);
+  return changes;
+}
+
+$: if (showQuickStartConfirm) {
+  quickStartChanges = getQuickStartChanges();
+}
+
 async function applyQuickStart(id: QuickStartId = 'local-jazzy') {
   const selected = applyRecipeQuickStart(
     {
@@ -370,6 +384,13 @@ function cancelQuickStart() {
             <span class="text-xs pai-text-warning">
               This will replace the current builder configuration with the selected Quick Start.
             </span>
+            {#if quickStartChanges.length > 0}
+              <div class="text-xs text-[var(--pd-content-text)] flex flex-col gap-1 ml-2">
+                {#each quickStartChanges as change}
+                  <span>• {change}</span>
+                {/each}
+              </div>
+            {/if}
             {#if pendingQuickStartId === 'openshift-jazzy-amd64'}
               <span class="text-xs pai-text-warning">
                 &#9888; amd64 is required for OpenShift deployment. Cross-building on a {hostArch} host uses QEMU emulation
