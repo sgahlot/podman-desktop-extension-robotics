@@ -72,10 +72,6 @@ import { navigationLayout } from './lib/navigationLayout';
           Silicon host this cross-builds via emulation and is slower — expected).
         </div>
         <div>
-          <strong>Configure</strong> — Select ROS distro (Humble or Jazzy), robot, middleware, engine, and base preset.
-          Save persists to Preferences. Humble is <strong>not currently verified working</strong> — use Jazzy.
-        </div>
-        <div>
           <strong>Phase 1: Base Image</strong> — Humble: <span class="font-mono">sloretz</span> (<span class="font-mono"
             >:sloretz</span
           >) or <span class="font-mono">osrf</span> (<span class="font-mono">:osrf</span>). Jazzy: Ubuntu Noble preset
@@ -87,7 +83,15 @@ import { navigationLayout } from './lib/navigationLayout';
           reference (for example <span class="font-mono">quay.io/org/ros2:jazzy-desktop</span>). This is the parent
           <span class="font-mono">FROM</span> image, not the output tag in the Build panel; it is saved with your preferences.
           Compatibility is not verified for arbitrary images, so authenticate to private registries and ensure the parent
-          works with the selected recipe. The supported Phase 2 simulation path remains Ubuntu/Jazzy.
+          works with the selected recipe. The supported preset Phase 2 simulation path remains Ubuntu/Jazzy.
+        </div>
+        <div>
+          <strong>Custom ROS simulation packages</strong> — For a ROS-ready custom parent, select the registered
+          <span class="font-mono">Fedora 43 + ROS 2 Lyrical (dnf)</span> template. It adds the fixed
+          <span class="font-mono">ros-lyrical-nav2-minimal-tb3-sim</span> and
+          <span class="font-mono">ros-lyrical-ros-gz-sim</span> packages directly to the parent and labels the output
+          <strong>packages-only</strong>. This BYO image is not eligible for managed launch, noVNC, Navigate,
+          diagnostics, or OpenShift simulation deployment.
         </div>
         <div>
           <strong>Phase 2: Simulation Image</strong> — Layers Gazebo, TurtleBot3 spawn assets, and noVNC (Jazzy) on your
@@ -108,13 +112,18 @@ import { navigationLayout } from './lib/navigationLayout';
           its scope. This does not remove volumes, and the extension does not run it automatically.
         </div>
         <div>
-          <strong>Layers layout</strong> — Compose an image from Base OS, hardened app, ROS, and simulation layers, with
-          a live compatibility verdict as you pick. Pull the layer images (base OS + any selected Hummingbird images)
-          right from the wizard — a <span class="font-mono">&#10003; Local</span> badge marks the ones you already have
-          — then build the composed image: a tested Ubuntu + ROS [+ Sim] stack builds the full runnable image, and any
-          other combination builds from the generated Containerfile (an <em>Attempt anyway</em> build of a blocked
-          combination really runs and fails at the step the verdict names). The bootc bases and Hummingbird hardened
-          apps shown are a representative catalog; install the <span class="font-mono">redhat.bootc</span> and
+          <strong>Presets / Customize</strong> — Quick Starts are available in every Image Builder layout.
+          <strong>Presets</strong> are known-good recipes (Ubuntu + ROS Jazzy + Simulation). <strong>Customize</strong>
+          composes Base OS, hardened app, ROS, and simulation layers, with a live compatibility verdict as you pick. Pull
+          the layer images (base OS + any selected Hummingbird images) right from the wizard — a
+          <span class="font-mono">&#10003; Local</span>
+          badge marks the ones you already have — then build the composed image: a tested Ubuntu + ROS [+ Sim] stack builds
+          the full runnable image, and any other combination builds from the generated Containerfile (an
+          <em>Attempt anyway</em>
+          build of a blocked combination really runs and fails at the step the verdict names). The bootc bases and Hummingbird
+          hardened apps shown are a representative catalog; install the
+          <span class="font-mono">redhat.bootc</span>
+          and
           <span class="font-mono">redhat.hummingbird</span> extensions to pull those images. Hummingbird apps split into
           <em>companions</em> (pulled and run alongside) and <em>tools</em> (a hardened CLI baked in via
           <span class="font-mono">COPY --from</span>).
@@ -183,9 +192,9 @@ import { navigationLayout } from './lib/navigationLayout';
           causes: (1)&nbsp;<strong>Not enough CPU</strong> for the workload &mdash; Gazebo (especially the noVNC GUI),
           physics, and Nav2 all compete for the pod&rsquo;s CPU quota. When the cluster throttles the pod, simulation
           time runs slower than real time, so motion looks frozen or stuttery even though Nav2 is working. On OpenShift
-          GPU nodes (<span class="font-mono">g5.2xlarge</span>), request <strong>6&ndash;7</strong> guaranteed CPUs for
-          the sim container (7 without the Hummingbird sidecar, 6 with it); values like 3 are too low and match the
-          slow/hoppy behavior. Software-render (no GPU) deployments usually need <strong>8</strong> (adjust via
+          GPU nodes (<span class="font-mono">g5.2xlarge</span>), request <strong>6</strong> guaranteed CPUs for the sim
+          container with or without the Hummingbird sidecar; values like 3 are too low and match the slow/hoppy
+          behavior. Software-render (no GPU) deployments usually need <strong>8</strong> (adjust via
           <strong>Guaranteed CPUs</strong>). (2)&nbsp;<strong>Nav2 recovery</strong> &mdash; if the planner cannot find a
           path yet, the behavior tree runs recovery moves (spin, backup, clear costmap) that can look like hopping in place
           before forward motion starts.
@@ -220,11 +229,10 @@ import { navigationLayout } from './lib/navigationLayout';
           requests&nbsp;==&nbsp;limits). The whole pod (sim&nbsp;+&nbsp;optional Hummingbird sidecar) must fit on one
           node.
           <strong>Software-render (GPU off):</strong> default <strong>8</strong>; dial to your worker node sizes.
-          <strong>GPU on a <span class="font-mono">g5.2xlarge</span> node:</strong> use <strong>7</strong> without the
-          Hummingbird sidecar, or <strong>6</strong> with it &mdash; that is the practical maximum on an 8&nbsp;vCPU GPU node
-          after system overhead (~7.5&nbsp;cores allocatable). Lower values schedule but navigation becomes slow or jerky
-          (simulation runs below real-time). The UI allows up to 64; the scheduler will keep the pod Pending if the request
-          exceeds what the node can fit.
+          <strong>GPU on a <span class="font-mono">g5.2xlarge</span> node:</strong> use <strong>6</strong> for the simulation
+          container with or without Hummingbird; the sidecar keeps its own small CPU request. Lower values schedule but navigation
+          becomes slow or jerky (simulation runs below real-time). The UI allows up to 64; the scheduler will keep the pod
+          Pending if the request exceeds what the node can fit.
         </div>
         <div>
           <strong>Hummingbird nginx sidecar</strong> — Optional checkbox that adds a

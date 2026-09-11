@@ -12,6 +12,11 @@ export interface SimulationConfig {
   baseImage: SimulationBaseImageSelection;
   /** Arbitrary parent image reference when baseImage is `custom`. */
   customBaseImage?: string;
+  customBaseOsFamily?: string;
+  customBaseOsVersion?: string;
+  customBaseRosDistro?: string;
+  customSimulationTemplateId?: string;
+  customSimulationMode?: 'preset' | 'packages';
   /**
    * Target architecture for the build. When set and different from the host,
    * the build runs under emulation. Cross-arch images get an arch-suffixed tag

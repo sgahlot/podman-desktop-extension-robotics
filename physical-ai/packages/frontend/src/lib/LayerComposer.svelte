@@ -23,6 +23,7 @@ import {
   archTagSuffix,
 } from '/@shared/src/types/SimulationProfiles';
 import { defaultBaseImageForDistro, shortImageRef } from '/@shared/src/types/SimulationBaseImages';
+import { CUSTOM_SIMULATION_TEMPLATES } from '/@shared/src/types/CustomSimulationTemplates';
 import type { SimulationConfig, TargetArch } from '/@shared/src/types/SimulationConfig';
 import { physicalAiClient } from '../api/client';
 import { onMount, onDestroy } from 'svelte';
@@ -31,9 +32,13 @@ import BuildPushPanel from './BuildPushPanel.svelte';
 let selection: LayerSelection = {
   baseOs: 'ubuntu-noble',
   customBaseImage: '',
+  customBaseOsFamily: '',
+  customBaseOsVersion: '',
+  customBaseRosDistro: '',
   hardened: 'none',
   ros: 'ros2-jazzy',
   sim: 'gazebo-nav2-tb3',
+  customSimulationTemplateId: CUSTOM_SIMULATION_TEMPLATES[0].id,
   hummingbirdApps: [],
 };
 
@@ -47,6 +52,8 @@ let attemptAnyway = false;
 // so the Target toggle silently did nothing in Layers mode).
 export let targetArch: TargetArch;
 export let hostArch: TargetArch;
+/** Shared Quick Start selection from the Image Builder shell. */
+export let quickStartId: string | undefined = undefined;
 /** Notifies the parent (SimulationSetup, which owns the BuildHistoryPanel instance) that a
  * build here just finished, so the Recent Builds list can refresh — this panel has no
  * history view of its own (APPENG-6265: previously missing entirely, so a Layers build
@@ -58,13 +65,47 @@ export let onBuildComplete: ((opts: { watchForSbom: boolean }) => void) | undefi
 // Environment loaded once on mount.
 let ns = '';
 let localImages: string[] = [];
+let appliedQuickStartId = '';
+
+$: if (quickStartId && quickStartId !== appliedQuickStartId) {
+  appliedQuickStartId = quickStartId;
+  selection = {
+    ...selection,
+    baseOs: 'ubuntu-noble',
+    customBaseImage: '',
+    ros: 'ros2-jazzy',
+    sim: 'gazebo-nav2-tb3',
+  };
+}
 
 $: result = evaluateStack(selection);
 $: containerfile = generateLayerContainerfile(selection);
-$: baseOsNote = BASE_OS_OPTIONS.find(o => o.id === selection.baseOs)?.note ?? '';
+$: baseOsNote =
+  selection.sim === 'custom-template' && selection.baseOs === 'custom'
+    ? `Expected parent: ${selectedCustomTemplate.osFamily} ${selectedCustomTemplate.osVersion} with ROS 2 ${selectedCustomTemplate.rosDistro}`
+    : (BASE_OS_OPTIONS.find(o => o.id === selection.baseOs)?.note ?? '');
 $: hardenedNote = HARDENED_OPTIONS.find(o => o.id === selection.hardened)?.note ?? '';
 $: rosNote = ROS_OPTIONS.find(o => o.id === selection.ros)?.note ?? '';
 $: simNote = SIM_OPTIONS.find(o => o.id === selection.sim)?.note ?? '';
+$: selectedCustomTemplate =
+  CUSTOM_SIMULATION_TEMPLATES.find(t => t.id === selection.customSimulationTemplateId) ??
+  CUSTOM_SIMULATION_TEMPLATES[0];
+$: customTemplateSupportsTarget =
+  selection.sim !== 'custom-template' || selectedCustomTemplate.architectures.includes(targetArch);
+$: otherArch = (hostArch === 'amd64' ? 'arm64' : 'amd64') as TargetArch;
+$: otherArchLabel = otherArch === 'amd64' ? 'amd64 (for OpenShift)' : `${otherArch} (cross-build)`;
+$: if (selection.baseOs === 'custom' && selection.sim === 'custom-template' && selection.ros !== 'provided-by-parent') {
+  selection.ros = 'provided-by-parent';
+}
+
+function syncSimulationSource(): void {
+  if (selection.sim === 'custom-template') {
+    selection.ros = 'provided-by-parent';
+  } else {
+    // Reset to default when switching away from custom-template
+    selection.ros = 'ros2-jazzy';
+  }
+}
 $: baseOsLabel =
   selection.baseOs === 'custom'
     ? selection.customBaseImage?.trim()
@@ -74,12 +115,14 @@ $: baseOsLabel =
 $: bannerClass =
   result.level === 'ok' ? 'pai-banner-success' : result.level === 'warn' ? 'pai-banner-warning' : 'pai-banner-error';
 $: bannerHeadline =
-  result.level === 'ok'
-    ? '✅ Ready — builds and runs today'
-    : result.level === 'warn'
-      ? '⚠️ Builds, but not a working robotics image'
-      : "❌ Won't build";
-$: buildDisabled = result.level === 'blocked' && !attemptAnyway;
+  selection.sim === 'custom-template' && result.buildable
+    ? '⚠️ Template contract selected · parent not verified'
+    : result.level === 'ok'
+      ? '✅ Ready — builds and runs today'
+      : result.level === 'warn'
+        ? '⚠️ Builds, but not a working robotics image'
+        : "❌ Won't build";
+$: buildDisabled = (result.level === 'blocked' && !attemptAnyway) || !customTemplateSupportsTarget;
 
 // Reset the escape hatch whenever the selection changes so a previously-blocked
 // "attempt anyway" choice doesn't silently carry over to a new combination.
@@ -232,14 +275,21 @@ onDestroy(() => {
           {/each}
         </select>
         {#if selection.baseOs === 'custom'}
-          <input
-            id="layer-custom-base-image"
-            aria-label="Custom base image"
-            bind:value={selection.customBaseImage}
-            placeholder="e.g. docker.io/library/ubuntu:24.04"
-            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]" />
+          <div class="flex flex-col gap-3 mt-1 pl-3 border-l border-[var(--pd-content-card-border)]">
+            <div class="flex flex-col gap-1">
+              <input
+                id="layer-custom-base-image"
+                aria-label="Custom base image"
+                bind:value={selection.customBaseImage}
+                placeholder="e.g. docker.io/library/ubuntu:24.04"
+                class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]" />
+              <span class="text-xs pai-text-muted">{baseOsNote}</span>
+            </div>
+          </div>
         {/if}
-        <span class="text-xs pai-text-muted">{baseOsNote}</span>
+        {#if selection.baseOs !== 'custom'}
+          <span class="text-xs pai-text-muted">{baseOsNote}</span>
+        {/if}
       </div>
 
       <div class="flex flex-col gap-1">
@@ -304,11 +354,53 @@ onDestroy(() => {
       </div>
 
       <div class="flex flex-col gap-1">
-        <label for="layer-ros" class="text-xs text-[var(--pd-content-text)]">ROS</label>
+        <label for="layer-sim" class="text-xs text-[var(--pd-content-text)]">Simulation</label>
+        <select
+          id="layer-sim"
+          bind:value={selection.sim}
+          on:change={syncSimulationSource}
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+          {#each SIM_OPTIONS as o}
+            <option value={o.id}>{o.label}</option>
+          {/each}
+        </select>
+        <span class="text-xs pai-text-muted">{simNote}</span>
+        {#if selection.sim === 'custom-template' && selection.baseOs === 'custom'}
+          <div class="flex flex-col gap-3 mt-1 pl-3 border-l border-[var(--pd-content-card-border)]">
+            <div class="flex flex-col gap-1">
+              <label for="layer-simulation-template" class="text-xs text-[var(--pd-content-text)]"
+                >Registered simulation template</label>
+              <select
+                id="layer-simulation-template"
+                bind:value={selection.customSimulationTemplateId}
+                aria-label="Simulation template"
+                class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+                {#each CUSTOM_SIMULATION_TEMPLATES as template}
+                  <option value={template.id}>{template.label}</option>
+                {/each}
+              </select>
+              <span class="text-xs pai-text-warning"
+                >{selectedCustomTemplate.capability}: {selectedCustomTemplate.packages.join(', ')}</span>
+              <span class="text-xs text-[var(--pd-content-text)] opacity-80">
+                Required parent: {selectedCustomTemplate.osFamily}
+                {selectedCustomTemplate.osVersion} · ROS 2
+                {selectedCustomTemplate.rosDistro} · {selectedCustomTemplate.packageManager}. ROS is provided by the
+                custom parent.
+              </span>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label for="layer-ros" class="text-xs text-[var(--pd-content-text)]">
+          {selection.sim === 'custom-template' ? 'ROS source (derived from template)' : 'ROS'}
+        </label>
         <select
           id="layer-ros"
           bind:value={selection.ros}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+          disabled={selection.sim === 'custom-template'}
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] disabled:opacity-70">
           {#each ROS_OPTIONS as o}
             <option value={o.id}>{o.label}</option>
           {/each}
@@ -317,16 +409,24 @@ onDestroy(() => {
       </div>
 
       <div class="flex flex-col gap-1">
-        <label for="layer-sim" class="text-xs text-[var(--pd-content-text)]">Simulation</label>
+        <label for="layer-target-arch" class="text-xs text-[var(--pd-content-text)]">Target architecture</label>
         <select
-          id="layer-sim"
-          bind:value={selection.sim}
+          id="layer-target-arch"
+          bind:value={targetArch}
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-          {#each SIM_OPTIONS as o}
-            <option value={o.id}>{o.label}</option>
-          {/each}
+          <option value={hostArch}>This machine ({hostArch})</option>
+          <option value={otherArch}>{otherArchLabel}</option>
         </select>
-        <span class="text-xs pai-text-muted">{simNote}</span>
+        <span class="text-xs text-[var(--pd-content-text)] opacity-80">
+          The selected architecture controls the image platform, regardless of the tag you enter. OpenShift requires
+          <span class="font-mono">amd64</span>.
+        </span>
+        {#if !customTemplateSupportsTarget}
+          <span class="text-xs pai-text-error">
+            The selected template supports {selectedCustomTemplate.architectures.join(' and ')} only. Choose a supported target
+            before building.
+          </span>
+        {/if}
       </div>
     </div>
   </div>
@@ -494,6 +594,7 @@ onDestroy(() => {
           physicalAiClient.buildFromContainerfile(t, containerfile, platformForArch(targetArch), {
             generateSbom: selectedHbApps.includes('syft'),
             sbomFormat,
+            layerPlan: layerCachePlan,
           })}
         onBuildComplete={() => {
           void refreshLocalImages();

@@ -181,7 +181,7 @@ describe('buildOpenShiftManifests', () => {
       .requests.cpu;
     const customCpu = (deploymentCustom as unknown as DeploymentManifest).spec.template.spec.containers[0].resources
       .requests.cpu;
-    expect(defaultCpu).toBe('7');
+    expect(defaultCpu).toBe('6');
     expect(customCpu).toBe('6');
   });
 
@@ -195,10 +195,9 @@ describe('buildOpenShiftManifests', () => {
     expect(env.PHYSICAL_AI_USE_GPU).toBe('1');
     expect(container.resources.limits['nvidia.com/gpu']).toBe('1');
     // The GPU offloads only sensor rendering; the GUI stays software on a no-DRI
-    // cluster, so the pod is guaranteed GPU_POD_CPU cores (requests == limits) —
-    // the most an 8-vCPU g5.2xlarge GPU node fits.
-    expect(container.resources.requests.cpu).toBe('7');
-    expect(container.resources.limits.cpu).toBe('7');
+    // cluster, so the pod is guaranteed GPU_POD_CPU cores (requests == limits).
+    expect(container.resources.requests.cpu).toBe('6');
+    expect(container.resources.limits.cpu).toBe('6');
   });
 
   it('tolerates the default GPU-node taint when useGpu is set', () => {

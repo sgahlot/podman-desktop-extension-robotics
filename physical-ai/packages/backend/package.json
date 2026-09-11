@@ -1,6 +1,6 @@
 {
-  "name": "physical-ai",
-  "displayName": "Physical AI",
+  "name": "physical-ai-appeng-6313",
+  "displayName": "Physical AI (APPENG-6313)",
   "description": "Podman Desktop extension for Physical AI robotics development",
   "version": "0.1.0",
   "icon": "icon.png",
@@ -99,6 +99,35 @@
           "default": "",
           "description": "Arbitrary parent image reference used when the Custom base image is selected"
         },
+        "physical-ai.simulation.customBaseOsFamily": {
+          "type": "string",
+          "default": "",
+          "description": "Declared OS family for a custom simulation parent"
+        },
+        "physical-ai.simulation.customBaseOsVersion": {
+          "type": "string",
+          "default": "",
+          "description": "Declared OS version for a custom simulation parent"
+        },
+        "physical-ai.simulation.customBaseRosDistro": {
+          "type": "string",
+          "default": "",
+          "description": "Declared ROS distro for a custom simulation parent"
+        },
+        "physical-ai.simulation.customSimulationTemplateId": {
+          "type": "string",
+          "default": "",
+          "description": "Registered simulation template for a custom parent"
+        },
+        "physical-ai.simulation.customSimulationMode": {
+          "type": "string",
+          "enum": [
+            "preset",
+            "packages"
+          ],
+          "default": "preset",
+          "description": "Simulation recipe source for a custom parent"
+        },
         "physical-ai.simulation.gpuPassthrough": {
           "type": "boolean",
           "default": true,
@@ -138,16 +167,16 @@
         "physical-ai.build.layout": {
           "type": "string",
           "enum": [
-            "pipeline",
-            "guided",
+            "presets",
+            "customize",
             "layers"
           ],
           "enumDescriptions": [
-            "Single-page pipeline: base image (Step 1) and simulation image (Step 2) shown together",
-            "Guided chooser: pick whether to build the base image, the simulation image, or both",
+            "Opinionated known-good recipes with Quick Start actions",
+            "Customize the base and simulation layer sources independently",
             "Layers — compose an image from base OS + hardened + ROS + simulation layers (experimental)"
           ],
-          "default": "guided",
+          "default": "presets",
           "description": "Layout for the Image Builder page"
         },
         "physical-ai.build.historyLimit": {
@@ -171,7 +200,7 @@
           "minimum": 1,
           "maximum": 64,
           "default": 8,
-          "description": "Default guaranteed CPU count (requests == limits) for the OpenShift sim container on the software-render path. Seeds the Guaranteed CPUs (sim container) field on the Simulation → OpenShift tab, where it can still be adjusted per deploy (including on the GPU path, which defaults to 7). An N-CPU pod only schedules on a node with ≥ N allocatable CPU."
+          "description": "Default guaranteed CPU count (requests == limits) for the OpenShift sim container on the software-render path. Seeds the Guaranteed CPUs (sim container) field on the Simulation → OpenShift tab, where it can still be adjusted per deploy (including on the GPU path, which defaults to 6). An N-CPU pod only schedules on a node with ≥ N allocatable CPU."
         },
         "physical-ai.openshift.deployImageAllowlist": {
           "type": "string",

@@ -92,15 +92,11 @@ export const DEFAULT_SW_RENDER_CPU = 8;
  * process alone burns ~3 cores of llvmpipe at idle) and active Nav2 adds ~1.5
  * more. At 6 the pod throttled ~97% of scheduling periods even at idle (measured
  * live), so first-move lagged ~20s and motion was jumpy. 7 (requests==limits) is
- * the most a g5.2xlarge fits — 7000m pod + ~474m node-system = ~7474m < ~7500m
- * allocatable, i.e. the node's last free core — and gives idle demand headroom so
- * the throttle eases. Still bounded by the 8-vCPU GPU node, which can't match the
- * 8-CPU software-render path on a bigger node (see the story5/item-5 notes): real
- * smoothness on this path needs a larger GPU node or a /dev/dri render node so the
- * GUI itself can render on the GPU. Not user-configurable — GPU node size, not
- * preference, bounds it.
+ * Six guaranteed cores produced smooth validated navigation and leaves scheduling
+ * room for optional sidecars on an 8-vCPU GPU node. The per-deploy field remains
+ * user-configurable for different node sizes.
  */
-export const GPU_POD_CPU = 7;
+export const GPU_POD_CPU = 6;
 
 /** Validate a user-supplied CPU count: a whole number of cores in a sane range. */
 export function assertCpuCount(cpu: number): number {

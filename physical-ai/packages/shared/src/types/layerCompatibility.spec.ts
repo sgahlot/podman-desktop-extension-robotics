@@ -33,6 +33,51 @@ describe('evaluateStack', () => {
     expect(result.buildable).toBe(true);
   });
 
+  it('accepts a Fedora/Lyrical custom parent with the registered packages-only template', () => {
+    const result = evaluateStack(
+      sel({
+        baseOs: 'custom',
+        customBaseImage: 'quay.io/lrossett/ros2:f43-full-desktop',
+        customBaseOsFamily: 'Fedora',
+        customBaseOsVersion: '43',
+        customBaseRosDistro: 'lyrical',
+        ros: 'provided-by-parent',
+        sim: 'custom-template',
+        customSimulationTemplateId: 'fedora43-lyrical-dnf',
+      }),
+    );
+    expect(result.level).toBe('warn');
+    expect(result.buildable).toBe(true);
+    expect(
+      generateLayerContainerfile({
+        ...sel({
+          baseOs: 'custom',
+          customBaseImage: 'quay.io/lrossett/ros2:f43-full-desktop',
+          ros: 'provided-by-parent',
+          sim: 'custom-template',
+          customSimulationTemplateId: 'fedora43-lyrical-dnf',
+        }),
+      }),
+    ).toContain('ros-lyrical-ros-gz-sim');
+  });
+
+  it('treats the registered template contract as unverified instead of inferring parent metadata', () => {
+    const result = evaluateStack(
+      sel({
+        baseOs: 'custom',
+        customBaseImage: 'quay.io/lrossett/ros2:f43-full-desktop',
+        customBaseOsFamily: 'Ubuntu',
+        customBaseOsVersion: '24.04',
+        customBaseRosDistro: 'jazzy',
+        ros: 'provided-by-parent',
+        sim: 'custom-template',
+        customSimulationTemplateId: 'fedora43-lyrical-dnf',
+      }),
+    );
+    expect(result.level).toBe('warn');
+    expect(result.buildable).toBe(true);
+  });
+
   it('ubuntu + jazzy + sim is a known-good combination', () => {
     const result = evaluateStack(sel({ baseOs: 'ubuntu-noble', ros: 'ros2-jazzy', sim: 'gazebo-nav2-tb3' }));
     expect(result.level).toBe('ok');
