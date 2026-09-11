@@ -953,6 +953,18 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
       </div>
 
       <div class="flex flex-col gap-1">
+        <label for="oc-middleware" class="text-xs text-[var(--pd-content-text)]">Middleware</label>
+        <select
+          id="oc-middleware"
+          bind:value={middleware}
+          disabled={deploying}
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]">
+          <option value="dds">DDS (default)</option>
+          <option value="zenoh">Zenoh</option>
+        </select>
+      </div>
+
+      <div class="flex flex-col gap-1">
         <label class="flex flex-row items-center gap-2 text-sm text-[var(--pd-content-text)]">
           <input
             type="checkbox"

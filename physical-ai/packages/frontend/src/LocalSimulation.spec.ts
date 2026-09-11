@@ -101,20 +101,22 @@ describe('LocalSimulation', () => {
     });
   });
 
-  it('passes RMW_IMPLEMENTATION=rmw_zenoh_cpp when the sim config selects zenoh middleware', async () => {
+  it('passes RMW_IMPLEMENTATION=rmw_zenoh_cpp when the user selects zenoh middleware', async () => {
     mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
     mockListSimulationContainers.mockResolvedValue([]);
     mockGetSimulationConfig.mockResolvedValue({
       robot: 'turtlebot3',
       distro: 'jazzy',
-      middleware: 'zenoh',
+      middleware: 'dds',
       engine: 'gazebo',
       baseImage: 'jazzy-noble',
     });
 
     render(SimulationPage);
-    const launchBtn = await screen.findByRole('button', { name: 'Launch' });
+    const middlewareSelect = await screen.findByRole('combobox', { name: 'Middleware' });
+    await fireEvent.change(middlewareSelect, { target: { value: 'zenoh' } });
 
+    const launchBtn = await screen.findByRole('button', { name: 'Launch' });
     await fireEvent.click(launchBtn);
     await waitFor(() => {
       expect(mockLaunchSimulation).toHaveBeenCalledWith(SIM_IMAGE, '', {

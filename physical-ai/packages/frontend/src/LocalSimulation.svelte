@@ -15,6 +15,7 @@ import { clearCachedDiagnostics } from './lib/robotDiagnosticsCache';
 
 let localSimImages: string[] = [];
 let selectedImage = '';
+let selectedMiddleware: 'dds' | 'zenoh' = 'dds';
 let containers: SimContainerInfo[] = [];
 let launching = false;
 let launchError = '';
@@ -124,9 +125,8 @@ async function launchSim() {
     // selecting zenoh is just an extra env var — entrypoint-gazebo.sh starts the Zenoh
     // router (rmw_zenohd) when it sees this set. Keep passing undefined for the
     // dds/default case so existing behavior (and its test snapshot) is unchanged.
-    const simConfig = await physicalAiClient.getSimulationConfig();
     const launchOptions =
-      simConfig.middleware === 'zenoh' ? { env: { RMW_IMPLEMENTATION: 'rmw_zenoh_cpp' } } : undefined;
+      selectedMiddleware === 'zenoh' ? { env: { RMW_IMPLEMENTATION: 'rmw_zenoh_cpp' } } : undefined;
     await physicalAiClient.launchSimulation(selectedImage, '', launchOptions);
     spawnedRobots = [];
     await pollContainers();
@@ -352,6 +352,16 @@ function diagnoseRobot(index: number): void {
           {#each localSimImages as img}
             <option value={img}>{img}</option>
           {/each}
+        </select>
+
+        <label for="middleware" class="text-xs text-[var(--pd-content-text)]">Middleware</label>
+        <select
+          id="middleware"
+          bind:value={selectedMiddleware}
+          disabled={launching || hasRunning}
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]">
+          <option value="dds">DDS (default)</option>
+          <option value="zenoh">Zenoh</option>
         </select>
 
         <button
