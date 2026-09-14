@@ -653,7 +653,11 @@ function cancelQuickStart() {
         bind:targetArch={targetArch}
         hostArch={hostArch}
         quickStartId={appliedQuickStartId}
-        onBuildComplete={({ watchForSbom }) => void buildHistoryPanel?.refreshAfterBuild(watchForSbom)} />
+        onBuildComplete={({ watchForSbom }) => {
+          void buildHistoryPanel?.refreshAfterBuild(watchForSbom);
+          // Refresh image existence check so parent can detect newly built images
+          refreshImageExistence(`${baseTag}|${simTag}`);
+        }} />
     {/if}
 
     <hr class="border-[var(--pd-content-card-border)] my-2" />
