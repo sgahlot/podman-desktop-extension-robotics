@@ -293,7 +293,8 @@ async function applyQuickStart(id: QuickStartId = 'local-jazzy') {
     selected.base.kind === 'preset'
       ? (selected.base.presetId as SimulationBaseImageSelection)
       : DEFAULT_SIMULATION_BASE_IMAGE;
-  if (selected.targetArch) targetArch = selected.targetArch;
+  // Set targetArch based on quick start: local → native, openshift → amd64
+  targetArch = id === 'local-jazzy' ? hostArch : 'amd64';
   appliedQuickStartId = id;
   showQuickStartConfirm = false;
   // Record what we just applied
