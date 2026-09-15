@@ -31,6 +31,15 @@ import {
   QUICK_STARTS,
   type QuickStartId,
 } from '/@shared/src/types/QuickStarts';
+
+// Quick Start defaults — all quick starts apply these same values
+const QUICK_START_DEFAULTS = {
+  robot: 'turtlebot3',
+  distro: 'jazzy',
+  middleware: 'dds',
+  engine: 'gazebo',
+  baseImage: 'jazzy-noble' as SimulationBaseImageSelection,
+};
 import type { ImageBuilderRecipe } from '/@shared/src/types/ImageBuilderRecipe';
 import { customSimulationImageTag } from '/@shared/src/types/imageBuilderPlan';
 
@@ -70,11 +79,14 @@ let simImageExists = false;
 let existsCheckKey = '';
 
 let optionsExpanded = false;
+let configurationExpanded = false;
 
 let showQuickStartConfirm = false;
 let appliedQuickStartId: QuickStartId | undefined;
 let pendingQuickStartId: QuickStartId = 'local-jazzy';
 let selectedQuickStartId: QuickStartId = 'local-jazzy';
+let quickStartChanges: string[] = [];
+let lastAppliedConfig = { ...QUICK_START_DEFAULTS };
 
 let layout: 'presets' | 'layers' = 'presets';
 let buildChoice: 'base' | 'sim' | 'both' | undefined = undefined;
@@ -251,6 +263,17 @@ function handleCustomSimulationTemplateChange(): void {
   if (customSimulationMode === 'packages') distro = customSimulationTemplate.rosDistro;
 }
 
+function getQuickStartChanges(): string[] {
+  const changes: string[] = [];
+  if (robot !== QUICK_START_DEFAULTS.robot) changes.push(`Robot: ${robot} → TurtleBot3`);
+  if (distro !== QUICK_START_DEFAULTS.distro) changes.push(`ROS distro: ${distro} → Jazzy`);
+  if (middleware !== QUICK_START_DEFAULTS.middleware) changes.push(`Middleware: ${middleware} → DDS`);
+  if (engine !== QUICK_START_DEFAULTS.engine) changes.push(`Engine: ${engine} → Gazebo`);
+  if (baseImage !== QUICK_START_DEFAULTS.baseImage)
+    changes.push(`Base image: ${basePreset.label} → Ubuntu 24.04 Noble (multi-arch)`);
+  return changes;
+}
+
 async function applyQuickStart(id: QuickStartId = 'local-jazzy') {
   const selected = applyRecipeQuickStart(
     {
@@ -270,9 +293,12 @@ async function applyQuickStart(id: QuickStartId = 'local-jazzy') {
     selected.base.kind === 'preset'
       ? (selected.base.presetId as SimulationBaseImageSelection)
       : DEFAULT_SIMULATION_BASE_IMAGE;
-  if (selected.targetArch) targetArch = selected.targetArch;
+  // Set targetArch based on quick start: local → native, openshift → amd64
+  targetArch = id === 'local-jazzy' ? hostArch : 'amd64';
   appliedQuickStartId = id;
   showQuickStartConfirm = false;
+  // Record what we just applied
+  lastAppliedConfig = { robot, distro, middleware, engine, baseImage };
   // Target arch comes from the Target toggle, not from Quick Start.
   // Let reactive tags update before save
   await tick();
@@ -283,10 +309,21 @@ async function applyQuickStart(id: QuickStartId = 'local-jazzy') {
 function onQuickStartClick(id: QuickStartId = 'local-jazzy') {
   selectedQuickStartId = id;
   pendingQuickStartId = id;
-  if (id === appliedQuickStartId) {
-    // Already applied — no change needed.
+
+  const currentConfig = { robot, distro, middleware, engine, baseImage };
+  const configChanged =
+    currentConfig.robot !== lastAppliedConfig.robot ||
+    currentConfig.distro !== lastAppliedConfig.distro ||
+    currentConfig.middleware !== lastAppliedConfig.middleware ||
+    currentConfig.engine !== lastAppliedConfig.engine ||
+    currentConfig.baseImage !== lastAppliedConfig.baseImage;
+
+  if (!configChanged) {
+    // Config matches what was last applied — apply directly without confirmation
     void applyQuickStart(id);
   } else {
+    // Config differs — show confirmation with what will change
+    quickStartChanges = getQuickStartChanges();
     showQuickStartConfirm = true;
   }
 }
@@ -336,14 +373,16 @@ function cancelQuickStart() {
       </button>
     </div>
 
+    <!-- Preset configuration controls (Presets layout only) -->
+
     <!-- Quick Start only in Presets layout -->
     {#if layout === 'presets'}
       <div
         class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-md flex flex-col gap-2">
         <h2 class="text-sm font-medium text-[var(--pd-content-header)]">Quick Start</h2>
         <p class="text-xs text-[var(--pd-content-text)]">
-          TurtleBot3 + Jazzy — the recommended configuration for the simulation demo. Applies the recommended
-          configuration to the preset.
+          TurtleBot3 + Jazzy — the recommended configuration for the simulation demo. Use the Target toggle above to
+          choose this machine or amd64 (for OpenShift).
         </p>
         <div class="flex flex-row gap-2 flex-wrap">
           {#each QUICK_STARTS as quickStart}
@@ -367,6 +406,13 @@ function cancelQuickStart() {
             <span class="text-xs pai-text-warning">
               This will replace the current builder configuration with the selected Quick Start.
             </span>
+            {#if quickStartChanges.length > 0}
+              <div class="text-xs text-[var(--pd-content-text)] flex flex-col gap-1 ml-2">
+                {#each quickStartChanges as change}
+                  <span>• {change}</span>
+                {/each}
+              </div>
+            {/if}
             {#if pendingQuickStartId === 'openshift-jazzy-amd64'}
               <span class="text-xs pai-text-warning">
                 &#9888; amd64 is required for OpenShift deployment. Cross-building on a {hostArch} host uses QEMU emulation
@@ -382,6 +428,76 @@ function cancelQuickStart() {
               </button>
               <button on:click={cancelQuickStart} disabled={buildBusy || saving} class="pai-btn"> Cancel </button>
             </div>
+          </div>
+        {/if}
+      </div>
+    {/if}
+
+    <!-- Configuration panel (Presets layout only), collapsed by default -->
+    {#if layout === 'presets'}
+      <div
+        class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-md flex flex-col gap-3">
+        <button
+          on:click={() => (configurationExpanded = !configurationExpanded)}
+          disabled={buildBusy}
+          class="flex flex-row items-center justify-between text-sm font-medium text-[var(--pd-content-header)] hover:opacity-80 disabled:opacity-50">
+          <span>Configuration</span>
+          <span class="text-xs">{configurationExpanded ? '▼' : '▶'}</span>
+        </button>
+
+        {#if configurationExpanded}
+          <!-- Robot type (single option for now) -->
+          <div class="flex flex-col gap-1">
+            <label for="robot-preset" class="text-xs text-[var(--pd-content-text)]">Robot type</label>
+            <select
+              id="robot-preset"
+              bind:value={robot}
+              disabled={buildBusy}
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+              <option value="turtlebot3">TurtleBot3</option>
+            </select>
+          </div>
+
+          <!-- ROS distro -->
+          <div class="flex flex-col gap-1">
+            <label for="distro-preset" class="text-xs text-[var(--pd-content-text)]">ROS distro</label>
+            <select
+              id="distro-preset"
+              bind:value={distro}
+              disabled={buildBusy}
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+              <option value="humble">Humble (simulation/desktop)</option>
+              <option value="jazzy">Jazzy (simulation)</option>
+            </select>
+          </div>
+
+          <!-- Simulation engine (single option) -->
+          <div class="flex flex-col gap-1">
+            <label for="engine-preset" class="text-xs text-[var(--pd-content-text)]">Simulation engine</label>
+            <select
+              id="engine-preset"
+              bind:value={engine}
+              disabled={buildBusy}
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+              <option value="gazebo">Gazebo</option>
+            </select>
+          </div>
+
+          <!-- Base image -->
+          <div class="flex flex-col gap-1">
+            <label for="baseImage-preset" class="text-xs text-[var(--pd-content-text)]">Base image</label>
+            <select
+              id="baseImage-preset"
+              bind:value={baseImage}
+              disabled={buildBusy}
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+              {#each availableBaseImages as img}
+                <option value={img.id}>{img.label}</option>
+              {/each}
+            </select>
+            <span class="text-xs text-[var(--pd-content-text)] opacity-80">
+              {basePreset.label}
+            </span>
           </div>
         {/if}
       </div>
@@ -537,7 +653,11 @@ function cancelQuickStart() {
         bind:targetArch={targetArch}
         hostArch={hostArch}
         quickStartId={appliedQuickStartId}
-        onBuildComplete={({ watchForSbom }) => void buildHistoryPanel?.refreshAfterBuild(watchForSbom)} />
+        onBuildComplete={({ watchForSbom }) => {
+          void buildHistoryPanel?.refreshAfterBuild(watchForSbom);
+          // Refresh image existence check so parent can detect newly built images
+          refreshImageExistence(`${baseTag}|${simTag}`);
+        }} />
     {/if}
 
     <hr class="border-[var(--pd-content-card-border)] my-2" />

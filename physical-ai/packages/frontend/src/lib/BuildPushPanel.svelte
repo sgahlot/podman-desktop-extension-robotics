@@ -24,6 +24,8 @@ import LayerCacheCake from './LayerCacheCake.svelte';
 export let buildImage: (tag: string) => Promise<void>;
 /** Image tag — bind from parent. Parent updates are adopted when idle (not building/pushing). */
 export let tag = '';
+/** Actual tag currently in the input field (what will be built). Bind from parent to track user edits. */
+export let actualTag = '';
 export let tagPlaceholder = 'e.g. quay.io/org/image:latest';
 export let tagInputId = 'image-tag';
 /** True while a build or push is in progress — bind from parent to freeze wizard controls. */
@@ -39,6 +41,9 @@ let inputValue = tag;
 let lastSyncedTag = tag;
 
 let imageExistsLocally = false;
+
+// Expose the actual tag being edited (what will be built) for parent to check existence
+$: actualTag = inputValue;
 /** null = not checked / N/A; true/false = Quay tag presence for quay.io refs */
 let imageExistsInRegistry: boolean | null = null;
 let registryCheckError = false;

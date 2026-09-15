@@ -125,18 +125,22 @@ describe('SimulationSetup (Image Builder)', () => {
     });
   });
 
-  it('Quick Start saves jazzy config (arch from the Target toggle, defaults to host)', async () => {
+  it('Quick Start saves jazzy config (arch defaults to host)', async () => {
     Element.prototype.scrollIntoView = vi.fn();
+    mockGetSimulationConfig.mockResolvedValue({
+      robot: 'turtlebot3',
+      distro: 'jazzy',
+      middleware: 'dds',
+      engine: 'gazebo',
+      baseImage: 'jazzy-noble',
+    });
     render(SimulationSetup);
     await waitFor(() => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
 
-    // Default loaded config (humble/sloretz) differs from the preset, so clicking
-    // Quick Start surfaces a confirmation instead of saving immediately.
+    // Dropdowns show jazzy/jazzy-noble, matching Quick Start — saves immediately without confirmation
     await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
-    expect(mockSaveSimulationConfig).not.toHaveBeenCalled();
-    await fireEvent.click(await screen.findByRole('button', { name: 'Apply Quick Start' }));
 
     await waitFor(() => {
       expect(mockSaveSimulationConfig).toHaveBeenCalledWith(
@@ -152,20 +156,22 @@ describe('SimulationSetup (Image Builder)', () => {
     });
   });
 
-  it('toggling Target to amd64 in Customize then Quick Start saves jazzy config targeting amd64', async () => {
+  it('Quick Start button applies current dropdown config', async () => {
     Element.prototype.scrollIntoView = vi.fn();
-    mockGetImageBuilderLayout.mockResolvedValue('layers');
+    mockGetSimulationConfig.mockResolvedValue({
+      robot: 'turtlebot3',
+      distro: 'jazzy',
+      middleware: 'dds',
+      engine: 'gazebo',
+      baseImage: 'jazzy-noble',
+    });
     render(SimulationSetup);
     await waitFor(() => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
 
-    // Change target arch in Customize, then switch to Presets to apply Quick Start
-    const targetSelect = screen.getByLabelText('Target architecture') as HTMLSelectElement;
-    await fireEvent.change(targetSelect, { target: { value: 'amd64' } });
-    await fireEvent.click(screen.getByRole('tab', { name: 'Presets' }));
+    // Click Quick Start button — with jazzy/jazzy-noble config already loaded, saves immediately
     await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
-    await fireEvent.click(await screen.findByRole('button', { name: 'Apply Quick Start' }));
 
     await waitFor(() => {
       expect(mockSaveSimulationConfig).toHaveBeenCalledWith(
@@ -175,7 +181,7 @@ describe('SimulationSetup (Image Builder)', () => {
           middleware: 'dds',
           engine: 'gazebo',
           baseImage: 'jazzy-noble',
-          targetArch: 'amd64',
+          targetArch: 'arm64',
         }),
       );
     });

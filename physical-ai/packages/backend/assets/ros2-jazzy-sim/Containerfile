@@ -89,6 +89,7 @@ COPY entrypoint-nav2.sh /entrypoint-nav2.sh
 COPY lib/validate-input.sh /usr/local/lib/physical-ai/validate-input.sh
 COPY lib/load-validate-input.sh /usr/local/lib/physical-ai/load-validate-input.sh
 COPY lib/patch-nav2-params.py /usr/local/lib/physical-ai/patch-nav2-params.py
+COPY config/cyclonedds-qos.xml /opt/ros2-demo/config/cyclonedds-qos.xml
 COPY worlds/ /opt/ros2-demo/worlds/
 COPY www/ /opt/ros2-demo/www/
 

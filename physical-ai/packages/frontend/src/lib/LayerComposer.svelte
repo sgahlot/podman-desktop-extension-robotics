@@ -165,8 +165,15 @@ $: presetHardenedTag = needsHardened && ns ? (hardenedImageTag(ns, presetConfig)
 $: presetSimTag = ns ? (simulationImageTag(ns, presetConfig) ?? '') : '';
 $: wantsSim = selection.sim !== 'none';
 $: needsHardened = bakeInTools.length > 0;
-$: baseImageExists = !!presetBaseTag && localImages.includes(presetBaseTag);
-$: hardenedImageExists = !!presetHardenedTag && localImages.includes(presetHardenedTag);
+
+// Track the actual tags being used (may differ from preset if user edited them)
+let baseTag = presetBaseTag;
+let hardenedTag = presetHardenedTag;
+let simTag = presetSimTag;
+
+// Check existence against the actual tags (what the user built), not the presets
+$: baseImageExists = !!baseTag && localImages.includes(baseTag);
+$: hardenedImageExists = !!hardenedTag && localImages.includes(hardenedTag);
 $: simParentReady = baseImageExists && (!needsHardened || hardenedImageExists);
 $: containerfileTag = `${ns ? `quay.io/${ns}/` : ''}pai-layer-${selection.baseOs}:latest${archTagSuffix(targetArch)}`;
 
@@ -506,6 +513,7 @@ onDestroy(() => {
         <BuildPushPanel
           tagInputId="layer-base-tag"
           tag={presetBaseTag}
+          bind:actualTag={baseTag}
           tagPlaceholder="e.g. quay.io/org/ros2-base:latest"
           buildImage={t => physicalAiClient.buildBaseImage(t, presetConfig, { layerPlan: layerCachePlanBase })}
           onBuildComplete={() => {
@@ -525,6 +533,7 @@ onDestroy(() => {
           <BuildPushPanel
             tagInputId="layer-hardened-tag"
             tag={presetHardenedTag}
+            bind:actualTag={hardenedTag}
             tagPlaceholder="e.g. quay.io/org/ros2-jazzy-hardened:noble"
             buildImage={t =>
               physicalAiClient.buildHardenedImage(t, presetConfig, {
@@ -555,11 +564,12 @@ onDestroy(() => {
           <BuildPushPanel
             tagInputId="layer-sim-tag"
             tag={presetSimTag}
+            bind:actualTag={simTag}
             tagPlaceholder="e.g. quay.io/org/ros2-sim:latest"
             buildImage={t =>
               physicalAiClient.buildSimulationImage(t, presetConfig, {
                 layerPlan: layerCachePlanSim,
-                parentImageTag: needsHardened ? presetHardenedTag : undefined,
+                parentImageTag: needsHardened ? hardenedTag : undefined,
               })}
             onBuildComplete={() => {
               void refreshLocalImages();

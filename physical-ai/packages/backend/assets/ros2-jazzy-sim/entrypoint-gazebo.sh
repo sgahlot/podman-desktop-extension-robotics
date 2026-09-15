@@ -49,6 +49,10 @@ source "${PHYSICAL_AI_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
 
 set -u
 
+# DDS configuration for robust clock synchronization (APPENG-6344): increase buffer
+# depth and configure RELIABLE mode to prevent message loss under render bottleneck.
+export CYCLONEDDS_URI="file:///opt/ros2-demo/config/cyclonedds-qos.xml"
+
 export TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-waffle}"
 export GZ_SIM_RESOURCE_PATH="/opt/ros/jazzy/share:/opt/ros/jazzy/share/nav2_minimal_tb3_sim/models:${GZ_SIM_RESOURCE_PATH:-}"
 
