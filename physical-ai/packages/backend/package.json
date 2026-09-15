@@ -1,7 +1,7 @@
 {
   "name": "physical-ai",
-  "displayName": "Physical AI",
-  "description": "Podman Desktop extension for Physical AI robotics development",
+  "displayName": "Robotics",
+  "description": "Podman Desktop extension for robotics development",
   "version": "0.1.0",
   "icon": "icon.png",
   "publisher": "redhat",
@@ -13,23 +13,23 @@
   "contributes": {
     "commands": [
       {
-        "command": "physical-ai.open",
-        "title": "Physical AI: Open Dashboard"
+        "command": "robotics.open",
+        "title": "Robotics: Open Dashboard"
       }
     ],
     "configuration": {
-      "title": "Physical AI",
+      "title": "Robotics",
       "properties": {
-        "physical-ai.general.sectionTitle": {
+        "robotics.general.sectionTitle": {
           "type": "markdown",
           "markdownDescription": "### General"
         },
-        "physical-ai.general.quayNamespace": {
+        "robotics.general.quayNamespace": {
           "type": "string",
           "default": "ecosystem-appeng",
           "description": "Default Quay.io namespace for browsing and building images"
         },
-        "physical-ai.general.navigationLayout": {
+        "robotics.general.navigationLayout": {
           "type": "string",
           "enum": [
             "sidebar",
@@ -42,40 +42,40 @@
             "No persistent navigation chrome — the Dashboard grid of cards is the hub (original behavior)"
           ],
           "default": "sidebar",
-          "description": "Navigation layout for the Physical AI extension shell"
+          "description": "Navigation layout for the Robotics extension shell"
         },
-        "physical-ai.general.topicPeekTimeoutSeconds": {
+        "robotics.general.topicPeekTimeoutSeconds": {
           "type": "number",
           "minimum": 1,
           "maximum": 30,
           "default": 5,
           "description": "Timeout in seconds for Topic Monitor Peek (ros2 topic echo --once). Must be a whole number from 1 to 30."
         },
-        "physical-ai.simulation.sectionTitle": {
+        "robotics.simulation.sectionTitle": {
           "type": "markdown",
           "markdownDescription": "### Simulation"
         },
-        "physical-ai.simulation.robot": {
+        "robotics.simulation.robot": {
           "type": "string",
           "default": "turtlebot3",
           "description": "Robot type for simulation (e.g. turtlebot3)"
         },
-        "physical-ai.simulation.distro": {
+        "robotics.simulation.distro": {
           "type": "string",
           "default": "jazzy",
           "description": "ROS distro for simulation (jazzy: sim + noVNC via jazzy-noble preset; humble: legacy TurtleBot3 sim)"
         },
-        "physical-ai.simulation.middleware": {
+        "robotics.simulation.middleware": {
           "type": "string",
           "default": "dds",
           "description": "Middleware for simulation (dds or zenoh)"
         },
-        "physical-ai.simulation.engine": {
+        "robotics.simulation.engine": {
           "type": "string",
           "default": "gazebo",
           "description": "Simulation engine (e.g. gazebo)"
         },
-        "physical-ai.simulation.baseImage": {
+        "robotics.simulation.baseImage": {
           "type": "string",
           "enum": [
             "sloretz",
@@ -94,32 +94,32 @@
           "default": "jazzy-noble",
           "description": "Base image preset for Image Builder builds"
         },
-        "physical-ai.simulation.customBaseImage": {
+        "robotics.simulation.customBaseImage": {
           "type": "string",
           "default": "",
           "description": "Arbitrary parent image reference used when the Custom base image is selected"
         },
-        "physical-ai.simulation.customBaseOsFamily": {
+        "robotics.simulation.customBaseOsFamily": {
           "type": "string",
           "default": "",
           "description": "Declared OS family for a custom simulation parent"
         },
-        "physical-ai.simulation.customBaseOsVersion": {
+        "robotics.simulation.customBaseOsVersion": {
           "type": "string",
           "default": "",
           "description": "Declared OS version for a custom simulation parent"
         },
-        "physical-ai.simulation.customBaseRosDistro": {
+        "robotics.simulation.customBaseRosDistro": {
           "type": "string",
           "default": "",
           "description": "Declared ROS distro for a custom simulation parent"
         },
-        "physical-ai.simulation.customSimulationTemplateId": {
+        "robotics.simulation.customSimulationTemplateId": {
           "type": "string",
           "default": "",
           "description": "Registered simulation template for a custom parent"
         },
-        "physical-ai.simulation.customSimulationMode": {
+        "robotics.simulation.customSimulationMode": {
           "type": "string",
           "enum": [
             "preset",
@@ -128,21 +128,21 @@
           "default": "preset",
           "description": "Simulation recipe source for a custom parent"
         },
-        "physical-ai.simulation.gpuPassthrough": {
+        "robotics.simulation.gpuPassthrough": {
           "type": "boolean",
           "default": true,
           "description": "On Apple Silicon (arm64), pass /dev/dri into simulation containers and use virtio-gpu rendering when available. Disable to force software rendering (llvmpipe). Ignored on amd64 (always software GL)."
         },
-        "physical-ai.simulation.imageAllowlist": {
+        "robotics.simulation.imageAllowlist": {
           "type": "string",
           "default": "",
           "description": "ENFORCED — a non-empty value here is required for Simulation launch to succeed, not just a suggestion. Comma-separated image refs or repo patterns (e.g. quay.io/ns/ros2-jazzy-sim:noble or quay.io/ns/ros2-jazzy-sim@sha256:…). Empty = default ros2-*-sim* and ros2-*-turtlebot3. Setting a value REPLACES the defaults entirely — list them too (e.g. myimage-sim*,ros2-*-sim*,ros2-*-turtlebot3) if you still want them to launch. Local image content is still trusted once selected, so this is not cryptographic verification — it exists to stop an accidental/mistyped launch, not a determined user."
         },
-        "physical-ai.catalog.sectionTitle": {
+        "robotics.catalog.sectionTitle": {
           "type": "markdown",
           "markdownDescription": "### Image Catalog"
         },
-        "physical-ai.catalog.viewMode": {
+        "robotics.catalog.viewMode": {
           "type": "string",
           "enum": [
             "all",
@@ -155,16 +155,16 @@
           "default": "all",
           "description": "Default Image Catalog view mode"
         },
-        "physical-ai.catalog.curatedAllowlist": {
+        "robotics.catalog.curatedAllowlist": {
           "type": "string",
           "default": "ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*",
           "description": "Comma-separated Quay repository name patterns for Curated catalog view. Use * as a wildcard (e.g. ros2-*-base,ros2-*-sim*,ros2-humble-turtlebot3)."
         },
-        "physical-ai.build.sectionTitle": {
+        "robotics.build.sectionTitle": {
           "type": "markdown",
           "markdownDescription": "### Image Builder"
         },
-        "physical-ai.build.layout": {
+        "robotics.build.layout": {
           "type": "string",
           "enum": [
             "presets",
@@ -179,30 +179,30 @@
           "default": "presets",
           "description": "Layout for the Image Builder page"
         },
-        "physical-ai.build.historyLimit": {
+        "robotics.build.historyLimit": {
           "type": "number",
           "minimum": 1,
           "maximum": 20,
           "default": 5,
           "description": "Number of recent image builds to remember (tag, arch, duration, and SBOM if one was generated). SBOM text is fetched on demand when expanded, not kept in memory, so a higher limit mainly costs disk space."
         },
-        "physical-ai.openshift.sectionTitle": {
+        "robotics.openshift.sectionTitle": {
           "type": "markdown",
           "markdownDescription": "### OpenShift"
         },
-        "physical-ai.openshift.defaultNamespace": {
+        "robotics.openshift.defaultNamespace": {
           "type": "string",
           "default": "",
           "description": "Default OpenShift/Kubernetes namespace to use when the current kubeconfig context doesn't specify one (the kubeconfig context's own namespace, when present, always takes priority)"
         },
-        "physical-ai.openshift.defaultSoftwareRenderCpus": {
+        "robotics.openshift.defaultSoftwareRenderCpus": {
           "type": "number",
           "minimum": 1,
           "maximum": 64,
           "default": 8,
           "description": "Default guaranteed CPU count (requests == limits) for the OpenShift sim container on the software-render path. Seeds the Guaranteed CPUs (sim container) field on the Simulation → OpenShift tab, where it can still be adjusted per deploy (including on the GPU path, which defaults to 6). An N-CPU pod only schedules on a node with ≥ N allocatable CPU."
         },
-        "physical-ai.openshift.deployImageAllowlist": {
+        "robotics.openshift.deployImageAllowlist": {
           "type": "string",
           "default": "",
           "description": "NOT ENFORCED — UI convenience only. Comma-separated image refs or repo patterns (e.g. ros2-*-sim*, or a full ref) to narrow the OpenShift deploy tab's Image picker dropdown. Empty = suggest every genuinely-amd64 local image, regardless of name. Setting a value narrows the SUGGESTIONS only — the field always still accepts and deploys any free-text value, matched or not."

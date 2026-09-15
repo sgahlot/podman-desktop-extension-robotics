@@ -34,7 +34,7 @@ function metricButton(name: string): HTMLElement {
 describe('Dashboard', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mockGetStatus.mockResolvedValue('Physical AI extension is running');
+    mockGetStatus.mockResolvedValue('Robotics extension is running');
     mockListLocalImages.mockResolvedValue(['quay.io/x/ros2-jazzy-sim:noble', 'docker.io/lib/nginx']);
     mockListSimulationContainers.mockResolvedValue([
       { id: 'c1', name: 'pai-sim-1', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [], labels: {} },
@@ -59,7 +59,7 @@ describe('Dashboard', () => {
 
   it('renders heading', () => {
     render(Dashboard);
-    expect(screen.getByText('Physical AI')).toBeTruthy();
+    expect(screen.getByText('Robotics')).toBeTruthy();
   });
 
   it('renders quick link cards', () => {
@@ -74,7 +74,7 @@ describe('Dashboard', () => {
 
   it('shows status after loading', async () => {
     render(Dashboard);
-    const statusEl = await screen.findByText(/Physical AI extension is running/);
+    const statusEl = await screen.findByText(/Robotics extension is running/);
     expect(statusEl).toBeTruthy();
   });
 
@@ -171,7 +171,7 @@ describe('Dashboard', () => {
   it('shows shared guidance content alongside Quick Links in cards mode', async () => {
     render(Dashboard, { layout: 'cards' });
     expect(screen.getByText('Quick Links')).toBeTruthy();
-    expect(screen.getByText('Welcome to Physical AI')).toBeTruthy();
+    expect(screen.getByText('Welcome to Robotics')).toBeTruthy();
     expect(screen.getByText('Open Image Builder')).toBeTruthy();
     expect(screen.getByText('Local ROS 2 images')).toBeTruthy();
     expect(screen.getByText('local')).toBeTruthy();
@@ -192,7 +192,7 @@ describe('Dashboard', () => {
 
   it('shows dashboard content instead of Quick Links in sidebar layout', async () => {
     render(Dashboard, { layout: 'sidebar' });
-    expect(screen.getByText('Welcome to Physical AI')).toBeTruthy();
+    expect(screen.getByText('Welcome to Robotics')).toBeTruthy();
     expect(screen.getByText('Open Image Builder')).toBeTruthy();
     expect(screen.getByText('Local ROS 2 images')).toBeTruthy();
     expect(screen.getByText('local')).toBeTruthy();

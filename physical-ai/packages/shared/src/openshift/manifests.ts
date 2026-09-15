@@ -41,7 +41,7 @@ export const HUMMINGBIRD_NGINX_CONTAINER_NAME = 'hummingbird-nginx';
 
 /** Label marking resources this extension manages, used for list/delete. */
 export const PART_OF_LABEL = 'app.kubernetes.io/part-of';
-export const PART_OF_VALUE = 'physical-ai';
+export const PART_OF_VALUE = 'robotics';
 
 /** DNS-1123 label: lowercase alphanumeric and '-', must start/end alphanumeric, max 63. */
 const DNS_1123_LABEL_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;

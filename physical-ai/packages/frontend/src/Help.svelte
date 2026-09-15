@@ -8,16 +8,14 @@ import { navigationLayout } from './lib/navigationLayout';
     <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
   {/if}
   <h1 class="text-3xl text-[var(--pd-content-header)]">Help</h1>
-  <p class="text-sm text-[var(--pd-content-text)]">
-    Quick guide to using the Physical AI extension for Podman Desktop.
-  </p>
+  <p class="text-sm text-[var(--pd-content-text)]">Quick guide to using the Robotics extension for Podman Desktop.</p>
 
   <div class="flex flex-col gap-4">
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Getting Started</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-1">
         <p>
-          Physical AI gives robotics developers a GUI-driven path from local development to OpenShift deployment — no
+          Robotics gives robotics developers a GUI-driven path from local development to OpenShift deployment — no
           terminal required.
         </p>
         <p>
@@ -42,7 +40,7 @@ import { navigationLayout } from './lib/navigationLayout';
           the namespace; private Quay repos are not listed without auth). Switch to <strong>Curated</strong> to show
           only names matching the allowlist (default
           <span class="font-mono">ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*</span>). Both the default view and the
-          allowlist are configurable under Settings &rarr; Preferences &rarr; Physical AI (comma-separated patterns;
+          allowlist are configurable under Settings &rarr; Preferences &rarr; Robotics (comma-separated patterns;
           <span class="font-mono">*</span> is a wildcard).
         </div>
         <div>
@@ -142,7 +140,7 @@ import { navigationLayout } from './lib/navigationLayout';
         <div>
           <strong>Image trust</strong> — Launch runs entrypoints from the selected <em>local</em> image. Tag matching is
           not a signature check: only use images you built via Image Builder or pulled from a Quay namespace you trust.
-          For demos, pin exact tags or digests under Settings → Preferences → Physical AI →
+          For demos, pin exact tags or digests under Settings → Preferences → Robotics →
           <span class="font-mono">Simulation image allowlist</span>.
         </div>
         <div>
@@ -282,9 +280,9 @@ import { navigationLayout } from './lib/navigationLayout';
         <div>
           <strong>Peek</strong> — On an expanded row, <strong>Peek</strong> captures one live message (<span
             class="font-mono">ros2 topic echo --once</span
-          >). Timeout is configurable under Preferences → Physical AI → <strong>Topic peek timeout</strong> (1–30
-          seconds, default 5). Shows topic/type, wall-clock capture time, optional ROS msg stamp, and a Tree/Raw view
-          with Copy. Idle topics show a timeout notice. Message schema is available via
+          >). Timeout is configurable under Preferences → Robotics → <strong>Topic peek timeout</strong> (1–30 seconds,
+          default 5). Shows topic/type, wall-clock capture time, optional ROS msg stamp, and a Tree/Raw view with Copy.
+          Idle topics show a timeout notice. Message schema is available via
           <strong>Show message schema</strong> (<span class="font-mono">ros2 interface show</span>). Msg stamp is time
           inside the message (e.g. <span class="font-mono">header.stamp</span>), not the
           <span class="font-mono">/clock</span> topic.

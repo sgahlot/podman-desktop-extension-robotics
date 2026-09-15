@@ -1,6 +1,6 @@
-# Physical AI
+# Robotics
 
-Podman Desktop extension for Physical AI robotics development. Provides a GUI-driven path from local development to container deployment for robotics engineers.
+Podman Desktop extension for Robotics robotics development. Provides a GUI-driven path from local development to container deployment for robotics engineers.
 
 ## Features
 
@@ -61,11 +61,11 @@ To check or change Podman Machine resources: open **Settings → Resources → P
 ## Getting Started
 
 1. Install the extension — either the published image (Podman Desktop → Extensions → Install custom extension → `quay.io/sgahlot/physical-ai-extension:latest`, or a specific version tag) or load from source (see [`physical-ai/README.md`](../README.md))
-2. Open **Physical AI**, or press **F1** → **Physical AI: Open Dashboard**
+2. Open **Robotics**, or press **F1** → **Robotics: Open Dashboard**
 3. **Image Builder** → Quick Start **Local** (**TurtleBot3 Sim (Jazzy)**) → Phase 1 Build → Phase 2 Build (use **OpenShift** for a cluster-pullable `amd64` image)
 4. **Simulation** → Launch → **Show Viewer** (or Open in Browser) → Add TurtleBot3 → optional **Navigate** (X/Y) and Topic Monitor **Peek**
 5. **Stop & remove** when done — close the Gazebo (noVNC) browser tab manually if it is still open
-6. Adjust defaults under **Settings → Preferences → Physical AI** (including **Simulation GPU passthrough** on Mac)
+6. Adjust defaults under **Settings → Preferences → Robotics** (including **Simulation GPU passthrough** on Mac)
 
 Idle noVNC tabs may show Disconnected; reconnect or refresh — the simulation is still running. Lidar/IMU topics are available after spawn when using a current sim image; **Navigate** on Jazzy sim uses Nav2 (`navigate_to_pose`) with obstacle-aware planning (Humble images still use open-loop `cmd_vel`).
 
@@ -147,7 +147,7 @@ Bundled Containerfile contexts live under `assets/` in this package.
 
 On Mac, Podman Machine uses **LibKrun**. The host GPU is exposed to the Linux VM via **virtio-gpu** (API translation to Metal). Containers do **not** see `/dev/dri` unless the device is passed at launch.
 
-**Default on Apple Silicon (arm64):** Simulation launch passes `/dev/dri/card0` and `/dev/dri/renderD128` and sets `PHYSICAL_AI_USE_GPU=1`. The entrypoint uses hardware rendering when `/dev/dri` is present; otherwise it falls back to `llvmpipe`. Disable under **Settings → Preferences → Physical AI → Simulation GPU passthrough** to always use software rendering.
+**Default on Apple Silicon (arm64):** Simulation launch passes `/dev/dri/card0` and `/dev/dri/renderD128` and sets `PHYSICAL_AI_USE_GPU=1`. The entrypoint uses hardware rendering when `/dev/dri` is present; otherwise it falls back to `llvmpipe`. Disable under **Settings → Preferences → Robotics → Simulation GPU passthrough** to always use software rendering.
 
 On **amd64**, launch always forces `llvmpipe` (no GPU passthrough).
 

@@ -1,7 +1,7 @@
 {
   "name": "frontend",
-  "displayName": "Physical AI Frontend",
-  "description": "Frontend UI for the Physical AI extension",
+  "displayName": "Robotics Frontend",
+  "description": "Frontend UI for the Robotics extension",
   "version": "0.1.0",
   "type": "module",
   "scripts": {

@@ -4,12 +4,12 @@ import fs from 'node:fs';
 import { RpcExtension } from '/@shared/src/messages/MessageProxy';
 import { PhysicalAiApiImpl } from './api-impl';
 
-const COMMAND_OPEN = 'physical-ai.open';
+const COMMAND_OPEN = 'robotics.open';
 
 let panel: WebviewPanel | undefined;
 
 async function createDashboardPanel(extensionContext: ExtensionContext): Promise<WebviewPanel> {
-  const newPanel = extensionApi.window.createWebviewPanel('physicalAi', 'Physical AI', {
+  const newPanel = extensionApi.window.createWebviewPanel('robotics', 'Robotics', {
     localResourceRoots: [extensionApi.Uri.joinPath(extensionContext.extensionUri, 'media')],
   });
 
@@ -70,7 +70,7 @@ async function openDashboard(extensionContext: ExtensionContext): Promise<void> 
 }
 
 export async function activate(extensionContext: ExtensionContext): Promise<void> {
-  console.log('starting Physical AI extension');
+  console.log('starting Robotics extension');
 
   await openDashboard(extensionContext);
 
@@ -83,5 +83,5 @@ export async function activate(extensionContext: ExtensionContext): Promise<void
 
 export async function deactivate(): Promise<void> {
   panel = undefined;
-  console.log('stopping Physical AI extension');
+  console.log('stopping Robotics extension');
 }

@@ -38,7 +38,7 @@ onMount(async () => {
 });
 </script>
 
-<Route path="/*" breadcrumb="Physical AI" isAppMounted={isMounted} let:meta>
+<Route path="/*" breadcrumb="Robotics" isAppMounted={isMounted} let:meta>
   <main class="flex flex-col w-screen h-screen overflow-hidden bg-[var(--pd-content-bg)]">
     <!-- min-h-0 lets the active page become the scroll container instead of growing past the viewport -->
     <NavShell layout={navigationLayout} onLayoutChange={setNavigationLayout}>

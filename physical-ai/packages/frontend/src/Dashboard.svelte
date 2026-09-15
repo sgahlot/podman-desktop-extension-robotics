@@ -95,7 +95,7 @@ onMount(async () => {
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
   <div class="flex flex-row items-start justify-between gap-4">
-    <h1 class="text-3xl text-[var(--pd-content-header)]">Physical AI</h1>
+    <h1 class="text-3xl text-[var(--pd-content-header)]">Robotics</h1>
     {#if layout === 'cards' && onLayoutChange}
       <div class="flex flex-col items-end gap-1 shrink-0">
         <span class="text-xs pai-text-muted">Layout</span>
@@ -104,11 +104,11 @@ onMount(async () => {
     {/if}
   </div>
   <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
-    <h2 class="text-lg font-medium text-[var(--pd-content-header)]">Welcome to Physical AI</h2>
+    <h2 class="text-lg font-medium text-[var(--pd-content-header)]">Welcome to Robotics</h2>
     <p class="text-sm text-[var(--pd-content-text)] mt-2">
-      Physical AI gives robotics developers a GUI-driven path from local development to OpenShift deployment — no
-      terminal required. Build ROS 2 base and simulation images, launch TurtleBot3 in Gazebo, drive it with Nav2, and
-      inspect live ROS 2 topics.
+      Robotics gives developers a GUI-driven path from local development to OpenShift deployment — no terminal required.
+      Build ROS 2 base and simulation images, launch TurtleBot3 in Gazebo, drive it with Nav2, and inspect live ROS 2
+      topics.
     </p>
     <button on:click={() => router.goto('/help')} class="pai-link mt-2">Read the full guide &rarr;</button>
   </div>

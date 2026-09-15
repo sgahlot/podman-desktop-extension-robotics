@@ -93,22 +93,22 @@ describe('extension', () => {
       await activate(MOCK_CONTEXT);
 
       expect(extensionApi.window.createWebviewPanel).toHaveBeenCalledWith(
-        'physicalAi',
-        'Physical AI',
+        'robotics',
+        'Robotics',
         expect.objectContaining({ localResourceRoots: expect.any(Array) }),
       );
     });
 
-    it('registers physical-ai.open and adds panel + command to subscriptions', async () => {
+    it('registers robotics.open and adds panel + command to subscriptions', async () => {
       vi.mocked(fs.promises.readFile).mockResolvedValue('<html></html>');
 
       await activate(MOCK_CONTEXT);
 
-      expect(extensionApi.commands.registerCommand).toHaveBeenCalledWith('physical-ai.open', expect.any(Function));
+      expect(extensionApi.commands.registerCommand).toHaveBeenCalledWith('robotics.open', expect.any(Function));
       expect(MOCK_CONTEXT.subscriptions).toHaveLength(2);
     });
 
-    it('reveals existing panel when physical-ai.open runs again', async () => {
+    it('reveals existing panel when robotics.open runs again', async () => {
       vi.mocked(fs.promises.readFile).mockResolvedValue('<html></html>');
 
       await activate(MOCK_CONTEXT);
@@ -121,7 +121,7 @@ describe('extension', () => {
       expect(extensionApi.window.createWebviewPanel).toHaveBeenCalledTimes(1);
     });
 
-    it('recreates panel after dispose when physical-ai.open runs', async () => {
+    it('recreates panel after dispose when robotics.open runs', async () => {
       vi.mocked(fs.promises.readFile).mockResolvedValue('<html></html>');
 
       await activate(MOCK_CONTEXT);

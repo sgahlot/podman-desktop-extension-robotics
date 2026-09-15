@@ -1704,7 +1704,7 @@ RUN apt-get install -y ros-jazzy-desktop
 
       const ns = await api.getDefaultNamespace();
       expect(ns).toBe('sgahlot');
-      expect(extensionApi.configuration.getConfiguration).toHaveBeenCalledWith('physical-ai');
+      expect(extensionApi.configuration.getConfiguration).toHaveBeenCalledWith('robotics');
     });
 
     it('falls back to ecosystem-appeng when not configured', async () => {
@@ -1725,7 +1725,7 @@ RUN apt-get install -y ros-jazzy-desktop
 
       const ns = await api.getDefaultOpenShiftNamespace();
       expect(ns).toBe('my-team-dev');
-      expect(extensionApi.configuration.getConfiguration).toHaveBeenCalledWith('physical-ai');
+      expect(extensionApi.configuration.getConfiguration).toHaveBeenCalledWith('robotics');
     });
 
     it('falls back to an empty string when not configured (never "default")', async () => {
@@ -3695,7 +3695,7 @@ linear_acceleration:
           hasHummingbirdSidecar: false,
         });
         const listArgs = vi.mocked(extensionApi.process.exec).mock.calls[0][1] as string[];
-        expect(listArgs).toContain('app.kubernetes.io/part-of=physical-ai');
+        expect(listArgs).toContain('app.kubernetes.io/part-of=robotics');
       });
 
       it('detects the Hummingbird nginx sidecar from the live Deployment container list (APPENG-6227)', async () => {

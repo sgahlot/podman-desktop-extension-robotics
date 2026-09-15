@@ -1,8 +1,8 @@
 # physical-ai-cli
 
-A standalone CLI for Physical AI robotics development — build ROS2 images, launch Gazebo
+A standalone CLI for Robotics robotics development — build ROS2 images, launch Gazebo
 simulations, and spawn robots, **without installing Podman Desktop**. It reuses the same
-business logic as the [Physical AI Podman Desktop extension](../backend/README.md), talking
+business logic as the [Robotics Podman Desktop extension](../backend/README.md), talking
 directly to the `podman` CLI instead of going through Podman Desktop's extension API.
 
 This is a **prototype covering a representative slice** — build, launch, and spawn — not full

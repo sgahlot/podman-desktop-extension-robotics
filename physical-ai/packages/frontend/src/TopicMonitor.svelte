@@ -437,7 +437,7 @@ onDestroy(() => {
                               {peeking ? 'Peeking...' : 'Peek'}
                             </button>
                             <span class="text-xs pai-text-muted">
-                              One live message (cleaned echo, {peekTimeoutSec}s timeout — Preferences → Physical AI)
+                              One live message (cleaned echo, {peekTimeoutSec}s timeout — Preferences → Robotics)
                             </span>
                           </div>
 

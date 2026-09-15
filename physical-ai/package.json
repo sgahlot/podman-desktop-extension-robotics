@@ -1,7 +1,7 @@
 {
   "name": "physical-ai",
-  "displayName": "Physical AI",
-  "description": "Podman Desktop extension for Physical AI robotics development",
+  "displayName": "Robotics",
+  "description": "Podman Desktop extension for robotics development",
   "version": "0.1.0",
   "publisher": "redhat",
   "private": true,

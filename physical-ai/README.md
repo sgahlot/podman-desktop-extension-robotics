@@ -1,4 +1,4 @@
-# Physical AI — Podman Desktop Extension
+# Robotics — Podman Desktop Extension
 
 Developer README for the `physical-ai/` npm workspace. **User-facing documentation** (features, quick start, Navigate, OpenShift CPU sizing, GPU notes, settings) lives in **[`packages/backend/README.md`](packages/backend/README.md)** — that file ships inside the published extension OCI image and is what Podman Desktop displays. Edit there for extension-user docs; keep this file for build, install-from-source, and repo layout.
 
@@ -52,9 +52,9 @@ npm run build
    Error: Extension with id redhat.physical-ai is not compatible with Podman Desktop. It requires 'podman-desktop' engine.
    ```
 
-5. The **Physical AI** extension appears in the navbar.
+5. The **Robotics** extension appears in the navbar.
 
-   ![Physical AI Extension](../docs/images/physical-ai-extension.png)
+   ![Robotics Extension](../docs/images/physical-ai-extension.png)
 
 **Don't** build the root `Containerfile` locally and paste that tag into **Install custom extension…** — that flow always pulls from a registry. Use Option B for local changes; use `scripts/publish-extension-image.sh` when you need a pushed OCI image.
 

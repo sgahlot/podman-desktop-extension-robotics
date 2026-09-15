@@ -1,7 +1,7 @@
 {
   "name": "physical-ai-cli",
   "version": "0.1.0",
-  "description": "CLI for Physical AI robotics development, for use without Podman Desktop",
+  "description": "CLI for Robotics robotics development, for use without Podman Desktop",
   "private": true,
   "license": "Apache-2.0",
   "engines": {

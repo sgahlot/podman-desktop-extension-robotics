@@ -302,7 +302,7 @@ onDestroy(() => {
   </div>
   {#if viewMode === 'curated'}
     <p class="text-xs pai-text-muted">
-      Curated patterns (Settings → Preferences → Physical AI): <span class="font-mono">{curatedAllowlist}</span>
+      Curated patterns (Settings → Preferences → Robotics): <span class="font-mono">{curatedAllowlist}</span>
     </p>
   {/if}
 
