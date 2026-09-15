@@ -92,6 +92,7 @@ $: selectedCustomTemplate =
   CUSTOM_SIMULATION_TEMPLATES[0];
 $: customTemplateSupportsTarget =
   selection.sim !== 'custom-template' || selectedCustomTemplate.architectures.includes(targetArch);
+$: lyricalTargetUnsupported = selection.ros === 'ros2-lyrical' && targetArch !== 'amd64';
 $: otherArch = (hostArch === 'amd64' ? 'arm64' : 'amd64') as TargetArch;
 $: otherArchLabel = otherArch === 'amd64' ? 'amd64 (for OpenShift)' : `${otherArch} (cross-build)`;
 $: if (selection.baseOs === 'custom' && selection.sim === 'custom-template' && selection.ros !== 'provided-by-parent') {
@@ -122,7 +123,8 @@ $: bannerHeadline =
       : result.level === 'warn'
         ? '⚠️ Builds, but not a working robotics image'
         : "❌ Won't build";
-$: buildDisabled = (result.level === 'blocked' && !attemptAnyway) || !customTemplateSupportsTarget;
+$: buildDisabled =
+  (result.level === 'blocked' && !attemptAnyway) || !customTemplateSupportsTarget || lyricalTargetUnsupported;
 
 // Reset the escape hatch whenever the selection changes so a previously-blocked
 // "attempt anyway" choice doesn't silently carry over to a new combination.
@@ -422,7 +424,8 @@ onDestroy(() => {
           bind:value={targetArch}
           class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
           <option value={hostArch}>This machine ({hostArch})</option>
-          <option value={otherArch}>{otherArchLabel}</option>
+          <option value={otherArch} disabled={selection.ros === 'ros2-lyrical' && otherArch === 'arm64'}
+            >{otherArchLabel}</option>
         </select>
         <span class="text-xs text-[var(--pd-content-text)] opacity-80">
           The selected architecture controls the image platform, regardless of the tag you enter. OpenShift requires
@@ -432,6 +435,13 @@ onDestroy(() => {
           <span class="text-xs pai-text-error">
             The selected template supports {selectedCustomTemplate.architectures.join(' and ')} only. Choose a supported target
             before building.
+          </span>
+        {/if}
+        {#if lyricalTargetUnsupported}
+          <span class="text-xs" style="color: #ef4444;">
+            ROS2 Lyrical uses the Fedora 43 x86_64 testing repository and requires an <span class="font-mono"
+              >amd64</span>
+            target.
           </span>
         {/if}
       </div>
