@@ -94,6 +94,14 @@ import { navigationLayout } from './lib/navigationLayout';
           diagnostics, or OpenShift simulation deployment.
         </div>
         <div>
+          <strong>Fedora 43 + ROS 2 Lyrical</strong> — In the Layers composer, choose <strong>Fedora bootc 43</strong>
+          and
+          <strong>ROS2 Lyrical</strong>, then keep <strong>Gazebo + Nav2 + TurtleBot3</strong> selected. The generated Containerfile
+          pins DNF to Fedora 43 and configures the ROS 2 Lyrical Fedora 43 x86_64 testing repository before installing the
+          the ROS runtime stack plus development RPM dependencies required by the testing repository. This path is x86_64-only
+          and packages-only.
+        </div>
+        <div>
           <strong>Phase 2: Simulation Image</strong> — Layers Gazebo, TurtleBot3 spawn assets, and noVNC (Jazzy) on your
           Phase 1 local base. Nav2 packages are included; on Jazzy sim, <strong>Navigate</strong> launches Nav2 for obstacle-aware
           navigation. Disabled until the base exists locally.
