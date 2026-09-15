@@ -120,12 +120,12 @@ Build via Image Builder (or CLI against `assets/`), then push:
 
 ### Base images (Phase 1 outputs)
 
-- `quay.io/<ns>/ros2-jazzy-base:latest` — Jazzy headless base for amd64. No GUI, for CI or headless ROS2 work.
-- `quay.io/<ns>/ros2-jazzy-base:noble` — Jazzy base for arm64 (the Quick Start path). This is what Phase 1 produces on Mac.
+- `quay.io/{NAMESPACE}/ros2-jazzy-base:latest` — Jazzy headless base for amd64. No GUI, for CI or headless ROS2 work.
+- `quay.io/{NAMESPACE}/ros2-jazzy-base:noble` — Jazzy base for arm64 (the Quick Start path). This is what Phase 1 produces on Mac.
 
 ### Simulation images (Phase 2 outputs, built on top of a base)
 
-- `quay.io/<ns>/ros2-jazzy-sim:noble` — The Jazzy sim: Gazebo + noVNC + Nav2 (launched on **Navigate** via `entrypoint-nav2.sh`).
+- `quay.io/{NAMESPACE}/ros2-jazzy-sim:noble` — The Jazzy sim: Gazebo + noVNC + Nav2 (launched on **Navigate** via `entrypoint-nav2.sh`).
 
 ## Coming Soon
 
