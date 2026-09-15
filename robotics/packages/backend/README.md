@@ -52,8 +52,8 @@ To check or change Podman Machine resources: open **Settings → Resources → P
 
 ### Platform notes
 
-- **Mac Apple Silicon (arm64)**: Use the **Local** Jazzy Quick Start — builds natively, no QEMU. VM backend is LibKrun (default). Simulation launch passes `/dev/dri` by default (virtio-gpu); see [GPU and rendering](#gpu-and-rendering).
-- **OpenShift target (amd64)**: Use the **OpenShift** Quick Start (**TurtleBot3 Sim (Jazzy · amd64)**) — targets `amd64` (tagged `-amd64`) so the image is cluster-pullable. On an Apple Silicon host this cross-builds via QEMU emulation and is slower (expected). The in-cluster GPU rendering path (server + GUI, via NVIDIA headless EGL / VirtualGL) has been validated live on a real GPU cluster for a single robot — see [GPU and rendering](#gpu-and-rendering).
+- **Mac Apple Silicon (arm64)**: Use the **arm64** Jazzy Quick Start — builds natively, no QEMU. VM backend is LibKrun (default). Simulation launch passes `/dev/dri` by default (virtio-gpu); see [GPU and rendering](#gpu-and-rendering).
+- **OpenShift target (amd64)**: Use the **amd64** Quick Start (**TurtleBot3 Sim (Jazzy · amd64)**) — targets `amd64` (tagged `-amd64`) so the image is cluster-pullable. On an Apple Silicon host this cross-builds via QEMU emulation and is slower (expected). The in-cluster GPU rendering path (server + GUI, via NVIDIA headless EGL / VirtualGL) has been validated live on a real GPU cluster for a single robot — see [GPU and rendering](#gpu-and-rendering).
 - **Linux amd64**: Use the **Jazzy** Quick Start. Humble base/sim images exist under `assets/` but are **not currently verified working** — don't rely on them until re-validated.
 - **Native GPU rendering (bare-metal Linux, outside a VM or cluster)**: not tested. This is separate from the in-cluster OpenShift GPU path above, which has been validated.
 - **Windows**: Untested.
@@ -62,7 +62,7 @@ To check or change Podman Machine resources: open **Settings → Resources → P
 
 1. Install the extension — either the published image (Podman Desktop → Extensions → Install custom extension → `quay.io/sgahlot/physical-ai-extension:latest`, or a specific version tag) or load from source (see [`physical-ai/README.md`](../README.md))
 2. Open **Robotics**, or press **F1** → **Robotics: Open Dashboard**
-3. **Image Builder** → Quick Start **Local** (**TurtleBot3 Sim (Jazzy)**) → Phase 1 Build → Phase 2 Build (use **OpenShift** for a cluster-pullable `amd64` image)
+3. **Image Builder** → Quick Start **arm64** (**TurtleBot3 Sim (Jazzy)**) → Phase 1 Build → Phase 2 Build (use **amd64** for a cluster-pullable `amd64` image)
 4. **Simulation** → Launch → **Show Viewer** (or Open in Browser) → Add TurtleBot3 → optional **Navigate** (X/Y) and Topic Monitor **Peek**
 5. **Stop & remove** when done — close the Gazebo (noVNC) browser tab manually if it is still open
 6. Adjust defaults under **Settings → Preferences → Robotics** (including **Simulation GPU passthrough** on Mac)
