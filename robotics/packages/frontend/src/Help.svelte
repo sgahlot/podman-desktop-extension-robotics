@@ -61,60 +61,6 @@ import { navigationLayout } from './lib/navigationLayout';
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Image Builder</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
         <div>
-          <strong>Quick Start:</strong> <strong>arm64</strong> — for Apple Silicon (Mac only) and
-          <strong>amd64</strong> — for Linux, OpenShift clusters. These two presets set the dropdowns, save preferences,
-          and scroll to Phase 1, then you click Build for Phase 1 and Phase 2.
-          <i>Building amd64 on Mac is slower via emulation</i>.
-        </div>
-        <div>
-          <strong>Phase 1: Base Image</strong> — Humble: <span class="font-mono">sloretz</span> (<span class="font-mono"
-            >:sloretz</span
-          >) or <span class="font-mono">osrf</span> (<span class="font-mono">:osrf</span>). Jazzy: Ubuntu Noble preset
-          (tag <span class="font-mono">:noble</span>). Official Jazzy amd64 preset uses tag
-          <span class="font-mono">:latest</span>.
-        </div>
-        <div>
-          <strong>Custom Phase 1 parent</strong> — Choose <strong>Custom image…</strong> and enter an OCI image
-          reference (for example <span class="font-mono">quay.io/org/ros2:jazzy-desktop</span>). This is the parent
-          <span class="font-mono">FROM</span> image, not the output tag in the Build panel; it is saved with your preferences.
-          Compatibility is not verified for arbitrary images, so authenticate to private registries and ensure the parent
-          works with the selected recipe. The supported preset Phase 2 simulation path remains Ubuntu/Jazzy.
-        </div>
-        <div>
-          <strong>Custom ROS simulation packages</strong> — For a ROS-ready custom parent, select the registered
-          <span class="font-mono">Fedora 43 + ROS 2 Lyrical (dnf)</span> template. It adds the fixed
-          <span class="font-mono">ros-lyrical-nav2-minimal-tb3-sim</span> and
-          <span class="font-mono">ros-lyrical-ros-gz-sim</span> packages directly to the parent and labels the output
-          <strong>packages-only</strong>. This BYO image is not eligible for managed launch, noVNC, Navigate,
-          diagnostics, or OpenShift simulation deployment.
-        </div>
-        <div>
-          <strong>Fedora 43 + ROS 2 Lyrical</strong> — In the Layers composer, choose <strong>Fedora bootc 43</strong>
-          and
-          <strong>ROS2 Lyrical</strong>, then keep <strong>Gazebo + Nav2 + TurtleBot3</strong> selected. The generated Containerfile
-          pins DNF to Fedora 43 and configures the ROS 2 Lyrical Fedora 43 x86_64 testing repository before installing the
-          the ROS runtime stack plus development RPM dependencies required by the testing repository. This path is x86_64-only
-          and packages-only.
-        </div>
-        <div>
-          <strong>Phase 2: Simulation Image</strong> — Layers Gazebo, TurtleBot3 spawn assets, and noVNC (Jazzy) on your
-          Phase 1 local base. Nav2 packages are included; on Jazzy sim, <strong>Navigate</strong> launches Nav2 for obstacle-aware
-          navigation. Disabled until the base exists locally.
-        </div>
-        <div>
-          <strong>Cancel / Push</strong> — Cancel aborts an in-progress <strong>build</strong> or <strong>push</strong>.
-          Push requires registry login via Podman Desktop &rarr; Settings &rarr; Registries. Image Builder also shows
-          whether the current <span class="font-mono">quay.io/…</span> tag exists on Quay (public repos only; private repos
-          show as unavailable).
-        </div>
-        <div>
-          <strong>Build storage cleanup</strong> — Successful and failed builds remove their intermediate Buildah
-          containers. A cancelled build may leave external Buildah containers because the Podman Desktop build API does
-          not expose a safe per-build cleanup identifier. If storage accumulates or Podman reports no space left on
-          device, stop all builds and run <span class="font-mono">podman system prune --build --force</span> after reviewing
-          its scope. This does not remove volumes, and the extension does not run it automatically.
-        </div>
-        <div>
           <strong>Presets / Customize</strong> — Quick Starts are available in every Image Builder layout.
           <strong>Presets</strong> are known-good recipes (Ubuntu + ROS Jazzy + Simulation). <strong>Customize</strong>
           composes Base OS, hardened app, ROS, and simulation layers, with a live compatibility verdict as you pick. Pull
@@ -130,6 +76,66 @@ import { navigationLayout } from './lib/navigationLayout';
           <span class="font-mono">redhat.hummingbird</span> extensions to pull those images. Hummingbird apps split into
           <em>companions</em> (pulled and run alongside) and <em>tools</em> (a hardened CLI baked in via
           <span class="font-mono">COPY --from</span>).
+        </div>
+        <div class="text-xs font-semibold text-[var(--pd-content-header)] mt-3 mb-2">Presets Tab</div>
+        <div>
+          <strong>Quick Start:</strong> <strong>arm64</strong> — for Apple Silicon (Mac only) and
+          <strong>amd64</strong> — for Linux, OpenShift clusters. These two presets set the dropdowns, save preferences,
+          and scroll to Phase 1, then you click Build for Phase 1 and Phase 2.
+          <i>Building amd64 on Mac is slower via emulation</i>.
+        </div>
+        <div>
+          <strong>Phase 1: Base Image</strong> — Humble: <span class="font-mono">sloretz</span> (<span class="font-mono"
+            >:sloretz</span
+          >) or <span class="font-mono">osrf</span> (<span class="font-mono">:osrf</span>). Jazzy: Ubuntu Noble preset
+          (tag <span class="font-mono">:noble</span>). Official Jazzy amd64 preset uses tag
+          <span class="font-mono">:latest</span>.
+        </div>
+        <div>
+          <strong>Phase 2: Simulation Image</strong> — Layers Gazebo, TurtleBot3 spawn assets, and noVNC (Jazzy) on your
+          Phase 1 local base. Nav2 packages are included; on Jazzy sim, <strong>Navigate</strong> launches Nav2 for obstacle-aware
+          navigation. Disabled until the base exists locally.
+        </div>
+        <div class="text-xs font-semibold text-[var(--pd-content-header)] mt-3 mb-2">Customize Tab</div>
+        <div>
+          <strong>Custom image reference</strong> — Choose <strong>Custom image…</strong> in the Base OS selector and
+          enter an OCI image reference (for example <span class="font-mono">quay.io/org/ros2:jazzy-desktop</span>). This
+          is the parent
+          <span class="font-mono">FROM</span> image, not the output tag in the Build panel; it is saved with your preferences.
+          Compatibility is not verified for arbitrary images, so authenticate to private registries and ensure the parent
+          works with the selected recipe. The supported preset Phase 2 simulation path remains Ubuntu/Jazzy.
+        </div>
+        <div>
+          <strong>Custom ROS simulation packages</strong> — For a ROS-ready custom parent, select the registered
+          <span class="font-mono">Fedora 43 + ROS 2 Lyrical (dnf)</span> template. It adds the fixed
+          <span class="font-mono">ros-lyrical-nav2-minimal-tb3-sim</span> and
+          <span class="font-mono">ros-lyrical-ros-gz-sim</span> packages directly to the parent and labels the output
+          <strong>packages-only</strong>. This BYO image is not eligible for managed launch, noVNC, Navigate,
+          diagnostics, or OpenShift simulation deployment.
+        </div>
+        <div>
+          <strong>Fedora 43 + ROS 2 Lyrical</strong> — Choose <strong>Fedora bootc 43</strong> for
+          <span class="font-mono">Base OS</span>
+          and <strong>ROS2 Lyrical</strong> for <span class="font-mono">ROS</span>, then keep
+          <strong>Gazebo + Nav2 + TurtleBot3</strong>
+          selected for <span class="font-mono">Simulation</span>. The generated Containerfile pins DNF to Fedora 43 and
+          configures the ROS 2 Lyrical Fedora 43 x86_64 testing repository before installing the the ROS runtime stack
+          plus development RPM dependencies required by the testing repository. This path is amd64-only and
+          packages-only.
+        </div>
+        <div class="text-xs font-semibold text-[var(--pd-content-header)] mt-3 mb-2">All Layouts</div>
+        <div>
+          <strong>Cancel / Push</strong> — Cancel aborts an in-progress <strong>build</strong> or <strong>push</strong>.
+          Push requires registry login via Podman Desktop &rarr; Settings &rarr; Registries. Image Builder also shows
+          whether the current <span class="font-mono">quay.io/…</span> tag exists on Quay (public repos only; private repos
+          show as unavailable).
+        </div>
+        <div>
+          <strong>Build storage cleanup</strong> — Successful and failed builds remove their intermediate Buildah
+          containers. A cancelled build may leave external Buildah containers because the Podman Desktop build API does
+          not expose a safe per-build cleanup identifier. If storage accumulates or Podman reports no space left on
+          device, stop all builds and run <span class="font-mono">podman system prune --build --force</span> after reviewing
+          its scope. This does not remove volumes, and the extension does not run it automatically.
         </div>
       </div>
     </div>

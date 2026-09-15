@@ -438,7 +438,7 @@ onDestroy(() => {
           </span>
         {/if}
         {#if lyricalTargetUnsupported}
-          <span class="text-xs text-[var(--pd-content-text)] opacity-80">
+          <span class="text-xs" style="color: #ef4444;">
             ROS2 Lyrical uses the Fedora 43 x86_64 testing repository and requires an <span class="font-mono"
               >amd64</span>
             target.
