@@ -15,7 +15,7 @@ export interface QuickStartDefinition {
 export const QUICK_STARTS: readonly QuickStartDefinition[] = [
   {
     id: 'local-jazzy',
-    label: 'TurtleBot3 Sim (Jazzy)',
+    label: 'TurtleBot3 Sim (Jazzy · arm64)',
     description: 'Ubuntu Noble + ROS 2 Jazzy + Gazebo/Nav2/TurtleBot3 simulation',
     recipe: {
       base: { kind: 'preset', presetId: 'jazzy-noble' },

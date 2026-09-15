@@ -60,31 +60,31 @@ assert_fail "rejects bad ROBOTS env" pai_validate_robots_env "robot_1:0:0:0 bad;
 echo
 echo "=== entrypoint-spawn-robot.sh (rejects before ROS) ==="
 assert_fail "spawn rejects robot;id" \
-  env PHYSICAL_AI_VALIDATE_LIB="${VALIDATE}" "${SPAWN}" "robot;id" 0 0 0
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${SPAWN}" "robot;id" 0 0 0
 assert_fail "spawn rejects non-numeric x" \
-  env PHYSICAL_AI_VALIDATE_LIB="${VALIDATE}" "${SPAWN}" "robot_1" "0;rm" 0 0
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${SPAWN}" "robot_1" "0;rm" 0 0
 assert_fail "spawn rejects missing args" \
-  env PHYSICAL_AI_VALIDATE_LIB="${VALIDATE}" "${SPAWN}"
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${SPAWN}"
 
 echo
 echo "=== entrypoint-nav2.sh (rejects before ROS) ==="
 assert_fail "nav2 rejects robot;id" \
-  env PHYSICAL_AI_VALIDATE_LIB="${VALIDATE}" "${NAV2}" "robot;id"
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${NAV2}" "robot;id"
 assert_fail "nav2 rejects empty" \
-  env PHYSICAL_AI_VALIDATE_LIB="${VALIDATE}" "${NAV2}"
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${NAV2}"
 
 echo
 echo "=== entrypoint-gazebo.sh (rejects hostile env before display/ROS) ==="
 assert_fail "gazebo rejects injectable ROBOTS" \
-  env PHYSICAL_AI_VALIDATE_LIB="${VALIDATE}" ROBOTS='robot;x:0:0:0' "${GAZEBO}"
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" ROBOTS='robot;x:0:0:0' "${GAZEBO}"
 assert_fail "gazebo rejects bad WORLD_NAME" \
-  env PHYSICAL_AI_VALIDATE_LIB="${VALIDATE}" WORLD_NAME='tb3;sandbox' "${GAZEBO}"
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" WORLD_NAME='tb3;sandbox' "${GAZEBO}"
 assert_fail "gazebo rejects bad NOVNC_PORT" \
-  env PHYSICAL_AI_VALIDATE_LIB="${VALIDATE}" NOVNC_PORT='6080;id' "${GAZEBO}"
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" NOVNC_PORT='6080;id' "${GAZEBO}"
 assert_fail "gazebo rejects bad RESOLUTION" \
-  env PHYSICAL_AI_VALIDATE_LIB="${VALIDATE}" RESOLUTION='1024x768' "${GAZEBO}"
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" RESOLUTION='1024x768' "${GAZEBO}"
 assert_fail "spawn rejects missing validate lib override" \
-  env PHYSICAL_AI_VALIDATE_LIB="/nonexistent/validate-input.sh" "${SPAWN}" robot_1 0 0 0
+  env ROBOTICS_VALIDATE_LIB="/nonexistent/validate-input.sh" "${SPAWN}" robot_1 0 0 0
 
 echo
 echo "Results: ${pass} passed, ${fail} failed"

@@ -208,7 +208,7 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
   // GPU on: signal the entrypoint to use hardware rendering and request a GPU device.
   // GPU off: force software (llvmpipe) — the entrypoint then uses headless EGL for sensors.
   const env = useGpu
-    ? [{ name: 'PHYSICAL_AI_USE_GPU', value: '1' }]
+    ? [{ name: 'ROBOTICS_USE_GPU', value: '1' }]
     : [
         { name: 'LIBGL_ALWAYS_SOFTWARE', value: '1' },
         { name: 'GALLIUM_DRIVER', value: 'llvmpipe' },

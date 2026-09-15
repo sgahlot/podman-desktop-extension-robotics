@@ -1336,7 +1336,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const useGpu = await this.#simulationGpuPassthroughEnabled();
     const env: Record<string, string> = { ...clientEnv };
     if (useGpu) {
-      env.PHYSICAL_AI_USE_GPU = '1';
+      env.ROBOTICS_USE_GPU = '1';
     } else {
       env.LIBGL_ALWAYS_SOFTWARE = '1';
       env.GALLIUM_DRIVER = 'llvmpipe';
@@ -1796,8 +1796,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       // We're launching a fresh bringup → the first goal must clear the costmaps once.
       this.nav2ClearPending.add(PhysicalAiApiImpl.#navTargetKey(target, robotName));
       await this.#execDetached(target, NAV2_ENTRYPOINT, [robotName], {
-        PHYSICAL_AI_SPAWN_X: pose.x.toFixed(4),
-        PHYSICAL_AI_SPAWN_Y: pose.y.toFixed(4),
+        ROBOTICS_SPAWN_X: pose.x.toFixed(4),
+        ROBOTICS_SPAWN_Y: pose.y.toFixed(4),
       });
     }
 

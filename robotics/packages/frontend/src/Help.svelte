@@ -15,7 +15,7 @@ import { navigationLayout } from './lib/navigationLayout';
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Getting Started</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-1">
         <p>
-          Robotics gives robotics developers a GUI-driven path from local development to OpenShift deployment — no
+          This extension gives robotics developers a GUI-driven path from local development to OpenShift deployment — no
           terminal required.
         </p>
         <p>

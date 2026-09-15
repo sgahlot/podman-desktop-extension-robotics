@@ -54,7 +54,7 @@ describe('BuildHistoryPanel', () => {
 
   it('shows per-layer cache summary when layerCacheStatus is present', async () => {
     const entry: BuildHistoryEntry = {
-      tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
+      tag: 'quay.io/ns/robotics-ubuntu-noble:latest',
       arch: 'arm64',
       startedAt: Date.now(),
       durationMs: 49_000,
@@ -78,7 +78,7 @@ describe('BuildHistoryPanel', () => {
 
   it('formats a duration over a minute as minutes and seconds', async () => {
     const entry: BuildHistoryEntry = {
-      tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64',
+      tag: 'quay.io/ns/robotics-ubuntu-noble:latest-amd64',
       arch: 'amd64',
       startedAt: Date.now(),
       durationMs: 1_150_200,
@@ -93,7 +93,7 @@ describe('BuildHistoryPanel', () => {
 
   it('renders a failed entry with its error message', async () => {
     const entry: BuildHistoryEntry = {
-      tag: 'quay.io/ns/pai-layer-fedora-bootc-42:latest',
+      tag: 'quay.io/ns/robotics-fedora-bootc-42:latest',
       arch: 'arm64',
       startedAt: Date.now(),
       durationMs: 4_000,
@@ -127,7 +127,7 @@ describe('BuildHistoryPanel', () => {
 
   it('labels a CycloneDX SBOM by its component count from sbomPackageCount, without fetching the SBOM', async () => {
     const entry: BuildHistoryEntry = {
-      tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
+      tag: 'quay.io/ns/robotics-ubuntu-noble:latest',
       arch: 'amd64',
       startedAt: Date.now(),
       durationMs: 20_000,
@@ -146,7 +146,7 @@ describe('BuildHistoryPanel', () => {
 
   it('fetches the SBOM on demand when expanded, showing a parsed, pretty-printed count, and copies the raw SBOM to clipboard', async () => {
     const entry: BuildHistoryEntry = {
-      tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
+      tag: 'quay.io/ns/robotics-ubuntu-noble:latest',
       arch: 'amd64',
       startedAt: Date.now(),
       durationMs: 20_000,
@@ -199,7 +199,7 @@ describe('BuildHistoryPanel', () => {
         }),
     );
     const entry: BuildHistoryEntry = {
-      tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
+      tag: 'quay.io/ns/robotics-ubuntu-noble:latest',
       arch: 'amd64',
       startedAt: Date.now(),
       durationMs: 20_000,
@@ -222,7 +222,7 @@ describe('BuildHistoryPanel', () => {
   it('shows an inline error when the on-demand SBOM fetch fails', async () => {
     mockGetBuildHistorySbom.mockRejectedValue(new Error('history file unreadable'));
     const entry: BuildHistoryEntry = {
-      tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
+      tag: 'quay.io/ns/robotics-ubuntu-noble:latest',
       arch: 'amd64',
       startedAt: Date.now(),
       durationMs: 20_000,
@@ -244,7 +244,7 @@ describe('BuildHistoryPanel', () => {
     mockGetBuildHistorySbom.mockResolvedValue(SPDX_SBOM);
 
     const entry: BuildHistoryEntry = {
-      tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
+      tag: 'quay.io/ns/robotics-ubuntu-noble:latest',
       arch: 'amd64',
       startedAt: Date.now(),
       durationMs: 20_000,
@@ -268,7 +268,7 @@ describe('BuildHistoryPanel', () => {
     mockGetBuildHistorySbom.mockResolvedValue(SPDX_SBOM);
 
     const entry: BuildHistoryEntry = {
-      tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
+      tag: 'quay.io/ns/robotics-ubuntu-noble:latest',
       arch: 'amd64',
       startedAt: Date.now(),
       durationMs: 20_000,
@@ -300,7 +300,7 @@ describe('BuildHistoryPanel', () => {
     // sbomFormat to spdx-json for these so the toggle still shows (APPENG-6265), but no
     // sbomPackageCount was ever computed for it.
     const entry: BuildHistoryEntry = {
-      tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
+      tag: 'quay.io/ns/robotics-ubuntu-noble:latest',
       arch: 'amd64',
       startedAt: Date.now(),
       durationMs: 20_000,
@@ -376,7 +376,7 @@ describe('BuildHistoryPanel', () => {
   it('refreshAfterBuild(true) stops as soon as the newest entry gets its SBOM, without waiting out the full ceiling', async () => {
     vi.useFakeTimers();
     const withoutSbom: BuildHistoryEntry = {
-      tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest',
+      tag: 'quay.io/ns/robotics-ubuntu-noble:latest',
       arch: 'arm64',
       startedAt: 1,
       durationMs: 3400,

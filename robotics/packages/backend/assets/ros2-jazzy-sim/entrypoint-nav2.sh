@@ -30,7 +30,7 @@ export ROS_HOME="${HOME}/.ros"
 export ROS_LOG_DIR="${HOME}/.ros/log"
 
 # shellcheck disable=SC1090
-source "${PHYSICAL_AI_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
+source "${ROBOTICS_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
 
 PATCH_SCRIPT="${SCRIPT_DIR}/lib/patch-nav2-params.py"
 [[ -f "${PATCH_SCRIPT}" ]] || PATCH_SCRIPT="/usr/local/lib/robotics/patch-nav2-params.py"
@@ -40,7 +40,7 @@ if [[ ! -f "${PATCH_SCRIPT}" ]]; then
 fi
 
 PARAMS_FILE="${HOME}/nav2-${ROBOT_NAME}-params.yaml"
-MAP_FILE="${PHYSICAL_AI_NAV2_MAP:-/opt/ros/jazzy/share/nav2_bringup/maps/tb3_sandbox.yaml}"
+MAP_FILE="${ROBOTICS_NAV2_MAP:-/opt/ros/jazzy/share/nav2_bringup/maps/tb3_sandbox.yaml}"
 
 python3 "${PATCH_SCRIPT}" --output "${PARAMS_FILE}"
 
@@ -62,10 +62,10 @@ ros2 launch nav2_bringup bringup_launch.py \
 NAV2_PID=$!
 
 # AMCL needs an initial pose before it publishes map->odom. Defaults match spawn entrypoint.
-SPAWN_X="${PHYSICAL_AI_SPAWN_X:--2.0}"
-SPAWN_Y="${PHYSICAL_AI_SPAWN_Y:--0.5}"
+SPAWN_X="${ROBOTICS_SPAWN_X:--2.0}"
+SPAWN_Y="${ROBOTICS_SPAWN_Y:--0.5}"
 # Max seconds to wait for AMCL to come up before seeding the pose anyway.
-AMCL_READY_ATTEMPTS="${PHYSICAL_AI_AMCL_READY_ATTEMPTS:-60}"
+AMCL_READY_ATTEMPTS="${ROBOTICS_AMCL_READY_ATTEMPTS:-60}"
 (
   # Seed the initial pose as soon as AMCL is subscribed to /initialpose, instead of a
   # blind `sleep 12` — this starts localization/convergence several seconds sooner and

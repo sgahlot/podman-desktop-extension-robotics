@@ -96,7 +96,7 @@ describe('SimulationSetup (Image Builder)', () => {
     await waitFor(() => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
-    expect(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · arm64)' })).toBeTruthy();
 
     // Switch to Customize to verify detailed controls are available
     // (including Target architecture dropdown in LayerComposer)
@@ -140,7 +140,7 @@ describe('SimulationSetup (Image Builder)', () => {
     });
 
     // Dropdowns show jazzy/jazzy-noble, matching Quick Start — saves immediately without confirmation
-    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · arm64)' }));
 
     await waitFor(() => {
       expect(mockSaveSimulationConfig).toHaveBeenCalledWith(
@@ -171,7 +171,7 @@ describe('SimulationSetup (Image Builder)', () => {
     });
 
     // Click Quick Start button — with jazzy/jazzy-noble config already loaded, saves immediately
-    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · arm64)' }));
 
     await waitFor(() => {
       expect(mockSaveSimulationConfig).toHaveBeenCalledWith(
@@ -233,7 +233,7 @@ describe('SimulationSetup (Image Builder)', () => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · arm64)' }));
 
     await waitFor(() => {
       expect(mockSaveSimulationConfig).toHaveBeenCalledWith(
@@ -256,7 +256,7 @@ describe('SimulationSetup (Image Builder)', () => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy)' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · arm64)' }));
     expect(await screen.findByRole('button', { name: 'Apply Quick Start' })).toBeTruthy();
     expect(mockSaveSimulationConfig).not.toHaveBeenCalled();
 

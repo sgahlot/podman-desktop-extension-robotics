@@ -151,7 +151,7 @@ describe('OpenShiftSimulation', () => {
         { tag: 'quay.io/ns/ros2-jazzy-sim:noble', arch: 'arm64' }, // host-native — excluded
         // A Layers-wizard build: doesn't match the local sim-launch allowlist's naming
         // convention at all, but is just as valid an OpenShift deploy candidate.
-        { tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64', arch: 'amd64' },
+        { tag: 'quay.io/ns/robotics-ubuntu-noble:latest-amd64', arch: 'amd64' },
       ]);
       render(DeployOpenShift);
 
@@ -159,7 +159,7 @@ describe('OpenShiftSimulation', () => {
       await fireEvent.focus(input);
 
       expect(await screen.findByRole('option', { name: 'quay.io/ns/ros2-jazzy-sim:noble-amd64' })).toBeTruthy();
-      expect(screen.getByRole('option', { name: 'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64' })).toBeTruthy();
+      expect(screen.getByRole('option', { name: 'quay.io/ns/robotics-ubuntu-noble:latest-amd64' })).toBeTruthy();
       expect(screen.queryByRole('option', { name: 'quay.io/ns/ros2-jazzy-sim:noble' })).toBeNull();
     });
 
@@ -202,7 +202,7 @@ describe('OpenShiftSimulation', () => {
     it('narrows suggestions by the configured OCP image allowlist, when set', async () => {
       mockListLocalImagesWithArch.mockResolvedValue([
         { tag: 'quay.io/ns/ros2-jazzy-sim:noble-amd64', arch: 'amd64' },
-        { tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64', arch: 'amd64' },
+        { tag: 'quay.io/ns/robotics-ubuntu-noble:latest-amd64', arch: 'amd64' },
       ]);
       mockGetOpenShiftImageAllowlist.mockResolvedValue('ros2-*-sim*');
       render(DeployOpenShift);
@@ -211,13 +211,13 @@ describe('OpenShiftSimulation', () => {
       await fireEvent.focus(input);
 
       expect(await screen.findByRole('option', { name: 'quay.io/ns/ros2-jazzy-sim:noble-amd64' })).toBeTruthy();
-      expect(screen.queryByRole('option', { name: 'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64' })).toBeNull();
+      expect(screen.queryByRole('option', { name: 'quay.io/ns/robotics-ubuntu-noble:latest-amd64' })).toBeNull();
     });
 
     it('shows every amd64 image when the allowlist preference is empty (the default)', async () => {
       mockListLocalImagesWithArch.mockResolvedValue([
         { tag: 'quay.io/ns/ros2-jazzy-sim:noble-amd64', arch: 'amd64' },
-        { tag: 'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64', arch: 'amd64' },
+        { tag: 'quay.io/ns/robotics-ubuntu-noble:latest-amd64', arch: 'amd64' },
       ]);
       mockGetOpenShiftImageAllowlist.mockResolvedValue('');
       render(DeployOpenShift);
@@ -226,7 +226,7 @@ describe('OpenShiftSimulation', () => {
       await fireEvent.focus(input);
 
       expect(await screen.findByRole('option', { name: 'quay.io/ns/ros2-jazzy-sim:noble-amd64' })).toBeTruthy();
-      expect(screen.getByRole('option', { name: 'quay.io/ns/pai-layer-ubuntu-noble:latest-amd64' })).toBeTruthy();
+      expect(screen.getByRole('option', { name: 'quay.io/ns/robotics-ubuntu-noble:latest-amd64' })).toBeTruthy();
     });
 
     it('picking a suggestion fills the Image field and closes the menu', async () => {

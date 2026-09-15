@@ -35,12 +35,12 @@ export ROS_LOG_DIR="${HOME}/.ros/log"
 
 # Overridable for stubbed unit tests (default: real image path).
 # shellcheck disable=SC1090
-source "${PHYSICAL_AI_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
+source "${ROBOTICS_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
 
 export TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-waffle}"
 export GZ_SIM_RESOURCE_PATH="/opt/ros/jazzy/share:/opt/ros/jazzy/share/nav2_minimal_tb3_sim/models:${GZ_SIM_RESOURCE_PATH:-}"
 
-SIM_DIR="${PHYSICAL_AI_SIM_DIR:-/opt/ros/jazzy/share/nav2_minimal_tb3_sim}"
+SIM_DIR="${ROBOTICS_SIM_DIR:-/opt/ros/jazzy/share/nav2_minimal_tb3_sim}"
 URDF_FILE="${SIM_DIR}/urdf/turtlebot3_waffle.urdf"
 
 echo "[spawn] Spawning ${ROBOT_NAME} at (${X_POSE}, ${Y_POSE}, yaw=${YAW})..."

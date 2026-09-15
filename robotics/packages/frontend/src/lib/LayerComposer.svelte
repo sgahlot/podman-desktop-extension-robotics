@@ -175,7 +175,7 @@ let simTag = presetSimTag;
 $: baseImageExists = !!baseTag && localImages.includes(baseTag);
 $: hardenedImageExists = !!hardenedTag && localImages.includes(hardenedTag);
 $: simParentReady = baseImageExists && (!needsHardened || hardenedImageExists);
-$: containerfileTag = `${ns ? `quay.io/${ns}/` : ''}pai-layer-${selection.baseOs}:latest${archTagSuffix(targetArch)}`;
+$: containerfileTag = `${ns ? `quay.io/${ns}/` : ''}robotics-${selection.baseOs}:latest${archTagSuffix(targetArch)}`;
 
 // --- Images this stack pulls -----------------------------------------------------
 // The generic Base OS ref (BASE_OS_IMAGE_REF) is only what the *generated Containerfile*

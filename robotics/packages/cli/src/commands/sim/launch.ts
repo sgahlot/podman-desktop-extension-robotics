@@ -75,7 +75,7 @@ export default class SimLaunch extends Command {
     const useGpu = flags.gpu ?? process.arch === 'arm64';
     const env: Record<string, string> = { ...clientEnv };
     if (useGpu) {
-      env.PHYSICAL_AI_USE_GPU = '1';
+      env.ROBOTICS_USE_GPU = '1';
     } else {
       env.LIBGL_ALWAYS_SOFTWARE = '1';
       env.GALLIUM_DRIVER = 'llvmpipe';

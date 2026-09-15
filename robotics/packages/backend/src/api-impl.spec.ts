@@ -2860,10 +2860,8 @@ linear_acceleration:
       const dIdx = detachedArgs.indexOf('-d');
       expect(detachedArgs.indexOf(CONTAINER_ID)).toBeGreaterThan(dIdx);
       expect(detachedArgs.indexOf(NAV2_ENTRYPOINT)).toBeGreaterThan(detachedArgs.indexOf(CONTAINER_ID));
-      expect(detachedArgs.some(a => a === 'PHYSICAL_AI_SPAWN_X=0.0000' || a.startsWith('PHYSICAL_AI_SPAWN_X='))).toBe(
-        true,
-      );
-      expect(detachedArgs.some(a => a.startsWith('PHYSICAL_AI_SPAWN_Y='))).toBe(true);
+      expect(detachedArgs.some(a => a === 'ROBOTICS_SPAWN_X=0.0000' || a.startsWith('ROBOTICS_SPAWN_X='))).toBe(true);
+      expect(detachedArgs.some(a => a.startsWith('ROBOTICS_SPAWN_Y='))).toBe(true);
     });
 
     it('clears both costmaps once on a cold start, before sending the goal', async () => {
@@ -3184,7 +3182,7 @@ linear_acceleration:
       );
     });
 
-    it('passes /dev/dri and PHYSICAL_AI_USE_GPU on arm64 when GPU passthrough is enabled', async () => {
+    it('passes /dev/dri and ROBOTICS_USE_GPU on arm64 when GPU passthrough is enabled', async () => {
       const archSpy = vi.spyOn(process, 'arch', 'get').mockReturnValue('arm64');
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockImplementation((key: string) => {
@@ -3200,7 +3198,7 @@ linear_acceleration:
         Env: string[];
         HostConfig: { Devices?: Array<{ PathOnHost: string }> };
       };
-      expect(createArg.Env).toContain('PHYSICAL_AI_USE_GPU=1');
+      expect(createArg.Env).toContain('ROBOTICS_USE_GPU=1');
       expect(createArg.Env.some(e => e.startsWith('LIBGL_ALWAYS_SOFTWARE='))).toBe(false);
       expect(createArg.HostConfig.Devices?.map(d => d.PathOnHost)).toEqual(['/dev/dri/card0', '/dev/dri/renderD128']);
       archSpy.mockRestore();

@@ -192,7 +192,7 @@ describe('buildOpenShiftManifests', () => {
     // Software-rendering env is dropped; the entrypoint uses hardware rendering.
     expect(env.LIBGL_ALWAYS_SOFTWARE).toBeUndefined();
     expect(env.GALLIUM_DRIVER).toBeUndefined();
-    expect(env.PHYSICAL_AI_USE_GPU).toBe('1');
+    expect(env.ROBOTICS_USE_GPU).toBe('1');
     expect(container.resources.limits['nvidia.com/gpu']).toBe('1');
     // The GPU offloads only sensor rendering; the GUI stays software on a no-DRI
     // cluster, so the pod is guaranteed GPU_POD_CPU cores (requests == limits).
@@ -251,7 +251,7 @@ describe('buildOpenShiftManifests', () => {
     const container = (deployment as unknown as DeploymentManifest).spec.template.spec.containers[0];
     const env = Object.fromEntries(container.env.map(e => [e.name, e.value]));
     expect(env.RMW_IMPLEMENTATION).toBe('rmw_zenoh_cpp');
-    expect(env.PHYSICAL_AI_USE_GPU).toBe('1');
+    expect(env.ROBOTICS_USE_GPU).toBe('1');
   });
 
   it('exposes the noVNC port via an edge-terminated Route', () => {
@@ -348,7 +348,7 @@ describe('buildOpenShiftManifests — Hummingbird nginx sidecar (APPENG-6227)', 
 
     const simContainer = (deployment as unknown as DeploymentManifest).spec.template.spec.containers[0];
     const env = Object.fromEntries(simContainer.env.map(e => [e.name, e.value]));
-    expect(env.PHYSICAL_AI_USE_GPU).toBe('1');
+    expect(env.ROBOTICS_USE_GPU).toBe('1');
     expect(env.RMW_IMPLEMENTATION).toBe('rmw_zenoh_cpp');
     expect(simContainer.resources.limits['nvidia.com/gpu']).toBe('1');
 

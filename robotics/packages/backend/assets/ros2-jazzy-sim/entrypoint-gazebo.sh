@@ -45,7 +45,7 @@ export ROS_HOME="${HOME}/.ros"
 export ROS_LOG_DIR="${HOME}/.ros/log"
 
 # shellcheck disable=SC1090
-source "${PHYSICAL_AI_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
+source "${ROBOTICS_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
 
 set -u
 
@@ -80,10 +80,10 @@ fi
 # micro-stutter seen even at avg RTF ~1.0. Widening the quota (the configurable CPU
 # count) helps; capping the pools removes the oversubscription at any core count.
 # Cap only when a quota exists — the unlimited local (podman) path has no quota and
-# no throttling, so leave it alone. Override/force with PHYSICAL_AI_CPU_CAP.
+# no throttling, so leave it alone. Override/force with ROBOTICS_CPU_CAP.
 _pai_cpu_cap() {
-  if [[ -n "${PHYSICAL_AI_CPU_CAP:-}" ]]; then
-    echo "${PHYSICAL_AI_CPU_CAP}"
+  if [[ -n "${ROBOTICS_CPU_CAP:-}" ]]; then
+    echo "${ROBOTICS_CPU_CAP}"
     return
   fi
   local q p
@@ -103,17 +103,17 @@ _pai_cpu_cap() {
   fi
   echo ""   # no quota (unlimited) → don't cap
 }
-PAI_CPU_CAP="$(_pai_cpu_cap)"
-if [[ -n "${PAI_CPU_CAP}" && "${PAI_CPU_CAP}" -ge 1 ]]; then
-  echo "[gazebo] capping render/physics thread pools to ${PAI_CPU_CAP} CPU(s) (cgroup quota)"
-  export OMP_NUM_THREADS="${OMP_NUM_THREADS:-${PAI_CPU_CAP}}"       # OpenMP (collision/physics libs)
-  export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-${PAI_CPU_CAP}}"
-  export LP_NUM_THREADS="${LP_NUM_THREADS:-${PAI_CPU_CAP}}"        # llvmpipe/Mesa software rasterizer (biggest hog)
-  export MESA_NUM_THREADS="${MESA_NUM_THREADS:-${PAI_CPU_CAP}}"    # some Mesa builds read this instead
-  export GALLIUM_NUM_THREADS="${GALLIUM_NUM_THREADS:-${PAI_CPU_CAP}}"
+ROBOTICS_CPU_CAP="$(_pai_cpu_cap)"
+if [[ -n "${ROBOTICS_CPU_CAP}" && "${ROBOTICS_CPU_CAP}" -ge 1 ]]; then
+  echo "[gazebo] capping render/physics thread pools to ${ROBOTICS_CPU_CAP} CPU(s) (cgroup quota)"
+  export OMP_NUM_THREADS="${OMP_NUM_THREADS:-${ROBOTICS_CPU_CAP}}"       # OpenMP (collision/physics libs)
+  export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-${ROBOTICS_CPU_CAP}}"
+  export LP_NUM_THREADS="${LP_NUM_THREADS:-${ROBOTICS_CPU_CAP}}"        # llvmpipe/Mesa software rasterizer (biggest hog)
+  export MESA_NUM_THREADS="${MESA_NUM_THREADS:-${ROBOTICS_CPU_CAP}}"    # some Mesa builds read this instead
+  export GALLIUM_NUM_THREADS="${GALLIUM_NUM_THREADS:-${ROBOTICS_CPU_CAP}}"
 fi
 
-# Rendering: three paths, selected by PHYSICAL_AI_USE_GPU and what GPU devices exist.
+# Rendering: three paths, selected by ROBOTICS_USE_GPU and what GPU devices exist.
 # Server-side sensor rendering (camera/lidar) is separate from the GUI canvas:
 #   1. GPU + /dev/dri (Mac virtio-gpu passthrough) → GLX on the Xvfb display (hardware).
 #   2. GPU but no /dev/dri (NVIDIA GPU operator in-cluster exposes /dev/nvidia*, not DRI)
@@ -163,11 +163,11 @@ GZ_SERVER_GL=()
 # the GPU via `vglrun -d egl` instead of the llvmpipe CPU rasterizer (APPENG-6083).
 VGL_GUI=()
 GUI_GPU=0
-if [[ "${PHYSICAL_AI_USE_GPU:-0}" == "1" ]] && [[ -e /dev/dri/renderD128 ]]; then
+if [[ "${ROBOTICS_USE_GPU:-0}" == "1" ]] && [[ -e /dev/dri/renderD128 ]]; then
   echo "[gazebo] GPU passthrough enabled (/dev/dri present), using hardware GLX rendering"
   unset LIBGL_ALWAYS_SOFTWARE
   unset GALLIUM_DRIVER
-elif [[ "${PHYSICAL_AI_USE_GPU:-0}" == "1" ]]; then
+elif [[ "${ROBOTICS_USE_GPU:-0}" == "1" ]]; then
   echo "[gazebo] GPU requested without /dev/dri (assuming NVIDIA): software EGL for server sensors + Xvfb/GUI (APPENG-6110), GPU reserved for the GUI viewport (VirtualGL)"
   unset LIBGL_ALWAYS_SOFTWARE
   unset GALLIUM_DRIVER
@@ -211,9 +211,9 @@ elif [[ "${PHYSICAL_AI_USE_GPU:-0}" == "1" ]]; then
   # moved to software EGL above), so the GUI is now the GPU's only consumer. Xvfb :99
   # stays the 2D/window-system side that VGL reads frames back into for x11vnc. Requires
   # VirtualGL in the image and an NVIDIA EGL vendor ICD. Falls back to the software
-  # (llvmpipe) GUI path when either is missing, or when disabled via PHYSICAL_AI_GUI_GPU=0.
-  PHYSICAL_AI_GUI_GPU="${PHYSICAL_AI_GUI_GPU:-1}"
-  if [[ "${PHYSICAL_AI_GUI_GPU}" == "1" ]] && command -v vglrun >/dev/null 2>&1 && [[ -n "${_nvidia_egl}" ]]; then
+  # (llvmpipe) GUI path when either is missing, or when disabled via ROBOTICS_GUI_GPU=0.
+  ROBOTICS_GUI_GPU="${ROBOTICS_GUI_GPU:-1}"
+  if [[ "${ROBOTICS_GUI_GPU}" == "1" ]] && command -v vglrun >/dev/null 2>&1 && [[ -n "${_nvidia_egl}" ]]; then
     GUI_GPU=1
     # Pin the GUI's EGL vendor to NVIDIA so VGL's EGL back end binds the GPU. No Mesa/
     # llvmpipe steering and no llvmpipe thread clamp are applied to the GUI on this path
@@ -221,15 +221,15 @@ elif [[ "${PHYSICAL_AI_USE_GPU:-0}" == "1" ]]; then
     VGL_GUI=(env "__EGL_VENDOR_LIBRARY_FILENAMES=${_nvidia_egl}" VGL_LOGO=0)
     # Optional frame-rate cap for VGL readback (empty disables). Bounds the GPU->X
     # readback/event loop cost; the browser can't perceive more via x11vnc downsampling.
-    PHYSICAL_AI_GUI_VGL_FPS="${PHYSICAL_AI_GUI_VGL_FPS:-30}"
-    if [[ -n "${PHYSICAL_AI_GUI_VGL_FPS}" ]]; then
-      if [[ "${PHYSICAL_AI_GUI_VGL_FPS}" =~ ^[0-9]+$ ]] && [[ "${PHYSICAL_AI_GUI_VGL_FPS}" -ge 1 ]]; then
-        VGL_GUI+=("VGL_FPS=${PHYSICAL_AI_GUI_VGL_FPS}")
+    ROBOTICS_GUI_VGL_FPS="${ROBOTICS_GUI_VGL_FPS:-30}"
+    if [[ -n "${ROBOTICS_GUI_VGL_FPS}" ]]; then
+      if [[ "${ROBOTICS_GUI_VGL_FPS}" =~ ^[0-9]+$ ]] && [[ "${ROBOTICS_GUI_VGL_FPS}" -ge 1 ]]; then
+        VGL_GUI+=("VGL_FPS=${ROBOTICS_GUI_VGL_FPS}")
       else
-        echo "[gazebo]   WARN: ignoring invalid PHYSICAL_AI_GUI_VGL_FPS '${PHYSICAL_AI_GUI_VGL_FPS}' (want a positive integer)"
+        echo "[gazebo]   WARN: ignoring invalid ROBOTICS_GUI_VGL_FPS '${ROBOTICS_GUI_VGL_FPS}' (want a positive integer)"
       fi
     fi
-    echo "[gazebo]   GUI: GPU-rendered via VirtualGL EGL back end (NVIDIA, VGL_FPS=${PHYSICAL_AI_GUI_VGL_FPS:-uncapped})"
+    echo "[gazebo]   GUI: GPU-rendered via VirtualGL EGL back end (NVIDIA, VGL_FPS=${ROBOTICS_GUI_VGL_FPS:-uncapped})"
   else
     echo "[gazebo]   GUI: software-rendered (llvmpipe); VirtualGL GPU-GUI unavailable or disabled"
   fi
@@ -297,7 +297,7 @@ for i in $(seq 1 60); do
 done
 
 # --- 8. Optionally spawn robots (Path A) ---
-SIM_DIR="${PHYSICAL_AI_SIM_DIR:-/opt/ros/jazzy/share/nav2_minimal_tb3_sim}"
+SIM_DIR="${ROBOTICS_SIM_DIR:-/opt/ros/jazzy/share/nav2_minimal_tb3_sim}"
 URDF_FILE="${SIM_DIR}/urdf/turtlebot3_waffle.urdf"
 
 SPAWN_PIDS=()
@@ -340,33 +340,33 @@ fi
 # gz *server's* physics thread, so the real-time factor swings (measured 0.39-1.46)
 # and the robot's motion turns jumpy (with a transient stale-pose "double" render
 # during a stall). Two clamps, both proven live in-cluster:
-#   1. GUI llvmpipe threads -> 2 (PHYSICAL_AI_GUI_LP_THREADS): caps the GUI at ~2
+#   1. GUI llvmpipe threads -> 2 (ROBOTICS_GUI_LP_THREADS): caps the GUI at ~2
 #      cores instead of ~3.5, freeing the rest for the server + Nav2. Measured: GUI
 #      350% -> 170%, RTF snapped to a rock-steady ~1.000 (was 0.39-1.46). x11vnc
 #      downsamples the GUI for noVNC anyway, so the lower frame rate is invisible.
-#   2. renice the GUI down (PHYSICAL_AI_GUI_NICE, default 19): belt-and-suspenders
+#   2. renice the GUI down (ROBOTICS_GUI_NICE, default 19): belt-and-suspenders
 #      so physics/Nav2 still win any residual contention (we can't raise the
 #      server's priority instead — negative nice needs CAP_SYS_NICE, denied in-cluster).
-# Set PHYSICAL_AI_GUI_LP_THREADS= (empty) or PHYSICAL_AI_GUI_NICE= (empty) to disable.
-PHYSICAL_AI_GUI_NICE="${PHYSICAL_AI_GUI_NICE:-19}"
+# Set ROBOTICS_GUI_LP_THREADS= (empty) or ROBOTICS_GUI_NICE= (empty) to disable.
+ROBOTICS_GUI_NICE="${ROBOTICS_GUI_NICE:-19}"
 GUI_NICE=()
-if [[ -n "${PHYSICAL_AI_GUI_NICE}" ]]; then
-  if [[ "${PHYSICAL_AI_GUI_NICE}" =~ ^-?[0-9]+$ ]]; then
-    GUI_NICE=(nice -n "${PHYSICAL_AI_GUI_NICE}")
+if [[ -n "${ROBOTICS_GUI_NICE}" ]]; then
+  if [[ "${ROBOTICS_GUI_NICE}" =~ ^-?[0-9]+$ ]]; then
+    GUI_NICE=(nice -n "${ROBOTICS_GUI_NICE}")
   else
-    echo "[gazebo] WARN: ignoring invalid PHYSICAL_AI_GUI_NICE '${PHYSICAL_AI_GUI_NICE}' (want an integer)"
+    echo "[gazebo] WARN: ignoring invalid ROBOTICS_GUI_NICE '${ROBOTICS_GUI_NICE}' (want an integer)"
   fi
 fi
-PHYSICAL_AI_GUI_LP_THREADS="${PHYSICAL_AI_GUI_LP_THREADS:-2}"
+ROBOTICS_GUI_LP_THREADS="${ROBOTICS_GUI_LP_THREADS:-2}"
 GUI_THREADS=()
-if [[ -n "${PHYSICAL_AI_GUI_LP_THREADS}" ]]; then
-  if [[ "${PHYSICAL_AI_GUI_LP_THREADS}" =~ ^[0-9]+$ ]] && [[ "${PHYSICAL_AI_GUI_LP_THREADS}" -ge 1 ]]; then
+if [[ -n "${ROBOTICS_GUI_LP_THREADS}" ]]; then
+  if [[ "${ROBOTICS_GUI_LP_THREADS}" =~ ^[0-9]+$ ]] && [[ "${ROBOTICS_GUI_LP_THREADS}" -ge 1 ]]; then
     GUI_THREADS=(env
-      "LP_NUM_THREADS=${PHYSICAL_AI_GUI_LP_THREADS}"
-      "GALLIUM_NUM_THREADS=${PHYSICAL_AI_GUI_LP_THREADS}"
-      "MESA_NUM_THREADS=${PHYSICAL_AI_GUI_LP_THREADS}")
+      "LP_NUM_THREADS=${ROBOTICS_GUI_LP_THREADS}"
+      "GALLIUM_NUM_THREADS=${ROBOTICS_GUI_LP_THREADS}"
+      "MESA_NUM_THREADS=${ROBOTICS_GUI_LP_THREADS}")
   else
-    echo "[gazebo] WARN: ignoring invalid PHYSICAL_AI_GUI_LP_THREADS '${PHYSICAL_AI_GUI_LP_THREADS}' (want a positive integer)"
+    echo "[gazebo] WARN: ignoring invalid ROBOTICS_GUI_LP_THREADS '${ROBOTICS_GUI_LP_THREADS}' (want a positive integer)"
   fi
 fi
 # _pai_launch_gui: (re)launches `gz sim -g` and sets GZ_GUI_PID. Used both for the
@@ -393,9 +393,9 @@ _pai_launch_gui() {
 }
 
 if [[ "${GUI_GPU}" == "1" ]]; then
-  echo "[gazebo] Launching Gazebo GUI (GPU via VirtualGL, nice=${PHYSICAL_AI_GUI_NICE:-none})..."
+  echo "[gazebo] Launching Gazebo GUI (GPU via VirtualGL, nice=${ROBOTICS_GUI_NICE:-none})..."
 else
-  echo "[gazebo] Launching Gazebo GUI (llvmpipe threads=${PHYSICAL_AI_GUI_LP_THREADS:-inherit}, nice=${PHYSICAL_AI_GUI_NICE:-none})..."
+  echo "[gazebo] Launching Gazebo GUI (llvmpipe threads=${ROBOTICS_GUI_LP_THREADS:-inherit}, nice=${ROBOTICS_GUI_NICE:-none})..."
 fi
 for i in $(seq 1 30); do
   if gz topic -l 2>/dev/null | grep -q "/world/${WORLD_NAME}/"; then
@@ -414,9 +414,9 @@ done
 # left noVNC silently frozen/black indefinitely. This loop (a) relaunches the GUI if it
 # dies for any reason, and (b) on the GPU path only, proactively recycles it on a timer
 # safely under the observed fault window, since we can't fix the underlying NVIDIA leak
-# from here. Empty PHYSICAL_AI_GUI_RESTART_SEC disables the proactive recycle (crash
+# from here. Empty ROBOTICS_GUI_RESTART_SEC disables the proactive recycle (crash
 # relaunch still applies). Capped at 20 relaunches to avoid a runaway crash-loop.
-PHYSICAL_AI_GUI_RESTART_SEC="${PHYSICAL_AI_GUI_RESTART_SEC:-2700}"
+ROBOTICS_GUI_RESTART_SEC="${ROBOTICS_GUI_RESTART_SEC:-2700}"
 _pai_gui_supervisor() {
   local gui_started restart_count=0
   gui_started=$(date +%s)
@@ -433,9 +433,9 @@ _pai_gui_supervisor() {
       gui_started=$(date +%s)
       continue
     fi
-    if [[ "${GUI_GPU}" == "1" ]] && [[ -n "${PHYSICAL_AI_GUI_RESTART_SEC}" ]] \
-       && (( $(date +%s) - gui_started >= PHYSICAL_AI_GUI_RESTART_SEC )); then
-      echo "[gazebo] Proactively recycling GPU GUI after ${PHYSICAL_AI_GUI_RESTART_SEC}s (APPENG-6110 mitigation for the NVIDIA sustained-EGL leak)..."
+    if [[ "${GUI_GPU}" == "1" ]] && [[ -n "${ROBOTICS_GUI_RESTART_SEC}" ]] \
+       && (( $(date +%s) - gui_started >= ROBOTICS_GUI_RESTART_SEC )); then
+      echo "[gazebo] Proactively recycling GPU GUI after ${ROBOTICS_GUI_RESTART_SEC}s (APPENG-6110 mitigation for the NVIDIA sustained-EGL leak)..."
       # `wait` on a SIGTERM'd process returns its exit status (143, non-zero); under
       # this script's `set -eo pipefail` (inherited by this backgrounded subshell), a
       # bare non-zero return here would silently kill the whole supervisor loop before
