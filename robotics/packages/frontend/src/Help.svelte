@@ -62,8 +62,9 @@ import { navigationLayout } from './lib/navigationLayout';
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
         <div>
           <strong>Quick Start:</strong> <strong>arm64</strong> — for Apple Silicon (Mac only) and
-          <strong>amd64</strong> — for Linux, OpenShift clusters. These two presets set the dropdowns, save preferences, and scroll to Phase 1,
-          then you click Build for Phase 1 and Phase 2. <i>Building amd64 on Mac is slower via emulation</i>.
+          <strong>amd64</strong> — for Linux, OpenShift clusters. These two presets set the dropdowns, save preferences,
+          and scroll to Phase 1, then you click Build for Phase 1 and Phase 2.
+          <i>Building amd64 on Mac is slower via emulation</i>.
         </div>
         <div>
           <strong>Phase 1: Base Image</strong> — Humble: <span class="font-mono">sloretz</span> (<span class="font-mono"
