@@ -106,7 +106,14 @@ describe('evaluateStack', () => {
     expect(result.level).toBe('blocked');
     expect(result.buildable).toBe(false);
     expect(result.failsAtStep).toBe('ros-install');
-    expect(result.messages.some(m => m.text.includes('no official ROS repository'))).toBe(true);
+    expect(result.messages.some(m => m.text.includes('no ROS Jazzy sim packages'))).toBe(true);
+  });
+
+  it('fedora bootc 43 + Lyrical + sim is supported by the testing repository', () => {
+    const result = evaluateStack(sel({ baseOs: 'fedora-bootc-43', ros: 'ros2-lyrical', sim: 'gazebo-nav2-tb3' }));
+    expect(result.level).toBe('ok');
+    expect(result.buildable).toBe(true);
+    expect(result.messages.some(m => m.text.includes('Known-good combination'))).toBe(true);
   });
 
   it('centos bootc with no ROS and no sim warns that it is not a robotics image yet', () => {
@@ -233,6 +240,34 @@ describe('generateLayerContainerfile', () => {
       "if ! grep -Rqs 'packages.ros.org/ros2/ubuntu' /etc/apt/sources.list /etc/apt/sources.list.d",
     );
     expect(containerfile.indexOf('ros2.list')).toBeLessThan(containerfile.indexOf('ros-jazzy-desktop'));
+  });
+
+  it('fedora 43 + Lyrical adds the x86_64 testing repository before installing ROS and sim packages', () => {
+    const containerfile = generateLayerContainerfile(
+      sel({ baseOs: 'fedora-bootc-43', ros: 'ros2-lyrical', sim: 'gazebo-nav2-tb3' }),
+    );
+    expect(containerfile).toContain('FROM quay.io/fedora/fedora-bootc:43');
+    expect(containerfile).toContain("RUN cat > /etc/yum.repos.d/ros2-lyrical-testing.repo <<'EOF'");
+    expect(containerfile).toContain('[ros2-lyrical-testing]');
+    expect(containerfile).toContain('baseurl=https://repo.ros2.org/fedora/testing/43/x86_64/');
+    expect(containerfile).toContain(
+      'RUN dnf --releasever=43 install -y ros-lyrical-desktop-runtime ros-lyrical-desktop-devel',
+    );
+    expect(containerfile).toContain(
+      'RUN dnf --releasever=43 install -y ros-lyrical-navigation2-runtime ' +
+        'ros-lyrical-navigation2-devel ' +
+        'ros-lyrical-nav2-bringup-runtime ' +
+        'ros-lyrical-nav2-bringup-devel ' +
+        'ros-lyrical-nav2-minimal-tb3-sim-runtime ' +
+        'ros-lyrical-nav2-minimal-tb3-sim-devel ' +
+        'ros-lyrical-turtlebot3-gazebo-runtime ' +
+        'ros-lyrical-turtlebot3-gazebo-devel ' +
+        'ros-lyrical-ros-gz-sim-runtime ' +
+        'ros-lyrical-ros-gz-sim-devel && dnf clean all',
+    );
+    expect(containerfile.indexOf('ros2-lyrical-testing.repo')).toBeLessThan(
+      containerfile.indexOf('ros-lyrical-desktop'),
+    );
   });
 
   it('uses system curl for ROS setup when a hardened curl tool is baked in', () => {

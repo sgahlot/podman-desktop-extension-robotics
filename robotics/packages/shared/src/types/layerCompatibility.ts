@@ -1,9 +1,9 @@
 /**
  * Pure compatibility engine for the layer-composition wizard (APPENG-6108).
  *
- * Encodes empirical findings from an el9/bootc feasibility spike: ROS2 Jazzy and the
- * Gazebo/Nav2/TurtleBot3 simulation stack install via apt on Ubuntu and have no
- * equivalent el9 RPMs today, so any dnf-based ("bootc") base blocks those layers.
+ * Encodes empirical findings from an el9/bootc feasibility spike: ROS2 Jazzy/Humble and
+ * the Gazebo/Nav2/TurtleBot3 simulation stack install via apt on Ubuntu. Fedora 43 also
+ * has an x86_64 ROS 2 Lyrical testing repository; other dnf-based bases block those layers.
  *
  * No Svelte, no I/O — safe to unit test directly and to share between the extension
  * backend and the future wizard UI.
@@ -21,7 +21,7 @@ export type BaseOsLayer =
   | 'rhel-bootc'
   | 'rhel10-bootc';
 export type HardenedLayer = 'none' | 'hummingbird-app';
-export type RosLayer = 'none' | 'provided-by-parent' | 'ros2-jazzy' | 'ros2-humble';
+export type RosLayer = 'none' | 'provided-by-parent' | 'ros2-jazzy' | 'ros2-humble' | 'ros2-lyrical';
 export type SimLayer = 'none' | 'gazebo-nav2-tb3' | 'custom-template';
 export type HardenedApp =
   | 'nginx'
@@ -126,7 +126,11 @@ export const BASE_OS_OPTIONS: readonly LayerOption<BaseOsLayer>[] = [
     note: 'bootc — core RPMs only, unsigned',
   },
   { id: 'fedora-bootc-42', label: 'Fedora bootc 42', note: 'bootc — no ROS repo' },
-  { id: 'fedora-bootc-43', label: 'Fedora bootc 43', note: 'bootc — no ROS repo' },
+  {
+    id: 'fedora-bootc-43',
+    label: 'Fedora bootc 43',
+    note: 'bootc — ROS 2 Lyrical x86_64 testing repository available',
+  },
   { id: 'fedora-bootc-44', label: 'Fedora bootc 44', note: 'bootc — no ROS repo' },
   { id: 'rhel-bootc', label: 'RHEL bootc 9', note: 'bootc — requires Red Hat subscription' },
   { id: 'rhel10-bootc', label: 'RHEL bootc 10', note: 'bootc — requires Red Hat subscription' },
@@ -220,6 +224,7 @@ export const ROS_OPTIONS: readonly LayerOption<RosLayer>[] = [
   },
   { id: 'ros2-jazzy', label: 'ROS2 Jazzy', note: 'Installs via apt on Ubuntu' },
   { id: 'ros2-humble', label: 'ROS2 Humble', note: 'Installs via apt on Ubuntu' },
+  { id: 'ros2-lyrical', label: 'ROS2 Lyrical', note: 'Installs via dnf on Fedora bootc 43 (x86_64 testing)' },
 ];
 
 export const SIM_OPTIONS: readonly LayerOption<SimLayer>[] = [
@@ -233,10 +238,10 @@ export const SIM_OPTIONS: readonly LayerOption<SimLayer>[] = [
  * from these facts rather than hand-written per combination, so every layer selection is
  * classified completely (build-feasible? × robotics-image?) with no coverage gaps.
  *
- * Empirical basis (S8-14 spike): ROS 2 Jazzy and the Gazebo/Nav2/TurtleBot3 sim stack
- * install via apt on Ubuntu and have no installable equivalent on the dnf-based bootc
- * bases today, so those bases support neither ROS nor sim. This table is the single place
- * to flip a fact if upstream packaging changes (or to add a new base).
+ * Empirical basis (S8-14 spike): ROS 2 Jazzy/Humble and the Gazebo/Nav2/TurtleBot3 sim
+ * stack install via apt on Ubuntu. Fedora 43 has the ROS 2 Lyrical x86_64 testing
+ * repository; the other dnf-based bootc bases have no supported package set today. This
+ * table is the single place to flip a fact if upstream packaging changes (or add a base).
  */
 interface BaseOsCapability {
   /** a bootc (bootable-container) base rather than the plain Ubuntu base */
@@ -245,11 +250,11 @@ interface BaseOsCapability {
   packaging: 'apt' | 'dnf';
   /** pulling the base image needs a Red Hat subscription (registry.redhat.io) */
   requiresSubscription: boolean;
-  /** ROS 2 packages are installable on this base today (empirically: Ubuntu only) */
-  supportsRos: boolean;
-  /** the Gazebo/Nav2/TurtleBot3 sim stack is installable on this base today (Ubuntu only) */
-  supportsSim: boolean;
-  /** an official ROS package repository exists for this distro family at all (Fedora has none) */
+  /** ROS 2 distros installable on this base today. */
+  supportedRosDistros: readonly string[];
+  /** ROS 2 distros with a supported Gazebo/Nav2/TurtleBot3 stack on this base. */
+  supportedSimDistros: readonly string[];
+  /** a ROS package repository exists for this base and selected distro */
   hasRosRepo: boolean;
 }
 
@@ -258,72 +263,72 @@ const BASE_OS_CAPABILITY: Record<BaseOsLayer, BaseOsCapability> = {
     isBootc: false,
     packaging: 'apt',
     requiresSubscription: false,
-    supportsRos: true,
-    supportsSim: true,
+    supportedRosDistros: ['jazzy', 'humble'],
+    supportedSimDistros: ['jazzy', 'humble'],
     hasRosRepo: true,
   },
   'ubuntu-noble': {
     isBootc: false,
     packaging: 'apt',
     requiresSubscription: false,
-    supportsRos: true,
-    supportsSim: true,
+    supportedRosDistros: ['jazzy', 'humble'],
+    supportedSimDistros: ['jazzy', 'humble'],
     hasRosRepo: true,
   },
   'centos-bootc-stream9': {
     isBootc: true,
     packaging: 'dnf',
     requiresSubscription: false,
-    supportsRos: false,
-    supportsSim: false,
+    supportedRosDistros: [],
+    supportedSimDistros: [],
     hasRosRepo: true,
   },
   'centos-bootc-stream10': {
     isBootc: true,
     packaging: 'dnf',
     requiresSubscription: false,
-    supportsRos: false,
-    supportsSim: false,
+    supportedRosDistros: [],
+    supportedSimDistros: [],
     hasRosRepo: true,
   },
   'fedora-bootc-42': {
     isBootc: true,
     packaging: 'dnf',
     requiresSubscription: false,
-    supportsRos: false,
-    supportsSim: false,
+    supportedRosDistros: [],
+    supportedSimDistros: [],
     hasRosRepo: false,
   },
   'fedora-bootc-43': {
     isBootc: true,
     packaging: 'dnf',
     requiresSubscription: false,
-    supportsRos: false,
-    supportsSim: false,
-    hasRosRepo: false,
+    supportedRosDistros: ['lyrical'],
+    supportedSimDistros: ['lyrical'],
+    hasRosRepo: true,
   },
   'fedora-bootc-44': {
     isBootc: true,
     packaging: 'dnf',
     requiresSubscription: false,
-    supportsRos: false,
-    supportsSim: false,
+    supportedRosDistros: [],
+    supportedSimDistros: [],
     hasRosRepo: false,
   },
   'rhel-bootc': {
     isBootc: true,
     packaging: 'dnf',
     requiresSubscription: true,
-    supportsRos: false,
-    supportsSim: false,
+    supportedRosDistros: [],
+    supportedSimDistros: [],
     hasRosRepo: true,
   },
   'rhel10-bootc': {
     isBootc: true,
     packaging: 'dnf',
     requiresSubscription: true,
-    supportsRos: false,
-    supportsSim: false,
+    supportedRosDistros: [],
+    supportedSimDistros: [],
     hasRosRepo: true,
   },
 };
@@ -351,6 +356,13 @@ export function evaluateStack(sel: LayerSelection): CompatResult {
   const baseLabel = labelForBaseOs(sel.baseOs, sel.customBaseImage);
   const wantsRos = sel.ros !== 'none';
   const wantsSim = sel.sim !== 'none';
+  const selectedRosDistro = sel.ros in ROS_DISTRO ? ROS_DISTRO[sel.ros as keyof typeof ROS_DISTRO] : undefined;
+  const supportsSelectedRos =
+    sel.ros === 'provided-by-parent' ||
+    Boolean(selectedRosDistro && cap.supportedRosDistros.includes(selectedRosDistro));
+  const supportsSelectedSim =
+    sel.ros === 'provided-by-parent' ||
+    Boolean(selectedRosDistro && cap.supportedSimDistros.includes(selectedRosDistro));
 
   let failsAtStep: string | undefined;
 
@@ -393,7 +405,7 @@ export function evaluateStack(sel: LayerSelection): CompatResult {
   }
 
   // (1) Build-feasibility — a selected layer the base can't satisfy fails at build time.
-  if (wantsRos && sel.ros !== 'provided-by-parent' && !cap.supportsRos && sel.sim !== 'custom-template') {
+  if (wantsRos && sel.ros !== 'provided-by-parent' && !supportsSelectedRos && sel.sim !== 'custom-template') {
     messages.push({
       level: 'error',
       text: cap.hasRosRepo
@@ -403,10 +415,10 @@ export function evaluateStack(sel: LayerSelection): CompatResult {
     failsAtStep = 'ros-install';
   }
 
-  if (wantsSim && sel.sim !== 'custom-template' && !cap.supportsSim) {
+  if (wantsSim && sel.sim !== 'custom-template' && !supportsSelectedSim) {
     messages.push({
       level: 'error',
-      text: `Gazebo Harmonic / Nav2 / TurtleBot3 sim are not published for ${baseLabel} (no el9 RPMs) — the build fails at the simulation install step.`,
+      text: `Gazebo Harmonic / Nav2 / TurtleBot3 sim are not published for ${baseLabel} with the selected ROS distro — the build fails at the simulation install step.`,
     });
     failsAtStep ??= 'sim-install';
   }
@@ -502,6 +514,7 @@ export function baseOsImageRef(baseOs: BaseOsLayer, customBaseImage?: string): s
 const ROS_DISTRO: Record<Exclude<RosLayer, 'none' | 'provided-by-parent'>, string> = {
   'ros2-jazzy': 'jazzy',
   'ros2-humble': 'humble',
+  'ros2-lyrical': 'lyrical',
 };
 
 export function labelFor<TId extends string>(options: readonly LayerOption<TId>[], id: TId): string {
@@ -555,11 +568,30 @@ export function generateLayerContainerfile(sel: LayerSelection): string {
     sections.push(lines.join('\n'));
   }
 
-  // Package manager matches the base's actual packaging (BASE_OS_CAPABILITY) so an
-  // "Attempt anyway" build on a dnf-based bootc image fails on real package unavailability
-  // (the S8-14 finding), not on a misleading "apt-get: command not found".
+  // Package manager matches the base's actual packaging (BASE_OS_CAPABILITY) so generated
+  // dnf-based bootc builds use the base's native installer.
   const cap = BASE_OS_CAPABILITY[sel.baseOs];
-  const installCmd = cap.packaging === 'dnf' ? 'dnf install -y' : 'apt-get update && apt-get install -y';
+  const installCmd =
+    cap.packaging === 'dnf'
+      ? sel.baseOs === 'fedora-bootc-43'
+        ? 'dnf --releasever=43 install -y'
+        : 'dnf install -y'
+      : 'apt-get update && apt-get install -y';
+  const installCleanup = sel.baseOs === 'fedora-bootc-43' ? ' && dnf clean all' : '';
+
+  if (sel.baseOs === 'fedora-bootc-43' && sel.ros === 'ros2-lyrical') {
+    sections.push(
+      '# ROS 2 Lyrical Fedora 43 x86_64 testing repository\n' +
+        "RUN cat > /etc/yum.repos.d/ros2-lyrical-testing.repo <<'EOF'\n" +
+        '[ros2-lyrical-testing]\n' +
+        'name=ROS 2 Lyrical Fedora 43 x86_64 (testing)\n' +
+        'baseurl=https://repo.ros2.org/fedora/testing/43/x86_64/\n' +
+        'enabled=1\n' +
+        'gpgcheck=0\n' +
+        'gpgkey=https://repo.ros2.org/repos.key\n' +
+        'EOF',
+    );
+  }
 
   // The base OS images are bare (no ROS apt source configured), unlike the tested-preset
   // path which FROMs an already-ROS-baked image — without this, "apt-get install ros-*"
@@ -580,15 +612,35 @@ export function generateLayerContainerfile(sel: LayerSelection): string {
 
   if (sel.ros !== 'none' && sel.ros !== 'provided-by-parent') {
     const distro = ROS_DISTRO[sel.ros];
-    sections.push(`# Layer 3 — ROS: ${labelFor(ROS_OPTIONS, sel.ros)}\nRUN ${installCmd} ros-${distro}-desktop`);
+    const desktopPackage = sel.ros === 'ros2-lyrical' ? `ros-${distro}-desktop-runtime` : `ros-${distro}-desktop`;
+    const lyricalDesktopPackages =
+      sel.ros === 'ros2-lyrical' ? `${desktopPackage} ros-${distro}-desktop-devel` : desktopPackage;
+    sections.push(
+      `# Layer 3 — ROS: ${labelFor(ROS_OPTIONS, sel.ros)}\nRUN ${installCmd} ${lyricalDesktopPackages}${installCleanup}`,
+    );
   }
 
   if (sel.sim !== 'none') {
     const distro = sel.ros !== 'none' && sel.ros !== 'provided-by-parent' ? ROS_DISTRO[sel.ros] : 'jazzy';
+    const simulationPackages =
+      sel.ros === 'ros2-lyrical'
+        ? [
+            `ros-${distro}-navigation2-runtime`,
+            `ros-${distro}-navigation2-devel`,
+            `ros-${distro}-nav2-bringup-runtime`,
+            `ros-${distro}-nav2-bringup-devel`,
+            `ros-${distro}-nav2-minimal-tb3-sim-runtime`,
+            `ros-${distro}-nav2-minimal-tb3-sim-devel`,
+            `ros-${distro}-turtlebot3-gazebo-runtime`,
+            `ros-${distro}-turtlebot3-gazebo-devel`,
+            `ros-${distro}-ros-gz-sim-runtime`,
+            `ros-${distro}-ros-gz-sim-devel`,
+          ].join(' ')
+        : `ros-${distro}-navigation2 ros-${distro}-nav2-bringup ` +
+          `ros-${distro}-nav2-minimal-tb3-sim ros-${distro}-ros-gz-sim`;
     sections.push(
       `# Layer 4 — Simulation: ${labelFor(SIM_OPTIONS, sel.sim)}\n` +
-        `RUN ${installCmd} ros-${distro}-navigation2 ros-${distro}-nav2-bringup ` +
-        `ros-${distro}-nav2-minimal-tb3-sim ros-${distro}-ros-gz-sim`,
+        `RUN ${installCmd} ${simulationPackages}${installCleanup}`,
     );
   }
 

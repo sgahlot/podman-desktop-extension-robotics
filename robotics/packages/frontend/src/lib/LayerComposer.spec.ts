@@ -58,6 +58,7 @@ describe('LayerComposer', () => {
     expect(screen.getByLabelText('ROS')).toBeTruthy();
     expect(screen.getByLabelText('Simulation')).toBeTruthy();
     expect(screen.getByLabelText('Target architecture')).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'ROS2 Lyrical' })).toBeTruthy();
 
     const banner = screen.getByRole('status');
     expect(banner.textContent).toContain('Ready — builds and runs today');
@@ -108,6 +109,25 @@ describe('LayerComposer', () => {
     await fireEvent.change(baseOsSelect, { target: { value: 'centos-bootc-stream9' } });
 
     expect(document.body.textContent).toContain('quay.io/centos-bootc/centos-bootc:stream9');
+  });
+
+  it('selecting Fedora 43 and ROS2 Lyrical previews the Fedora repository and dnf packages', async () => {
+    render(LayerComposer);
+    await fireEvent.change(screen.getByLabelText('Base OS'), { target: { value: 'fedora-bootc-43' } });
+    await fireEvent.change(screen.getByLabelText('ROS'), { target: { value: 'ros2-lyrical' } });
+
+    expect(screen.getByRole('status').textContent).toContain('Ready — builds and runs today');
+    expect(document.body.textContent).toContain('baseurl=https://repo.ros2.org/fedora/testing/43/x86_64/');
+    expect(document.body.textContent).toContain('ros-lyrical-nav2-minimal-tb3-sim');
+  });
+
+  it('blocks an arm64 target for the x86_64 Fedora 43 Lyrical repository', async () => {
+    render(LayerComposer, { props: { targetArch: 'arm64', hostArch: 'arm64' } });
+    await fireEvent.change(screen.getByLabelText('Base OS'), { target: { value: 'fedora-bootc-43' } });
+    await fireEvent.change(screen.getByLabelText('ROS'), { target: { value: 'ros2-lyrical' } });
+
+    expect(document.body.textContent).toContain('amd64 target');
+    expect((screen.getByRole('button', { name: 'Build' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('Hummingbird app checkboxes are absent by default and appear after selecting Hardened=Hummingbird', async () => {
