@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Locate and source validate-input.sh (same directory as this file, or PHYSICAL_AI_VALIDATE_LIB).
-# Entrypoints source this loader from repo lib/ or /usr/local/lib/physical-ai/.
+# Entrypoints source this loader from repo lib/ or /usr/local/lib/robotics/.
 #
 # Override: PHYSICAL_AI_VALIDATE_LIB=/path/to/validate-input.sh
 

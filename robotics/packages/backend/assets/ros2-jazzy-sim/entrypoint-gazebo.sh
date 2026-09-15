@@ -11,9 +11,9 @@ set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _pai_loader="${SCRIPT_DIR}/lib/load-validate-input.sh"
-[[ -f "${_pai_loader}" ]] || _pai_loader="/usr/local/lib/physical-ai/load-validate-input.sh"
+[[ -f "${_pai_loader}" ]] || _pai_loader="/usr/local/lib/robotics/load-validate-input.sh"
 if [[ ! -f "${_pai_loader}" ]]; then
-  echo "error: load-validate-input.sh not found (tried ${SCRIPT_DIR}/lib/ and /usr/local/lib/physical-ai/)" >&2
+  echo "error: load-validate-input.sh not found (tried ${SCRIPT_DIR}/lib/ and /usr/local/lib/robotics/)" >&2
   exit 1
 fi
 # shellcheck source=lib/load-validate-input.sh

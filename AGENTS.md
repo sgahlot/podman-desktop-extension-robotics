@@ -89,8 +89,8 @@ branch; it never implies a merge to `main` or Jira closure. Merges require the
 - Create sibling feature worktrees as `APPENG-<NNNN>-<slug>` on branch
   `feature/APPENG-<NNNN>-<slug>`.
 - Bootstrap a new feature worktree before Podman Desktop loading. From the
-  worktree root, if `physical-ai/node_modules` is absent, copy the dependency
-  tree from `../main/physical-ai/node_modules`, then run `npm install` to
+  worktree root, if `robotics/node_modules` is absent, copy the dependency
+  tree from `../main/robotics/node_modules`, then run `npm install` to
   reconcile it with the branch's lockfile/package manifests. Verify that the
   tracked repository-root `AGENTS.md` is present before handoff; for a legacy
   branch created before it was tracked, create an untracked symlink to
@@ -124,17 +124,17 @@ branch; it never implies a merge to `main` or Jira closure. Merges require the
   applicable surfaces in the same feature branch.
 - Follow this documentation hierarchy; do not duplicate user-facing detail:
   - Repository-root `README.adoc` is a short landing page: project purpose,
-    high-level layout, and a pointer to `physical-ai/README.md`. It does not
+    high-level layout, and a pointer to `robotics/README.md`. It does not
     contain detailed developer or end-user feature documentation.
-  - `physical-ai/README.md` is the main developer README: source setup, build,
+  - `robotics/README.md` is the main developer README: source setup, build,
     local loading, packaging, project structure, and development troubleshooting.
     It points to `packages/backend/README.md` for user-facing features and
     operational guidance.
-  - `physical-ai/packages/backend/README.md` is the canonical user-facing
+  - `robotics/packages/backend/README.md` is the canonical user-facing
     feature and operations guide. Update it for new or changed extension
     behavior, workflows, prerequisites, settings, platform notes, screenshots,
     and end-user troubleshooting.
-  - `physical-ai/packages/frontend/src/Help.svelte` is the in-app help surface.
+  - `robotics/packages/frontend/src/Help.svelte` is the in-app help surface.
     Keep it in sync with the backend README whenever operational user guidance
     changes.
   - `docs/design.adoc` records current architecture, APIs, data flow, and

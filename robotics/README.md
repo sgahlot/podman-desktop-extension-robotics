@@ -1,6 +1,6 @@
 # Robotics — Podman Desktop Extension
 
-Developer README for the `physical-ai/` npm workspace. **User-facing documentation** (features, quick start, Navigate, OpenShift CPU sizing, GPU notes, settings) lives in **[`packages/backend/README.md`](packages/backend/README.md)** — that file ships inside the published extension OCI image and is what Podman Desktop displays. Edit there for extension-user docs; keep this file for build, install-from-source, and repo layout.
+Developer README for the `robotics/` npm workspace. **User-facing documentation** (features, quick start, Navigate, OpenShift CPU sizing, GPU notes, settings) lives in **[`packages/backend/README.md`](packages/backend/README.md)** — that file ships inside the published extension OCI image and is what Podman Desktop displays. Edit there for extension-user docs; keep this file for build, install-from-source, and repo layout.
 
 ## Quick start (developers)
 
@@ -46,7 +46,7 @@ npm run build
 
 2. Navigate to **Extensions** in the left nav.
 3. Open the **Local extension** tab.
-4. Click **Add a local folder…** and select **`packages/backend`** (relative to this `physical-ai/` directory) — not this workspace root. Only `packages/backend/package.json` declares the `podman-desktop` engine version. Selecting the top-level folder fails with:
+4. Click **Add a local folder…** and select **`packages/backend`** (relative to this `robotics/` directory) — not this workspace root. Only `packages/backend/package.json` declares the `podman-desktop` engine version. Selecting the top-level folder fails with:
 
    ```
    Error: Extension with id redhat.physical-ai is not compatible with Podman Desktop. It requires 'podman-desktop' engine.
@@ -94,7 +94,7 @@ The root `Containerfile` builds an OCI image of the extension. `packages/backend
 
 ## Troubleshooting (install / dev)
 
-- **Wrong folder selected** — must be `packages/backend`, not `physical-ai/`.
+- **Wrong folder selected** — must be `packages/backend`, not `robotics/`.
 - **Extension won't load after build** — run `npm run build` from this directory; reload the extension in Podman Desktop.
 - **Simulation / OpenShift / Navigate issues** — see [`packages/backend/README.md`](packages/backend/README.md) and in-extension **Help**.
 

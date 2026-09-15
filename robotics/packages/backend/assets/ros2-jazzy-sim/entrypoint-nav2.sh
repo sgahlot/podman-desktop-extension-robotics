@@ -13,9 +13,9 @@ set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _pai_loader="${SCRIPT_DIR}/lib/load-validate-input.sh"
-[[ -f "${_pai_loader}" ]] || _pai_loader="/usr/local/lib/physical-ai/load-validate-input.sh"
+[[ -f "${_pai_loader}" ]] || _pai_loader="/usr/local/lib/robotics/load-validate-input.sh"
 if [[ ! -f "${_pai_loader}" ]]; then
-  echo "error: load-validate-input.sh not found (tried ${SCRIPT_DIR}/lib/ and /usr/local/lib/physical-ai/)" >&2
+  echo "error: load-validate-input.sh not found (tried ${SCRIPT_DIR}/lib/ and /usr/local/lib/robotics/)" >&2
   exit 1
 fi
 # shellcheck source=lib/load-validate-input.sh
@@ -33,9 +33,9 @@ export ROS_LOG_DIR="${HOME}/.ros/log"
 source "${PHYSICAL_AI_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
 
 PATCH_SCRIPT="${SCRIPT_DIR}/lib/patch-nav2-params.py"
-[[ -f "${PATCH_SCRIPT}" ]] || PATCH_SCRIPT="/usr/local/lib/physical-ai/patch-nav2-params.py"
+[[ -f "${PATCH_SCRIPT}" ]] || PATCH_SCRIPT="/usr/local/lib/robotics/patch-nav2-params.py"
 if [[ ! -f "${PATCH_SCRIPT}" ]]; then
-  echo "error: patch-nav2-params.py not found (tried ${SCRIPT_DIR}/lib/ and /usr/local/lib/physical-ai/)" >&2
+  echo "error: patch-nav2-params.py not found (tried ${SCRIPT_DIR}/lib/ and /usr/local/lib/robotics/)" >&2
   exit 1
 fi
 
