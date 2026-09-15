@@ -3,7 +3,7 @@
 # teams can install it via Podman Desktop → Extensions → "Install custom extension…"
 # with just an image reference (no clone / npm install / build on their side).
 #
-# The image is the artifact described by physical-ai/Containerfile (the io.podman-desktop.*
+# The image is the artifact described by robotics/Containerfile (the io.podman-desktop.*
 # labels are what make Podman Desktop recognize it as an installable extension).
 #
 # Usage (run from anywhere inside the repo; operates on the repo's physical-ai/ tree):
@@ -113,7 +113,7 @@ if [ -z "$REPO" ]; then
 fi
 
 ROOT="$(git rev-parse --show-toplevel)"
-EXT_DIR="$ROOT/physical-ai"
+EXT_DIR="$ROOT/robotics"
 BACKEND_PKG="$EXT_DIR/packages/backend/package.json"
 EXT_TS="$EXT_DIR/packages/backend/src/extension.ts"
 API_TS="$EXT_DIR/packages/backend/src/api-impl.ts"

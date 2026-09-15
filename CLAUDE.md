@@ -18,15 +18,15 @@
 
 ## Documentation Rules
 - **Three README/doc roles, don't blur them:**
-  1. `physical-ai/packages/backend/README.md` — the **canonical user doc**. All
+  1. `robotics/packages/backend/README.md` — the **canonical user doc**. All
      extension-user-facing content (features, usage, sizing/settings guidance,
      troubleshooting for people running the extension) goes here, and only here.
-  2. `physical-ai/README.md` — a **slim dev README**. Install-from-source, build
+  2. `robotics/README.md` — a **slim dev README**. Install-from-source, build
      prerequisites, project structure, tech stack, packaging, and dev-environment
      troubleshooting only. It gets a short intro plus an explicit pointer
-     (`See physical-ai/packages/backend/README.md for usage/feature docs`) — never
+     (`See robotics/packages/backend/README.md for usage/feature docs`) — never
      duplicate user-facing prose here.
-  3. `physical-ai/packages/frontend/src/Help.svelte` — the in-app Help content shown
+  3. `robotics/packages/frontend/src/Help.svelte` — the in-app Help content shown
      inside Podman Desktop.
 - When operational/user-facing guidance changes (a new feature, a changed default, a
   troubleshooting tip), update **the backend README and Help together** — they're the two
@@ -90,11 +90,11 @@
   only the merge-**into**-`main` step is `main/`-only. Only run `git worktree remove <path>` for
   a feature worktree after its branch is merged, and only once nothing is still actively using
   that worktree (e.g. no live Claude Code session still `cd`'d into it).
-- **If this checkout is a git worktree sibling (not `main/`) and `physical-ai/node_modules`
+- **If this checkout is a git worktree sibling (not `main/`) and `robotics/node_modules`
   doesn't exist yet, it's a brand-new worktree — do this one-time setup before anything
   else, in order:**
-  1. Copy `node_modules` from `../main/physical-ai/node_modules` into this worktree's
-     `physical-ai/node_modules` (npm workspace symlinks are relative, so this is safe
+  1. Copy `node_modules` from `../main/robotics/node_modules` into this worktree's
+     `robotics/node_modules` (npm workspace symlinks are relative, so this is safe
      across sibling worktrees at the same depth) — much faster than a from-scratch
      install — then run `npm install` once to reconcile any branch-specific dependency
      drift. **WORKAROUND for Haiku model:** if `npm run clean && npm run build` fails

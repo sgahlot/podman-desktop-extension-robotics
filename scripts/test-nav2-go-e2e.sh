@@ -76,8 +76,8 @@ if ! ros_exec "timeout 5 ros2 run tf2_ros tf2_echo map base_link --ros-args -p u
   else
     echo "Nav2 not ready — launching /entrypoint-nav2.sh (AMCL seed: ${SPAWN_X}, ${SPAWN_Y})..."
     podman exec -d \
-      -e "PHYSICAL_AI_SPAWN_X=${SPAWN_X}" \
-      -e "PHYSICAL_AI_SPAWN_Y=${SPAWN_Y}" \
+      -e "ROBOTICS_SPAWN_X=${SPAWN_X}" \
+      -e "ROBOTICS_SPAWN_Y=${SPAWN_Y}" \
       "${CONTAINER_ID}" \
       /entrypoint-nav2.sh "${ROBOT_NAME}"
   fi

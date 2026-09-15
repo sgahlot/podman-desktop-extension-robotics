@@ -36,9 +36,9 @@ set -euo pipefail
 
 MODE="${1:?Usage: apply-worktree-identity.sh <JIRA-NUMBER, e.g. 6250 | restore>}"
 
-PKG=physical-ai/packages/backend/package.json
-EXT=physical-ai/packages/backend/src/extension.ts
-API=physical-ai/packages/backend/src/api-impl.ts
+PKG=robotics/packages/backend/package.json
+EXT=robotics/packages/backend/src/extension.ts
+API=robotics/packages/backend/src/api-impl.ts
 
 if [ "$(git branch --show-current 2>/dev/null)" = "main" ]; then
   echo "Refusing to run: current branch is 'main' — this script must be run from a" >&2
@@ -55,8 +55,8 @@ fi
 if [ "$MODE" = "restore" ]; then
   git update-index --no-skip-worktree "$PKG" "$EXT" "$API" 2>/dev/null || true
   git checkout -- "$PKG" "$EXT" "$API"
-  echo "Restored default identity (physical-ai). Rebuilding backend..."
-  (cd physical-ai && npm run -w packages/backend build)
+  echo "Restored default identity (robotics). Rebuilding backend..."
+  (cd robotics && npm run -w packages/backend build)
   echo "Done. Safe to run the zero-errors gate / merge now."
   exit 0
 fi
@@ -81,7 +81,7 @@ git update-index --skip-worktree "$PKG" "$EXT" "$API"
 
 echo "Applied identity physical-ai-${SUFFIX} to $PKG, $EXT, $API (all skip-worktree'd)."
 echo "Rebuilding backend..."
-(cd physical-ai && npm run -w packages/backend build)
+(cd robotics && npm run -w packages/backend build)
 
 echo "Done. Reload this folder in Podman Desktop (or add it fresh) — it will register as"
 echo "physical-ai-${SUFFIX} / \"Physical AI (APPENG-${NNNN})\", with its own command and settings"
