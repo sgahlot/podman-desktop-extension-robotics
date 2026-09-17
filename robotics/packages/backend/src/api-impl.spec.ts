@@ -66,10 +66,14 @@ vi.mock('node:fs/promises', () => ({
   rename: vi.fn(),
   rm: vi.fn(),
   cp: vi.fn(),
+  access: vi.fn(),
+  readdir: vi.fn(),
 }));
 
 import * as extensionApi from '@podman-desktop/api';
-import { readFile, writeFile, mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
+import { access, cp, readFile, writeFile, mkdtemp, mkdir, readdir, rename, rm } from 'node:fs/promises';
+import { SIM_RUNTIME_CONTEXT_PATHS } from '/@shared/src/build/verifyBuildContext';
+import { SIM_RUNTIME_LAYER_MARKER } from '/@shared/src/types/simOperationalLayer';
 
 const MOCK_CONTEXT = {
   extensionUri: { fsPath: '/fake/extension/path' },
@@ -155,6 +159,66 @@ function mockPresetContainerfileRead(content = 'ARG X\nFROM scratch\nRUN echo ba
   });
 }
 
+const STAGED_ASSET_BUILD_DIR = '/tmp/robotics-asset-build-staged';
+
+function createMockDirent(name: string, isDirectory: boolean) {
+  return {
+    name,
+    isDirectory: () => isDirectory,
+    isFile: () => !isDirectory,
+  };
+}
+
+function mockBuildContextReaddir(relativePaths: readonly string[]): void {
+  let contextRoot: string | undefined;
+
+  vi.mocked(readdir).mockImplementation(async dir => {
+    const dirPath = String(dir).replace(/\\/g, '/');
+    if (contextRoot === undefined || !dirPath.startsWith(contextRoot)) {
+      contextRoot = dirPath;
+    }
+    const relDir = dirPath === contextRoot ? '' : dirPath.slice(contextRoot.length + 1);
+    const prefix = relDir === '' ? '' : `${relDir}/`;
+    const children = new Map<string, boolean>();
+
+    for (const path of relativePaths) {
+      const normalized = path.replace(/\\/g, '/');
+      if (relDir !== '' && !normalized.startsWith(prefix)) {
+        continue;
+      }
+      const rest = relDir === '' ? normalized : normalized.slice(prefix.length);
+      if (!rest) {
+        continue;
+      }
+      const [name, ...restParts] = rest.split('/');
+      if (!name) {
+        continue;
+      }
+      const isDirectory = restParts.length > 0;
+      children.set(name, (children.get(name) ?? false) || isDirectory);
+    }
+
+    return [...children.entries()].map(([name, isDirectory]) =>
+      createMockDirent(name, isDirectory),
+    ) as unknown as Awaited<ReturnType<typeof readdir>>;
+  });
+}
+
+function mockBundledAssetStaging(layerBuildDir = '/tmp/physical-ai-layer-build-staged'): void {
+  vi.mocked(extensionApi.Uri.joinPath).mockImplementation(
+    (base, ...segments) => ({ fsPath: [base.fsPath, ...segments].join('/') }) as extensionApi.Uri,
+  );
+  vi.mocked(access).mockResolvedValue(undefined);
+  vi.mocked(cp).mockResolvedValue(undefined);
+  mockBuildContextReaddir([...SIM_RUNTIME_CONTEXT_PATHS, 'f']);
+  vi.mocked(mkdtemp).mockImplementation(async (prefix: string) => {
+    if (prefix.includes('robotics-asset-build')) {
+      return STAGED_ASSET_BUILD_DIR;
+    }
+    return layerBuildDir;
+  });
+}
+
 function mockConfigWithBuildHistoryLimit(limit: unknown): void {
   vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
     get: vi.fn((key: string) => (key === 'build.historyLimit' ? limit : undefined)),
@@ -168,6 +232,7 @@ describe('PhysicalAiApiImpl', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.useFakeTimers();
+    mockBuildContextReaddir([]);
     api = new PhysicalAiApiImpl(MOCK_CONTEXT);
   });
 
@@ -638,6 +703,30 @@ describe('PhysicalAiApiImpl', () => {
 
       expect(rm).toHaveBeenCalledWith('/tmp/physical-ai-layer-build-jkl', { recursive: true, force: true });
     });
+
+    it('stages bundled sim runtime assets when the Containerfile includes the sim-runtime layer', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      mockBundledAssetStaging('/tmp/physical-ai-layer-build-sim');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(cp).mockResolvedValue(undefined);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
+
+      const containerfile = `FROM quay.io/fedora/fedora-bootc:43\n${SIM_RUNTIME_LAYER_MARKER} noVNC\n`;
+      await api.buildFromContainerfile('my-layer:latest', containerfile);
+
+      expect(extensionApi.Uri.joinPath).toHaveBeenCalledWith(MOCK_CONTEXT.extensionUri, 'assets', 'ros2-jazzy-sim');
+      expect(cp).toHaveBeenCalledWith(
+        '/fake/extension/path/assets/ros2-jazzy-sim/entrypoint-gazebo.sh',
+        '/tmp/physical-ai-layer-build-sim/entrypoint-gazebo.sh',
+      );
+      expect(cp).toHaveBeenCalledWith(
+        '/fake/extension/path/assets/ros2-jazzy-sim/worlds',
+        '/tmp/physical-ai-layer-build-sim/worlds',
+        { recursive: true },
+      );
+    });
   });
 
   describe('build history (APPENG-6226)', () => {
@@ -645,7 +734,7 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(mkdir).mockResolvedValue(undefined);
       vi.mocked(writeFile).mockResolvedValue(undefined);
       mockPresetContainerfileRead();
-      vi.mocked(mkdtemp).mockResolvedValue('/tmp/physical-ai-layer-build-hist');
+      mockBundledAssetStaging('/tmp/physical-ai-layer-build-hist');
       vi.mocked(rm).mockResolvedValue(undefined);
       mockConfigWithBuildHistoryLimit(undefined);
     });
@@ -654,7 +743,6 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
 
       await api.buildBaseImage('my-tag:latest', {
@@ -680,7 +768,6 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockRejectedValue(new Error('build failed'));
 
       await api.buildBaseImage('my-tag:latest', {
@@ -703,7 +790,6 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
 
       await api.buildBaseImage('my-tag:latest', {
@@ -1054,6 +1140,7 @@ describe('PhysicalAiApiImpl', () => {
 
     beforeEach(() => {
       mockPresetContainerfileRead();
+      mockBundledAssetStaging();
     });
 
     it('throws when no Podman connection found', async () => {
@@ -1076,16 +1163,15 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         mockConnection,
       ] as unknown as extensionApi.ProviderContainerConnection[]);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({
-        fsPath: '/fake/assets/ros2-jazzy-base',
-      } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
 
       await api.buildBaseImage('my-tag:latest', { ...baseConfig, distro: 'jazzy', baseImage: 'jazzy' });
 
-      expect(extensionApi.Uri.joinPath).toHaveBeenCalledWith(MOCK_CONTEXT.extensionUri, 'assets', 'ros2-jazzy-base');
+      expect(cp).toHaveBeenCalledWith('/fake/extension/path/assets/ros2-jazzy-base', STAGED_ASSET_BUILD_DIR, {
+        recursive: true,
+      });
       expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
-        '/fake/assets/ros2-jazzy-base',
+        STAGED_ASSET_BUILD_DIR,
         expect.any(Function),
         expect.objectContaining({
           buildargs: {
@@ -1100,13 +1186,12 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
 
       await api.buildBaseImage('my-tag:noble-amd64', { ...baseConfig, targetArch: 'amd64' });
 
       expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
-        '/fake/assets',
+        STAGED_ASSET_BUILD_DIR,
         expect.any(Function),
         expect.objectContaining({ platform: 'linux/amd64' }),
       );
@@ -1116,7 +1201,6 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
 
       await api.buildBaseImage('my-tag:latest', baseConfig);
@@ -1129,7 +1213,6 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
 
       await api.buildBaseImage('my-tag:latest', baseConfig);
@@ -1147,8 +1230,6 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
-
       let buildCallback: Parameters<typeof extensionApi.containerEngine.buildImage>[1];
       vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation((_ctx, cb, _opts) => {
         buildCallback = cb;
@@ -1207,9 +1288,6 @@ RUN apt-get install -y ros-jazzy-desktop
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({
-        fsPath: '/fake/assets/ros2-jazzy-base',
-      } as unknown as extensionApi.Uri);
       mockPresetContainerfileRead('FROM docker.io/ros:jazzy\nRUN apt-get\nCOPY f /f\n');
 
       let buildCallback: Parameters<typeof extensionApi.containerEngine.buildImage>[1];
@@ -1235,8 +1313,6 @@ RUN apt-get install -y ros-jazzy-desktop
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
-
       let buildCallback: Parameters<typeof extensionApi.containerEngine.buildImage>[1];
       vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation((_ctx, cb, _opts) => {
         buildCallback = cb;
@@ -1255,7 +1331,6 @@ RUN apt-get install -y ros-jazzy-desktop
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
 
       await api.buildBaseImage('my-tag:latest', baseConfig);
@@ -1270,7 +1345,6 @@ RUN apt-get install -y ros-jazzy-desktop
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockRejectedValue(new Error('build failed'));
 
       await api.buildBaseImage('my-tag:latest', baseConfig);
@@ -1286,16 +1360,15 @@ RUN apt-get install -y ros-jazzy-desktop
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         mockConnection,
       ] as unknown as extensionApi.ProviderContainerConnection[]);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({
-        fsPath: '/fake/assets/ros2-humble-base',
-      } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
 
       await api.buildBaseImage('my-tag:latest', baseConfig);
 
-      expect(extensionApi.Uri.joinPath).toHaveBeenCalledWith(MOCK_CONTEXT.extensionUri, 'assets', 'ros2-humble-base');
+      expect(cp).toHaveBeenCalledWith('/fake/extension/path/assets/ros2-humble-base', STAGED_ASSET_BUILD_DIR, {
+        recursive: true,
+      });
       expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
-        '/fake/assets/ros2-humble-base',
+        STAGED_ASSET_BUILD_DIR,
         expect.any(Function),
         expect.objectContaining({
           containerFile: 'Containerfile',
@@ -1317,8 +1390,6 @@ RUN apt-get install -y ros-jazzy-desktop
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         mockConnection,
       ] as unknown as extensionApi.ProviderContainerConnection[]);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
-
       let aborted = false;
       vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation(
         (_ctx, _cb, opts) =>
@@ -1344,8 +1415,6 @@ RUN apt-get install -y ros-jazzy-desktop
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({ fsPath: '/fake/assets' } as unknown as extensionApi.Uri);
-
       let buildCallback: Parameters<typeof extensionApi.containerEngine.buildImage>[1];
       vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation((_ctx, cb, _opts) => {
         buildCallback = cb;
@@ -1419,6 +1488,7 @@ RUN apt-get install -y ros-jazzy-desktop
 
     beforeEach(() => {
       mockPresetContainerfileRead('ARG LOCAL_BASE_IMAGE\nFROM ${LOCAL_BASE_IMAGE}\nRUN apt-get\n');
+      mockBundledAssetStaging();
     });
 
     it('builds from the turtlebot3 simulation asset directory with LOCAL_BASE_IMAGE build-arg', async () => {
@@ -1426,9 +1496,6 @@ RUN apt-get install -y ros-jazzy-desktop
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         mockConnection,
       ] as unknown as extensionApi.ProviderContainerConnection[]);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({
-        fsPath: '/fake/assets/ros2-humble-turtlebot3',
-      } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockReturnValue('ecosystem-appeng'),
@@ -1442,7 +1509,7 @@ RUN apt-get install -y ros-jazzy-desktop
         'ros2-humble-turtlebot3',
       );
       expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
-        '/fake/assets/ros2-humble-turtlebot3',
+        STAGED_ASSET_BUILD_DIR,
         expect.any(Function),
         expect.objectContaining({
           containerFile: 'Containerfile',
@@ -1461,9 +1528,6 @@ RUN apt-get install -y ros-jazzy-desktop
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         mockConnection,
       ] as unknown as extensionApi.ProviderContainerConnection[]);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({
-        fsPath: '/fake/assets/ros2-humble-turtlebot3',
-      } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockReturnValue('ecosystem-appeng'),
@@ -1475,7 +1539,7 @@ RUN apt-get install -y ros-jazzy-desktop
       });
 
       expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
-        '/fake/assets/ros2-humble-turtlebot3',
+        STAGED_ASSET_BUILD_DIR,
         expect.any(Function),
         expect.objectContaining({
           buildargs: {
@@ -1500,9 +1564,6 @@ RUN apt-get install -y ros-jazzy-desktop
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockReturnValue('ecosystem-appeng'),
       } as unknown as extensionApi.Configuration);
-      vi.mocked(extensionApi.Uri.joinPath).mockReturnValue({
-        fsPath: '/fake/assets/ros2-jazzy-sim',
-      } as unknown as extensionApi.Uri);
       vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
 
       await api.buildSimulationImage('sim-tag:noble', {
@@ -1512,7 +1573,7 @@ RUN apt-get install -y ros-jazzy-desktop
       });
 
       expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
-        '/fake/assets/ros2-jazzy-sim',
+        STAGED_ASSET_BUILD_DIR,
         expect.any(Function),
         expect.objectContaining({
           buildargs: {
@@ -3013,6 +3074,14 @@ linear_acceleration:
 
       await api.despawnRobot(CONTAINER_ID, 'robot_1');
       expect(await api.getRobotWarmStatus(CONTAINER_ID, 'robot_1')).toBe('idle');
+    });
+
+    it("reports 'warming' after a lyrical spawn", async () => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/robotics-fedora-bootc-43:ros2-lyrical'),
+      ] as unknown as extensionApi.ContainerInfo[]);
+      await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '-0.5', '0.0']);
+      expect(await api.getRobotWarmStatus(CONTAINER_ID, 'robot_1')).toBe('warming');
     });
 
     it('rejects an injectable robot name', async () => {

@@ -9,6 +9,9 @@
  * backend and the future wizard UI.
  */
 import { generateCustomSimulationContainerfile, resolveCustomSimulationTemplate } from './CustomSimulationTemplates';
+import { generateSimOperationalLayerFragment, selectionNeedsBundledSimRuntime } from './simOperationalLayer';
+
+export { selectionNeedsBundledSimRuntime } from './simOperationalLayer';
 
 export type BaseOsLayer =
   | 'custom'
@@ -463,6 +466,11 @@ export function evaluateStack(sel: LayerSelection): CompatResult {
         level: 'warn',
         text: `Builds ${cap.isBootc ? 'a bootc base image' : 'a base image'}, but it has no ROS layer — not a robotics image yet.`,
       });
+    } else if (selectionNeedsBundledSimRuntime(sel)) {
+      messages.push({
+        level: 'info',
+        text: 'Builds a managed simulation image — ROS/sim packages plus bundled entrypoints, noVNC, and worlds for OpenShift deploy.',
+      });
     } else if (!messages.some(m => m.level === 'error' || m.level === 'warn')) {
       messages.push({
         level: 'info',
@@ -644,5 +652,9 @@ export function generateLayerContainerfile(sel: LayerSelection): string {
     );
   }
 
-  return sections.join('\n\n') + '\n';
+  let containerfile = sections.join('\n\n') + '\n';
+  if (selectionNeedsBundledSimRuntime(sel)) {
+    containerfile += '\n' + generateSimOperationalLayerFragment(sel, cap.packaging);
+  }
+  return containerfile;
 }

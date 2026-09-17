@@ -41,8 +41,9 @@ fi
 
 PARAMS_FILE="${HOME}/nav2-${ROBOT_NAME}-params.yaml"
 MAP_FILE="${ROBOTICS_NAV2_MAP:-/opt/ros/jazzy/share/nav2_bringup/maps/tb3_sandbox.yaml}"
+NAV2_PARAMS_SOURCE="$(dirname "$(dirname "${MAP_FILE}")")/params/nav2_params.yaml"
 
-python3 "${PATCH_SCRIPT}" --output "${PARAMS_FILE}"
+python3 "${PATCH_SCRIPT}" --source "${NAV2_PARAMS_SOURCE}" --output "${PARAMS_FILE}"
 
 echo "[nav2] Starting Nav2 bringup for ${ROBOT_NAME} (map: ${MAP_FILE})..."
 

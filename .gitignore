@@ -1,4 +1,5 @@
 .internal
 .DS_Store
 node_modules/
+.cursor
 .cursor/

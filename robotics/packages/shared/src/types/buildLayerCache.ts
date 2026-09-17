@@ -181,6 +181,10 @@ export function parseBuildStepLayerIds(containerfile: string): CompositionLayerI
       currentLayer = 'sim';
       continue;
     }
+    if (/^#\s*Layer\s+5\s+—/i.test(line)) {
+      currentLayer = 'sim';
+      continue;
+    }
     if (/^#\s*ROS\s+2\s+apt\s+repository/i.test(line)) {
       currentLayer = 'ros';
       continue;

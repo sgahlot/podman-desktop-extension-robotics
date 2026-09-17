@@ -30,7 +30,7 @@ export let tagPlaceholder = 'e.g. quay.io/org/image:latest';
 export let tagInputId = 'image-tag';
 /** True while a build or push is in progress — bind from parent to freeze wizard controls. */
 export let busy = false;
-/** Called when a build completes successfully (no error). */
+/** Called when a build settles (success or failure) so parents can refresh history. */
 export let onBuildComplete: (() => void) | undefined = undefined;
 /** When true, the Build button is disabled (e.g. waiting for a prerequisite). */
 export let disabled = false;
@@ -272,8 +272,8 @@ function startPolling(mode: 'build' | 'push') {
               buildError = progress.error;
             } else {
               imageExistsLocally = true;
-              onBuildComplete?.();
             }
+            onBuildComplete?.();
           }
         }
       } else {

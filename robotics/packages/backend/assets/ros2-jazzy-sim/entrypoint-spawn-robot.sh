@@ -38,7 +38,7 @@ export ROS_LOG_DIR="${HOME}/.ros/log"
 source "${ROBOTICS_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
 
 export TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-waffle}"
-export GZ_SIM_RESOURCE_PATH="/opt/ros/jazzy/share:/opt/ros/jazzy/share/nav2_minimal_tb3_sim/models:${GZ_SIM_RESOURCE_PATH:-}"
+pai_export_gz_sim_resource_path
 
 SIM_DIR="${ROBOTICS_SIM_DIR:-/opt/ros/jazzy/share/nav2_minimal_tb3_sim}"
 URDF_FILE="${SIM_DIR}/urdf/turtlebot3_waffle.urdf"

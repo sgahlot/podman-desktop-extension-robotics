@@ -74,3 +74,16 @@ pai_validate_robots_env() {
     pai_validate_robot_spec "${spec}" || return 1
   done
 }
+
+# /opt/ros/<distro> from ROBOTICS_ROS_SETUP (default: jazzy preset image).
+pai_ros_distro_dir() {
+  local setup="${ROBOTICS_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
+  cd "$(dirname "${setup}")" && pwd
+}
+
+# Gazebo model lookup for nav2_minimal_tb3_sim worlds (must match the sourced ROS distro).
+pai_export_gz_sim_resource_path() {
+  local d
+  d="$(pai_ros_distro_dir)"
+  export GZ_SIM_RESOURCE_PATH="${d}/share:${d}/share/nav2_minimal_tb3_sim/models:${GZ_SIM_RESOURCE_PATH:-}"
+}
