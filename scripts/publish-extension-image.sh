@@ -192,8 +192,8 @@ podman manifest inspect "$IMG_VER" | node -e 'const m=JSON.parse(require("fs").r
 if [ "$PUSH" -ne 1 ]; then
   echo "==> --no-push set; built locally, not pushing."
   echo "    Inspect:  podman manifest inspect $IMG_VER"
-  echo "    (dangling per-arch build images are left in place so you can inspect/push"
-  echo "     manually; they're only auto-cleaned after a real push)"
+  echo "    Clean up:  podman manifest rm $IMG_VER && podman image prune -f"
+  echo "    (auto cleanup of <none> layers runs only after a real push)"
   exit 0
 fi
 
@@ -202,24 +202,39 @@ echo "==> Pushing manifest list (all arches)"
 podman manifest push --all "$IMG_VER" "docker://$IMG_VER"
 podman manifest push --all "$IMG_VER" "docker://$IMG_LATEST"
 
-# Clean up the dangling per-arch/builder-stage images this run produced. Safe only now
-# that the push succeeded (the registry has its own copy; local blobs are disposable) —
-# local storage keeps the manifest list's digest metadata independently of the blobs, so
-# removing the underlying images does not break `podman manifest inspect` on $IMG_VER.
-# Only IDs that are newly dangling since this run started are removed — anything that was
-# already dangling before (unrelated to this script) is left untouched. Removed one at a
-# time: a batched `podman rmi id1 id2 ...` can abort partway through on the first error.
+# Clean up the per-arch / multi-stage images this run produced. Safe only now that the
+# push succeeded (the registry has its own copy; local blobs are disposable).
+#
+# `podman build --manifest` leaves per-arch images as <none>:<none> entries that are still
+# referenced by the local manifest list (dangling=false), so a dangling-only filter never
+# selects them. Drop the local manifest first so those layers become dangling, then remove
+# only IDs that are newly dangling since this run started — unrelated pre-existing
+# dangling images are left untouched.
 echo "==> Cleaning up local build layers from this run"
+echo "    (drops local manifest tag $IMG_VER — registry tags are unchanged)"
+podman manifest rm "$IMG_VER" 2>/dev/null || true
 DANGLING_AFTER="$(podman images -q -f dangling=true 2>/dev/null | sort -u)"
 NEW_DANGLING="$(comm -13 <(printf '%s\n' "$DANGLING_BEFORE") <(printf '%s\n' "$DANGLING_AFTER") | grep -v '^$' || true)"
+REMOVED=0
 if [ -n "$NEW_DANGLING" ]; then
-  REMOVED=0
-  while IFS= read -r _id; do
-    podman rmi "$_id" >/dev/null 2>&1 && REMOVED=$((REMOVED + 1))
-  done <<< "$NEW_DANGLING"
-  echo "    removed $REMOVED image(s)"
+  # Multiple passes: removing a parent can leave children removable on the next pass.
+  while [ -n "$NEW_DANGLING" ]; do
+    PASS=0
+    while IFS= read -r _id; do
+      podman rmi "$_id" >/dev/null 2>&1 && REMOVED=$((REMOVED + 1)) && PASS=$((PASS + 1))
+    done <<< "$NEW_DANGLING"
+    [ "$PASS" -eq 0 ] && break
+    DANGLING_AFTER="$(podman images -q -f dangling=true 2>/dev/null | sort -u)"
+    NEW_DANGLING="$(comm -13 <(printf '%s\n' "$DANGLING_BEFORE") <(printf '%s\n' "$DANGLING_AFTER") | grep -v '^$' || true)"
+  done
+fi
+# Cached scratch intermediates from earlier publishes keep the same image IDs, so they
+# never show up as "newly" dangling — prune the rest once the push is on the registry.
+PRUNE_OUT="$(podman image prune -f 2>&1)" || true
+if printf '%s\n' "$PRUNE_OUT" | grep -q 'Total reclaimed space'; then
+  echo "    removed $REMOVED newly dangling image(s); $(printf '%s\n' "$PRUNE_OUT" | grep 'Total reclaimed space')"
 else
-  echo "    nothing to clean up"
+  echo "    removed $REMOVED newly dangling image(s)"
 fi
 
 echo "==> Done."
