@@ -37,7 +37,7 @@ describe('buildLayerCache', () => {
     const ids = parseBuildStepLayerIds(fullStack);
     expect(ids.slice(0, 4)).toEqual(['base-os', 'hardened', 'ros', 'ros']);
     expect(ids.slice(4)).toEqual(Array(ids.length - 4).fill('sim'));
-  
+
     expect(parseBuildStepLayerIds(noSimStack)).toEqual(['base-os', 'hardened', 'ros', 'ros']);
   });
 
