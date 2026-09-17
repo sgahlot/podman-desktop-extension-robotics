@@ -55,7 +55,9 @@ export abstract class PhysicalAiApi {
     baseMetadata?: { osFamily: string; osVersion: string; rosDistro: string },
   ): Promise<void>;
   /** Build an image from an in-memory Containerfile (layer-composition wizard). The
-   * Containerfile is written to a throwaway build context; no bundled asset dir is used.
+   * Containerfile is written to a throwaway build context. When `bundleSimRuntime` is true
+   * (or the Containerfile includes the sim-runtime layer marker), bundled entrypoint/world
+   * assets from `assets/ros2-jazzy-sim/` are copied into that context before `podman build`.
    * `options.generateSbom` (only meaningful here — the base/sim build paths never set it)
    * runs `syft` against the built image afterward and records the SBOM in build history,
    * in `options.sbomFormat` (defaults to SBOM_FORMAT_DEFAULT — see BuildHistory.ts for why
@@ -64,7 +66,12 @@ export abstract class PhysicalAiApi {
     tag: string,
     containerfile: string,
     platform?: string,
-    options?: { generateSbom?: boolean; sbomFormat?: SbomFormat; layerPlan?: LayerCacheBuildOptions['layerPlan'] },
+    options?: {
+      generateSbom?: boolean;
+      sbomFormat?: SbomFormat;
+      layerPlan?: LayerCacheBuildOptions['layerPlan'];
+      bundleSimRuntime?: boolean;
+    },
   ): Promise<void>;
   abstract cancelBuild(tag: string): Promise<void>;
   abstract getBuildProgress(tag: string): Promise<BuildProgress | undefined>;

@@ -5,7 +5,7 @@ import { router } from 'tinro';
 import type { SimContainerInfo } from '/@shared/src/types/SimulationContainer';
 import { SIM_STOPPED_BROWSER_HINT } from '/@shared/src/types/SimulationContainer';
 import { isSimLaunchImageRef } from '/@shared/src/security/simImageTrust';
-import { simulationBrowserUrl } from '/@shared/src/security/simInput';
+import { imageSupportsNav2Prewarm, simulationBrowserUrl } from '/@shared/src/security/simInput';
 import RobotControls, { type RobotEntry } from './RobotControls.svelte';
 import { reconcileAdd, pruneStale } from './lib/robotReconcile';
 import { localDiagnosticsHref } from './lib/diagnosticsLink';
@@ -196,8 +196,9 @@ async function spawnRobot(form: { name: string; x: string; y: string; yaw: strin
       navStatus: 'idle',
       navTarget: { x: '2.0', y: '2.0' },
       navReached: null,
-      // Backend pre-warms Nav2 for Jazzy only; show "warming…" optimistically there.
-      warmStatus: runningContainer?.imageTag?.includes('jazzy') ? 'warming' : undefined,
+      // Backend pre-warms Nav2 for Nav2 sim images; show "warming…" optimistically there.
+      warmStatus:
+        runningContainer?.imageTag && imageSupportsNav2Prewarm(runningContainer.imageTag) ? 'warming' : undefined,
     },
   ];
 }

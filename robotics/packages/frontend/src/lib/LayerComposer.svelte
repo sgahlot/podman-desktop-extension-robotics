@@ -10,6 +10,7 @@ import {
   evaluateStack,
   generateLayerContainerfile,
   hummingbirdImageRef,
+  selectionNeedsBundledSimRuntime,
   type HardenedApp,
   type LayerSelection,
 } from '/@shared/src/types/layerCompatibility';
@@ -615,6 +616,7 @@ onDestroy(() => {
             generateSbom: selectedHbApps.includes('syft'),
             sbomFormat,
             layerPlan: layerCachePlan,
+            bundleSimRuntime: selectionNeedsBundledSimRuntime(selection),
           })}
         onBuildComplete={() => {
           void refreshLocalImages();

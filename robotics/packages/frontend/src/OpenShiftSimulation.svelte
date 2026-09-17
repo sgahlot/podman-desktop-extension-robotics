@@ -15,6 +15,7 @@ import { ocTargetKey } from './lib/diagnosticsTargetKey';
 import { setSpawnedRobotsForTarget } from './lib/spawnedRobotsStore';
 import { clearCachedDiagnostics } from './lib/robotDiagnosticsCache';
 import { formatRpcError } from './lib/formatRpcError';
+import { imageSupportsNav2Prewarm } from '/@shared/src/security/simInput';
 
 let loading = true;
 let context: OpenShiftContext | undefined = undefined;
@@ -731,8 +732,8 @@ async function spawnRobot(w: OpenShiftWorkload, form: { name: string; x: string;
       navStatus: 'idle',
       navTarget: { x: '2.0', y: '0.5' },
       navReached: null,
-      // Backend pre-warms Nav2 for Jazzy only; show "warming…" optimistically there.
-      warmStatus: w.image?.includes('jazzy') ? 'warming' : undefined,
+      // Backend pre-warms Nav2 for Nav2 sim images; show "warming…" optimistically there.
+      warmStatus: w.image && imageSupportsNav2Prewarm(w.image) ? 'warming' : undefined,
     },
   ];
   robotsByWorkload = robotsByWorkload;

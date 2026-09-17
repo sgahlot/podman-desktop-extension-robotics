@@ -110,9 +110,9 @@ The extension does not verify an arbitrary parent image’s architecture, operat
 
 To add simulation packages directly to a ROS-ready custom parent, select **Custom image reference** and choose the registered **Fedora 43 + ROS 2 Lyrical (dnf)** template. The template installs the fixed `ros-lyrical-nav2-minimal-tb3-sim` and `ros-lyrical-ros-gz-sim` packages on a parent such as `quay.io/lrossett/ros2:f43-full-desktop`. This skips the preset Phase 1 build and produces a labeled **packages-only** BYO image.
 
-For a Fedora bootc build managed by the Layers composer, select **Fedora bootc 43**, choose **ROS2 Lyrical** in the ROS dropdown, and keep **Gazebo + Nav2 + TurtleBot3** selected. The generated Containerfile pins DNF to Fedora 43, configures the ROS 2 Lyrical Fedora 43 x86_64 testing repository, and installs the ROS runtime stack plus development RPM dependencies required by this testing repository. This repository is x86_64-only; the resulting image is a packages-only BYO image and does not use the Ubuntu/Jazzy managed simulation workflow.
+For a Fedora bootc build managed by the Layers composer, select **Fedora bootc 43**, choose **ROS2 Lyrical** in the ROS dropdown, and keep **Gazebo + Nav2 + TurtleBot3** selected. The generated Containerfile pins DNF to Fedora 43, configures the ROS 2 Lyrical Fedora 43 x86_64 testing repository, installs the ROS runtime stack plus development RPM dependencies required by this testing repository, and appends a **sim runtime layer** (noVNC display stack, extension entrypoints, worlds). This repository is x86_64-only. The extension copies bundled operational assets into the build context automatically — rebuild after upgrading the extension if entrypoints change.
 
-Packages-only images do not provide the preset operational contract: managed Local/OpenShift launch, noVNC, Navigate, and diagnostics are not supported. Run the resulting image manually after building and verify that the parent exposes the expected ROS distro and package repositories.
+The **Custom image reference → Fedora 43 + ROS 2 Lyrical (dnf)** template remains **packages-only** (RPM additions only, no bundled entrypoints). Use the Fedora bootc 43 + ROS2 Lyrical + Gazebo stack above for managed Local/OpenShift deploy.
 
 ## Golden images to publish
 

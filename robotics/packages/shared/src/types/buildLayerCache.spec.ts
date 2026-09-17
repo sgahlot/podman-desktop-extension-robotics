@@ -34,7 +34,10 @@ describe('buildLayerCache', () => {
   });
 
   it('maps build steps to composition layers', () => {
-    expect(parseBuildStepLayerIds(fullStack)).toEqual(['base-os', 'hardened', 'ros', 'ros', 'sim']);
+    const ids = parseBuildStepLayerIds(fullStack);
+    expect(ids.slice(0, 4)).toEqual(['base-os', 'hardened', 'ros', 'ros']);
+    expect(ids.slice(4)).toEqual(Array(ids.length - 4).fill('sim'));
+  
     expect(parseBuildStepLayerIds(noSimStack)).toEqual(['base-os', 'hardened', 'ros', 'ros']);
   });
 
@@ -63,17 +66,13 @@ describe('buildLayerCache', () => {
 
   it('aggregates cache hits per layer from Podman stream lines', () => {
     const parser = new BuildCacheStreamParser(fullStack);
+    const stepCount = parseBuildStepLayerIds(fullStack).length;
 
-    parser.processLine('STEP 1/5: FROM docker.io/library/ubuntu:24.04');
-    parser.processLine('--> Using cache');
-    parser.processLine('STEP 2/5: COPY --from=registry.access.redhat.com/hi/cosign:latest');
-    parser.processLine('--> Using cache');
-    parser.processLine('STEP 3/5: RUN apt-get update && apt-get install -y curl');
-    parser.processLine('--> Using cache');
-    parser.processLine('STEP 4/5: RUN apt-get install -y ros-jazzy-desktop');
-    parser.processLine('--> Using cache');
-    parser.processLine('STEP 5/5: RUN apt-get install -y ros-jazzy-navigation2');
-    // Step 5 runs fresh — no "Using cache" before the build ends.
+    for (let step = 1; step <= stepCount; step++) {
+      parser.processLine(`STEP ${step}/${stepCount}: generated instruction`);
+      // Last step runs fresh — no "Using cache" before finalize (sim layer rebuilt).
+      if (step < stepCount) parser.processLine('--> Using cache');
+    }
 
     const status = parser.finalize();
     expect(status).toEqual([
@@ -109,16 +108,13 @@ describe('buildLayerCache', () => {
 
   it('infers Base OS cached when FROM has no Using cache line but all later steps hit cache', () => {
     const parser = new BuildCacheStreamParser(fullStack);
+    const stepCount = parseBuildStepLayerIds(fullStack).length;
 
-    parser.processLine('STEP 1/5: FROM docker.io/library/ubuntu:24.04');
-    parser.processLine('STEP 2/5: COPY --from=registry.access.redhat.com/hi/cosign:latest');
-    parser.processLine('--> Using cache');
-    parser.processLine('STEP 3/5: RUN apt-get update && apt-get install -y curl');
-    parser.processLine('--> Using cache');
-    parser.processLine('STEP 4/5: RUN apt-get install -y ros-jazzy-desktop');
-    parser.processLine('--> Using cache');
-    parser.processLine('STEP 5/5: RUN apt-get install -y ros-jazzy-navigation2');
-    parser.processLine('--> Using cache');
+    for (let step = 1; step <= stepCount; step++) {
+      parser.processLine(`STEP ${step}/${stepCount}: generated instruction`);
+      // Step 1 (FROM): no "Using cache" line — inference should still mark base OS cached.
+      if (step > 1) parser.processLine('--> Using cache');
+    }
 
     const status = parser.finalize();
     expect(status[0]).toEqual({ layer: 'Base OS · Ubuntu Noble', cached: true });

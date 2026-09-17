@@ -78,12 +78,12 @@ describe('evaluateStack', () => {
     expect(result.buildable).toBe(true);
   });
 
-  it('ubuntu + jazzy + sim is a known-good combination', () => {
+  it('ubuntu + jazzy + sim builds a managed simulation image', () => {
     const result = evaluateStack(sel({ baseOs: 'ubuntu-noble', ros: 'ros2-jazzy', sim: 'gazebo-nav2-tb3' }));
     expect(result.level).toBe('ok');
     expect(result.buildable).toBe(true);
     expect(result.failsAtStep).toBeUndefined();
-    expect(result.messages.some(m => m.text.includes('Known-good combination'))).toBe(true);
+    expect(result.messages.some(m => m.text.includes('managed simulation image'))).toBe(true);
   });
 
   it('ubuntu + jazzy with no sim is also ok', () => {
@@ -113,7 +113,7 @@ describe('evaluateStack', () => {
     const result = evaluateStack(sel({ baseOs: 'fedora-bootc-43', ros: 'ros2-lyrical', sim: 'gazebo-nav2-tb3' }));
     expect(result.level).toBe('ok');
     expect(result.buildable).toBe(true);
-    expect(result.messages.some(m => m.text.includes('Known-good combination'))).toBe(true);
+    expect(result.messages.some(m => m.text.includes('managed simulation image'))).toBe(true);
   });
 
   it('centos bootc with no ROS and no sim warns that it is not a robotics image yet', () => {
@@ -220,12 +220,15 @@ describe('generateLayerContainerfile', () => {
     expect(containerfile).toContain('FROM quay.io/example/robot-base:latest');
   });
 
-  it('ubuntu + jazzy + sim contains the ubuntu FROM ref and the nav2 RUN line', () => {
+  it('ubuntu + jazzy + sim contains the ubuntu FROM ref, nav2 RUN line, and Layer 5 runtime', () => {
     const containerfile = generateLayerContainerfile(
       sel({ baseOs: 'ubuntu-noble', ros: 'ros2-jazzy', sim: 'gazebo-nav2-tb3' }),
     );
     expect(containerfile).toContain('FROM docker.io/library/ubuntu:24.04');
     expect(containerfile).toContain('ros-jazzy-nav2-bringup');
+    expect(containerfile).toContain('Layer 5 — Sim runtime');
+    expect(containerfile).toContain('COPY entrypoint-gazebo.sh /entrypoint-gazebo.sh');
+    expect(containerfile).toContain('ENV ROBOTICS_ROS_SETUP=/opt/ros/jazzy/setup.bash');
   });
 
   it('bootc base contains the centos FROM ref', () => {
@@ -268,6 +271,9 @@ describe('generateLayerContainerfile', () => {
     expect(containerfile.indexOf('ros2-lyrical-testing.repo')).toBeLessThan(
       containerfile.indexOf('ros-lyrical-desktop'),
     );
+    expect(containerfile).toContain('COPY entrypoint-gazebo.sh /entrypoint-gazebo.sh');
+    expect(containerfile).toContain('ENV ROBOTICS_ROS_SETUP=/opt/ros/lyrical/setup.bash');
+    expect(containerfile).toContain('Layer 5 — Sim runtime');
   });
 
   it('uses system curl for ROS setup when a hardened curl tool is baked in', () => {

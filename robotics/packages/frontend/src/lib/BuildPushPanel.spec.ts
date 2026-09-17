@@ -275,6 +275,26 @@ describe('BuildPushPanel', () => {
     expect(screen.queryByText(/transient upstream package-mirror issue/)).toBeNull();
   });
 
+  it('notifies onBuildComplete when a build fails so history can refresh', async () => {
+    const onBuildComplete = vi.fn();
+    mockGetBuildProgress.mockResolvedValue({
+      tag: TAG,
+      status: 'Failed',
+      logs: ['[00:00:01] STEP 1/1', 'ERROR: exit status 1'],
+      done: true,
+      error: 'building at STEP "RUN bogus": exit status 1',
+    });
+
+    render(BuildPushPanel, {
+      props: { buildImage, tag: TAG, tagInputId: 'phase1-tag', onBuildComplete },
+    });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Build' }));
+    await waitFor(() => {
+      expect(onBuildComplete).toHaveBeenCalledOnce();
+    });
+  });
+
   it('clears stale build logs/status when the tag prop changes to a different (unbuilt) tag', async () => {
     const startedAt = 1_000;
     mockGetBuildProgress.mockResolvedValue({

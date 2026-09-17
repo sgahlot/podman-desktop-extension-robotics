@@ -65,6 +65,12 @@ import {
 } from '/@shared/src/types/buildLayerCache';
 import type { HardenedApp } from '/@shared/src/types/layerCompatibility';
 import {
+  SIM_RUNTIME_BUNDLE_ASSET_DIR,
+  containerfileNeedsBundledSimRuntime,
+} from '/@shared/src/types/simOperationalLayer';
+import { assertBuildContextReady } from './buildContextFs';
+import { stageBundledAssetDir, stageSimRuntimeAssetFiles } from './bundledAssets';
+import {
   assertCustomBaseImageRef,
   generateCustomSimulationContainerfile,
   resolveCustomSimulationTemplate,
@@ -90,6 +96,9 @@ import {
   assertPortMappings,
   assertContainerName,
   simulationBrowserUrl,
+  distroFromImageRef,
+  distroSupportsNav2,
+  imageSupportsNav2Prewarm,
   type SupportedRosDistro,
 } from '/@shared/src/security/simInput';
 import { assertLaunchImageTag } from '/@shared/src/security/simImageTrust';
@@ -502,17 +511,28 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     cacheOptions?: LayerCacheBuildOptions & { kind: 'preset-base' | 'preset-sim' | 'custom-sim' },
   ): Promise<void> {
     this.#assertCanStartOp(this.activeBuilds, tag, 'build');
-    // Fail fast if there's no running Podman, before resolving the asset context dir.
+    // Fail fast if there's no running Podman, before staging the asset context dir.
     this.#getRunningPodmanConnection();
-    const assetPath = extensionApi.Uri.joinPath(this.extensionContext.extensionUri, 'assets', assetDir).fsPath;
-    const contextDir = assetPath;
-    const containerfileContent = await readFile(pathJoin(assetPath, 'Containerfile'), 'utf8');
+
+    const contextDir = await mkdtemp(pathJoin(tmpdir(), `robotics-asset-build-${assetDir}-`));
+    let containerfileContent: string;
+    try {
+      await stageBundledAssetDir(this.extensionContext.extensionUri, assetDir, contextDir);
+      containerfileContent = await readFile(pathJoin(contextDir, 'Containerfile'), 'utf8');
+    } catch (err) {
+      await rm(contextDir, { recursive: true, force: true }).catch(() => {});
+      throw err;
+    }
 
     const kind = cacheOptions?.kind ?? 'preset-base';
     const layerPlan = cacheOptions?.layerPlan ?? [];
     const layerCacheParser = new BuildCacheStreamParser(containerfileContent, { kind, plan: layerPlan });
 
-    this.#runContainerBuild(tag, contextDir, 'Containerfile', buildargs, platform, undefined, layerCacheParser);
+    await assertBuildContextReady(contextDir, containerfileContent);
+
+    this.#runContainerBuild(tag, contextDir, 'Containerfile', buildargs, platform, undefined, layerCacheParser, () => {
+      void rm(contextDir, { recursive: true, force: true }).catch(() => {});
+    });
   }
 
   /**
@@ -597,6 +617,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
               progress.error = 'Build cancelled';
               appendProgressLog(progress.logs, 'Build cancelled by user');
               this.layerCacheParsers.delete(tag);
+            } else if (progress.error) {
+              progress.status = 'Failed';
+              progress.done = true;
+              progress.finishedAt = Date.now();
+              appendProgressLog(progress.logs, data?.trim() ? data.trim() : 'Build finished with errors');
+              this.#finalizeLayerCache(tag, progress);
+              void this.#recordBuildHistory(tag, platform, progress, generateSbom, sbomFormat);
             } else {
               progress.status = 'Complete';
               progress.done = true;
@@ -1117,11 +1144,20 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
   }
 
+  async #stageSimRuntimeBuildContext(contextDir: string): Promise<void> {
+    await stageSimRuntimeAssetFiles(this.extensionContext.extensionUri, SIM_RUNTIME_BUNDLE_ASSET_DIR, contextDir);
+  }
+
   async buildFromContainerfile(
     tag: string,
     containerfile: string,
     platform?: string,
-    options?: { generateSbom?: boolean; sbomFormat?: SbomFormat; layerPlan?: LayerCacheBuildOptions['layerPlan'] },
+    options?: {
+      generateSbom?: boolean;
+      sbomFormat?: SbomFormat;
+      layerPlan?: LayerCacheBuildOptions['layerPlan'];
+      bundleSimRuntime?: boolean;
+    },
   ): Promise<void> {
     if (!containerfile?.trim()) {
       throw new Error('Cannot build: the Containerfile is empty.');
@@ -1130,14 +1166,19 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     this.#assertCanStartOp(this.activeBuilds, tag, 'build');
 
     const contextDir = await mkdtemp(pathJoin(tmpdir(), 'physical-ai-layer-build-'));
+    const bundleSimRuntime = options?.bundleSimRuntime ?? containerfileNeedsBundledSimRuntime(containerfile);
     try {
       await writeFile(pathJoin(contextDir, 'Containerfile'), containerfile, 'utf8');
+      if (bundleSimRuntime) {
+        await this.#stageSimRuntimeBuildContext(contextDir);
+      }
     } catch (err) {
       await rm(contextDir, { recursive: true, force: true }).catch(() => {});
       throw err;
     }
 
     try {
+      await assertBuildContextReady(contextDir, containerfile, { bundleSimRuntime });
       this.#runContainerBuild(
         tag,
         contextDir,
@@ -1453,11 +1494,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       // Detached: entrypoint backgrounds work; exitCode reflects only whether
       // podman accepted the exec, not whether spawn succeeded inside the container.
       const result = await extensionApi.process.exec('podman', ['exec', '-d', id, ...safeCommand]);
-      // Warm Nav2 in the background so the first Navigate click is instant (Jazzy only).
-      if (image.includes('jazzy')) {
+      // Warm Nav2 in the background so the first Navigate click is instant (Nav2 sim images).
+      if (imageSupportsNav2Prewarm(image)) {
         const pose = { x: Number(safeX), y: Number(safeY), yaw: Number(safeYaw) };
         const warmKey = PhysicalAiApiImpl.#warmKey(id, safeRobot);
-        void this.#prewarmNav2(warmKey, { kind: 'podman', id }, safeRobot, pose, 'jazzy');
+        const distro = PhysicalAiApiImpl.#distroFromImage(image);
+        void this.#prewarmNav2(warmKey, { kind: 'podman', id }, safeRobot, pose, distro);
       }
       return {
         exitCode: 0,
@@ -1692,7 +1734,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const distro = await this.#detectRosDistro(id);
     const target = { kind: 'podman', id } as const;
 
-    if (distro === 'jazzy') {
+    if (distroSupportsNav2(distro)) {
       return this.#sendNav2NavigationGoal(target, safeRobot, x, y, distro);
     }
     return this.#sendCmdVelNavigationGoal(target, safeRobot, x, y, distro);
@@ -1855,7 +1897,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
    * instantly instead of paying the ~40–90 s software-render cold-start. Waits
    * for the robot to appear in the world (spawn is detached), then launches Nav2
    * via #ensureNav2Running. Fire-and-forget: never throws — a failure just means
-   * the later Navigate click pays the cold-start as before. Jazzy (Nav2) only.
+   * the later Navigate click pays the cold-start as before. Nav2 sim distros only.
    *
    * `warmKey` scopes the status entry (see #warmKey) so the UI can poll it.
    */
@@ -2484,9 +2526,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   static #distroFromImage(image: string): SupportedRosDistro {
-    if (image.includes('humble')) return 'humble';
-    if (image.includes('jazzy')) return 'jazzy';
-    throw new Error(`Unsupported ROS distro for image "${image}". Tag must include "humble" or "jazzy".`);
+    return distroFromImageRef(image);
   }
 
   async pushImage(tag: string): Promise<void> {
@@ -2857,14 +2897,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const target = { kind: 'oc', pod, namespace: ns, context } as const;
     await this.#execDetached(target, SPAWN_ENTRYPOINT, [safeRobot, safeX, safeY, safeYaw]);
 
-    // Warm Nav2 in the background so the first Navigate click is instant (Jazzy only).
+    // Warm Nav2 in the background so the first Navigate click is instant (Nav2 sim images).
     // The spawn already succeeded — never let pre-warm setup surface as an error.
     try {
       const image = await this.#openShiftDeploymentImage(ns, safeName, context);
-      if (image.includes('jazzy')) {
+      if (imageSupportsNav2Prewarm(image)) {
         const pose = { x: Number(safeX), y: Number(safeY), yaw: Number(safeYaw) };
         const warmKey = PhysicalAiApiImpl.#warmKey(`${ns}/${safeName}`, safeRobot);
-        void this.#prewarmNav2(warmKey, target, safeRobot, pose, 'jazzy');
+        const distro = PhysicalAiApiImpl.#distroFromImage(image);
+        void this.#prewarmNav2(warmKey, target, safeRobot, pose, distro);
       }
     } catch (err) {
       console.error('[physical-ai] Nav2 pre-warm setup failed (non-fatal):', err);
@@ -2887,7 +2928,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
     const target = { kind: 'oc', pod, namespace: ns, context } as const;
 
-    if (distro === 'jazzy') {
+    if (distroSupportsNav2(distro)) {
       return this.#sendNav2NavigationGoal(target, safeRobot, x, y, distro);
     }
     return this.#sendCmdVelNavigationGoal(target, safeRobot, x, y, distro);

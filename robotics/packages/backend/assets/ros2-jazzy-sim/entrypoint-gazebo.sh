@@ -54,7 +54,7 @@ set -u
 export CYCLONEDDS_URI="file:///opt/ros2-demo/config/cyclonedds-qos.xml"
 
 export TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-waffle}"
-export GZ_SIM_RESOURCE_PATH="/opt/ros/jazzy/share:/opt/ros/jazzy/share/nav2_minimal_tb3_sim/models:${GZ_SIM_RESOURCE_PATH:-}"
+pai_export_gz_sim_resource_path
 
 # Zenoh middleware (APPENG-5775): RMW_IMPLEMENTATION is a runtime choice baked into the
 # same image as the default DDS RMW (rmw_cyclonedds_cpp/rmw_fastrtps_cpp). When the

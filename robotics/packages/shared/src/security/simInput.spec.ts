@@ -13,6 +13,8 @@ import {
   NOVNC_BROWSER_PATH,
   SPAWN_ENTRYPOINT,
   GAZEBO_ENTRYPOINT,
+  distroFromImageRef,
+  imageSupportsNav2Prewarm,
 } from './simInput';
 
 describe('simInput security validators', () => {
@@ -39,10 +41,18 @@ describe('simInput security validators', () => {
     expect(() => assertRosTopicName('/foo/../bar')).toThrow(/Invalid ROS topic/);
   });
 
-  it('only allows humble and jazzy distros', () => {
+  it('allows humble, jazzy, and lyrical distros', () => {
     expect(assertRosDistro('humble')).toBe('humble');
     expect(assertRosDistro('jazzy')).toBe('jazzy');
+    expect(assertRosDistro('lyrical')).toBe('lyrical');
     expect(() => assertRosDistro('foxy')).toThrow(/Unsupported ROS distro/);
+  });
+
+  it('detects Nav2-capable distros from image refs', () => {
+    expect(distroFromImageRef('quay.io/ns/ros2-jazzy-sim:noble-amd64')).toBe('jazzy');
+    expect(distroFromImageRef('quay.io/ns/robotics-fedora-bootc-43:ros2-lyrical')).toBe('lyrical');
+    expect(imageSupportsNav2Prewarm('quay.io/ns/robotics-fedora-bootc-43:ros2-lyrical')).toBe(true);
+    expect(imageSupportsNav2Prewarm('quay.io/ns/ros2-humble-turtlebot3:sloretz')).toBe(false);
   });
 
   it('validates spawn exec commands', () => {
