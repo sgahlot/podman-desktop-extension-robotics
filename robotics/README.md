@@ -6,7 +6,7 @@ Developer README for the `robotics/` npm workspace. **User-facing documentation*
 
 ### Option A — published image (no build)
 
-Podman Desktop → Extensions → **Install custom extension…** → `quay.io/sgahlot/physical-ai-extension:latest`
+Podman Desktop → Extensions → **Install custom…** → `quay.io/fedora-sig-robotics/robotics-extension:latest`
 
 ### Option B — build from source
 
@@ -18,6 +18,7 @@ Podman Desktop → Extensions → **Install custom extension…** → `quay.io/s
 | Podman | 5.x | 6.0+ | Tested with 5.8.5 and 6.0.2 |
 | Node.js | 24.0.0 | 24.x | Matches Podman Desktop's Node requirement |
 | npm | 11.0.0 | 11.x | |
+| oc | 4.22.3 | 4.22.x | OpenShift deploy tab — kubeconfig context and `oc login` |
 
 **Podman Machine** (for local simulation)
 
@@ -54,7 +55,7 @@ npm run build
 
 5. The **Robotics** extension appears in the navbar.
 
-   ![Robotics Extension](../docs/images/physical-ai-extension.png)
+   ![Robotics Extension](../docs/images/robotics-extension.png)
 
 **Don't** build the root `Containerfile` locally and paste that tag into **Install custom extension…** — that flow always pulls from a registry. Use Option B for local changes; use `scripts/publish-extension-image.sh` when you need a pushed OCI image.
 
@@ -68,7 +69,7 @@ Repo-level plan, design, and story tracking live in [`../docs/`](../docs/) (outs
 | `packages/frontend` | Svelte 5 + TailwindCSS webview UI |
 | `packages/shared` | API interface, RPC bridge, shared types |
 | `packages/cli` | Standalone CLI — see [`packages/cli/README.md`](packages/cli/README.md) |
-| `docs/img/` | Screenshots and GIFs referenced by the backend README |
+| `robotics/docs/img/` | Walkthrough GIFs — bundled into Help via the frontend build; backend README links via GitLab raw URLs |
 
 ## Tech stack
 
@@ -90,14 +91,13 @@ Backend runs in Podman Desktop's Node.js/Electron host. Frontend is a Svelte 5 S
 
 ## Packaging
 
-The root `Containerfile` builds an OCI image of the extension. `packages/backend/README.md` and the icon ship inside the image. Publish via `scripts/publish-extension-image.sh`.
+The root `Containerfile` builds an OCI image of the extension. `packages/backend/README.md` and the icon ship inside the image (Readme may link GitLab raw GIFs under `robotics/docs/img/`; **Help** bundles the same files). Publish via `scripts/publish-extension-image.sh`.
 
 ## Troubleshooting (install / dev)
 
 - **Wrong folder selected** — must be `packages/backend`, not `robotics/`.
 - **Extension won't load after build** — run `npm run build` from this directory; reload the extension in Podman Desktop.
 - **Simulation / OpenShift / Navigate issues** — see [`packages/backend/README.md`](packages/backend/README.md) and in-extension **Help**.
-
 ## License
 
 Apache-2.0

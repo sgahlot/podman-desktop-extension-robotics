@@ -1,6 +1,23 @@
 <script lang="ts">
 import { router } from 'tinro';
 import { navigationLayout } from './lib/navigationLayout';
+import { helpScreenshots as ss } from './lib/helpScreenshots';
+
+// Defining strings for image captions
+let dashboardCaption =
+  '<strong>Dashboard</strong> — <strong>Overview</strong> counts (local ROS 2 images, local and OpenShift sims) plus <strong>Explore</strong> and quick navigation.';
+let imageBuilderCaption =
+  '<strong>Image Builder: Presets:</strong> — Quick Starts → Phase 1/Phase 2 build. <strong>Customize:</strong> choose different layers/options → build.';
+let imageCatalogCaption =
+  '<strong>Image Catalog</strong> — browse a Quay.io namespace and pull a pre-built image instead of building locally.';
+let showViewerCaption =
+  '<strong>Show Viewer:</strong> (Simulation page, Local or OpenShift) — Launch → <strong>Show Viewer</strong> (embedded inline, no browser tab) → <em>toggle the embedded noVNC canvas on and off</em>.';
+let openshiftDeployCaption =
+  "<strong>Simulation:</strong> OpenShift tab — Deploy → preview manifests → Deploy → <strong>Show Viewer</strong>, rendering inline over the cluster's route.";
+let diagnosticsCaption =
+  '<strong>Diagnostics:</strong> Local or OpenShift tab → Refresh or List simulations → Refresh Diagnostics → see various diagnostics information.';
+let topicMonitorCaption =
+  '<strong>Topic Monitor:</strong> active ROS2 topics inside a running simulation container → Publishes/Subscribers, message schema, peek inside a topic.';
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
@@ -13,18 +30,149 @@ import { navigationLayout } from './lib/navigationLayout';
   <div class="flex flex-col gap-4">
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Getting Started</h2>
-      <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-1">
+      <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
         <p>
           This extension gives robotics developers a GUI-driven path from local development to OpenShift deployment — no
           terminal required.
         </p>
         <p>
-          Typical demo path:
-          <strong>Image Builder</strong> (build base + sim) →
-          <strong>Simulation</strong> (launch empty Gazebo + noVNC) →
-          <strong>Add TurtleBot3</strong>. Or pull golden images from <strong>Image Catalog</strong>. Bases are
-          <strong>Ubuntu interim</strong> today; Fedora/RHEL migration is tracked separately.
+          A common end-to-end flow: prepare images with <strong>Image Builder</strong> or
+          <strong>Image Catalog</strong>, run and drive robots on <strong>Simulation</strong> (local or OpenShift),
+          inspect traffic with
+          <strong>Topic Monitor</strong> and <strong>Diagnostics</strong>, and tune behavior under Settings &rarr;
+          Preferences &rarr; Robotics.
         </p>
+        <p>
+          The sections below mirror each destination in the extension. Open <strong>Help</strong> from the Dashboard or the
+          navigation shell whenever you need detail on a page.
+        </p>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
+      <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Dashboard</h2>
+      <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
+        <p>
+          The <strong>Dashboard</strong> is the home hub: welcome text, shortcuts into the main pages, live counts, and links
+          to external references.
+        </p>
+        <div>
+          <strong>Overview</strong> — Three stat cards refresh when you open the Dashboard:
+          <strong>Local ROS 2 images</strong> (opens Image Catalog),
+          <strong>local</strong> running simulations (Simulation tab), and <strong>OpenShift</strong> deployed sims (Simulation
+          &rarr; OpenShift). Use them as a quick health snapshot and to jump straight to the relevant page.
+        </div>
+        <div>
+          <strong>Get started</strong> — Numbered shortcuts (Build &rarr; Simulate &rarr; Navigate &rarr; Monitor) and
+          <strong>Open Image Builder</strong> for a first-time path; same ideas as the full flow above, without leaving the
+          hub.
+        </div>
+        <div>
+          <strong>Quick Links</strong> — When navigation layout is <strong>Cards</strong>, a grid of tiles opens Image
+          Builder, Image Catalog, Simulation, Topic Monitor, and Help (Fleet is listed as coming soon). Switch layout
+          under Settings &rarr; Preferences &rarr; Robotics if you prefer sidebar or tabs instead.
+        </div>
+        <div>
+          <strong>Explore</strong> — Opens vetted external docs in your browser (ROS 2 Jazzy, TurtleBot3, Nav2) or
+          returns here via <strong>Extension guide</strong>. These are reference material, not part of the in-panel
+          workflow.
+        </div>
+
+        <hr class="border-[var(--pd-content-card-border)] my-3 opacity-60" />
+
+        <figure class="flex flex-col gap-2 mt-1">
+          <img
+            src={ss.dashboardOverviewCards}
+            alt=""
+            class="rounded border border-[var(--pd-content-card-border)] max-w-full" />
+          <figcaption>{@html dashboardCaption}</figcaption>
+        </figure>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
+      <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Image Builder</h2>
+      <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
+        <div class="text-xs font-semibold text-[var(--pd-content-header)] mb-2">Presets tab</div>
+        <div>
+          <strong>Overview</strong> — Known-good <strong>Ubuntu + ROS 2 Jazzy</strong> recipes: Phase 1 (base) then
+          Phase 2 (simulation). <strong>Quick Starts</strong> appear on this tab only (not on Customize).
+        </div>
+        <div>
+          <strong>Quick Start:</strong> <strong>arm64</strong> — Apple Silicon Mac (native build) and
+          <strong>amd64</strong> — Linux hosts and OpenShift-bound images. Each preset saves preferences and scrolls to
+          Phase 1; click Build for Phase 1, then Phase 2. <i>Building amd64 on Mac uses QEMU and is slower.</i>
+        </div>
+        <div>
+          <strong>Configuration</strong> — Collapsible panel for robot, ROS distro, simulation engine, and base image preset
+          (expand to change from Quick Start defaults).
+        </div>
+        <div>
+          <strong>Phase 1: Base image</strong> — Humble: <span class="font-mono">sloretz</span> (<span class="font-mono"
+            >:sloretz</span
+          >) or <span class="font-mono">osrf</span> (<span class="font-mono">:osrf</span>). Jazzy: Ubuntu Noble preset
+          (tag <span class="font-mono">:noble</span>). Official Jazzy amd64 preset uses tag
+          <span class="font-mono">:latest</span>.
+        </div>
+        <div>
+          <strong>Phase 2: Simulation image</strong> — Layers Gazebo, TurtleBot3 spawn assets, and noVNC (Jazzy) on your
+          Phase 1 local base. Nav2 packages are included; on Jazzy sim (for obstacle-aware navigation).
+          <i>Disabled until the base exists locally.</i>
+        </div>
+        <div class="text-xs font-semibold text-[var(--pd-content-header)] mt-3 mb-2">Customize tab</div>
+        <div>
+          <strong>Layer composition</strong> — Pick Base OS, optional Hummingbird layers, ROS, and simulation options.
+          Pull layer images from the wizard — a <span class="font-mono">&#10003; Local</span> badge marks what you
+          already have. Review the generated Containerfile preview, then build (or push) from that file. A live
+          compatibility verdict blocks the primary build unless you choose <em>Attempt anyway</em> (that build really
+          runs and fails at the step the verdict names). A tested <strong>Ubuntu + ROS [+ Sim]</strong> preset recipe
+          builds a full runnable sim image; other stacks build from the generated Containerfile. Bootc bases and
+          Hummingbird hardened apps shown are a representative catalog — install
+          <span class="font-mono">redhat.bootc</span>
+          and
+          <span class="font-mono">redhat.hummingbird</span> to pull those images. Hummingbird apps split into
+          <em>companions</em> (run alongside) and <em>tools</em> (baked in via
+          <span class="font-mono">COPY --from</span>).
+        </div>
+        <div>
+          <strong>Fedora 43 + ROS 2 Lyrical</strong> — On <strong>Customize</strong>, choose
+          <strong>Fedora bootc 43</strong>
+          for <span class="font-mono">Base OS</span>, <strong>ROS2 Lyrical</strong> for
+          <span class="font-mono">ROS</span>, and keep <strong>Gazebo + Nav2 + TurtleBot3</strong> for a
+          <strong>managed sim image</strong>
+          (amd64-only; bundled entrypoints, noVNC, worlds). That path supports local <strong>Simulation</strong>,
+          <strong>Navigate</strong>,
+          <strong>Diagnostics</strong>, and <strong>OpenShift</strong> deploy like Ubuntu Jazzy sim images. The separate
+          <span class="font-mono">Fedora 43 + ROS 2 Lyrical (dnf)</span> template is <strong>packages-only</strong> BYO (RPM
+          additions only — not eligible for managed launch, noVNC, Navigate, diagnostics, or OpenShift simulation deploy).
+        </div>
+        <div class="text-xs font-semibold text-[var(--pd-content-header)] mt-3 mb-2">Build history</div>
+        <div>
+          <strong>Recent builds</strong> — Below the build panels, Image Builder lists recent builds (tag, arch, duration,
+          success/failure). Expand an entry to see layer cache reuse (cache cake) and, when generated, an optional SBOM (fetched
+          on demand). History refreshes when a build finishes; SBOM generation can take minutes after the build completes.
+        </div>
+        <div class="text-xs font-semibold text-[var(--pd-content-header)] mt-3 mb-2">Both tabs</div>
+        <div>
+          <strong>Cancel / Push</strong> — Cancel aborts an in-progress <strong>build</strong> or <strong>push</strong>.
+          Push requires registry login via Podman Desktop &rarr; Settings &rarr; Registries. Image Builder also shows
+          whether the current <span class="font-mono">quay.io/…</span> tag exists on Quay (public repos only; private repos
+          show as unavailable).
+        </div>
+        <div>
+          <strong>Build storage cleanup</strong> — Successful and failed builds remove their intermediate Buildah
+          containers. A cancelled build may leave external Buildah containers because the Podman Desktop build API does
+          not expose a safe per-build cleanup identifier. If storage accumulates or Podman reports no space left on
+          device, stop all builds and run <span class="font-mono">podman system prune --build --force</span> after reviewing
+          its scope. This does not remove volumes, and the extension does not run it automatically.
+        </div>
+
+        <hr class="border-[var(--pd-content-card-border)] my-3 opacity-60" />
+
+        <figure class="flex flex-col gap-2 mt-1">
+          <img src={ss.imageBuilder} alt="" class="rounded border border-[var(--pd-content-card-border)] max-w-full" />
+          <figcaption>{@html imageBuilderCaption}</figcaption>
+        </figure>
       </div>
     </div>
 
@@ -54,89 +202,16 @@ import { navigationLayout } from './lib/navigationLayout';
           locally. The backend merges the Podman Desktop image list with <span class="font-mono">podman images</span> so untagged
           or oddly-tagged local images still appear.
         </div>
-      </div>
-    </div>
 
-    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
-      <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Image Builder</h2>
-      <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
-        <div>
-          <strong>Presets / Customize</strong> — Quick Starts are available in every Image Builder layout.
-          <strong>Presets</strong> are known-good recipes (Ubuntu + ROS Jazzy + Simulation). <strong>Customize</strong>
-          composes Base OS, hardened app, ROS, and simulation layers, with a live compatibility verdict as you pick. Pull
-          the layer images (base OS + any selected Hummingbird images) right from the wizard — a
-          <span class="font-mono">&#10003; Local</span>
-          badge marks the ones you already have — then build the composed image: a tested Ubuntu + ROS [+ Sim] stack builds
-          the full runnable image, and any other combination builds from the generated Containerfile (an
-          <em>Attempt anyway</em>
-          build of a blocked combination really runs and fails at the step the verdict names). The bootc bases and Hummingbird
-          hardened apps shown are a representative catalog; install the
-          <span class="font-mono">redhat.bootc</span>
-          and
-          <span class="font-mono">redhat.hummingbird</span> extensions to pull those images. Hummingbird apps split into
-          <em>companions</em> (pulled and run alongside) and <em>tools</em> (a hardened CLI baked in via
-          <span class="font-mono">COPY --from</span>).
-        </div>
-        <div class="text-xs font-semibold text-[var(--pd-content-header)] mt-3 mb-2">Presets Tab</div>
-        <div>
-          <strong>Quick Start:</strong> <strong>arm64</strong> — for Apple Silicon (Mac only) and
-          <strong>amd64</strong> — for Linux, OpenShift clusters. These two presets set the dropdowns, save preferences,
-          and scroll to Phase 1, then you click Build for Phase 1 and Phase 2.
-          <i>Building amd64 on Mac is slower via emulation</i>.
-        </div>
-        <div>
-          <strong>Phase 1: Base Image</strong> — Humble: <span class="font-mono">sloretz</span> (<span class="font-mono"
-            >:sloretz</span
-          >) or <span class="font-mono">osrf</span> (<span class="font-mono">:osrf</span>). Jazzy: Ubuntu Noble preset
-          (tag <span class="font-mono">:noble</span>). Official Jazzy amd64 preset uses tag
-          <span class="font-mono">:latest</span>.
-        </div>
-        <div>
-          <strong>Phase 2: Simulation Image</strong> — Layers Gazebo, TurtleBot3 spawn assets, and noVNC (Jazzy) on your
-          Phase 1 local base. Nav2 packages are included; on Jazzy sim, <strong>Navigate</strong> launches Nav2 for obstacle-aware
-          navigation. Disabled until the base exists locally.
-        </div>
-        <div class="text-xs font-semibold text-[var(--pd-content-header)] mt-3 mb-2">Customize Tab</div>
-        <div>
-          <strong>Custom image reference</strong> — Choose <strong>Custom image…</strong> in the Base OS selector and
-          enter an OCI image reference (for example <span class="font-mono">quay.io/org/ros2:jazzy-desktop</span>). This
-          is the parent
-          <span class="font-mono">FROM</span> image, not the output tag in the Build panel; it is saved with your preferences.
-          Compatibility is not verified for arbitrary images, so authenticate to private registries and ensure the parent
-          works with the selected recipe. The supported preset Phase 2 simulation path remains Ubuntu/Jazzy.
-        </div>
-        <div>
-          <strong>Custom ROS simulation packages</strong> — For a ROS-ready custom parent, select the registered
-          <span class="font-mono">Fedora 43 + ROS 2 Lyrical (dnf)</span> template. It adds the fixed
-          <span class="font-mono">ros-lyrical-nav2-minimal-tb3-sim</span> and
-          <span class="font-mono">ros-lyrical-ros-gz-sim</span> packages directly to the parent and labels the output
-          <strong>packages-only</strong>. This BYO image is not eligible for managed launch, noVNC, Navigate,
-          diagnostics, or OpenShift simulation deployment.
-        </div>
-        <div>
-          <strong>Fedora 43 + ROS 2 Lyrical</strong> — Choose <strong>Fedora bootc 43</strong> for
-          <span class="font-mono">Base OS</span>
-          and <strong>ROS2 Lyrical</strong> for <span class="font-mono">ROS</span>, then keep
-          <strong>Gazebo + Nav2 + TurtleBot3</strong>
-          selected for <span class="font-mono">Simulation</span>. The generated Containerfile pins DNF to Fedora 43 and
-          configures the ROS 2 Lyrical Fedora 43 x86_64 testing repository before installing the the ROS runtime stack
-          plus development RPM dependencies required by the testing repository. This path is amd64-only and
-          packages-only.
-        </div>
-        <div class="text-xs font-semibold text-[var(--pd-content-header)] mt-3 mb-2">All Layouts</div>
-        <div>
-          <strong>Cancel / Push</strong> — Cancel aborts an in-progress <strong>build</strong> or <strong>push</strong>.
-          Push requires registry login via Podman Desktop &rarr; Settings &rarr; Registries. Image Builder also shows
-          whether the current <span class="font-mono">quay.io/…</span> tag exists on Quay (public repos only; private repos
-          show as unavailable).
-        </div>
-        <div>
-          <strong>Build storage cleanup</strong> — Successful and failed builds remove their intermediate Buildah
-          containers. A cancelled build may leave external Buildah containers because the Podman Desktop build API does
-          not expose a safe per-build cleanup identifier. If storage accumulates or Podman reports no space left on
-          device, stop all builds and run <span class="font-mono">podman system prune --build --force</span> after reviewing
-          its scope. This does not remove volumes, and the extension does not run it automatically.
-        </div>
+        <hr class="border-[var(--pd-content-card-border)] my-3 opacity-60" />
+
+        <figure class="flex flex-col gap-2 mt-1">
+          <img
+            src={ss.imageCatalogPull}
+            alt=""
+            class="rounded border border-[var(--pd-content-card-border)] max-w-full" />
+          <figcaption>{@html imageCatalogCaption}</figcaption>
+        </figure>
       </div>
     </div>
 
@@ -147,6 +222,13 @@ import { navigationLayout } from './lib/navigationLayout';
           <strong>Launch</strong> — Pick a local sim image (tags matching <span class="font-mono">ros2-*-sim*</span> or
           <span class="font-mono">ros2-*-turtlebot3</span>). The container starts Gazebo + noVNC. The world is
           <strong>empty</strong> until you add a robot.
+        </div>
+        <div>
+          <strong>Middleware (DDS / Zenoh)</strong> — Before <strong>Launch</strong>, choose
+          <span class="font-mono">dds</span>
+          or <span class="font-mono">zenoh</span> on the Simulation page (and on the OpenShift tab when deploying). Jazzy
+          sim images include both RMW implementations; this selects which one runs at launch. Default is DDS; change under
+          Settings &rarr; Preferences &rarr; Robotics if you want a new default.
         </div>
         <div>
           <strong>Image trust</strong> — Launch runs entrypoints from the selected <em>local</em> image. Tag matching is
@@ -208,12 +290,27 @@ import { navigationLayout } from './lib/navigationLayout';
           path yet, the behavior tree runs recovery moves (spin, backup, clear costmap) that can look like hopping in place
           before forward motion starts.
         </div>
+
+        <hr class="border-[var(--pd-content-card-border)] my-3 opacity-60" />
+
+        <figure class="flex flex-col gap-2 mt-1">
+          <img
+            src={ss.showViewerToggle}
+            alt=""
+            class="rounded border border-[var(--pd-content-card-border)] max-w-full" />
+          <figcaption>{@html showViewerCaption}</figcaption>
+        </figure>
       </div>
     </div>
 
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">OpenShift Deployment</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
+        <div>
+          <strong>Prerequisites</strong> — Install the OpenShift CLI (<span class="font-mono">oc</span>) and log in to
+          your cluster (<span class="font-mono">oc login</span>) so the tab can list contexts, namespaces, and deployed
+          workloads. A valid kubeconfig context is required before <strong>Deploy</strong> or in-cluster robot actions.
+        </div>
         <div>
           <strong>Deploy</strong> — On the Simulation page's <strong>OpenShift</strong> tab, pick a pushed
           <span class="font-mono">amd64</span>
@@ -248,6 +345,16 @@ import { navigationLayout } from './lib/navigationLayout';
           <span class="font-mono">registry.access.redhat.com/hi/nginx</span> companion container to the pod, reverse-proxying
           noVNC through it, to demonstrate the Hummingbird companion-image pattern live.
         </div>
+
+        <hr class="border-[var(--pd-content-card-border)] my-3 opacity-60" />
+
+        <figure class="flex flex-col gap-2 mt-1">
+          <img
+            src={ss.openshiftDeployShowViewer}
+            alt=""
+            class="rounded border border-[var(--pd-content-card-border)] max-w-full" />
+          <figcaption>{@html openshiftDeployCaption}</figcaption>
+        </figure>
       </div>
     </div>
 
@@ -264,6 +371,13 @@ import { navigationLayout } from './lib/navigationLayout';
           <strong>Access</strong> — Click <strong>Diagnose</strong> next to a spawned robot on the Simulation or OpenShift
           page, or open the Diagnostics page directly and pick a target/robot.
         </div>
+
+        <hr class="border-[var(--pd-content-card-border)] my-3 opacity-60" />
+
+        <figure class="flex flex-col gap-2 mt-1">
+          <img src={ss.diagnostics} alt="" class="rounded border border-[var(--pd-content-card-border)] max-w-full" />
+          <figcaption>{@html diagnosticsCaption}</figcaption>
+        </figure>
       </div>
     </div>
 
@@ -298,6 +412,13 @@ import { navigationLayout } from './lib/navigationLayout';
           inside the message (e.g. <span class="font-mono">header.stamp</span>), not the
           <span class="font-mono">/clock</span> topic.
         </div>
+
+        <hr class="border-[var(--pd-content-card-border)] my-3 opacity-60" />
+
+        <figure class="flex flex-col gap-2 mt-1">
+          <img src={ss.topicMonitor} alt="" class="rounded border border-[var(--pd-content-card-border)] max-w-full" />
+          <figcaption>{@html topicMonitorCaption}</figcaption>
+        </figure>
       </div>
     </div>
 
@@ -305,7 +426,9 @@ import { navigationLayout } from './lib/navigationLayout';
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Golden Quay images</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-1">
         <p>
-          Recommended set to publish for Catalog demos (replace <span class="font-mono">&lt;ns&gt;</span> with your namespace).
+          Recommended set to publish for Catalog demos (replace <span class="font-mono">&lt;ns&gt;</span> with your
+          namespace). Fedora Lyrical sim images are built via <strong>Image Builder &rarr; Customize</strong>, not this
+          Ubuntu-centric golden list.
         </p>
         <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-jazzy-base:latest</p>
         <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-jazzy-base:noble</p>
@@ -341,6 +464,7 @@ import { navigationLayout } from './lib/navigationLayout';
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Coming Soon</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-1">
+        <p><strong>Custom build</strong> - Custom Containerfile via URL or local dir.</p>
         <p><strong>Customize hardware</strong> — Swap sensors (e.g. camera) on a running robot.</p>
         <p><strong>Additional robots</strong> — Beyond TurtleBot3.</p>
         <p><strong>Fleet</strong> — Multi-robot local fleets with Zenoh.</p>

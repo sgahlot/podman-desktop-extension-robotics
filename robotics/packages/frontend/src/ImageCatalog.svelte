@@ -250,8 +250,8 @@ onDestroy(() => {
     <QuickLinks links={[{ label: 'Image Builder', to: '/build' }]} />
   {/if}
   <p class="text-sm text-[var(--pd-content-text)]">
-    Browse and pull ROS2 container images from a Quay.io organization. Bases are Ubuntu interim today (Fedora/RHEL
-    migration is tracked separately).
+    Browse and pull ROS2 container images from a Quay.io organization. Curated pulls focus on Ubuntu + Jazzy sim/base
+    tags; build Fedora bootc 43 + ROS 2 Lyrical sims via <strong>Image Builder &rarr; Customize</strong>.
   </p>
 
   <div class="flex flex-row gap-3 items-end flex-wrap">
