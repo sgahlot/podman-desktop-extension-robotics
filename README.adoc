@@ -9,7 +9,7 @@ This repository contains a Podman Desktop extension that gives robotics develope
 
 *MVP target:* ROSCon Toronto demo, September 2026.
 
-For features, screenshots, and end-user quick start, see link:physical-ai/packages/backend/README.md[packages/backend/README.md] (ships in the published extension image).
+For features, screenshots, and end-user quick start, see link:robotics/packages/backend/README.md[packages/backend/README.md] (ships in the published extension image).
 
 == Repository layout
 
@@ -19,7 +19,8 @@ podman-work/                            <1>
 ├── README.adoc                         # This file — repo landing page
 ├── docs/                               <2>
 │   └── design.adoc                     # Architecture and design
-└── physical-ai/                        <3>
+└── robotics/                           <3>
+    ├── docs/img/                       # Walkthrough GIFs (Help + backend README)
     ├── README.md                       # Developer README — build, load, contribute
     ├── Containerfile                   # OCI image build for extension packaging
     └── packages/
@@ -34,9 +35,11 @@ podman-work/                            <1>
 
 == Develop the extension
 
-Install, build, load in Podman Desktop, workspace layout, tech stack, and packaging: link:physical-ai/README.md[physical-ai/README.md].
+Install the published extension: Podman Desktop → Extensions → *Install custom…* → `quay.io/fedora-sig-robotics/robotics-extension:latest` (details and dev load: link:robotics/README.md[robotics/README.md]).
 
-End-user documentation (Navigate, OpenShift, GPU/CPU sizing, settings): link:physical-ai/packages/backend/README.md[physical-ai/packages/backend/README.md].
+Build, workspace layout, tech stack, and packaging: link:robotics/README.md[robotics/README.md].
+
+End-user documentation (Navigate, OpenShift, GPU/CPU sizing, settings): link:robotics/packages/backend/README.md[robotics/packages/backend/README.md].
 
 == Documentation
 
@@ -46,4 +49,4 @@ Work tracking: Jira epic link:https://redhat.atlassian.net/browse/APPENG-5763[AP
 
 == License
 
-Apache-2.0. See link:physical-ai/LICENSE[LICENSE].
+Apache-2.0. See link:robotics/LICENSE[LICENSE].

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 
 const filename = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = path.dirname(filename);
+const REPO_ROOT = join(PACKAGE_ROOT, '../../..');
 
 export default defineConfig({
   mode: process.env.MODE,
@@ -15,6 +16,7 @@ export default defineConfig({
     alias: {
       '/@/': join(PACKAGE_ROOT, 'src') + '/',
       '/@shared/': join(PACKAGE_ROOT, '../shared') + '/',
+      '/@docs/': join(REPO_ROOT, 'robotics/docs/img') + '/',
     },
   },
   plugins: [svelte({ hot: !process.env.VITEST }), svelteTesting()],
@@ -27,6 +29,7 @@ export default defineConfig({
   server: {
     fs: {
       strict: true,
+      allow: [PACKAGE_ROOT, REPO_ROOT],
     },
   },
   build: {

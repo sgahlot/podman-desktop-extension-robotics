@@ -5,7 +5,7 @@ Podman Desktop extension for Robotics robotics development. Provides a GUI-drive
 ## Features
 
 - **Image Catalog** — Browse and pull ROS2 images from Quay.io (All or Curated view; allowlist configurable in Preferences)
-- **Image Builder** — Configure, build, and push ROS2 images (Jazzy sim + noVNC; Humble exists but is not currently verified working — see Coming Soon). The builder provides **Presets**, **Customize**, and **Layers** layouts. Quick Starts are available in every layout; Customize and Layers can independently select the base image and simulation-layer source, with a live compatibility verdict.
+- **Image Builder** — Configure, build, and push ROS2 images (Jazzy sim + noVNC; Humble exists but is not currently verified working — see Coming Soon). The builder provides **Presets** and **Customize** layouts. Quick Starts are available only in Presets layout; Customize can independently select the base image and simulation-layer source, with a live compatibility verdict.
 - **Simulation** — Launch Gazebo via Podman, open noVNC, add TurtleBot3 into a running world. Launch only allows images matching the simulation allowlist (default `ros2-*-sim*` / `ros2-*-turtlebot3`; optional exact tag/digest pins in Preferences). Local image content is trusted once selected — see Help → Image trust. A **Show Viewer** toggle next to **Open in Browser** embeds the noVNC canvas inline in the panel, no browser tab needed (APPENG-6283).
 - **OpenShift Deployment** — Deploy a pushed `amd64` image to an OpenShift cluster from the Simulation page's **OpenShift** tab: pick a namespace/context, preview generated manifests, Deploy, Open URL. Lists deployed sims with per-robot spawn/navigate/remove, delete/refresh, a **Cluster has a GPU** toggle, an optional [Hummingbird](#hummingbird-support) nginx sidecar demo, and the same inline **Show Viewer** toggle as local Simulation, over the route.
 - **Diagnostics** — Live diagnostics for spawned robots (local or OpenShift): TF tree, costmap, and a dynamic list of `sensor_msgs` topics (LaserScan and Imu peeked on refresh; other types listed). Deep-linkable via URL query params (`target=`, `containerId=`/context, `robot=`).
@@ -22,21 +22,35 @@ Current container bases are **Ubuntu interim** (official `ros` / OSRF / sloretz 
 
 ## Screenshots
 
-![Quick Start: build, launch, and view the simulation inline](https://raw.githubusercontent.com/sgahlot/podman-desktop-extension-robotics/main/physical-ai/docs/img/quick-start-show-viewer.gif)
+Animated walkthroughs are bundled in **Help** (one GIF per section, works offline). The images below also appear in the Extensions **Readme** tab when GitLab serves anonymous `/-/raw/main/robotics/docs/img/…` URLs (project path includes **`src`**: `fedora/sigs/robotics/src/podman-desktop-extension-robotics`).
 
-Quick Start — Image Builder page: Phase 1/Phase 2 build → Simulation page: Launch → **Show Viewer** (embedded inline, no browser tab) → Add TurtleBot3.
+**Dashboard Overview cards:** Local Images, Local sims running, OpenShift sims running.
 
-![Image Catalog: browse and pull an image](https://raw.githubusercontent.com/sgahlot/podman-desktop-extension-robotics/main/physical-ai/docs/img/image-catalog-pull.gif)
+![Dashboard Overview cards: quick info on Local Images, Local and OpenShift running sims](https://gitlab.com/fedora/sigs/robotics/src/podman-desktop-extension-robotics/-/raw/main/robotics/docs/img/dashboard-overview-cards.gif)
 
-Image Catalog — browse a Quay.io namespace and pull a pre-built image instead of building locally.
+**Image Builder**: Presets: Quick Starts → Phase 1/Phase 2 build. Customize: choose different layers/options → build.
 
-![OpenShift: deploy and view the simulation inline over the route](https://raw.githubusercontent.com/sgahlot/podman-desktop-extension-robotics/main/physical-ai/docs/img/openshift-deploy-show-viewer.gif)
+![Image Builder: Presets quick starts and Customize layers](https://gitlab.com/fedora/sigs/robotics/src/podman-desktop-extension-robotics/-/raw/main/robotics/docs/img/image-builder.gif)
 
-OpenShift tab — Deploy → preview manifests → Deploy → **Show Viewer**, rendering inline over the cluster's route.
+**Image Catalog:** browse a Quay.io namespace and pull a pre-built image instead of building locally.
 
-![Show Viewer toggle: embed the simulation inline](https://raw.githubusercontent.com/sgahlot/podman-desktop-extension-robotics/main/physical-ai/docs/img/show-viewer-toggle.gif)
+![Image Catalog: browse and pull an image](https://gitlab.com/fedora/sigs/robotics/src/podman-desktop-extension-robotics/-/raw/main/robotics/docs/img/image-catalog-pull.gif)
 
-**Show Viewer** (Simulation page, local or OpenShift) — toggle the embedded noVNC canvas on and off inline in the panel, no browser tab needed.
+**Simulation:** OpenShift tab — Deploy → preview manifests → Deploy → **Show Viewer**, rendering inline over the cluster's route.
+
+![OpenShift: deploy and view the simulation inline over the route](https://gitlab.com/fedora/sigs/robotics/src/podman-desktop-extension-robotics/-/raw/main/robotics/docs/img/openshift-deploy-show-viewer.gif)
+
+**Show Viewer:** (Simulation page, Local or OpenShift) — Launch → **Show Viewer** (embedded inline, no browser tab) → _toggle the embedded noVNC canvas on and off_.
+
+![Show Viewer toggle: embed the simulation inline](https://gitlab.com/fedora/sigs/robotics/src/podman-desktop-extension-robotics/-/raw/main/robotics/docs/img/show-viewer-toggle.gif)
+
+**Topic Monitor:** Topics → Publishes/Subscribers, message schema, peek.
+
+![Topic Monitor: active ROS2 topics inside a running simulation container](https://gitlab.com/fedora/sigs/robotics/src/podman-desktop-extension-robotics/-/raw/main/robotics/docs/img/topic-monitor.gif)
+
+**Diagnostics:** Local or OpenShift tab → Refresh or List simulations → Refresh Diagnostics → see various diagnostics information.
+
+![Diagnostics: health check page](https://gitlab.com/fedora/sigs/robotics/src/podman-desktop-extension-robotics/-/raw/main/robotics/docs/img/diagnostics.gif)
 
 ## Prerequisites
 
@@ -60,12 +74,12 @@ To check or change Podman Machine resources: open **Settings → Resources → P
 
 ## Getting Started
 
-1. Install the extension — either the published image (Podman Desktop → Extensions → Install custom extension → `quay.io/sgahlot/physical-ai-extension:latest`, or a specific version tag) or load from source (see [`physical-ai/README.md`](../README.md))
+1. Install the extension — either the published image (Podman Desktop → Extensions → Install custom extension → `quay.io/fedora-sig-robotics/robotics-extension:latest`, or a specific version tag) or load from source (see [`robotics/README.md`](../README.md))
 2. Open **Robotics**, or press **F1** → **Robotics: Open Dashboard**
-3. **Image Builder** → Quick Start **arm64** (**TurtleBot3 Sim (Jazzy)**) → Phase 1 Build → Phase 2 Build (use **amd64** for a cluster-pullable `amd64` image)
+3. **Image Builder** → Quick Start **amd64** (**TurtleBot3 Sim (Jazzy - amd64)**) → Phase 1 Build → Phase 2 Build
 4. **Simulation** → Launch → **Show Viewer** (or Open in Browser) → Add TurtleBot3 → optional **Navigate** (X/Y) and Topic Monitor **Peek**
 5. **Stop & remove** when done — close the Gazebo (noVNC) browser tab manually if it is still open
-6. Adjust defaults under **Settings → Preferences → Robotics** (including **Simulation GPU passthrough** on Mac)
+6. Adjust defaults under **Settings → Preferences → Robotics** (including **Simulation GPU passthrough** on Mac, _if running on a Mac_)
 
 Idle noVNC tabs may show Disconnected; reconnect or refresh — the simulation is still running. Lidar/IMU topics are available after spawn when using a current sim image; **Navigate** on Jazzy sim uses Nav2 (`navigate_to_pose`) with obstacle-aware planning (Humble images still use open-loop `cmd_vel`).
 
