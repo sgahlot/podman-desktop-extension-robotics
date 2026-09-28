@@ -30,7 +30,7 @@ podman-work/                            <1>
         └── cli/                        # Standalone CLI
 ----
 <1> Git repository root
-<2> Shared project docs — `docs/design.adoc` only; planning/backlog in private `.internal/` (not in repo)
+<2> Shared project docs — `docs/design.adoc` only; maintainer planning/backlog is not in this repo
 <3> Extension source (npm workspaces) — start here to build or hack on the extension
 
 == Develop the extension

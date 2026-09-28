@@ -37,10 +37,9 @@ After reading this file, if **`AGENTS.local.md`** exists alongside it (repositor
   failure or provide requested evidence.
 - For noisy development commands, use RTK when it is installed and supports
   the command. Use the form `rtk <command> ...`; do not use RTK for commands it
-  does not support. If RTK is unavailable or unsupported, use
-  `scripts/agent-run.sh <command> ...`. Both approaches retain full output in
-  a log and return only a compact success result or failure tail. Use the saved
-  log when detailed diagnosis is required.
+  does not support. If RTK is unavailable or unsupported and **`AGENTS.local.md`**
+  is present, use the maintainer command wrapper documented there; otherwise run
+  the command directly and keep chat output to a compact summary or failure tail.
 - Keep commentary and final summaries similarly compact unless the user asks
   for detail or the task requires a longer explanation.
 
@@ -291,10 +290,9 @@ is missing, run before ticket work:
   Jira hyperlinks. Visually match the most recently sent WSU email's established
   structure: greeting, weekly-status introduction, linked Jira bullets with
   concise implementation details, and `Best, Sandip`.
-- Save the working draft to
-  `/Users/sgahlot/code/work/AI/physical_ai/podman-work/wsu-draft.md`,
-  replacing the previous draft. After sending, record `status: sent`, send
-  date, and Gmail message ID in its header.
+- Save the working draft to the path in **`AGENTS.local.md`** when present
+  (overwrite each week). After sending, record `status: sent`, send date, and
+  Gmail message ID in its header.
 - Show the actual draft for review. Send only with the user's explicit,
   immediate approval.
 
