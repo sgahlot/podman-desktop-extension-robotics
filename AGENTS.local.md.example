@@ -1,0 +1,11 @@
+# Maintainer-only agent addendum (template)
+
+Copy to **`AGENTS.local.md`** next to `AGENTS.md` (git-ignored).
+
+- Read **AGENTS.md** first, then **AGENTS.local.md** when present.
+- Optional git-ignored private planning tree under `main/` for backlog, plans, and stories.
+- Entry navigation: doc index and local backlog board (paths live in your populated addendum).
+- Worktree bootstrap: symlink private planning material and optionally `AGENTS.local.md` from `../main/`.
+- Never link private planning material in Jira or public docs.
+
+Maintain the real addendum on your machine; copy from backup or recreate from your private planning README if needed.

@@ -1,14 +1,20 @@
 # Physical AI workspace — Shared agent rules
 
 These instructions apply to `podman-work/` and its child worktrees. `main/`
-is the source of truth for project documentation and private planning material.
+is the source of truth for tracked project documentation.
+
+## Optional local overlay (maintainers)
+
+After reading this file, if **`AGENTS.local.md`** exists alongside it (repository root of the `main` worktree, or a symlink in a feature worktree), read that addendum next. It holds maintainer-only backlog navigation, private doc paths, and worktree bootstrap steps that are not in git.
+
+**Claude Code** loads [`CLAUDE.md`](CLAUDE.md), which only points here. Template for the local overlay: [`AGENTS.local.md.example`](AGENTS.local.md.example).
 
 ## Project, roles, and privacy
 
 - All Jira work belongs under epic `APPENG-5763`.
-- Private S9/S10 stories, plans, and notes live in `main/.internal/`; Jira is
-  the public tracker. Never expose or link `.internal/` in Jira, email, public
-  documentation, or other external systems.
+- Jira is the public tracker. Never expose or link private planning material
+  (see `AGENTS.local.md` when present) in Jira, email, public documentation,
+  or other external systems.
 - Terra or Sol owns planning and prioritization, Jira/worktree creation,
   feature-branch and integrated validation, merge-to-`main`, push, merge
   handoff, and requested cleanup.
@@ -29,6 +35,12 @@ is the source of truth for project documentation and private planning material.
 - Prefer quiet/concise command and reporter modes. Do not dump successful logs
   or large diffs into chat; show detailed output only when needed to diagnose a
   failure or provide requested evidence.
+- For noisy development commands, use RTK when it is installed and supports
+  the command. Use the form `rtk <command> ...`; do not use RTK for commands it
+  does not support. If RTK is unavailable or unsupported, use
+  `scripts/agent-run.sh <command> ...`. Both approaches retain full output in
+  a log and return only a compact success result or failure tail. Use the saved
+  log when detailed diagnosis is required.
 - Keep commentary and final summaries similarly compact unless the user asks
   for detail or the task requires a longer explanation.
 
@@ -64,11 +76,11 @@ branch; it never implies a merge to `main` or Jira closure. Merges require the
   identify the next open follow-up instead of creating duplicate work. If the
   Story label maps to more than one Jira item or cannot be resolved, ask the
   user which item they mean.
-- For a new backlog item, update the applicable private S9 or S10 story before
-  creating the public Jira issue.
+- For a new backlog item, update applicable private story/backlog notes when
+  `AGENTS.local.md` is present, before creating the public Jira issue.
 - For an existing Jira ticket, read Jira first; it defines public scope and
-  status. Then read the matching `.internal/plans/` brief when present, the
-  relevant S9/S10 story, and `docs/design.adoc` as needed.
+  status. Then follow private doc read order in `AGENTS.local.md` when present,
+  and `docs/design.adoc` as needed.
 - Create a Jira Story under `APPENG-5763`, or a Sub-task under the appropriate
   Story when grouping is appropriate.
 - Assign every Jira Story or Sub-task Codex creates to the requesting user.
@@ -77,7 +89,10 @@ branch; it never implies a merge to `main` or Jira closure. Merges require the
 - Discover required Jira fields and transitions from the configured Jira client
   or schema. Do not rely on hard-coded custom-field IDs.
 - At work start, transition the ticket to `In Progress`. For a Sub-task, also
-  transition its parent Story if it is still `New`.
+  transition its parent Story if it is still `New`. A parent Story should not
+  stay `New` while a sub-task under it is actively in progress. Do not
+  auto-close the parent when one sub-task closes; close it only when all
+  planned work under that Story is done or explicitly deferred.
 - In the `main/` planning session, Terra or Sol creates or updates the plan,
   prioritizes and selects the work, creates the Jira issue and feature
   worktree, then hands it to Luna.
@@ -94,9 +109,10 @@ branch; it never implies a merge to `main` or Jira closure. Merges require the
   reconcile it with the branch's lockfile/package manifests. Verify that the
   tracked repository-root `AGENTS.md` is present before handoff; for a legacy
   branch created before it was tracked, create an untracked symlink to
-  `../main/AGENTS.md` rather than proceeding without instructions. Create a
-  shared `.internal` symlink (never copy the private planning directory),
-  apply a ticket-namespaced extension identity, and run the initial typecheck.
+  `../main/AGENTS.md` rather than proceeding without instructions. When
+  `AGENTS.local.md` is present, apply its worktree bootstrap steps (private
+  planning symlink and optional `AGENTS.local.md` symlink). Apply a
+  ticket-namespaced extension identity and run the initial typecheck.
   Verify and report each failure.
 - In a recognizable feature worktree, infer the Jira key from the branch or
   directory. Ask only if it is ambiguous.
@@ -114,6 +130,26 @@ branch; it never implies a merge to `main` or Jira closure. Merges require the
   asking the user to relay the request to another session. Stage only files
   belonging to the ticket and preserve unrelated worktree changes.
 - Preserve unrelated local changes.
+
+### Feature worktree one-time setup
+
+When this checkout is a sibling worktree (not `main/`) and `robotics/node_modules`
+is missing, run before ticket work:
+
+1. Copy `../main/robotics/node_modules` into this worktree’s `robotics/node_modules`,
+   then `npm install` to reconcile lockfile drift. If `npm run clean && npm run build`
+   fails with module resolution errors, delete `node_modules` and run a fresh
+   `npm install` instead.
+2. When **`AGENTS.local.md`** exists on `main/`, run the **Worktree bootstrap**
+   commands in that file (private planning symlinks).
+3. Run `scripts/apply-worktree-identity.sh <NNNN>` before Podman Desktop ever loads
+   this worktree. Suffixing only `name`/`displayName` is not enough — command ids
+   and `physical-ai.*` config keys must be namespaced together or multiple loaded
+   worktrees can both stick at “Starting.”
+4. Before the zero-errors gate or merge, run `scripts/apply-worktree-identity.sh restore`,
+   then re-apply the suffix if you still need PD testing. Leaving the suffix applied
+   breaks backend tests that assert the production command id.
+5. Confirm with `npm run typecheck` before reporting the worktree ready.
 
 ## Implementation and documentation
 
@@ -139,8 +175,8 @@ branch; it never implies a merge to `main` or Jira closure. Merges require the
     changes.
   - `docs/design.adoc` records current architecture, APIs, data flow, and
     significant technical decisions.
-  - `.internal/` contains private planning, backlog, and task tracking; never
-    expose it publicly.
+  - Private planning and backlog (when used) live outside git; see
+    `AGENTS.local.md` — never expose that material publicly.
 - Update documentation in the feature branch when warranted. A task that only
   changes internal implementation may need no public README update, but the
   readiness report must state that documentation impact was assessed.
@@ -164,7 +200,7 @@ branch; it never implies a merge to `main` or Jira closure. Merges require the
 - Merge only from `main/`, using `git merge --no-ff`.
 - Before merging, Terra or Sol runs the zero-error gate against the feature
   branch. After merging, run it again against integrated `main` before pushing.
-  From `main/physical-ai`, the gate is:
+  From `main/robotics`, the gate is:
 
   ```text
   npm run typecheck
@@ -197,7 +233,7 @@ branch; it never implies a merge to `main` or Jira closure. Merges require the
   verification but must never create, edit, or transition Jira activity. Match
   the final-comment visual structure below, including blank lines; render
   `main` as inline code and render the two link labels as Markdown hyperlinks.
-  Use no raw URLs or `.internal/` references:
+  Use no raw URLs or references to private planning material:
 
   ```text
   Implementation complete, tested, and merged to main.
@@ -244,8 +280,9 @@ branch; it never implies a merge to `main` or Jira closure. Merges require the
   exclusive lower bound. Find Jira issues assigned/completed by the requesting
   user with status `Closed` through the current Tuesday cutoff, using
   `America/Toronto` time. Query the live Jira issues directly for status and
-  completion; never infer closure or completion from `backlog-open.md`, Story
-  9/10 snapshots, plan headers, merge commits, or other local tracking tables.
+  completion; never infer closure or completion from local private tracking
+  docs (see `AGENTS.local.md` when present), merge commits alone, or other
+  non-Jira snapshots.
   Local docs and Git history may establish repository scope and implementation
   details only.
 - Include only work demonstrably associated with this repository.
@@ -272,19 +309,19 @@ branch; it never implies a merge to `main` or Jira closure. Merges require the
 ## Repository documentation ownership
 
 - `README.adoc` is the repository landing page and points to the developer documentation.
-- `physical-ai/README.md` is the slim developer README: source installation, build prerequisites, structure, packaging, and development troubleshooting.
-- `physical-ai/packages/backend/README.md` is the canonical user-facing extension documentation.
-- `physical-ai/packages/frontend/src/Help.svelte` is the in-app help surface.
+- `robotics/README.md` is the slim developer README: source installation, build prerequisites, structure, packaging, and development troubleshooting.
+- `robotics/packages/backend/README.md` is the canonical user-facing extension documentation.
+- `robotics/packages/frontend/src/Help.svelte` is the in-app help surface.
 - User-facing operational changes update the backend README and `Help.svelte` together; do not duplicate that content into the slim developer README.
 - Architecture and API decisions belong in `docs/design.adoc` when the change warrants it.
-- `.internal/` contains private plans, stories, backlog notes, and historical context. It is never linked from Jira or public documentation.
+- Private plans and backlog notes are not in git; see `AGENTS.local.md` when present. Never link them from Jira or public documentation.
 
 ## Repository context read order
 
-For feature work, read the Jira issue first, then the matching `.internal/plans/` brief, the relevant Story 9/10 backlog section, and `docs/design.adoc` as needed. Use the historical plan only when the current plan and Jira do not answer the question.
+Read Jira first for filed work, then `docs/design.adoc` as needed. When `AGENTS.local.md` exists, follow its **Read order** and **Repository context read order** sections for private plans and narratives.
 
 ## Repository worktree validation
 
-- New sibling worktrees must have the shared `.internal` link and a unique Podman Desktop extension identity before they are loaded into Podman Desktop.
+- New sibling worktrees must complete bootstrap in `AGENTS.local.md` when present (private planning symlink) and must have a unique Podman Desktop extension identity before they are loaded into Podman Desktop.
 - Restore the unsuffixed identity before the integrated merge gate.
 - The merge gate is `npm run typecheck`, `npm run lint:check`, `npm run svelte:check`, `npm run format:check`, and `npm test` across all packages.

@@ -39,6 +39,20 @@ npm install
 npm run build
 ```
 
+### Compact agent command output
+
+When running noisy checks from an AI coding session, use the repository wrapper
+to keep successful command output out of the conversation while retaining the
+full log for diagnosis:
+
+```bash
+../scripts/agent-run.sh npm test
+../scripts/agent-run.sh npm run typecheck
+```
+
+The wrapper writes complete output to a temporary log, reports a one-line
+success result, and prints the failure tail when a command exits unsuccessfully.
+
 **Load in Podman Desktop**
 
 1. Enable **Development Mode**: *Settings → Preferences → Extensions → Development Mode*
