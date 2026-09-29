@@ -53,6 +53,9 @@ let attemptAnyway = false;
 // so the Target toggle silently did nothing in Layers mode).
 export let targetArch: TargetArch;
 export let hostArch: TargetArch;
+export let active = true;
+export let refreshIntervalSeconds = 5;
+export let busy = false;
 /** Shared Quick Start selection from the Image Builder shell. */
 export let quickStartId: string | undefined = undefined;
 /** Notifies the parent (SimulationSetup, which owns the BuildHistoryPanel instance) that a
@@ -67,6 +70,13 @@ export let onBuildComplete: ((opts: { watchForSbom: boolean }) => void) | undefi
 let ns = '';
 let localImages: string[] = [];
 let appliedQuickStartId = '';
+let baseBusy = false;
+let hardenedBusy = false;
+let simBusy = false;
+let customBuildBusy = false;
+
+$: buildBusy = baseBusy || hardenedBusy || simBusy || customBuildBusy;
+$: busy = buildBusy;
 
 $: if (quickStartId && quickStartId !== appliedQuickStartId) {
   appliedQuickStartId = quickStartId;
@@ -273,7 +283,7 @@ onDestroy(() => {
   </p>
 
   <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
-    <div class="flex flex-col gap-4">
+    <fieldset disabled={buildBusy} class="flex flex-col gap-4 disabled:opacity-70">
       <div class="flex flex-col gap-1">
         <label for="layer-base-os" class="text-xs text-[var(--pd-content-text)]">Base OS</label>
         <select
@@ -446,7 +456,7 @@ onDestroy(() => {
           </span>
         {/if}
       </div>
-    </div>
+    </fieldset>
   </div>
 
   <div class="text-sm p-3 rounded {bannerClass}" role="status">
@@ -489,7 +499,7 @@ onDestroy(() => {
             <button
               type="button"
               class="pai-btn pai-btn-sm pai-btn-primary"
-              disabled={pulling[t.ref]}
+              disabled={buildBusy || pulling[t.ref]}
               on:click={() => pull(t.ref)}>
               {pulling[t.ref] ? 'Pulling…' : 'Pull'}
             </button>
@@ -525,6 +535,9 @@ onDestroy(() => {
           tagInputId="layer-base-tag"
           tag={presetBaseTag}
           bind:actualTag={baseTag}
+          bind:busy={baseBusy}
+          active={active}
+          refreshIntervalSeconds={refreshIntervalSeconds}
           tagPlaceholder="e.g. quay.io/org/ros2-base:latest"
           buildImage={t => physicalAiClient.buildBaseImage(t, presetConfig, { layerPlan: layerCachePlanBase })}
           onBuildComplete={() => {
@@ -545,6 +558,9 @@ onDestroy(() => {
             tagInputId="layer-hardened-tag"
             tag={presetHardenedTag}
             bind:actualTag={hardenedTag}
+            bind:busy={hardenedBusy}
+            active={active}
+            refreshIntervalSeconds={refreshIntervalSeconds}
             tagPlaceholder="e.g. quay.io/org/ros2-jazzy-hardened:noble"
             buildImage={t =>
               physicalAiClient.buildHardenedImage(t, presetConfig, {
@@ -576,6 +592,9 @@ onDestroy(() => {
             tagInputId="layer-sim-tag"
             tag={presetSimTag}
             bind:actualTag={simTag}
+            bind:busy={simBusy}
+            active={active}
+            refreshIntervalSeconds={refreshIntervalSeconds}
             tagPlaceholder="e.g. quay.io/org/ros2-sim:latest"
             buildImage={t =>
               physicalAiClient.buildSimulationImage(t, presetConfig, {
@@ -610,6 +629,9 @@ onDestroy(() => {
       <BuildPushPanel
         tagInputId="layer-build-tag"
         tag={containerfileTag}
+        bind:busy={customBuildBusy}
+        active={active}
+        refreshIntervalSeconds={refreshIntervalSeconds}
         tagPlaceholder="e.g. quay.io/org/custom-layer:latest"
         buildImage={t =>
           physicalAiClient.buildFromContainerfile(t, containerfile, platformForArch(targetArch), {

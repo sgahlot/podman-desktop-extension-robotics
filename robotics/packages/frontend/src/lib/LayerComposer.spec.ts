@@ -64,6 +64,23 @@ describe('LayerComposer', () => {
     expect(banner.textContent).toContain('Ready — builds and runs today');
   });
 
+  it('locks builder options while a build is in progress', async () => {
+    mockBuildBaseImage.mockResolvedValue(undefined);
+    render(LayerComposer);
+
+    await waitFor(() =>
+      expect((screen.getAllByRole('button', { name: 'Build' })[0] as HTMLButtonElement).disabled).toBe(false),
+    );
+    await fireEvent.click(screen.getAllByRole('button', { name: 'Build' })[0]);
+
+    await waitFor(() => expect(mockBuildBaseImage).toHaveBeenCalled());
+    expect((screen.getByLabelText('Base OS').closest('fieldset') as HTMLFieldSetElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Hardened app').closest('fieldset') as HTMLFieldSetElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Target architecture').closest('fieldset') as HTMLFieldSetElement).disabled).toBe(
+      true,
+    );
+  });
+
   it('selecting a bootc base with ROS produces the error banner text and disables the Build button', async () => {
     render(LayerComposer);
     const baseOsSelect = screen.getByLabelText('Base OS');
