@@ -20,7 +20,7 @@
     "lint:fix": "eslint . --fix --ext js,ts,tsx",
     "svelte:check": "svelte-check",
     "test:backend": "vitest run -r packages/backend --passWithNoTests --coverage",
-    "test:frontend": "vitest -c packages/frontend/vite.config.js run packages/frontend --passWithNoTests --coverage",
+    "test:frontend": "node --require ./packages/frontend/vite-toolchain-quiet.cjs ./node_modules/vitest/vitest.mjs -c packages/frontend/vite.config.js run packages/frontend --passWithNoTests --coverage",
     "test:shared": "vitest run -r packages/shared --passWithNoTests --coverage",
     "test:cli": "vitest run -r packages/cli --passWithNoTests --coverage",
     "test:scripts": "bash packages/backend/assets/ros2-jazzy-sim/test/entrypoint-security.test.sh",

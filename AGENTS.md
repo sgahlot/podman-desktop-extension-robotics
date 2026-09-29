@@ -130,6 +130,21 @@ branch; it never implies a merge to `main` or Jira closure. Merges require the
   belonging to the ticket and preserve unrelated worktree changes.
 - Preserve unrelated local changes.
 
+### Git status and push verification
+
+- Establish the Git worktree root before inspecting or changing state with
+  `git rev-parse --show-toplevel`; do not mix commands run from the worktree
+  root with commands run from a nested project directory when interpreting
+  paths or status output.
+- For a definitive inventory, run `git -C <worktree-root> status --short
+  --untracked-files=all` and inspect the complete output. Do not infer a clean
+  or complete worktree from truncated command output or from a status command
+  run in a different checkout.
+- Before staging, record the complete status and diff file list. Stage only
+  the confirmed ticket files, then verify `git status`, `git rev-parse HEAD`,
+  `git rev-parse @{upstream}`, and `git ls-remote` after pushing. Report the
+  exact matching local and remote SHA; if they differ, the push is not done.
+
 ### Feature worktree one-time setup
 
 When this checkout is a sibling worktree (not `main/`) and `robotics/node_modules`

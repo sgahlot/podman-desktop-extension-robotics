@@ -44,5 +44,10 @@ export async function runWithProgress(steps: ProgressStep[]): Promise<void> {
     },
   }));
 
-  await new Listr(tasks, { rendererOptions: { collapseSubtasks: false } }).run();
+  await new Listr(tasks, {
+    rendererOptions: { collapseSubtasks: false },
+    // Vitest (and agent harnesses like rtk) are non-TTY; Listr still prints failed-task
+    // banners to stderr unless the silent renderer is selected.
+    silentRendererCondition: () => process.env.VITEST === 'true',
+  }).run();
 }

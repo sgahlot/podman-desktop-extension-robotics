@@ -453,7 +453,7 @@ describe('SimulationSetup (Image Builder)', () => {
       });
     });
 
-    it('Customize shows detailed controls, Presets does not', async () => {
+    it('keeps Customize mounted while Presets is selected', async () => {
       mockGetImageBuilderLayout.mockResolvedValue('presets');
 
       render(SimulationSetup);
@@ -461,8 +461,8 @@ describe('SimulationSetup (Image Builder)', () => {
         expect(screen.queryByText('Loading configuration...')).toBeNull();
       });
 
-      // Presets layout should not show layer controls
-      expect(screen.queryByLabelText('Base OS')).toBeNull();
+      // Customize stays mounted but hidden so an active build can continue.
+      expect(screen.getByLabelText('Base OS')).toBeTruthy();
 
       // Switch to Customize and verify detailed controls appear
       await fireEvent.click(screen.getByRole('tab', { name: 'Customize' }));

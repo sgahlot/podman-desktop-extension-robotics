@@ -51,11 +51,11 @@ onMount(async () => {
       <Route path="/help" breadcrumb="Help">
         <Help />
       </Route>
-      <Route path="/build" breadcrumb="Image Builder">
-        <ImageBuilder />
+      <Route path="/build" breadcrumb="Image Builder" let:active>
+        <ImageBuilder active={active} />
       </Route>
-      <Route path="/simulation/*" breadcrumb="Simulation">
-        <Simulation />
+      <Route path="/simulation/*" breadcrumb="Simulation" let:active>
+        <Simulation active={active} />
       </Route>
       <Route path="/topics" breadcrumb="Topic Monitor">
         <TopicMonitor />

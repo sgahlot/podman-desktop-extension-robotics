@@ -233,6 +233,7 @@ describe('PhysicalAiApiImpl', () => {
     vi.resetAllMocks();
     vi.useFakeTimers();
     mockBuildContextReaddir([]);
+    mockConfigWithBuildHistoryLimit(undefined);
     api = new PhysicalAiApiImpl(MOCK_CONTEXT);
   });
 
@@ -879,6 +880,7 @@ describe('PhysicalAiApiImpl', () => {
     });
 
     it('SBOM generation failure leaves the sbom field absent without failing the build', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
@@ -891,6 +893,11 @@ describe('PhysicalAiApiImpl', () => {
       const history = lastWrittenBuildHistory();
       expect(history[0].success).toBe(true);
       expect(history[0].sbom).toBeUndefined();
+      expect(consoleError).toHaveBeenCalledWith(
+        '[physical-ai] SBOM generation for "my-layer:latest" failed (non-fatal):',
+        expect.objectContaining({ message: 'syft: command not found' }),
+      );
+      consoleError.mockRestore();
     });
 
     it('buildFromContainerfile without generateSbom never invokes syft and records no sbom', async () => {
@@ -902,7 +909,7 @@ describe('PhysicalAiApiImpl', () => {
       await api.buildFromContainerfile('my-layer:latest', 'FROM scratch\n');
       await vi.runAllTimersAsync();
 
-      expect(extensionApi.process.exec).not.toHaveBeenCalled();
+      expect(extensionApi.process.exec).not.toHaveBeenCalledWith('podman', expect.arrayContaining(['syft']));
       const history = lastWrittenBuildHistory();
       expect(history[0].sbom).toBeUndefined();
     });
@@ -938,11 +945,14 @@ describe('PhysicalAiApiImpl', () => {
       vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
 
       let resolveSyft!: (v: extensionApi.RunResult) => void;
-      vi.mocked(extensionApi.process.exec).mockReturnValue(
-        new Promise(resolve => {
-          resolveSyft = resolve;
-        }),
-      );
+      vi.mocked(extensionApi.process.exec).mockImplementation((_command, args) => {
+        if (args?.includes('syft')) {
+          return new Promise(resolve => {
+            resolveSyft = resolve;
+          });
+        }
+        return Promise.resolve({ stdout: '', stderr: '', command: 'podman' } as extensionApi.RunResult);
+      });
 
       await api.buildFromContainerfile('my-layer:latest', 'FROM scratch\n', undefined, { generateSbom: true });
       await vi.runAllTimersAsync();
@@ -1085,6 +1095,13 @@ describe('PhysicalAiApiImpl', () => {
   describe('getBuildHistoryLimit / setBuildHistoryLimit', () => {
     it('returns the default (5) when unset', async () => {
       mockConfigWithBuildHistoryLimit(undefined);
+      expect(await api.getBuildHistoryLimit()).toBe(5);
+    });
+
+    it('returns the default when robotics configuration is unavailable', async () => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue(
+        undefined as unknown as extensionApi.Configuration,
+      );
       expect(await api.getBuildHistoryLimit()).toBe(5);
     });
 
@@ -2573,7 +2590,7 @@ linear_acceleration:
         update,
       } as unknown as extensionApi.Configuration);
       await api.setTopicPeekTimeoutSeconds(15);
-      expect(update).toHaveBeenCalledWith('general.topicPeekTimeoutSeconds', 15);
+      expect(update).toHaveBeenCalledWith('topicMonitor.topicPeekTimeoutSeconds', 15);
     });
   });
 

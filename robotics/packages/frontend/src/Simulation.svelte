@@ -5,6 +5,8 @@ import OpenShiftSimulation from './OpenShiftSimulation.svelte';
 import QuickLinks from './lib/QuickLinks.svelte';
 import { navigationLayout } from './lib/navigationLayout';
 
+export let active = true;
+
 $: tab = $router.path.startsWith('/simulation/openshift') ? 'openshift' : 'local';
 </script>
 
@@ -40,9 +42,9 @@ $: tab = $router.path.startsWith('/simulation/openshift') ? 'openshift' : 'local
 
   <div class="flex-1 min-h-0 overflow-auto">
     {#if tab === 'openshift'}
-      <OpenShiftSimulation />
+      <OpenShiftSimulation active={active} />
     {:else}
-      <LocalSimulation />
+      <LocalSimulation active={active} />
     {/if}
   </div>
 </div>

@@ -19,6 +19,8 @@ import { imageSupportsNav2Prewarm } from '/@shared/src/security/simInput';
 
 let loading = true;
 let context: OpenShiftContext | undefined = undefined;
+export let active = true;
+let wasActive = false;
 
 let name = 'ros2-jazzy-sim';
 /** Seeded from the current kube context's namespace on mount (see onMount); editable.
@@ -475,6 +477,17 @@ onDestroy(() => {
   if (namespaceBlurTimeout) clearTimeout(namespaceBlurTimeout);
   if (imageBlurTimeout) clearTimeout(imageBlurTimeout);
 });
+
+$: if (active && !wasActive) {
+  wasActive = true;
+  if (!loading) {
+    void refreshLoginStatus();
+    void refreshProjects();
+    void refreshLocalAmd64Images();
+    void refreshWorkloads();
+  }
+}
+$: if (!active) wasActive = false;
 
 /** Poll Nav2 pre-warm state for robots still warming across all deployments. */
 async function pollWarmStatus() {

@@ -24,6 +24,8 @@ let actionInfo = '';
 /** Container ids removed this session — hide until list API stops returning them. */
 let removedContainerIds: string[] = [];
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+export let active = true;
+let wasActive = false;
 let simImageAllowlist = '';
 
 let spawnedRobots: RobotEntry[] = [];
@@ -113,6 +115,13 @@ onMount(() => {
 onDestroy(() => {
   if (pollTimer) clearInterval(pollTimer);
 });
+
+$: if (active && !wasActive) {
+  wasActive = true;
+  void loadImages();
+  void pollContainers().then(reconcileRobots);
+}
+$: if (!active) wasActive = false;
 
 async function launchSim() {
   if (!selectedImage || hasRunning) return;

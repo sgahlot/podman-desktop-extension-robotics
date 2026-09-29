@@ -898,6 +898,9 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async getBuildHistoryLimit(): Promise<number> {
     const config = extensionApi.configuration.getConfiguration('robotics');
+    if (!config) {
+      return BUILD_HISTORY_LIMIT_DEFAULT;
+    }
     const raw = config.get<number>('build.historyLimit');
     if (raw === undefined) {
       return BUILD_HISTORY_LIMIT_DEFAULT;
@@ -1327,7 +1330,9 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async getTopicPeekTimeoutSeconds(): Promise<number> {
     const config = extensionApi.configuration.getConfiguration('robotics');
-    const raw = config.get<number>('general.topicPeekTimeoutSeconds');
+    const raw =
+      config.get<number>('topicMonitor.topicPeekTimeoutSeconds') ??
+      config.get<number>('general.topicPeekTimeoutSeconds');
     if (raw === undefined) {
       return PEEK_TIMEOUT_DEFAULT_SEC;
     }
@@ -1337,7 +1342,16 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   async setTopicPeekTimeoutSeconds(seconds: number): Promise<void> {
     const safe = assertPeekTimeoutSeconds(seconds);
     const config = extensionApi.configuration.getConfiguration('robotics');
-    await config.update('general.topicPeekTimeoutSeconds', safe);
+    await config.update('topicMonitor.topicPeekTimeoutSeconds', safe);
+  }
+
+  async getImageStatusRefreshIntervalSeconds(): Promise<number> {
+    const config = extensionApi.configuration.getConfiguration('robotics');
+    const raw =
+      config.get<number>('general.imageStatusRefreshIntervalSeconds') ??
+      config.get<number>('build.imageStatusRefreshIntervalSeconds');
+    if (raw === undefined || !Number.isInteger(raw)) return 5;
+    return Math.min(60, Math.max(1, raw));
   }
 
   async getDefaultSoftwareRenderCpus(): Promise<number> {
