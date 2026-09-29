@@ -34,6 +34,12 @@ export let busy = false;
 export let onBuildComplete: (() => void) | undefined = undefined;
 /** When true, the Build button is disabled (e.g. waiting for a prerequisite). */
 export let disabled = false;
+/** Whether the containing page is currently visible. Re-check image status on return. */
+export let active = true;
+/** Poll interval for local and registry image status. */
+export let refreshIntervalSeconds = 5;
+/** Parent-owned local availability, when the page has a shared image check. */
+export let localImageExistsFromParent: boolean | undefined = undefined;
 /** Bind from parent so a sibling panel starting its build can collapse this one's logs. */
 export let buildLogsExpanded = true;
 
@@ -41,6 +47,7 @@ let inputValue = tag;
 let lastSyncedTag = tag;
 
 let imageExistsLocally = false;
+let lastSuccessfulBuildAt = 0;
 
 // Expose the actual tag being edited (what will be built) for parent to check existence
 $: actualTag = inputValue;
@@ -69,6 +76,8 @@ let pushStatus = 'Pushing...';
 let pushDigest = '';
 let pushStartedAt: number | undefined;
 let pushFinishedAt: number | undefined;
+let wasActive = false;
+let imageStatusTimer: number | undefined;
 
 let pollTimer: number | null = null;
 let logContainer: HTMLDivElement;
@@ -109,12 +118,21 @@ async function checkLocalImage(imageTag: string = inputValue) {
   try {
     const localImages = await physicalAiClient.listLocalImages();
     if (gen !== imageCheckGen) return;
-    imageExistsLocally = localImages.includes(imageTag);
+    const listedLocally = localImages.includes(imageTag);
+    const buildReconciliationGraceMs = Math.max(10_000, refreshIntervalSeconds * 2_000);
+    if (!listedLocally && buildDone && !buildError && Date.now() - lastSuccessfulBuildAt < buildReconciliationGraceMs) {
+      return;
+    }
+    imageExistsLocally = listedLocally;
   } catch {
     if (gen !== imageCheckGen) return;
     imageExistsLocally = false;
   }
   await checkRegistryImage(imageTag, gen);
+}
+
+function pollImageStatus(): void {
+  if (active && !building && !pushing) void checkLocalImage();
 }
 
 /** Parse quay.io/ns/name:tag — other registries are not checked. */
@@ -165,6 +183,7 @@ async function startBuild() {
 
   building = true;
   buildDone = false;
+  lastSuccessfulBuildAt = 0;
   buildError = '';
   buildCancelled = false;
   cancelling = false;
@@ -272,6 +291,7 @@ function startPolling(mode: 'build' | 'push') {
               buildError = progress.error;
             } else {
               imageExistsLocally = true;
+              lastSuccessfulBuildAt = Date.now();
             }
             onBuildComplete?.();
           }
@@ -341,10 +361,18 @@ onMount(() => {
   inputValue = tag;
   lastSyncedTag = tag;
   checkLocalImage(tag);
+  imageStatusTimer = window.setInterval(pollImageStatus, refreshIntervalSeconds * 1000);
 });
+
+$: if (active && !wasActive) {
+  wasActive = true;
+  if (!building && !pushing) checkLocalImage();
+}
+$: if (!active) wasActive = false;
 
 onDestroy(() => {
   stopPolling();
+  if (imageStatusTimer !== undefined) window.clearInterval(imageStatusTimer);
 });
 
 // Adopt parent-driven tag changes only when idle (avoid mid-build poll key desync).
@@ -394,7 +422,7 @@ $: pushDurationSec =
     {/if}
   </div>
 
-  {#if imageExistsLocally && !building && !buildDone}
+  {#if (imageExistsLocally || localImageExistsFromParent === true) && !building && !buildDone}
     <div class="text-xs pai-text-success">
       &#10003; Image exists locally: <span class="font-mono">{inputValue}</span>
     </div>

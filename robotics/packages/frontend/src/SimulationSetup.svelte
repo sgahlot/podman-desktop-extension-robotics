@@ -1,6 +1,6 @@
 <script lang="ts">
 import { physicalAiClient } from './api/client';
-import { onMount, tick } from 'svelte';
+import { onDestroy, onMount, tick } from 'svelte';
 import { router } from 'tinro';
 import BuildPushPanel from './lib/BuildPushPanel.svelte';
 import BuildHistoryPanel from './lib/BuildHistoryPanel.svelte';
@@ -43,6 +43,8 @@ const QUICK_START_DEFAULTS = {
 import type { ImageBuilderRecipe } from '/@shared/src/types/ImageBuilderRecipe';
 import { customSimulationImageTag } from '/@shared/src/types/imageBuilderPlan';
 
+export let active = true;
+
 let robot = 'turtlebot3';
 let distro = 'jazzy';
 let middleware = 'dds';
@@ -71,12 +73,16 @@ let simTag = '';
 let lastConfigKey = '';
 let baseBusy = false;
 let simBusy = false;
+let layerBusy = false;
 let baseLogsExpanded = true;
 let simLogsExpanded = true;
 let baseImageExists = false;
 let simImageExists = false;
 /** Guards the async existence check against stale responses. */
 let existsCheckKey = '';
+let wasActive = false;
+let imageExistenceTimer: number | undefined;
+let imageStatusRefreshIntervalSeconds = 5;
 
 let optionsExpanded = false;
 let configurationExpanded = false;
@@ -92,7 +98,12 @@ let layout: 'presets' | 'layers' = 'presets';
 let buildChoice: 'base' | 'sim' | 'both' | undefined = undefined;
 let buildHistoryPanel: BuildHistoryPanel;
 
-$: buildBusy = baseBusy || simBusy;
+$: buildBusy = baseBusy || simBusy || layerBusy;
+$: if (active && !wasActive) {
+  wasActive = true;
+  existsCheckKey = '';
+}
+$: if (!active) wasActive = false;
 // Auto-expand a panel's own logs whenever ITS OWN build (re)starts — otherwise, once
 // collapsed by the rule below, a fresh build under that same panel would stay collapsed
 // forever with no way back short of manually clicking the toggle.
@@ -179,7 +190,25 @@ async function refreshImageExistence(key: string) {
   }
 }
 
+function refreshActiveImageExistence(): void {
+  if (!active || buildBusy || (!baseTag && !simTag)) return;
+  const key = `${baseTag}|${simTag}`;
+  existsCheckKey = key;
+  void refreshImageExistence(key);
+}
+
+function startImageExistencePolling(): void {
+  if (imageExistenceTimer !== undefined) window.clearInterval(imageExistenceTimer);
+  imageExistenceTimer = window.setInterval(refreshActiveImageExistence, imageStatusRefreshIntervalSeconds * 1000);
+}
+
 onMount(async () => {
+  try {
+    imageStatusRefreshIntervalSeconds = await physicalAiClient.getImageStatusRefreshIntervalSeconds();
+  } catch {
+    // Keep the default when the setting is unavailable.
+  }
+  startImageExistencePolling();
   try {
     ns = await physicalAiClient.getDefaultNamespace();
   } catch {
@@ -229,6 +258,10 @@ onMount(async () => {
   } finally {
     loading = false;
   }
+});
+
+onDestroy(() => {
+  if (imageExistenceTimer !== undefined) window.clearInterval(imageExistenceTimer);
 });
 
 function setLayout(next: 'presets' | 'layers') {
@@ -372,6 +405,12 @@ function cancelQuickStart() {
         Customize
       </button>
     </div>
+
+    {#if buildBusy}
+      <div class="text-sm p-3 rounded pai-banner-info" role="status">
+        Build in progress, options locked. Controls will re-enable when the build finishes.
+      </div>
+    {/if}
 
     <!-- Preset configuration controls (Presets layout only) -->
 
@@ -548,6 +587,10 @@ function cancelQuickStart() {
                 bind:tag={baseTag}
                 bind:busy={baseBusy}
                 bind:buildLogsExpanded={baseLogsExpanded}
+                active={active}
+                refreshIntervalSeconds={imageStatusRefreshIntervalSeconds}
+                localImageExistsFromParent={baseImageExists}
+                disabled={buildBusy}
                 buildImage={t => physicalAiClient.buildBaseImage(t, currentConfig)}
                 onBuildComplete={() => {
                   baseImageExists = true;
@@ -606,6 +649,9 @@ function cancelQuickStart() {
                 bind:tag={simTag}
                 bind:busy={simBusy}
                 bind:buildLogsExpanded={simLogsExpanded}
+                active={active}
+                refreshIntervalSeconds={imageStatusRefreshIntervalSeconds}
+                localImageExistsFromParent={simImageExists}
                 buildImage={t =>
                   baseImage === CUSTOM_SIMULATION_BASE_IMAGE && customSimulationMode === 'packages'
                     ? physicalAiClient.buildCustomSimulationImage(
@@ -629,9 +675,10 @@ function cancelQuickStart() {
                 }}
                 tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-sim:noble"
                 tagInputId="simTag"
-                disabled={baseImage === CUSTOM_SIMULATION_BASE_IMAGE && customSimulationMode === 'packages'
-                  ? !customSimReady
-                  : !baseImageExists} />
+                disabled={buildBusy ||
+                  (baseImage === CUSTOM_SIMULATION_BASE_IMAGE && customSimulationMode === 'packages'
+                    ? !customSimReady
+                    : !baseImageExists)} />
             {:else if profile && !simSupported}
               <p class="text-sm p-3 rounded pai-banner-warning">
                 <strong>Not available yet.</strong> Simulation images (Gazebo, Nav2, TurtleBot3) are not yet available
@@ -648,17 +695,20 @@ function cancelQuickStart() {
       </div>
     {/if}
 
-    {#if layout === 'layers'}
+    <div style:display={layout === 'layers' ? 'block' : 'none'}>
       <LayerComposer
         bind:targetArch={targetArch}
         hostArch={hostArch}
+        active={active && layout === 'layers'}
+        bind:busy={layerBusy}
+        refreshIntervalSeconds={imageStatusRefreshIntervalSeconds}
         quickStartId={appliedQuickStartId}
         onBuildComplete={({ watchForSbom }) => {
           void buildHistoryPanel?.refreshAfterBuild(watchForSbom);
           // Refresh image existence check so parent can detect newly built images
           refreshImageExistence(`${baseTag}|${simTag}`);
         }} />
-    {/if}
+    </div>
 
     <hr class="border-[var(--pd-content-card-border)] my-2" />
 
