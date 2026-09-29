@@ -111,10 +111,12 @@ export abstract class PhysicalAiApi {
    * regardless of name (APPENG-6259) — this only filters suggestions, never what the field
    * accepts as free text or what deploy actually sends. */
   abstract getOpenShiftImageAllowlist(): Promise<string>;
-  /** Peek wait in seconds (Preferences: physical-ai.general.topicPeekTimeoutSeconds, 1–30). */
+  /** Peek wait in seconds (Preferences: physical-ai.topicMonitor.topicPeekTimeoutSeconds, 1–30). */
   abstract getTopicPeekTimeoutSeconds(): Promise<number>;
   /** Validates and persists peek timeout (1–30). Throws a user-facing error if out of range. */
   abstract setTopicPeekTimeoutSeconds(seconds: number): Promise<void>;
+  /** Image-aware page status refresh interval in seconds (Preferences: physical-ai.general.imageStatusRefreshIntervalSeconds, 1–60). */
+  abstract getImageStatusRefreshIntervalSeconds(): Promise<number>;
   /** Default software-render CPU count that seeds the OpenShift deploy form (Preferences: physical-ai.openshift.defaultSoftwareRenderCpus, 1–64). */
   abstract getDefaultSoftwareRenderCpus(): Promise<number>;
   abstract getSimulationConfig(): Promise<SimulationConfig>;
