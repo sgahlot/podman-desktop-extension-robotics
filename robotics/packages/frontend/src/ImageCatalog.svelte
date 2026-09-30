@@ -7,7 +7,11 @@ import { filterCuratedRepos, type CatalogViewMode, DEFAULT_CURATED_ALLOWLIST } f
 import QuickLinks from './lib/QuickLinks.svelte';
 import { navigationLayout } from './lib/navigationLayout';
 
+/** False while another route is visible — Route.svelte keeps this page mounted. */
+export let active = true;
+
 let namespace = '';
+let catalogWasActive = false;
 let filter = '';
 let repos: QuayRepository[] = [];
 let loading = false;
@@ -216,6 +220,15 @@ function formatDate(dateStr: string): string {
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+$: if (active) {
+  if (!catalogWasActive) {
+    catalogWasActive = true;
+    void refreshLocalImages();
+  }
+} else {
+  catalogWasActive = false;
+}
+
 onMount(async () => {
   try {
     namespace = await physicalAiClient.getDefaultNamespace();
@@ -225,7 +238,9 @@ onMount(async () => {
     } catch {
       // defaults are fine
     }
-    refreshLocalImages();
+    if (active) {
+      void refreshLocalImages();
+    }
     if (namespace.trim()) {
       await loadRepos();
     }

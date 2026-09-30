@@ -45,8 +45,8 @@ onMount(async () => {
       <Route path="/" breadcrumb="Dashboard">
         <Dashboard layout={navigationLayout} onLayoutChange={setNavigationLayout} />
       </Route>
-      <Route path="/images" breadcrumb="Image Catalog">
-        <ImageCatalog />
+      <Route path="/images" breadcrumb="Image Catalog" let:active>
+        <ImageCatalog active={active} />
       </Route>
       <Route path="/help" breadcrumb="Help">
         <Help />

@@ -485,6 +485,42 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     this.progressCleanupTimers.set(timerKey, timer);
   }
 
+  async #getLocalImageIdForTag(tag: string): Promise<string | undefined> {
+    try {
+      const result = await extensionApi.process.exec('podman', ['image', 'inspect', tag, '--format', '{{.Id}}']);
+      const id = result.stdout.trim();
+      return id || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  #schedulePostBuildImageCleanup(tag: string, supersededImageIdPromise: Promise<string | undefined>): void {
+    void supersededImageIdPromise.then(supersededId => {
+      void this.#cleanupSupersededAndDanglingImages(tag, supersededId);
+    });
+  }
+
+  async #cleanupSupersededAndDanglingImages(tag: string, supersededImageId?: string): Promise<void> {
+    if (!supersededImageId) {
+      return;
+    }
+    const currentId = await this.#getLocalImageIdForTag(tag);
+    if (!currentId || currentId === supersededImageId) {
+      return;
+    }
+    try {
+      await extensionApi.process.exec('podman', ['rmi', supersededImageId]);
+    } catch {
+      // best-effort
+    }
+    try {
+      await extensionApi.process.exec('podman', ['image', 'prune', '-f']);
+    } catch {
+      // best-effort
+    }
+  }
+
   #countInFlight(map: Map<string, { done?: boolean }>): number {
     let n = 0;
     for (const v of map.values()) {
@@ -584,6 +620,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       startedAt: Date.now(),
     });
 
+    const supersededImageIdPromise = this.#getLocalImageIdForTag(tag);
+
     extensionApi.containerEngine
       .buildImage(
         contextDir,
@@ -634,6 +672,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
               appendProgressLog(progress.logs, data?.trim() ? data.trim() : 'Build finished');
               this.#finalizeLayerCache(tag, progress);
               void this.#recordBuildHistory(tag, platform, progress, generateSbom, sbomFormat);
+              this.#schedulePostBuildImageCleanup(tag, supersededImageIdPromise);
             }
             this.buildAbortControllers.delete(tag);
             this.layerCacheParsers.delete(tag);
@@ -669,6 +708,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
             progress.finishedAt = Date.now();
             this.#finalizeLayerCache(tag, progress);
             void this.#recordBuildHistory(tag, platform, progress, generateSbom, sbomFormat);
+            this.#schedulePostBuildImageCleanup(tag, supersededImageIdPromise);
           }
         }
         this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');

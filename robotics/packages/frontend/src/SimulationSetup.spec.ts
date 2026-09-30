@@ -19,6 +19,10 @@ const mockGetImageTags = vi.fn();
 const mockGetImageBuilderLayout = vi.fn();
 const mockSetImageBuilderLayout = vi.fn();
 const mockGetBuildHistory = vi.fn();
+const mockBuildFromContainerfile = vi.fn();
+const mockBuildHardenedImage = vi.fn();
+const mockPullImageByRef = vi.fn();
+const mockGetPullProgress = vi.fn();
 const mockGoto = vi.fn();
 
 vi.mock('./api/client', () => ({
@@ -39,6 +43,10 @@ vi.mock('./api/client', () => ({
     getImageBuilderLayout: (...args: unknown[]) => mockGetImageBuilderLayout(...args),
     setImageBuilderLayout: (...args: unknown[]) => mockSetImageBuilderLayout(...args),
     getBuildHistory: (...args: unknown[]) => mockGetBuildHistory(...args),
+    buildFromContainerfile: (...args: unknown[]) => mockBuildFromContainerfile(...args),
+    buildHardenedImage: (...args: unknown[]) => mockBuildHardenedImage(...args),
+    pullImageByRef: (...args: unknown[]) => mockPullImageByRef(...args),
+    getPullProgress: (...args: unknown[]) => mockGetPullProgress(...args),
   },
 }));
 
@@ -67,6 +75,37 @@ describe('SimulationSetup (Image Builder)', () => {
     mockGetImageBuilderLayout.mockResolvedValue('presets');
     mockSetImageBuilderLayout.mockResolvedValue(undefined);
     mockGetBuildHistory.mockResolvedValue([]);
+    mockBuildFromContainerfile.mockResolvedValue(undefined);
+    mockBuildHardenedImage.mockResolvedValue(undefined);
+    mockPullImageByRef.mockResolvedValue(undefined);
+    mockGetPullProgress.mockResolvedValue(undefined);
+  });
+
+  it('APPENG-6566: Lyrical quick start stays on Presets and shows layered builder', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    render(SimulationSetup);
+    await waitFor(() => {
+      expect(screen.queryByText('Loading configuration...')).toBeNull();
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Lyrical · amd64)' }));
+
+    await waitFor(() => {
+      expect(mockSaveSimulationConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          quickStartId: 'fedora-bootc43-lyrical-amd64',
+          targetArch: 'amd64',
+        }),
+      );
+    });
+    expect(mockSetImageBuilderLayout).not.toHaveBeenCalledWith('layers');
+    expect(screen.getByRole('tab', { name: 'Presets' }).getAttribute('aria-selected')).toBe('true');
+    const presetsLayerBuild = document.getElementById('presets-layer-build');
+    expect(presetsLayerBuild).toBeTruthy();
+    expect(presetsLayerBuild?.querySelector('#layer-target-arch')).toBeNull();
+    expect(presetsLayerBuild?.querySelector('#layer-base-os')).toBeNull();
+    expect(presetsLayerBuild?.textContent).not.toContain('Generated Containerfile');
+    expect(presetsLayerBuild?.querySelector('button')).toBeTruthy();
   });
 
   it('shows the back-to-dashboard link and Quick Links when navigation layout is cards', async () => {
@@ -151,6 +190,7 @@ describe('SimulationSetup (Image Builder)', () => {
           engine: 'gazebo',
           baseImage: 'jazzy-noble',
           targetArch: 'arm64',
+          quickStartId: 'ubuntu-jazzy-arm64',
         }),
       );
     });
@@ -182,6 +222,7 @@ describe('SimulationSetup (Image Builder)', () => {
           engine: 'gazebo',
           baseImage: 'jazzy-noble',
           targetArch: 'arm64',
+          quickStartId: 'ubuntu-jazzy-arm64',
         }),
       );
     });
@@ -219,7 +260,7 @@ describe('SimulationSetup (Image Builder)', () => {
     expect(screen.queryByText(/does not support/)).toBeNull();
   });
 
-  it('Quick Start applies immediately without a confirmation when the current config already matches the preset', async () => {
+  it('Quick Start applies immediately when re-selecting the active quick start', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     mockGetSimulationConfig.mockResolvedValue({
       robot: 'turtlebot3',
@@ -227,6 +268,8 @@ describe('SimulationSetup (Image Builder)', () => {
       middleware: 'dds',
       engine: 'gazebo',
       baseImage: 'jazzy-noble',
+      targetArch: 'arm64',
+      quickStartId: 'ubuntu-jazzy-arm64',
     });
     render(SimulationSetup);
     await waitFor(() => {
@@ -234,36 +277,38 @@ describe('SimulationSetup (Image Builder)', () => {
     });
 
     await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · arm64)' }));
+
+    expect(mockSaveSimulationConfig).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Apply Quick Start' })).toBeNull();
+  });
+
+  it('Quick Start applies immediately when switching recipes', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    mockGetSimulationConfig.mockResolvedValue({
+      robot: 'turtlebot3',
+      distro: 'jazzy',
+      middleware: 'dds',
+      engine: 'gazebo',
+      baseImage: 'jazzy-noble',
+      targetArch: 'arm64',
+      quickStartId: 'ubuntu-jazzy-arm64',
+    });
+    render(SimulationSetup);
+    await waitFor(() => {
+      expect(screen.queryByText('Loading configuration...')).toBeNull();
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · amd64)' }));
 
     await waitFor(() => {
       expect(mockSaveSimulationConfig).toHaveBeenCalledWith(
         expect.objectContaining({
-          robot: 'turtlebot3',
-          distro: 'jazzy',
-          middleware: 'dds',
-          engine: 'gazebo',
-          baseImage: 'jazzy-noble',
+          quickStartId: 'ubuntu-jazzy-amd64',
+          targetArch: 'amd64',
         }),
       );
     });
     expect(screen.queryByRole('button', { name: 'Apply Quick Start' })).toBeNull();
-  });
-
-  it('Quick Start shows a confirmation when the config differs, and Cancel dismisses it without saving', async () => {
-    Element.prototype.scrollIntoView = vi.fn();
-    render(SimulationSetup);
-    await waitFor(() => {
-      expect(screen.queryByText('Loading configuration...')).toBeNull();
-    });
-
-    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · arm64)' }));
-    expect(await screen.findByRole('button', { name: 'Apply Quick Start' })).toBeTruthy();
-    expect(mockSaveSimulationConfig).not.toHaveBeenCalled();
-
-    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-
-    expect(screen.queryByRole('button', { name: 'Apply Quick Start' })).toBeNull();
-    expect(mockSaveSimulationConfig).not.toHaveBeenCalled();
   });
 
   it('surfaces save errors', async () => {

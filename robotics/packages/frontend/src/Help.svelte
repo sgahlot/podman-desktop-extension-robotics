@@ -95,17 +95,16 @@ let topicMonitorCaption =
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
         <div class="text-xs font-semibold text-[var(--pd-content-header)] mb-2">Presets tab</div>
         <div>
-          <strong>Overview</strong> — Known-good <strong>Ubuntu + ROS 2 Jazzy</strong> recipes: Phase 1 (base) then
-          Phase 2 (simulation). <strong>Quick Starts</strong> appear on this tab only (not on Customize).
+          <strong>Overview</strong> — Known-good TurtleBot3 simulation recipes on <strong>Presets</strong> only (use
+          <strong>Customize</strong> for other stacks). Ubuntu Jazzy uses Phase 1 (base) then Phase 2 (simulation). Fedora
+          bootc 43 + ROS 2 Lyrical uses the layered containerfile builder on the same tab.
         </div>
         <div>
-          <strong>Quick Start:</strong> <strong>arm64</strong> — Apple Silicon Mac (native build) and
-          <strong>amd64</strong> — Linux hosts and OpenShift-bound images. Each preset saves preferences and scrolls to
-          Phase 1; click Build for Phase 1, then Phase 2. <i>Building amd64 on Mac uses QEMU and is slower.</i>
-        </div>
-        <div>
-          <strong>Configuration</strong> — Collapsible panel for robot, ROS distro, simulation engine, and base image preset
-          (expand to change from Quick Start defaults).
+          <strong>Quick Start</strong> — Three fixed recipes: Jazzy on Ubuntu Noble (<span class="font-mono"
+            >arm64</span>
+          or <span class="font-mono">amd64</span>) and Lyrical on Fedora bootc 43 (<span class="font-mono">amd64</span>
+          only). Each option sets OS, ROS distro, and architecture; the <strong>Recipe</strong> list shows what will be
+          built. <i>Building amd64 on an arm64 Mac uses QEMU and is slower.</i>
         </div>
         <div>
           <strong>Phase 1: Base image</strong> — Humble: <span class="font-mono">sloretz</span> (<span class="font-mono"
@@ -145,6 +144,11 @@ let topicMonitorCaption =
           <strong>Diagnostics</strong>, and <strong>OpenShift</strong> deploy like Ubuntu Jazzy sim images. The separate
           <span class="font-mono">Fedora 43 + ROS 2 Lyrical (dnf)</span> template is <strong>packages-only</strong> BYO (RPM
           additions only — not eligible for managed launch, noVNC, Navigate, diagnostics, or OpenShift simulation deploy).
+        </div>
+        <div>
+          <strong>Presets Quick Start</strong> — Choose <strong>TurtleBot3 Sim (Lyrical · amd64)</strong> to apply the Fedora
+          bootc 43 + ROS 2 Lyrical + Gazebo/Nav2/TurtleBot3 managed simulation recipe. It targets amd64 because the Fedora
+          testing repository is x86_64-only.
         </div>
         <div class="text-xs font-semibold text-[var(--pd-content-header)] mt-3 mb-2">Build history</div>
         <div>
@@ -199,8 +203,8 @@ let topicMonitorCaption =
         </div>
         <div>
           <strong>Locally Available</strong> — Collapsible section lists images from this namespace already present
-          locally. The backend merges the Podman Desktop image list with <span class="font-mono">podman images</span> so untagged
-          or oddly-tagged local images still appear.
+          locally (refreshes when you open or return to this tab). The backend merges the Podman Desktop image list with
+          <span class="font-mono">podman images</span>.
         </div>
 
         <hr class="border-[var(--pd-content-card-border)] my-3 opacity-60" />

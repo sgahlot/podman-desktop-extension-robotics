@@ -49,6 +49,23 @@ describe('ImageCatalog', () => {
     expect(screen.getByText('Image Catalog')).toBeTruthy();
   });
 
+  it('refreshes local images when the tab becomes active again', async () => {
+    mockListLocalImages.mockResolvedValueOnce([]).mockResolvedValueOnce(['quay.io/sgahlot/ros2-jazzy-base:noble']);
+    const { rerender } = render(ImageCatalog, { props: { active: false } });
+    await waitFor(() => {
+      expect(mockListLocalImages).not.toHaveBeenCalled();
+    });
+    void rerender({ active: true });
+    await waitFor(() => {
+      expect(mockListLocalImages).toHaveBeenCalled();
+    });
+    void rerender({ active: false });
+    void rerender({ active: true });
+    await waitFor(() => {
+      expect(mockListLocalImages.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
   it('initializes namespace from settings on mount', async () => {
     mockGetDefaultNamespace.mockResolvedValue('my-ns');
     render(ImageCatalog);
