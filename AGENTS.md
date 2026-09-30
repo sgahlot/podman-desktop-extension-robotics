@@ -52,7 +52,7 @@ Use the worktree folder to choose the chat:
 |------|----------|----------------|--------------|
 | Plan/select work | `main/` | `Pick up APPENG-<NNNN>` or `Pick up Story <N>-<N>` | Resolve Jira and private context, create or prepare the feature worktree, then hand off implementation. |
 | Start feature work | `APPENG-<NNNN>-<slug>/` | `start jira`, `start`, `go`, or `work on the associated Jira` | Infer the ticket, bootstrap if needed, read Jira/docs, and begin implementation. |
-| Ship feature work | Feature worktree | `ship it` | Restore the production identity, run the full zero-error gate, stage only intended files, commit any final fixes, push the feature branch, and verify the remote tip. Do not merge to `main`. |
+| Ship feature work | Feature worktree | `ship it` | Run the full zero-error gate, stage only intended files, commit any final fixes, push the feature branch, and verify the remote tip. Do not merge to `main`. |
 | Incremental feature commit | Feature worktree | `commit and push` | Stage only intended files, run relevant checks, commit on the feature branch, and push it. Do not merge to `main`. |
 | Merge feature work | `main/` | `merge APPENG-<NNNN>` | Merge with `--no-ff`, run the integrated gate, push `main` with the user's approval, report the merge SHA, then return to Luna for Jira closure. Never close Jira from `main/`. |
 | Close Jira | Feature worktree | `close jira` after merge | Read Jira first to verify its current status and final-comment state. If needed, post the single final Jira comment and transition the issue to Closed; then read Jira again to verify both. Never duplicate an existing final comment. |
@@ -111,8 +111,8 @@ branch; it never implies a merge to `main` or Jira closure. Merges require the
   branch created before it was tracked, create an untracked symlink to
   `../main/AGENTS.md` rather than proceeding without instructions. When
   `AGENTS.local.md` is present, apply its worktree bootstrap steps (private
-  planning symlink and optional `AGENTS.local.md` symlink). Apply a
-  ticket-namespaced extension identity and run the initial typecheck.
+  planning symlink and optional `AGENTS.local.md` symlink). Run the initial
+  typecheck.
   Verify and report each failure.
 - In a recognizable feature worktree, infer the Jira key from the branch or
   directory. Ask only if it is ambiguous.
@@ -157,14 +157,10 @@ is missing, run before ticket work:
    `npm install` instead.
 2. When **`AGENTS.local.md`** exists on `main/`, run the **Worktree bootstrap**
    commands in that file (private planning symlinks).
-3. Run `scripts/apply-worktree-identity.sh <NNNN>` before Podman Desktop ever loads
-   this worktree. Suffixing only `name`/`displayName` is not enough — command ids
-   and `physical-ai.*` config keys must be namespaced together or multiple loaded
-   worktrees can both stick at “Starting.”
-4. Before the zero-errors gate or merge, run `scripts/apply-worktree-identity.sh restore`,
-   then re-apply the suffix if you still need PD testing. Leaving the suffix applied
-   breaks backend tests that assert the production command id.
-5. Confirm with `npm run typecheck` before reporting the worktree ready.
+3. Confirm with `npm run typecheck` before reporting the worktree ready.
+
+Load only one worktree’s extension in Podman Desktop at a time (canonical
+`physical-ai` identity in every checkout).
 
 ## Implementation and documentation
 
@@ -211,7 +207,6 @@ is missing, run before ticket work:
 
 - Obtain the user’s required manual Podman Desktop test result before declaring
   a feature ready to merge.
-- Restore the unsuffixed worktree identity before validation or merge.
 - Merge only from `main/`, using `git merge --no-ff`.
 - Before merging, Terra or Sol runs the zero-error gate against the feature
   branch. After merging, run it again against integrated `main` before pushing.
@@ -336,6 +331,5 @@ Read Jira first for filed work, then `docs/design.adoc` as needed. When `AGENTS.
 
 ## Repository worktree validation
 
-- New sibling worktrees must complete bootstrap in `AGENTS.local.md` when present (private planning symlink) and must have a unique Podman Desktop extension identity before they are loaded into Podman Desktop.
-- Restore the unsuffixed identity before the integrated merge gate.
+- New sibling worktrees must complete bootstrap in `AGENTS.local.md` when present (private planning symlink). Load only one worktree’s extension in Podman Desktop at a time.
 - The merge gate is `npm run typecheck`, `npm run lint:check`, `npm run svelte:check`, `npm run format:check`, and `npm test` across all packages.

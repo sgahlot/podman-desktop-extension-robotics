@@ -41,10 +41,9 @@
 #                        convention `main` is only checked out in main/, so this also
 #                        enforces "publish from the main worktree." Override with
 #                        --allow-nonmain if you really mean it.
-#   2. Identity guard  — refuses if apply-worktree-identity.sh has suffixed the extension
-#                        (name/command/config namespace). A published image MUST carry the
-#                        canonical `physical-ai` identity, never a per-worktree `-appengNNNN`
-#                        one. Fix by running:  scripts/apply-worktree-identity.sh restore
+#   2. Identity guard  — refuses if backend package name is not `physical-ai` or if
+#                        `physical-ai-appengNNNN` appears in extension.ts / api-impl.ts.
+#                        Reset those files from git before publishing.
 set -euo pipefail
 
 # --- Special mode: --inspect <full-image-ref> (read-only, no build/push, no safeguards) --
@@ -131,17 +130,13 @@ fi
 BACKEND_NAME="$(node -p "require('$BACKEND_PKG').name")"
 if [ "$BACKEND_NAME" != "physical-ai" ]; then
   echo "Refusing to publish: backend package name is '$BACKEND_NAME', not 'physical-ai'." >&2
-  echo "A per-worktree identity suffix looks applied. Restore canonical identity first:" >&2
-  echo "  scripts/apply-worktree-identity.sh restore" >&2
+  echo "Reset robotics/packages/backend/package.json from git (canonical name: physical-ai)." >&2
   exit 1
 fi
-# Match the exact suffix apply-worktree-identity.sh writes (physical-ai-appengNNNN in the
-# command id / config namespace) — NOT a bare "appeng", which collides with legitimate
-# strings like the default quay namespace 'ecosystem-appeng'.
+# Legacy per-worktree suffix (physical-ai-appengNNNN) — NOT bare "appeng" (e.g. quay namespace).
 if grep -qE "physical-ai-appeng[0-9]" "$EXT_TS" "$API_TS" 2>/dev/null; then
-  echo "Refusing to publish: a worktree identity suffix ('physical-ai-appengNNNN') is present in" >&2
-  echo "  $EXT_TS / $API_TS" >&2
-  echo "Restore canonical identity first:  scripts/apply-worktree-identity.sh restore" >&2
+  echo "Refusing to publish: legacy worktree identity suffix in $EXT_TS / $API_TS" >&2
+  echo "Reset from git: git checkout -- robotics/packages/backend/src/extension.ts robotics/packages/backend/src/api-impl.ts" >&2
   exit 1
 fi
 
