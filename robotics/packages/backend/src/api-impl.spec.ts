@@ -1358,6 +1358,40 @@ RUN apt-get install -y ros-jazzy-desktop
       expect(progress!.status).toBe('Complete');
     });
 
+    it('removes the superseded image and prunes dangling images after a successful rebuild', async () => {
+      vi.useRealTimers();
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      let buildCallback: Parameters<typeof extensionApi.containerEngine.buildImage>[1];
+      vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation((_ctx, cb) => {
+        buildCallback = cb;
+        return Promise.resolve(undefined);
+      });
+
+      let inspectCalls = 0;
+      vi.mocked(extensionApi.process.exec).mockImplementation((_cmd, args) => {
+        if (args?.[0] === 'image' && args[1] === 'inspect') {
+          inspectCalls += 1;
+          const id = inspectCalls === 1 ? 'sha256:superseded' : 'sha256:current';
+          return Promise.resolve({
+            stdout: `${id}\n`,
+            stderr: '',
+            command: 'podman',
+          } as extensionApi.RunResult);
+        }
+        return Promise.resolve({ stdout: '', stderr: '', command: 'podman' } as extensionApi.RunResult);
+      });
+
+      await api.buildBaseImage('my-tag:latest', baseConfig);
+      buildCallback!('finish', 'Successfully tagged my-tag:latest');
+      await vi.waitFor(() => {
+        expect(extensionApi.process.exec).toHaveBeenCalledWith('podman', ['rmi', 'sha256:superseded']);
+        expect(extensionApi.process.exec).toHaveBeenCalledWith('podman', ['image', 'prune', '-f']);
+      });
+      vi.useFakeTimers();
+    });
+
     it('sets error on failed build', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),

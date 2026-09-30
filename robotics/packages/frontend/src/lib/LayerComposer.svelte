@@ -25,6 +25,7 @@ import {
 } from '/@shared/src/types/SimulationProfiles';
 import { defaultBaseImageForDistro, shortImageRef } from '/@shared/src/types/SimulationBaseImages';
 import { CUSTOM_SIMULATION_TEMPLATES } from '/@shared/src/types/CustomSimulationTemplates';
+import { QUICK_STARTS } from '/@shared/src/types/QuickStarts';
 import type { SimulationConfig, TargetArch } from '/@shared/src/types/SimulationConfig';
 import { physicalAiClient } from '../api/client';
 import { onMount, onDestroy } from 'svelte';
@@ -58,6 +59,10 @@ export let refreshIntervalSeconds = 5;
 export let busy = false;
 /** Shared Quick Start selection from the Image Builder shell. */
 export let quickStartId: string | undefined = undefined;
+/** Hide target-arch control when Presets quick start fixes the architecture. */
+export let hideTargetArch = false;
+/** Lock layer dropdowns (Presets fedora-layers quick start). */
+export let lockLayerSelection = false;
 /** Notifies the parent (SimulationSetup, which owns the BuildHistoryPanel instance) that a
  * build here just finished, so the Recent Builds list can refresh — this panel has no
  * history view of its own (APPENG-6265: previously missing entirely, so a Layers build
@@ -77,16 +82,28 @@ let customBuildBusy = false;
 
 $: buildBusy = baseBusy || hardenedBusy || simBusy || customBuildBusy;
 $: busy = buildBusy;
+$: layerFieldsDisabled = buildBusy || lockLayerSelection;
+/** Presets quick start: recipe is fixed above — only show compatibility + build actions. */
+$: compactPresetsQuickStart = lockLayerSelection && hideTargetArch;
 
 $: if (quickStartId && quickStartId !== appliedQuickStartId) {
   appliedQuickStartId = quickStartId;
-  selection = {
-    ...selection,
-    baseOs: 'ubuntu-noble',
-    customBaseImage: '',
-    ros: 'ros2-jazzy',
-    sim: 'gazebo-nav2-tb3',
-  };
+  const quickStart = QUICK_STARTS.find(qs => qs.id === quickStartId);
+  selection = quickStart?.layerPreset
+    ? {
+        ...selection,
+        baseOs: quickStart.layerPreset.baseOs,
+        customBaseImage: '',
+        ros: quickStart.layerPreset.ros,
+        sim: quickStart.layerPreset.sim,
+      }
+    : {
+        ...selection,
+        baseOs: 'ubuntu-noble',
+        customBaseImage: '',
+        ros: 'ros2-jazzy',
+        sim: 'gazebo-nav2-tb3',
+      };
 }
 
 $: result = evaluateStack(selection);
@@ -272,252 +289,275 @@ onDestroy(() => {
 </script>
 
 <div class="flex flex-col gap-4 max-w-2xl">
-  <p class="text-xs pai-text-muted">
-    Experimental — compose an image from a base OS, hardened, ROS, and simulation layers. Pick any combination; the
-    compatibility check tells you whether it will build, then pull the layers and build for real below.
-  </p>
-  <p class="text-xs pai-text-muted">
-    This is a representative catalog: bootc bases come from the <span class="font-mono">redhat.bootc</span> extension
-    and hardened apps from the <span class="font-mono">redhat.hummingbird</span> extension. Pull them below to make each layer
-    available locally — a ✓ badge shows which images you already have.
-  </p>
+  {#if !compactPresetsQuickStart}
+    <p class="text-xs pai-text-muted">
+      Experimental — compose an image from a base OS, hardened, ROS, and simulation layers. Pick any combination; the
+      compatibility check tells you whether it will build, then pull the layers and build for real below.
+    </p>
+    <p class="text-xs pai-text-muted">
+      This is a representative catalog: bootc bases come from the <span class="font-mono">redhat.bootc</span> extension
+      and hardened apps from the <span class="font-mono">redhat.hummingbird</span> extension. Pull them below to make each
+      layer available locally — a ✓ badge shows which images you already have.
+    </p>
+  {/if}
 
-  <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
-    <fieldset disabled={buildBusy} class="flex flex-col gap-4 disabled:opacity-70">
-      <div class="flex flex-col gap-1">
-        <label for="layer-base-os" class="text-xs text-[var(--pd-content-text)]">Base OS</label>
-        <select
-          id="layer-base-os"
-          bind:value={selection.baseOs}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-          {#each BASE_OS_OPTIONS as o}
-            <option value={o.id}>{o.label}</option>
-          {/each}
-        </select>
-        {#if selection.baseOs === 'custom'}
-          <div class="flex flex-col gap-3 mt-1 pl-3 border-l border-[var(--pd-content-card-border)]">
-            <div class="flex flex-col gap-1">
-              <input
-                id="layer-custom-base-image"
-                aria-label="Custom base image"
-                bind:value={selection.customBaseImage}
-                placeholder="e.g. docker.io/library/ubuntu:24.04"
-                class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]" />
-              <span class="text-xs pai-text-muted">{baseOsNote}</span>
-            </div>
-          </div>
-        {/if}
-        {#if selection.baseOs !== 'custom'}
-          <span class="text-xs pai-text-muted">{baseOsNote}</span>
-        {/if}
-      </div>
-
-      <div class="flex flex-col gap-1">
-        <label for="layer-hardened" class="text-xs text-[var(--pd-content-text)]">Hardened app</label>
-        <select
-          id="layer-hardened"
-          bind:value={selection.hardened}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-          {#each HARDENED_OPTIONS as o}
-            <option value={o.id}>{o.label}</option>
-          {/each}
-        </select>
-        <span class="text-xs pai-text-muted">{hardenedNote}</span>
-
-        {#if selection.hardened === 'hummingbird-app'}
-          <div class="flex flex-col gap-3 mt-1 pl-3 border-l border-[var(--pd-content-card-border)]">
-            <div class="flex flex-col gap-1">
-              <span class="text-xs text-[var(--pd-content-text)]">Companion images — pulled &amp; run alongside</span>
-              {#each HUMMINGBIRD_COMPANION_OPTIONS as o}
-                <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
-                  <input type="checkbox" class="mt-0.5" bind:group={selection.hummingbirdApps} value={o.id} />
-                  <span>{o.label} <span class="pai-text-muted">— {o.note}</span></span>
-                </label>
-              {/each}
-            </div>
-            <div class="flex flex-col gap-1">
-              <span class="text-xs text-[var(--pd-content-text)]">Tools to bake in — hardened CLI via COPY --from</span>
-              {#each HUMMINGBIRD_TOOL_OPTIONS as o}
-                <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
-                  <input type="checkbox" class="mt-0.5" bind:group={selection.hummingbirdApps} value={o.id} />
-                  <span>{o.label} <span class="pai-text-muted">— {o.note}</span></span>
-                </label>
-              {/each}
-            </div>
-
-            {#if selectedHbApps.includes('syft')}
-              <div
-                class="flex flex-col gap-1 pl-3 border-l border-[var(--pd-content-card-border)]"
-                role="radiogroup"
-                aria-label="SBOM format">
-                <span class="text-xs text-[var(--pd-content-text)]">SBOM format</span>
-                <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
-                  <input type="radio" class="mt-0.5" bind:group={sbomFormat} value="cyclonedx-json" />
-                  <span
-                    >CycloneDX <span class="pai-text-muted"
-                      >(recommended) — same package data without SPDX's per-package CPE-variant overhead; typically much
-                      smaller, especially for images with many small packages (e.g. ROS/Nav2 stacks)</span
-                    ></span>
-                </label>
-                <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
-                  <input type="radio" class="mt-0.5" bind:group={sbomFormat} value="spdx-json" />
-                  <span
-                    >SPDX <span class="pai-text-muted"
-                      >— includes richer CPE metadata some vulnerability-scanning tools specifically require, but can
-                      run significantly larger for images with many packages</span
-                    ></span>
-                </label>
+  {#if !compactPresetsQuickStart}
+    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
+      <fieldset disabled={layerFieldsDisabled} class="flex flex-col gap-4 disabled:opacity-70">
+        <div class="flex flex-col gap-1">
+          <label for="layer-base-os" class="text-xs text-[var(--pd-content-text)]">Base OS</label>
+          <select
+            id="layer-base-os"
+            bind:value={selection.baseOs}
+            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+            {#each BASE_OS_OPTIONS as o}
+              <option value={o.id}>{o.label}</option>
+            {/each}
+          </select>
+          {#if selection.baseOs === 'custom'}
+            <div class="flex flex-col gap-3 mt-1 pl-3 border-l border-[var(--pd-content-card-border)]">
+              <div class="flex flex-col gap-1">
+                <input
+                  id="layer-custom-base-image"
+                  aria-label="Custom base image"
+                  bind:value={selection.customBaseImage}
+                  placeholder="e.g. docker.io/library/ubuntu:24.04"
+                  class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]" />
+                <span class="text-xs pai-text-muted">{baseOsNote}</span>
               </div>
-            {/if}
-          </div>
-        {/if}
-      </div>
-
-      <div class="flex flex-col gap-1">
-        <label for="layer-sim" class="text-xs text-[var(--pd-content-text)]">Simulation</label>
-        <select
-          id="layer-sim"
-          bind:value={selection.sim}
-          on:change={syncSimulationSource}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-          {#each SIM_OPTIONS as o}
-            <option value={o.id}>{o.label}</option>
-          {/each}
-        </select>
-        <span class="text-xs pai-text-muted">{simNote}</span>
-        {#if selection.sim === 'custom-template' && selection.baseOs === 'custom'}
-          <div class="flex flex-col gap-3 mt-1 pl-3 border-l border-[var(--pd-content-card-border)]">
-            <div class="flex flex-col gap-1">
-              <label for="layer-simulation-template" class="text-xs text-[var(--pd-content-text)]"
-                >Registered simulation template</label>
-              <select
-                id="layer-simulation-template"
-                bind:value={selection.customSimulationTemplateId}
-                aria-label="Simulation template"
-                class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-                {#each CUSTOM_SIMULATION_TEMPLATES as template}
-                  <option value={template.id}>{template.label}</option>
-                {/each}
-              </select>
-              <span class="text-xs pai-text-warning"
-                >{selectedCustomTemplate.capability}: {selectedCustomTemplate.packages.join(', ')}</span>
-              <span class="text-xs text-[var(--pd-content-text)] opacity-80">
-                Required parent: {selectedCustomTemplate.osFamily}
-                {selectedCustomTemplate.osVersion} · ROS 2
-                {selectedCustomTemplate.rosDistro} · {selectedCustomTemplate.packageManager}. ROS is provided by the
-                custom parent.
-              </span>
             </div>
-          </div>
-        {/if}
-      </div>
-
-      <div class="flex flex-col gap-1">
-        <label for="layer-ros" class="text-xs text-[var(--pd-content-text)]">
-          {selection.sim === 'custom-template' ? 'ROS source (derived from template)' : 'ROS'}
-        </label>
-        <select
-          id="layer-ros"
-          bind:value={selection.ros}
-          disabled={selection.sim === 'custom-template'}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] disabled:opacity-70">
-          {#each ROS_OPTIONS as o}
-            <option value={o.id}>{o.label}</option>
-          {/each}
-        </select>
-        <span class="text-xs pai-text-muted">{rosNote}</span>
-      </div>
-
-      <div class="flex flex-col gap-1">
-        <label for="layer-target-arch" class="text-xs text-[var(--pd-content-text)]">Target architecture</label>
-        <select
-          id="layer-target-arch"
-          bind:value={targetArch}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
-          <option value={hostArch}>This machine ({hostArch})</option>
-          <option value={otherArch} disabled={selection.ros === 'ros2-lyrical' && otherArch === 'arm64'}
-            >{otherArchLabel}</option>
-        </select>
-        <span class="text-xs text-[var(--pd-content-text)] opacity-80">
-          The selected architecture controls the image platform, regardless of the tag you enter. OpenShift requires
-          <span class="font-mono">amd64</span>.
-        </span>
-        {#if !customTemplateSupportsTarget}
-          <span class="text-xs pai-text-error">
-            The selected template supports {selectedCustomTemplate.architectures.join(' and ')} only. Choose a supported target
-            before building.
-          </span>
-        {/if}
-        {#if lyricalTargetUnsupported}
-          <span class="text-xs" style="color: #ef4444;">
-            ROS2 Lyrical uses the Fedora 43 x86_64 testing repository and requires an <span class="font-mono"
-              >amd64</span>
-            target.
-          </span>
-        {/if}
-      </div>
-    </fieldset>
-  </div>
-
-  <div class="text-sm p-3 rounded {bannerClass}" role="status">
-    <p class="font-medium">{bannerHeadline}</p>
-    {#if result.messages.length > 0}
-      <ul class="list-disc list-inside mt-1">
-        {#each result.messages as message}
-          <li>{message.text}</li>
-        {/each}
-      </ul>
-    {/if}
-    {#if result.level === 'blocked' && result.failsAtStep}
-      <p class="text-xs mt-1">Fails at build step: {result.failsAtStep}</p>
-    {/if}
-  </div>
-
-  <!-- Pull the layer images locally -->
-  <div class="flex flex-col gap-2">
-    <h3 class="text-sm font-medium text-[var(--pd-content-header)]">Layer images</h3>
-    <p class="text-xs pai-text-muted">Pull the images this stack uses so they're available locally.</p>
-    {#if pullTargets.length === 0}
-      <p class="text-xs pai-text-muted">
-        This preset's own base/simulation images are pulled automatically when you build below.
-      </p>
-    {/if}
-    <div class="flex flex-col gap-2">
-      {#each pullTargets as t (t.ref)}
-        <div
-          class="flex flex-row items-center gap-3 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] px-3 py-2">
-          <div class="flex flex-col gap-0.5 min-w-0 flex-1">
-            <span class="text-xs text-[var(--pd-content-text)]">{t.label}</span>
-            <span class="text-xs font-mono pai-text-muted truncate">{t.ref}</span>
-            {#if pullStatus[t.ref] && !localImages.includes(t.ref)}
-              <span class="text-xs pai-text-accent">{pullStatus[t.ref]}</span>
-            {/if}
-          </div>
-          {#if localImages.includes(t.ref)}
-            <span class="text-xs pai-text-success whitespace-nowrap">&#10003; Local</span>
-          {:else}
-            <button
-              type="button"
-              class="pai-btn pai-btn-sm pai-btn-primary"
-              disabled={buildBusy || pulling[t.ref]}
-              on:click={() => pull(t.ref)}>
-              {pulling[t.ref] ? 'Pulling…' : 'Pull'}
-            </button>
+          {/if}
+          {#if selection.baseOs !== 'custom'}
+            <span class="text-xs pai-text-muted">{baseOsNote}</span>
           {/if}
         </div>
-      {/each}
-    </div>
-  </div>
 
-  <div class="flex flex-col gap-1">
-    <h3 class="text-sm font-medium text-[var(--pd-content-header)]">Generated Containerfile (preview)</h3>
-    <pre
-      class="text-xs font-mono p-3 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] overflow-auto max-h-64">{containerfile}</pre>
-  </div>
+        <div class="flex flex-col gap-1">
+          <label for="layer-hardened" class="text-xs text-[var(--pd-content-text)]">Hardened app</label>
+          <select
+            id="layer-hardened"
+            bind:value={selection.hardened}
+            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+            {#each HARDENED_OPTIONS as o}
+              <option value={o.id}>{o.label}</option>
+            {/each}
+          </select>
+          <span class="text-xs pai-text-muted">{hardenedNote}</span>
+
+          {#if selection.hardened === 'hummingbird-app'}
+            <div class="flex flex-col gap-3 mt-1 pl-3 border-l border-[var(--pd-content-card-border)]">
+              <div class="flex flex-col gap-1">
+                <span class="text-xs text-[var(--pd-content-text)]">Companion images — pulled &amp; run alongside</span>
+                {#each HUMMINGBIRD_COMPANION_OPTIONS as o}
+                  <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
+                    <input type="checkbox" class="mt-0.5" bind:group={selection.hummingbirdApps} value={o.id} />
+                    <span>{o.label} <span class="pai-text-muted">— {o.note}</span></span>
+                  </label>
+                {/each}
+              </div>
+              <div class="flex flex-col gap-1">
+                <span class="text-xs text-[var(--pd-content-text)]"
+                  >Tools to bake in — hardened CLI via COPY --from</span>
+                {#each HUMMINGBIRD_TOOL_OPTIONS as o}
+                  <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
+                    <input type="checkbox" class="mt-0.5" bind:group={selection.hummingbirdApps} value={o.id} />
+                    <span>{o.label} <span class="pai-text-muted">— {o.note}</span></span>
+                  </label>
+                {/each}
+              </div>
+
+              {#if selectedHbApps.includes('syft')}
+                <div
+                  class="flex flex-col gap-1 pl-3 border-l border-[var(--pd-content-card-border)]"
+                  role="radiogroup"
+                  aria-label="SBOM format">
+                  <span class="text-xs text-[var(--pd-content-text)]">SBOM format</span>
+                  <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
+                    <input type="radio" class="mt-0.5" bind:group={sbomFormat} value="cyclonedx-json" />
+                    <span
+                      >CycloneDX <span class="pai-text-muted"
+                        >(recommended) — same package data without SPDX's per-package CPE-variant overhead; typically
+                        much smaller, especially for images with many small packages (e.g. ROS/Nav2 stacks)</span
+                      ></span>
+                  </label>
+                  <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
+                    <input type="radio" class="mt-0.5" bind:group={sbomFormat} value="spdx-json" />
+                    <span
+                      >SPDX <span class="pai-text-muted"
+                        >— includes richer CPE metadata some vulnerability-scanning tools specifically require, but can
+                        run significantly larger for images with many packages</span
+                      ></span>
+                  </label>
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label for="layer-sim" class="text-xs text-[var(--pd-content-text)]">Simulation</label>
+          <select
+            id="layer-sim"
+            bind:value={selection.sim}
+            on:change={syncSimulationSource}
+            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+            {#each SIM_OPTIONS as o}
+              <option value={o.id}>{o.label}</option>
+            {/each}
+          </select>
+          <span class="text-xs pai-text-muted">{simNote}</span>
+          {#if selection.sim === 'custom-template' && selection.baseOs === 'custom'}
+            <div class="flex flex-col gap-3 mt-1 pl-3 border-l border-[var(--pd-content-card-border)]">
+              <div class="flex flex-col gap-1">
+                <label for="layer-simulation-template" class="text-xs text-[var(--pd-content-text)]"
+                  >Registered simulation template</label>
+                <select
+                  id="layer-simulation-template"
+                  bind:value={selection.customSimulationTemplateId}
+                  aria-label="Simulation template"
+                  class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+                  {#each CUSTOM_SIMULATION_TEMPLATES as template}
+                    <option value={template.id}>{template.label}</option>
+                  {/each}
+                </select>
+                <span class="text-xs pai-text-warning"
+                  >{selectedCustomTemplate.capability}: {selectedCustomTemplate.packages.join(', ')}</span>
+                <span class="text-xs text-[var(--pd-content-text)] opacity-80">
+                  Required parent: {selectedCustomTemplate.osFamily}
+                  {selectedCustomTemplate.osVersion} · ROS 2
+                  {selectedCustomTemplate.rosDistro} · {selectedCustomTemplate.packageManager}. ROS is provided by the
+                  custom parent.
+                </span>
+              </div>
+            </div>
+          {/if}
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label for="layer-ros" class="text-xs text-[var(--pd-content-text)]">
+            {selection.sim === 'custom-template' ? 'ROS source (derived from template)' : 'ROS'}
+          </label>
+          <select
+            id="layer-ros"
+            bind:value={selection.ros}
+            disabled={selection.sim === 'custom-template'}
+            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] disabled:opacity-70">
+            {#each ROS_OPTIONS as o}
+              <option value={o.id}>{o.label}</option>
+            {/each}
+          </select>
+          <span class="text-xs pai-text-muted">{rosNote}</span>
+        </div>
+
+        {#if !hideTargetArch}
+          <div class="flex flex-col gap-1">
+            <label for="layer-target-arch" class="text-xs text-[var(--pd-content-text)]">Target architecture</label>
+            <select
+              id="layer-target-arch"
+              bind:value={targetArch}
+              class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+              <option value={hostArch}>This machine ({hostArch})</option>
+              <option value={otherArch} disabled={selection.ros === 'ros2-lyrical' && otherArch === 'arm64'}
+                >{otherArchLabel}</option>
+            </select>
+            <span class="text-xs text-[var(--pd-content-text)] opacity-80">
+              The selected architecture controls the image platform, regardless of the tag you enter. OpenShift requires
+              <span class="font-mono">amd64</span>.
+            </span>
+            {#if !customTemplateSupportsTarget}
+              <span class="text-xs pai-text-error">
+                The selected template supports {selectedCustomTemplate.architectures.join(' and ')} only. Choose a supported
+                target before building.
+              </span>
+            {/if}
+            {#if lyricalTargetUnsupported}
+              <span class="text-xs" style="color: #ef4444;">
+                ROS2 Lyrical uses the Fedora 43 x86_64 testing repository and requires an <span class="font-mono"
+                  >amd64</span>
+                target.
+              </span>
+            {/if}
+          </div>
+        {/if}
+      </fieldset>
+    </div>
+  {/if}
+
+  {#if !(compactPresetsQuickStart && result.level === 'ok')}
+    <div class="text-sm p-3 rounded {bannerClass}" role="status">
+      <p class="font-medium">{bannerHeadline}</p>
+      {#if result.messages.length > 0}
+        <ul class="list-disc list-inside mt-1">
+          {#each result.messages as message}
+            <li>{message.text}</li>
+          {/each}
+        </ul>
+      {/if}
+      {#if result.level === 'blocked' && result.failsAtStep}
+        <p class="text-xs mt-1">Fails at build step: {result.failsAtStep}</p>
+      {/if}
+    </div>
+  {/if}
+
+  {#if !compactPresetsQuickStart}
+    <!-- Pull the layer images locally (Customize only) -->
+    <div class="flex flex-col gap-2">
+      <h3 class="text-sm font-medium text-[var(--pd-content-header)]">Layer images</h3>
+      <p class="text-xs pai-text-muted">Pull the images this stack uses so they're available locally.</p>
+      {#if pullTargets.length === 0}
+        <p class="text-xs pai-text-muted">
+          This preset's own base/simulation images are pulled automatically when you build below.
+        </p>
+      {/if}
+      <div class="flex flex-col gap-2">
+        {#each pullTargets as t (t.ref)}
+          <div
+            class="flex flex-row items-center gap-3 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] px-3 py-2">
+            <div class="flex flex-col gap-0.5 min-w-0 flex-1">
+              <span class="text-xs text-[var(--pd-content-text)]">{t.label}</span>
+              <span class="text-xs font-mono pai-text-muted truncate">{t.ref}</span>
+              {#if pullStatus[t.ref] && !localImages.includes(t.ref)}
+                <span class="text-xs pai-text-accent">{pullStatus[t.ref]}</span>
+              {/if}
+            </div>
+            {#if localImages.includes(t.ref)}
+              <span class="text-xs pai-text-success whitespace-nowrap">&#10003; Local</span>
+            {:else}
+              <button
+                type="button"
+                class="pai-btn pai-btn-sm pai-btn-primary"
+                disabled={buildBusy || pulling[t.ref]}
+                on:click={() => pull(t.ref)}>
+                {pulling[t.ref] ? 'Pulling…' : 'Pull'}
+              </button>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
+  {#if !compactPresetsQuickStart}
+    <div class="flex flex-col gap-1">
+      <h3 class="text-sm font-medium text-[var(--pd-content-header)]">Generated Containerfile (preview)</h3>
+      <pre
+        class="text-xs font-mono p-3 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] overflow-auto max-h-64">{containerfile}</pre>
+    </div>
+  {/if}
 
   <!-- Build -->
   <div class="flex flex-col gap-3">
-    <h3 class="text-sm font-medium text-[var(--pd-content-header)]">Build image</h3>
+    <div class="flex flex-col gap-1">
+      <h3 class="text-sm font-medium text-[var(--pd-content-header)]">
+        {compactPresetsQuickStart ? 'Simulation image' : 'Build image'}
+      </h3>
+      {#if compactPresetsQuickStart}
+        <p class="text-xs text-[var(--pd-content-text)] opacity-80">
+          One image with ROS 2 Lyrical, Gazebo, Nav2, and TurtleBot3 on Fedora bootc 43. Base layers are resolved at
+          build time.
+        </p>
+      {/if}
+    </div>
 
     {#if buildMode === 'preset'}
       <div class="text-sm p-3 rounded pai-banner-info">
@@ -609,23 +649,25 @@ onDestroy(() => {
         </div>
       {/if}
     {:else}
-      {#if result.level === 'blocked'}
+      {#if result.level === 'blocked' && !compactPresetsQuickStart}
         <label class="flex flex-row items-center gap-2 text-xs text-[var(--pd-content-text)]">
           <input type="checkbox" bind:checked={attemptAnyway} />
           Attempt anyway — I understand this is expected to fail at the {result.failsAtStep} step
         </label>
       {/if}
-      <p class="text-xs pai-text-muted">
-        Builds directly from the generated Containerfile above. It will either produce a plain image or fail for real at
-        the step the verdict predicts.
-      </p>
-      <p class="text-xs pai-text-muted">
-        Target: <span class="font-mono">{targetArch}</span>{#if targetArch !== hostArch}
-          <span>
-            (cross-building via QEMU on this {hostArch} host — expect a slower build; image tagged
-            <span class="font-mono">-{targetArch}</span>)</span>
-        {/if}
-      </p>
+      {#if !compactPresetsQuickStart}
+        <p class="text-xs pai-text-muted">
+          Builds directly from the generated Containerfile above. It will either produce a plain image or fail for real
+          at the step the verdict predicts.
+        </p>
+        <p class="text-xs pai-text-muted">
+          Target: <span class="font-mono">{targetArch}</span>{#if targetArch !== hostArch}
+            <span>
+              (cross-building via QEMU on this {hostArch} host — expect a slower build; image tagged
+              <span class="font-mono">-{targetArch}</span>)</span>
+          {/if}
+        </p>
+      {/if}
       <BuildPushPanel
         tagInputId="layer-build-tag"
         tag={containerfileTag}

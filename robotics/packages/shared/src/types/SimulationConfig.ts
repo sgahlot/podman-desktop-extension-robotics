@@ -1,4 +1,5 @@
 import type { SimulationBaseImageSelection } from './SimulationBaseImages';
+import type { QuickStartId } from './QuickStarts';
 
 /** Build target architecture. Defaults to the host arch when unset. */
 export type TargetArch = 'amd64' | 'arm64';
@@ -24,4 +25,6 @@ export interface SimulationConfig {
    * Undefined = build for the host arch with the native tag.
    */
   targetArch?: TargetArch;
+  /** Last applied Image Builder Presets quick start (when set). */
+  quickStartId?: QuickStartId;
 }
