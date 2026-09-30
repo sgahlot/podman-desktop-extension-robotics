@@ -35,11 +35,12 @@ After reading this file, if **`AGENTS.local.md`** exists alongside it (repositor
 - Prefer quiet/concise command and reporter modes. Do not dump successful logs
   or large diffs into chat; show detailed output only when needed to diagnose a
   failure or provide requested evidence.
-- For noisy development commands, use RTK when it is installed and supports
-  the command. Use the form `rtk <command> ...`; do not use RTK for commands it
-  does not support. If RTK is unavailable or unsupported and **`AGENTS.local.md`**
-  is present, use the maintainer command wrapper documented there; otherwise run
-  the command directly and keep chat output to a compact summary or failure tail.
+- For **noisy** development commands (tests, builds, long Podman logs), when
+  **`AGENTS.local.md`** is present use its workflow scripts; otherwise prefer
+  quiet reporter modes and summarize success or show only the failure tail.
+- For **Git**, always use the plain `git` CLI for status, diff, log, show,
+  staging decisions, and push verification — never a filtered or summarized
+  substitute. See **Git status and push verification** below.
 - Keep commentary and final summaries similarly compact unless the user asks
   for detail or the task requires a longer explanation.
 
@@ -137,9 +138,9 @@ branch; it never implies a merge to `main` or Jira closure. Merges require the
   root with commands run from a nested project directory when interpreting
   paths or status output.
 - For a definitive inventory, run `git -C <worktree-root> status --short
-  --untracked-files=all` and inspect the complete output. Do not infer a clean
-  or complete worktree from truncated command output or from a status command
-  run in a different checkout.
+  --untracked-files=all` and inspect the **complete** output. Do not infer a
+  clean or complete worktree from truncated shell output, third-party
+  summaries of `git` output, or a status command run in a different checkout.
 - Before staging, record the complete status and diff file list. Stage only
   the confirmed ticket files, then verify `git status`, `git rev-parse HEAD`,
   `git rev-parse @{upstream}`, and `git ls-remote` after pushing. Report the
