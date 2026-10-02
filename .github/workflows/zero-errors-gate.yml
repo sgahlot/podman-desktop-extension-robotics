@@ -1,0 +1,32 @@
+# Canonical merge gate — same as `npm run zero-errors-gate` in robotics/.
+name: Zero-errors gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: zero-errors-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: robotics
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: robotics/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: zero-errors-gate
+        run: npm run zero-errors-gate
