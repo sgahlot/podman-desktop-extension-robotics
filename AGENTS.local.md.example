@@ -6,6 +6,7 @@ Copy to **`AGENTS.local.md`** next to `AGENTS.md` (git-ignored).
 - Optional git-ignored private planning tree under `main/` for backlog, plans, and stories.
 - Entry navigation: doc index and local backlog board (paths live in your populated addendum).
 - Worktree bootstrap: symlink private planning material and optionally `AGENTS.local.md` from `../main/`.
+- Workflow scripts (`podman-work/scripts/`, not in public git): document in your addendum; **human-first** — agent gives you the `../scripts/...` command for gate/merge/bootstrap unless you insist the agent run it.
 - Cursor: one canonical `podman-work/.cursor/`; run `../scripts/link-shared-cursor.sh` from each worktree root so `.cursor` points at `../.cursor`.
 - Never link private planning material in Jira or public docs.
 
