@@ -887,11 +887,20 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     isFinalArtifact: boolean,
   ): Promise<void> {
     const success = progress.status === 'Complete' && !progress.error;
-    const startedAt = progress.startedAt ?? Date.now();
-    if (progress.startedAt === undefined) {
-      progress.startedAt = startedAt;
-    }
+    const startedAt = progress.startedAt ??= Date.now();
     const finishedAt = progress.finishedAt ?? Date.now();
+
+    const entry: BuildHistoryEntry = {
+      tag,
+      arch: PhysicalAiApiImpl.#archFromPlatform(platform),
+      startedAt,
+      durationMs: Math.max(0, finishedAt - startedAt),
+      success,
+      ...(success ? {} : { errorMessage: progress.error ?? 'Build failed' }),
+      ...(progress.layerCacheStatus?.length ? { layerCacheStatus: progress.layerCacheStatus } : {}),
+      ...(bundledTools.length ? { bundledTools } : {}),
+      ...(isFinalArtifact ? { isFinalArtifact: true } : {}),
+    };
 
     try {
       // Write the build's own outcome immediately — do NOT wait on SBOM generation first.
@@ -899,18 +908,6 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       // disabled (still has to walk every file), which previously delayed the entire
       // Recent Builds entry (tag/duration/success, not just the SBOM) until syft finished,
       // even though the build itself had already succeeded.
-      const entry: BuildHistoryEntry = {
-        tag,
-        arch: PhysicalAiApiImpl.#archFromPlatform(platform),
-        startedAt,
-        durationMs: Math.max(0, finishedAt - startedAt),
-        success,
-        ...(success ? {} : { errorMessage: progress.error ?? 'Build failed' }),
-        ...(progress.layerCacheStatus?.length ? { layerCacheStatus: progress.layerCacheStatus } : {}),
-        ...(bundledTools.length ? { bundledTools } : {}),
-        ...(isFinalArtifact ? { isFinalArtifact: true } : {}),
-      };
-
       await this.#enqueueBuildHistoryMutation(async () => {
         const history = await this.#readBuildHistory();
         await this.#persistBuildHistory(upsertBuildHistoryEntry(history, entry));
@@ -966,7 +963,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   #enqueueBuildHistoryMutation(mutation: () => Promise<void>): Promise<void> {
     const next = this.buildHistoryMutationQueue.then(mutation);
-    this.buildHistoryMutationQueue = next.catch(err => {
+    this.buildHistoryMutationQueue = next.catch((err: unknown) => {
       console.error('[physical-ai] Build history mutation failed (non-fatal):', err);
     });
     return next;
@@ -1104,10 +1101,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     if (progress.historyPersisted) {
       return;
     }
-    const startedAt = progress.startedAt ?? Date.now();
-    if (progress.startedAt === undefined) {
-      progress.startedAt = startedAt;
-    }
+    const startedAt = progress.startedAt ??= Date.now();
     const key = buildHistoryRecordKey(tag, startedAt);
     if (this.buildHistoryRecordInFlight.has(key)) {
       return;

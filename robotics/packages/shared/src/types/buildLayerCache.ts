@@ -7,7 +7,6 @@ import {
 import {
   BASE_OS_OPTIONS,
   HUMMINGBIRD_TOOL_OPTIONS,
-  hummingbirdImageRef,
   labelFor,
   ROS_OPTIONS,
   SIM_OPTIONS,

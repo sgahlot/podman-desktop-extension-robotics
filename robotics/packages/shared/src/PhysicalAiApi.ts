@@ -25,7 +25,6 @@ import type {
   OpenShiftWorkload,
 } from './types/OpenShiftDeploy';
 import type { LayerCacheBuildOptions } from './types/buildLayerCache';
-import type { HardenedApp } from './types/layerCompatibility';
 
 export abstract class PhysicalAiApi {
   abstract getStatus(): Promise<string>;

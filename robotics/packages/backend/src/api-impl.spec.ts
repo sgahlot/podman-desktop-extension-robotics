@@ -148,7 +148,7 @@ function mockStatefulBuildHistoryFile(): void {
       return stored as unknown as Awaited<ReturnType<typeof readFile>>;
     }
     if (previousRead) {
-      return previousRead(path, ...rest) as Awaited<ReturnType<typeof readFile>>;
+      return await previousRead(path, ...rest);
     }
     throw new Error('ENOENT');
   });
@@ -844,9 +844,7 @@ describe('PhysicalAiApiImpl', () => {
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
 
-      let buildCallback: Parameters<typeof extensionApi.containerEngine.buildImage>[1];
       vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation((_ctx, cb, _opts) => {
-        buildCallback = cb;
         queueMicrotask(() => {
           cb('finish', 'Successfully tagged my-tag:latest');
         });
@@ -1815,9 +1813,7 @@ RUN apt-get install -y ros-jazzy-desktop
         get: vi.fn().mockReturnValue('ecosystem-appeng'),
       } as unknown as extensionApi.Configuration);
 
-      let buildCallback: Parameters<typeof extensionApi.containerEngine.buildImage>[1];
       vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation((_ctx, cb, _opts) => {
-        buildCallback = cb;
         queueMicrotask(() => {
           cb('finish', 'Successfully tagged sim-tag:noble');
         });
