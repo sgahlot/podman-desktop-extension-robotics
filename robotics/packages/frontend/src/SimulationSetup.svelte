@@ -454,8 +454,8 @@ function onQuickStartClick(id: QuickStartId) {
           quickStartId={appliedQuickStartId}
           hideTargetArch={true}
           lockLayerSelection={true}
-          onBuildComplete={({ watchForSbom }) => {
-            void buildHistoryPanel?.refreshAfterBuild(watchForSbom);
+          onBuildComplete={({ watchForSbom, builtTag }) => {
+            void buildHistoryPanel?.refreshAfterBuild(watchForSbom, builtTag);
             refreshImageExistence(`${baseTag}|${simTag}`);
           }} />
       </div>
@@ -505,10 +505,10 @@ function onQuickStartClick(id: QuickStartId) {
                 localImageExistsFromParent={baseImageExists}
                 disabled={buildBusy}
                 buildImage={t => physicalAiClient.buildBaseImage(t, currentConfig)}
-                onBuildComplete={() => {
+                onBuildComplete={builtTag => {
                   baseImageExists = true;
                   refreshImageExistence(existsCheckKey);
-                  void buildHistoryPanel?.refresh();
+                  void buildHistoryPanel?.refreshAfterBuild(false, builtTag);
                 }}
                 tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-base:noble"
                 tagInputId="baseTag" />
@@ -581,10 +581,10 @@ function onQuickStartClick(id: QuickStartId) {
                     : baseImage === CUSTOM_SIMULATION_BASE_IMAGE
                       ? physicalAiClient.buildSimulationImage(t, currentConfig, { parentImageTag: baseTag })
                       : physicalAiClient.buildSimulationImage(t, currentConfig)}
-                onBuildComplete={() => {
+                onBuildComplete={builtTag => {
                   simImageExists = true;
                   refreshImageExistence(existsCheckKey);
-                  void buildHistoryPanel?.refresh();
+                  void buildHistoryPanel?.refreshAfterBuild(false, builtTag);
                 }}
                 tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-sim:noble"
                 tagInputId="simTag"
@@ -615,8 +615,8 @@ function onQuickStartClick(id: QuickStartId) {
         active={active && layout === 'layers'}
         bind:busy={layerBusy}
         refreshIntervalSeconds={imageStatusRefreshIntervalSeconds}
-        onBuildComplete={({ watchForSbom }) => {
-          void buildHistoryPanel?.refreshAfterBuild(watchForSbom);
+        onBuildComplete={({ watchForSbom, builtTag }) => {
+          void buildHistoryPanel?.refreshAfterBuild(watchForSbom, builtTag);
           // Refresh image existence check so parent can detect newly built images
           refreshImageExistence(`${baseTag}|${simTag}`);
         }} />

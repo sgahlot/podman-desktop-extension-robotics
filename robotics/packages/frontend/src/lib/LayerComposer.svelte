@@ -69,7 +69,7 @@ export let lockLayerSelection = false;
  * only ever showed up in Recent Builds once the panel's own periodic poll happened to
  * catch it). `watchForSbom` should be true only for a build that opted into SBOM
  * generation — its SBOM is attached asynchronously well after the build itself completes. */
-export let onBuildComplete: ((opts: { watchForSbom: boolean }) => void) | undefined = undefined;
+export let onBuildComplete: ((opts: { watchForSbom: boolean; builtTag: string }) => void) | undefined = undefined;
 
 // Environment loaded once on mount.
 let ns = '';
@@ -79,8 +79,21 @@ let baseBusy = false;
 let hardenedBusy = false;
 let simBusy = false;
 let customBuildBusy = false;
+let baseLogsExpanded = true;
+let hardenedLogsExpanded = true;
+let simLogsExpanded = true;
 
 $: buildBusy = baseBusy || hardenedBusy || simBusy || customBuildBusy;
+// Auto-expand a panel's own logs when its build (re)starts; collapse earlier steps when a later
+// preset-stack step starts (same UX as Presets Step 1 / Step 2 in SimulationSetup.svelte).
+$: if (baseBusy) baseLogsExpanded = true;
+$: if (hardenedBusy) hardenedLogsExpanded = true;
+$: if (simBusy) simLogsExpanded = true;
+$: if (hardenedBusy) baseLogsExpanded = false;
+$: if (simBusy) {
+  baseLogsExpanded = false;
+  hardenedLogsExpanded = false;
+}
 $: busy = buildBusy;
 $: layerFieldsDisabled = buildBusy || lockLayerSelection;
 /** Presets quick start: recipe is fixed above — only show compatibility + build actions. */
@@ -107,7 +120,7 @@ $: if (quickStartId && quickStartId !== appliedQuickStartId) {
 }
 
 $: result = evaluateStack(selection);
-$: containerfile = generateLayerContainerfile(selection);
+$: containerfile = generateLayerContainerfile(selection, targetArch);
 $: baseOsNote =
   selection.sim === 'custom-template' && selection.baseOs === 'custom'
     ? `Expected parent: ${selectedCustomTemplate.osFamily} ${selectedCustomTemplate.osVersion} with ROS 2 ${selectedCustomTemplate.rosDistro}`
@@ -205,6 +218,8 @@ let simTag = presetSimTag;
 $: baseImageExists = !!baseTag && localImages.includes(baseTag);
 $: hardenedImageExists = !!hardenedTag && localImages.includes(hardenedTag);
 $: simParentReady = baseImageExists && (!needsHardened || hardenedImageExists);
+/** Sim must FROM a finished hardened parent — not an in-flight rebuild or stale tag race. */
+$: simBuildDisabled = !simParentReady || (needsHardened && hardenedBusy);
 $: containerfileTag = `${ns ? `quay.io/${ns}/` : ''}robotics-${selection.baseOs}:latest${archTagSuffix(targetArch)}`;
 
 // --- Images this stack pulls -----------------------------------------------------
@@ -353,6 +368,31 @@ onDestroy(() => {
                     <input type="checkbox" class="mt-0.5" bind:group={selection.hummingbirdApps} value={o.id} />
                     <span>{o.label} <span class="pai-text-muted">— {o.note}</span></span>
                   </label>
+                  {#if o.id === 'syft' && selectedHbApps.includes('syft')}
+                    <div
+                      class="flex flex-col gap-1 ml-5 pl-3 border-l border-[var(--pd-content-card-border)]"
+                      role="radiogroup"
+                      aria-label="SBOM format">
+                      <span class="text-xs text-[var(--pd-content-text)]">SBOM format</span>
+                      <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
+                        <input type="radio" class="mt-0.5" bind:group={sbomFormat} value="cyclonedx-json" />
+                        <span
+                          >CycloneDX <span class="pai-text-muted"
+                            >(recommended) — same package data without SPDX's per-package CPE-variant overhead;
+                            typically much smaller, especially for images with many small packages (e.g. ROS/Nav2
+                            stacks)</span
+                          ></span>
+                      </label>
+                      <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
+                        <input type="radio" class="mt-0.5" bind:group={sbomFormat} value="spdx-json" />
+                        <span
+                          >SPDX <span class="pai-text-muted"
+                            >— includes richer CPE metadata some vulnerability-scanning tools specifically require, but
+                            can run significantly larger for images with many packages</span
+                          ></span>
+                      </label>
+                    </div>
+                  {/if}
                 {/each}
               </div>
               <div class="flex flex-col gap-1">
@@ -365,31 +405,6 @@ onDestroy(() => {
                   </label>
                 {/each}
               </div>
-
-              {#if selectedHbApps.includes('syft')}
-                <div
-                  class="flex flex-col gap-1 pl-3 border-l border-[var(--pd-content-card-border)]"
-                  role="radiogroup"
-                  aria-label="SBOM format">
-                  <span class="text-xs text-[var(--pd-content-text)]">SBOM format</span>
-                  <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
-                    <input type="radio" class="mt-0.5" bind:group={sbomFormat} value="cyclonedx-json" />
-                    <span
-                      >CycloneDX <span class="pai-text-muted"
-                        >(recommended) — same package data without SPDX's per-package CPE-variant overhead; typically
-                        much smaller, especially for images with many small packages (e.g. ROS/Nav2 stacks)</span
-                      ></span>
-                  </label>
-                  <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
-                    <input type="radio" class="mt-0.5" bind:group={sbomFormat} value="spdx-json" />
-                    <span
-                      >SPDX <span class="pai-text-muted"
-                        >— includes richer CPE metadata some vulnerability-scanning tools specifically require, but can
-                        run significantly larger for images with many packages</span
-                      ></span>
-                  </label>
-                </div>
-              {/if}
             </div>
           {/if}
         </div>
@@ -576,14 +591,23 @@ onDestroy(() => {
           tag={presetBaseTag}
           bind:actualTag={baseTag}
           bind:busy={baseBusy}
+          bind:buildLogsExpanded={baseLogsExpanded}
           active={active}
           refreshIntervalSeconds={refreshIntervalSeconds}
           tagPlaceholder="e.g. quay.io/org/ros2-base:latest"
-          buildImage={t => physicalAiClient.buildBaseImage(t, presetConfig, { layerPlan: layerCachePlanBase })}
-          onBuildComplete={() => {
+          buildImage={t =>
+            physicalAiClient.buildBaseImage(t, presetConfig, {
+              layerPlan: layerCachePlanBase,
+              generateSbom: selectedHbApps.includes('syft'),
+              sbomFormat,
+              bundledTools: [],
+              isFinalArtifact: false,
+            })}
+          onBuildComplete={builtTag => {
             void refreshLocalImages();
-            onBuildComplete?.({ watchForSbom: false });
-          }} />
+            onBuildComplete?.({ watchForSbom: selectedHbApps.includes('syft'), builtTag });
+          }}
+          disabled={buildBusy} />
       </div>
 
       {#if needsHardened}
@@ -599,6 +623,7 @@ onDestroy(() => {
             tag={presetHardenedTag}
             bind:actualTag={hardenedTag}
             bind:busy={hardenedBusy}
+            bind:buildLogsExpanded={hardenedLogsExpanded}
             active={active}
             refreshIntervalSeconds={refreshIntervalSeconds}
             tagPlaceholder="e.g. quay.io/org/ros2-jazzy-hardened:noble"
@@ -606,12 +631,13 @@ onDestroy(() => {
               physicalAiClient.buildHardenedImage(t, presetConfig, {
                 layerPlan: layerCachePlanHardened,
                 hummingbirdTools: bakeInTools,
+                isFinalArtifact: !wantsSim,
               })}
-            onBuildComplete={() => {
+            onBuildComplete={builtTag => {
               void refreshLocalImages();
-              onBuildComplete?.({ watchForSbom: false });
+              onBuildComplete?.({ watchForSbom: false, builtTag });
             }}
-            disabled={!baseImageExists} />
+            disabled={buildBusy || !baseImageExists} />
         </div>
       {/if}
 
@@ -619,9 +645,12 @@ onDestroy(() => {
         <div class="flex flex-col gap-1">
           <span class="text-xs font-medium text-[var(--pd-content-text)]"
             >{needsHardened ? '3' : '2'}. Simulation image</span>
-          {#if !simParentReady}
+          {#if !simParentReady || (needsHardened && hardenedBusy)}
             <p class="text-sm p-3 rounded pai-banner-warning">
-              {#if needsHardened && !hardenedImageExists}
+              {#if needsHardened && hardenedBusy}
+                Wait for the hardened image build to finish — the simulation image must layer on top of that result, not
+                an older image still tagged locally.
+              {:else if needsHardened && !hardenedImageExists}
                 Build the hardened image (step 2) first — the simulation image layers on top of it.
               {:else}
                 Build the base image (step 1) first — the simulation image depends on it.
@@ -633,6 +662,7 @@ onDestroy(() => {
             tag={presetSimTag}
             bind:actualTag={simTag}
             bind:busy={simBusy}
+            bind:buildLogsExpanded={simLogsExpanded}
             active={active}
             refreshIntervalSeconds={refreshIntervalSeconds}
             tagPlaceholder="e.g. quay.io/org/ros2-sim:latest"
@@ -640,12 +670,16 @@ onDestroy(() => {
               physicalAiClient.buildSimulationImage(t, presetConfig, {
                 layerPlan: layerCachePlanSim,
                 parentImageTag: needsHardened ? hardenedTag : undefined,
+                generateSbom: selectedHbApps.includes('syft'),
+                sbomFormat,
+                bundledTools: bakeInTools,
+                isFinalArtifact: true,
               })}
-            onBuildComplete={() => {
+            onBuildComplete={builtTag => {
               void refreshLocalImages();
-              onBuildComplete?.({ watchForSbom: false });
+              onBuildComplete?.({ watchForSbom: selectedHbApps.includes('syft'), builtTag });
             }}
-            disabled={!simParentReady} />
+            disabled={buildBusy || simBuildDisabled} />
         </div>
       {/if}
     {:else}
@@ -679,12 +713,14 @@ onDestroy(() => {
           physicalAiClient.buildFromContainerfile(t, containerfile, platformForArch(targetArch), {
             generateSbom: selectedHbApps.includes('syft'),
             sbomFormat,
+            bundledTools: bakeInTools,
+            isFinalArtifact: true,
             layerPlan: layerCachePlan,
             bundleSimRuntime: selectionNeedsBundledSimRuntime(selection),
           })}
-        onBuildComplete={() => {
+        onBuildComplete={builtTag => {
           void refreshLocalImages();
-          onBuildComplete?.({ watchForSbom: selectedHbApps.includes('syft') });
+          onBuildComplete?.({ watchForSbom: selectedHbApps.includes('syft'), builtTag });
         }}
         disabled={buildDisabled} />
     {/if}

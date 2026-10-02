@@ -527,8 +527,8 @@ The extension contributes settings under page-oriented sections in **Settings �
 | 500-line cap via `appendProgressLog()`
 | Prevents memory bloat from long builds; truncation marker shown
 
-| SBOM format (Layers wizard `syft` tool)
-| CycloneDX-JSON default (user-selectable to SPDX), `syft dir:/ -o <format> --select-catalogers -file`
+| SBOM format (Layers wizard Syft companion)
+| CycloneDX-JSON default (user-selectable to SPDX), external `registry.access.redhat.com/hi/syft:latest <image> --output <format> --select-catalogers -file`; Syft is selected as a companion, never baked into the image
 | Confirmed empirically on a real 2588-package robotics image (APPENG-6226): SPDX-JSON's `externalRefs` generate many combinatorial CPE vulnerability-matching variants per package (one package alone had 49) — pushed the SBOM to 84MB. CycloneDX-JSON stores one `cpe` field per component instead, ~54% smaller for the same content. Separately, syft's file-integrity catalogers (`file-content`/`-digest`/`-executable`/`-metadata`) add one component *per file* in the image (a SHA-1/SHA-256 hash manifest) unrelated to what's installed — 115,498 of a real 118,086-component CycloneDX SBOM (97.8%) were these file-hash entries; `--select-catalogers -file` drops them with zero loss of real package data (40.5MB → 6.9MB on the same image). Both fixes are independent and compound: format choice fixes SPDX's per-package bloat, the cataloger flag fixes the per-file bloat that affects both formats (SPDX barely, CycloneDX heavily).
 
 | Package manager

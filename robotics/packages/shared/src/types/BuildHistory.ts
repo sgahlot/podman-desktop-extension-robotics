@@ -1,3 +1,6 @@
+import type { HardenedApp } from './layerCompatibility';
+import { isBundledToolSmokeCheckSupported } from '../build/bundledToolSmokeCheck';
+
 /**
  * A persisted record of one completed (or failed) image build — survives navigating away
  * from the Image Builder page and Podman Desktop restarts (APPENG-6226). Written by the
@@ -42,9 +45,8 @@ export interface BuildHistoryEntry {
   /** Present only when `success` is false. */
   errorMessage?: string;
   /**
-   * SBOM text from `syft dir:/ -o <sbomFormat>` run against the built image. Present only
-   * for builds that opted in (a Layers-wizard build with the `syft` Hummingbird tool
-   * selected) and where SBOM generation succeeded.
+   * SBOM text from the external Syft scan run against the built image. Present only for
+   * builds that opted in with the Syft companion selected and where generation succeeded.
    */
   sbom?: string;
   /** The format `sbom` was generated in — undefined only for pre-existing entries recorded
@@ -58,10 +60,35 @@ export interface BuildHistoryEntry {
    */
   sbomPackageCount?: number;
   /**
+   * Present when the build succeeded and SBOM generation was requested but failed — the
+   * image build itself is unaffected. Shown in Recent Builds separately from `errorMessage`.
+   */
+  sbomErrorMessage?: string;
+  /**
    * Per-layer Podman cache summary for Layers-wizard containerfile builds. Absent for
    * preset-path builds, bundled asset builds, and entries recorded before APPENG-6298.
    */
   layerCacheStatus?: LayerCacheStatusEntry[];
+  /** Bundled Hummingbird tools present in this image. Absent for legacy entries. */
+  bundledTools?: HardenedApp[];
+  /** True only when this entry represents the user-facing final customized image. */
+  isFinalArtifact?: boolean;
+  /**
+   * Smoke-check results for bake-in Hummingbird tools (e.g. `cosign version` inside the image).
+   * Not signature verification or other tool-specific workflows — those stay future work.
+   */
+  bundledToolVerifications?: BundledToolVerificationResult[];
+}
+
+export interface BundledToolVerificationResult {
+  tool: HardenedApp;
+  success: boolean;
+  /** Command stdout on success (may be large; still small for smoke checks). */
+  output?: string;
+  /** User-facing failure when the smoke check did not succeed. */
+  errorMessage?: string;
+  /** Epoch ms when the check last ran. */
+  verifiedAt: number;
 }
 
 /**
@@ -84,12 +111,72 @@ export function sbomItemLabel(format: SbomFormat | undefined): string {
   return format === 'cyclonedx-json' ? 'components' : 'packages';
 }
 
+export function verifiableBundledTools(entry: BuildHistoryEntry): HardenedApp[] {
+  return (entry.bundledTools ?? []).filter(tool => isBundledToolSmokeCheckSupported(tool));
+}
+
+export function bundledToolVerificationFor(
+  entry: BuildHistoryEntry,
+  tool: HardenedApp,
+): BundledToolVerificationResult | undefined {
+  return entry.bundledToolVerifications?.find(v => v.tool === tool);
+}
+
+/**
+ * User-facing SBOM scan error for Recent Builds — raw Podman/libpod messages (EOF on export,
+ * exit 125, long API URLs) are normalized without changing the logged backend error.
+ */
+export function formatSbomScanErrorMessage(raw: string): string {
+  const normalized = raw.replace(/\s+/g, ' ').trim();
+  const lower = normalized.toLowerCase();
+  if (lower.includes('eof') && (lower.includes('libpod/images/export') || lower.includes('images/export'))) {
+    return (
+      'Podman Desktop or the Podman engine stopped before the SBOM scan finished ' +
+      '(image export was interrupted). Keep Podman Desktop open until Recent Builds shows the SBOM, ' +
+      'or rebuild with Syft selected to try again.'
+    );
+  }
+  if (
+    lower.includes('connection refused') ||
+    lower.includes('cannot connect to') ||
+    (lower.includes('podman machine') && lower.includes('not running'))
+  ) {
+    return (
+      'Could not reach Podman while generating the SBOM. Ensure Podman Desktop is running, ' +
+      'then rebuild with Syft selected.'
+    );
+  }
+  if (normalized.length > 240) {
+    return `${normalized.slice(0, 237)}…`;
+  }
+  return normalized;
+}
+
+/** Stable id for one build attempt — `${tag}` and `startedAt` are both required (rebuilds reuse tag). */
+export function buildHistoryRecordKey(tag: string, startedAt: number): string {
+  return `${tag}\u0000${startedAt}`;
+}
+
+/**
+ * Insert or replace one build row by `(tag, startedAt)`. Never drops an entry silently —
+ * callers persist the returned array.
+ */
+export function upsertBuildHistoryEntry(history: BuildHistoryEntry[], entry: BuildHistoryEntry): BuildHistoryEntry[] {
+  const idx = history.findIndex(e => e.tag === entry.tag && e.startedAt === entry.startedAt);
+  if (idx === -1) {
+    return [entry, ...history];
+  }
+  const next = [...history];
+  next[idx] = { ...next[idx], ...entry };
+  return next;
+}
+
 /**
  * Build history retention bounds (Preferences: physical-ai.build.historyLimit). The max was
  * 5 originally because every retained entry could carry its full SBOM text — now that SBOM
  * text is fetched on demand rather than shipped with the list (APPENG-6265), a higher
  * ceiling mainly costs disk space, not UI payload; default stays low since most entries
- * never carry an SBOM at all (only Layers-wizard builds that opt in via the syft tool do).
+ * never carry an SBOM at all (only builds that opt in via the Syft companion do).
  */
 export const BUILD_HISTORY_LIMIT_MIN = 1;
 export const BUILD_HISTORY_LIMIT_MAX = 20;

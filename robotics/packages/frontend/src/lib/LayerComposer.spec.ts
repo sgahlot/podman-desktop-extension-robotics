@@ -169,11 +169,10 @@ describe('LayerComposer', () => {
     expect(document.body.textContent).toContain('registry.access.redhat.com/hi/nginx');
   });
 
-  it('selecting the syft tool on a preset stack builds the hardened middle image', async () => {
-    mockBuildHardenedImage.mockResolvedValue(undefined);
+  it('selecting the syft companion does not create a bundled hardened image', async () => {
+    mockBuildBaseImage.mockResolvedValue(undefined);
     mockGetBuildProgress.mockResolvedValue({ tag: 'x', status: 'Complete', logs: [], done: true });
-    const onBuildComplete = vi.fn();
-    render(LayerComposer, { props: { onBuildComplete } });
+    render(LayerComposer);
     const hardenedSelect = screen.getByLabelText('Hardened app');
     await fireEvent.change(hardenedSelect, { target: { value: 'hummingbird-app' } });
 
@@ -181,24 +180,59 @@ describe('LayerComposer', () => {
     expect(syftCheckbox).toBeTruthy();
     await fireEvent.click(syftCheckbox as HTMLInputElement);
 
-    expect(screen.getByText('2. Hardened image')).toBeTruthy();
+    expect(screen.queryByText('2. Hardened image')).toBeNull();
+    expect(document.body.textContent).toContain('companion image (pull & run alongside)');
+    expect(document.body.textContent).toContain('registry.access.redhat.com/hi/syft:latest');
 
     await waitFor(() => {
       const buttons = screen.getAllByRole('button', { name: 'Build' }) as HTMLButtonElement[];
       expect(buttons[0].disabled).toBe(false);
     });
-    const buildButtons = screen.getAllByRole('button', { name: 'Build' });
-    await fireEvent.click(buildButtons[1]);
-
+    await fireEvent.click(screen.getAllByRole('button', { name: 'Build' })[0]);
     await waitFor(() => {
-      expect(mockBuildHardenedImage).toHaveBeenCalledWith(
+      expect(mockBuildBaseImage).toHaveBeenCalledWith(
         expect.any(String),
         expect.any(Object),
-        expect.objectContaining({ hummingbirdTools: ['syft'] }),
+        expect.objectContaining({ generateSbom: true, sbomFormat: 'cyclonedx-json' }),
       );
     });
+  });
+
+  it('disables sim build while hardened image is building', async () => {
+    const localTags: string[] = [];
+    mockListLocalImages.mockImplementation(() => Promise.resolve([...localTags]));
+    mockBuildHardenedImage.mockImplementation(() => new Promise(() => {}));
+    mockGetBuildProgress.mockResolvedValue({
+      status: 'Building...',
+      logs: ['STEP 1/2'],
+      done: false,
+      currentStep: 1,
+      totalSteps: 2,
+    });
+
+    const mountWithCosign = async () => {
+      const view = render(LayerComposer, { props: { hostArch: 'arm64', targetArch: 'arm64' } });
+      await fireEvent.change(screen.getByLabelText('Hardened app'), { target: { value: 'hummingbird-app' } });
+      const cosign = screen.getByText('Cosign').closest('label')?.querySelector('input[type="checkbox"]');
+      await fireEvent.click(cosign as HTMLInputElement);
+      await waitFor(() => expect(screen.getAllByLabelText('Image tag').length).toBe(3));
+      return view;
+    };
+
+    const first = await mountWithCosign();
+    const inputs = screen.getAllByLabelText('Image tag') as HTMLInputElement[];
+    localTags.push(inputs[0].value, inputs[1].value);
+    first.unmount();
+
+    await mountWithCosign();
+    const phaseButtons = await screen.findAllByRole('button', { name: /^(Build|Rebuild)$/ });
+    expect(phaseButtons.length).toBeGreaterThanOrEqual(3);
+    await fireEvent.click(phaseButtons[1]);
+
     await waitFor(() => {
-      expect(onBuildComplete).toHaveBeenCalledWith({ watchForSbom: false });
+      expect(screen.getByText(/Wait for the hardened image build to finish/)).toBeTruthy();
+      const simBuild = screen.getAllByRole('button', { name: 'Build' }).at(-1) as HTMLButtonElement;
+      expect(simBuild.disabled).toBe(true);
     });
   });
 
@@ -230,7 +264,39 @@ describe('LayerComposer', () => {
     });
     expect(mockBuildBaseImage).not.toHaveBeenCalled();
     await waitFor(() => {
-      expect(onBuildComplete).toHaveBeenCalledWith({ watchForSbom: false });
+      expect(onBuildComplete).toHaveBeenCalledWith({ watchForSbom: false, builtTag: expect.any(String) });
+    });
+  });
+
+  it('collapses Step 1 (base) build logs once Step 2 (sim) build starts on a preset stack', async () => {
+    const builtTags: string[] = [];
+    mockListLocalImages.mockImplementation(() => Promise.resolve([...builtTags]));
+    mockBuildBaseImage.mockImplementation(async (tag: string) => {
+      builtTags.push(tag);
+    });
+    mockBuildSimulationImage.mockResolvedValue(undefined);
+    mockGetBuildProgress.mockResolvedValue({
+      tag: 'x',
+      status: 'Complete',
+      logs: ['base build line'],
+      done: true,
+      startedAt: 1000,
+      finishedAt: 2000,
+    });
+
+    render(LayerComposer);
+    await waitFor(() => {
+      const buttons = screen.getAllByRole('button', { name: 'Build' }) as HTMLButtonElement[];
+      expect(buttons[0].disabled).toBe(false);
+    });
+    await fireEvent.click(screen.getAllByRole('button', { name: 'Build' })[0]);
+    await waitFor(() => expect(screen.getByText('base build line')).toBeTruthy());
+
+    // Step 1 becomes "Rebuild"; Step 2 (sim) is the remaining "Build" button.
+    const simBuildButton = await screen.findByRole('button', { name: 'Build' });
+    await fireEvent.click(simBuildButton);
+    await waitFor(() => {
+      expect(screen.queryByText('base build line')).toBeNull();
     });
   });
 
@@ -251,17 +317,16 @@ describe('LayerComposer', () => {
     await fireEvent.click(buildButtons[0]);
 
     await waitFor(() => {
-      expect(onBuildComplete).toHaveBeenCalledWith({ watchForSbom: false });
+      expect(onBuildComplete).toHaveBeenCalledWith({ watchForSbom: false, builtTag: expect.any(String) });
     });
   });
 
-  it('only shows the SBOM format picker once syft is selected, defaulting to CycloneDX', async () => {
+  it('shows the SBOM format picker only after selecting the Syft companion', async () => {
     render(LayerComposer);
     const hardenedSelect = screen.getByLabelText('Hardened app');
     await fireEvent.change(hardenedSelect, { target: { value: 'hummingbird-app' } });
 
     expect(screen.queryByRole('radiogroup', { name: 'SBOM format' })).toBeNull();
-
     const syftCheckbox = screen.getByText('Syft').closest('label')?.querySelector('input[type="checkbox"]');
     await fireEvent.click(syftCheckbox as HTMLInputElement);
 

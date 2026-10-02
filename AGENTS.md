@@ -210,15 +210,13 @@ Load only one worktree’s extension in Podman Desktop at a time (canonical
 - Merge only from `main/`, using `git merge --no-ff`.
 - Before merging, Terra or Sol runs the zero-error gate against the feature
   branch. After merging, run it again against integrated `main` before pushing.
-  From `main/robotics`, the gate is:
+  From `robotics/` (feature worktree or integrated `main`), run:
 
-  ```text
-  npm run typecheck
-  npm run lint:check
-  npm run svelte:check
-  npm run format:check
-  npm test
+  ```bash
+  npm run zero-errors-gate
   ```
+
+  Worktree harness: `../scripts/run-zero-errors-gate.sh` (same npm script; optional `--step` for one phase).
 
 - Report unrelated pre-existing failures with evidence. Do not expand ticket
   scope to fix them without user approval.
@@ -332,4 +330,4 @@ Read Jira first for filed work, then `docs/design.adoc` as needed. When `AGENTS.
 ## Repository worktree validation
 
 - New sibling worktrees must complete bootstrap in `AGENTS.local.md` when present (private planning symlink). Load only one worktree’s extension in Podman Desktop at a time.
-- The merge gate is `npm run typecheck`, `npm run lint:check`, `npm run svelte:check`, `npm run format:check`, and `npm test` across all packages.
+- The merge gate is `npm run zero-errors-gate` in `robotics/` (typecheck, lint, svelte-check, format, all package tests). GitHub Actions runs the same script on `main` and pull requests.

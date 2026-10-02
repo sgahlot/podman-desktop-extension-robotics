@@ -1,14 +1,7 @@
-import type { LayerCacheStatusEntry } from './BuildHistory';
+import type { LayerCacheStatusEntry, SbomFormat } from './BuildHistory';
 import type { HardenedApp, LayerSelection } from './layerCompatibility';
-import {
-  BASE_OS_OPTIONS,
-  HUMMINGBIRD_APP_OPTIONS,
-  HUMMINGBIRD_TOOL_OPTIONS,
-  hummingbirdImageRef,
-  labelFor,
-  ROS_OPTIONS,
-  SIM_OPTIONS,
-} from './layerCompatibility';
+import { hummingbirdToolBakeContainerfileLines, type HummingbirdBakeArch } from '../build/hummingbirdToolBake';
+import { BASE_OS_OPTIONS, HUMMINGBIRD_TOOL_OPTIONS, labelFor, ROS_OPTIONS, SIM_OPTIONS } from './layerCompatibility';
 import type { SimulationConfig } from './SimulationConfig';
 import { resolveCustomSimulationTemplate } from './CustomSimulationTemplates';
 import { resolveSimulationProfile } from './SimulationProfiles';
@@ -44,6 +37,14 @@ export interface LayerCachePlanEntry {
 /** Optional context for preset image builds so cache UX matches the Layers wizard. */
 export interface LayerCacheBuildOptions {
   layerPlan?: LayerCachePlanEntry[];
+  /** Bundled Hummingbird tools present in the resulting image. */
+  bundledTools?: HardenedApp[];
+  /** Whether this build is the user-facing final artifact. */
+  isFinalArtifact?: boolean;
+  /** Run the external Syft scan after a successful image build. */
+  generateSbom?: boolean;
+  /** Output format for the external Syft scan. */
+  sbomFormat?: SbomFormat;
   /** Bake-in Hummingbird CLI tools for the hardened middle-layer image (step 2 of 3). */
   hummingbirdTools?: HardenedApp[];
   /** Parent image tag for a sim build (hardened image when step 2 ran; otherwise the base). */
@@ -134,8 +135,10 @@ export function layerCachePlanFromSimulationConfig(
  * Containerfile for the preset hardened middle-layer image (step 2 of 3).
  * FROM the local base image; COPY --from each bake-in Hummingbird tool.
  */
-export function generatePresetHardenedContainerfile(tools: HardenedApp[]): string {
-  const optionById = new Map(HUMMINGBIRD_APP_OPTIONS.map(o => [o.id, o]));
+export function generatePresetHardenedContainerfile(
+  tools: HardenedApp[],
+  targetArch: HummingbirdBakeArch = 'amd64',
+): string {
   const lines = [
     '# Layer 2 — Hardened application layer: Hummingbird app (baked in)',
     'ARG LOCAL_BASE_IMAGE',
@@ -143,10 +146,7 @@ export function generatePresetHardenedContainerfile(tools: HardenedApp[]): strin
   ];
 
   for (const tool of tools) {
-    const opt = optionById.get(tool);
-    if (opt?.kind !== 'tool') continue;
-    const binPath = opt.binPath ?? `/usr/bin/${tool}`;
-    lines.push(`COPY --from=${hummingbirdImageRef(tool)} ${binPath} /usr/local/bin/${tool}`);
+    lines.push(...hummingbirdToolBakeContainerfileLines(tool, targetArch));
   }
 
   return lines.join('\n') + '\n';

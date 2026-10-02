@@ -6,7 +6,8 @@ import type {
   PushProgress,
   LocalImageInfo,
 } from './types/ImageCatalog';
-import type { BuildHistoryEntry, SbomFormat } from './types/BuildHistory';
+import type { BuildHistoryEntry, BundledToolVerificationResult, SbomFormat } from './types/BuildHistory';
+import type { HardenedApp } from './types/layerCompatibility';
 import type { SimulationConfig } from './types/SimulationConfig';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from './types/SimulationContainer';
 import type { TopicInfo, TopicDetailInfo, TopicPeekResult, TopicSchemaResult } from './types/TopicInfo';
@@ -24,7 +25,6 @@ import type {
   OpenShiftWorkload,
 } from './types/OpenShiftDeploy';
 import type { LayerCacheBuildOptions } from './types/buildLayerCache';
-import type { HardenedApp } from './types/layerCompatibility';
 
 export abstract class PhysicalAiApi {
   abstract getStatus(): Promise<string>;
@@ -58,8 +58,7 @@ export abstract class PhysicalAiApi {
    * Containerfile is written to a throwaway build context. When `bundleSimRuntime` is true
    * (or the Containerfile includes the sim-runtime layer marker), bundled entrypoint/world
    * assets from `assets/ros2-jazzy-sim/` are copied into that context before `podman build`.
-   * `options.generateSbom` (only meaningful here — the base/sim build paths never set it)
-   * runs `syft` against the built image afterward and records the SBOM in build history,
+   * `options.generateSbom` runs the external Syft image against the built image afterward and records the SBOM in build history,
    * in `options.sbomFormat` (defaults to SBOM_FORMAT_DEFAULT — see BuildHistory.ts for why
    * CycloneDX is the recommended default over SPDX). */
   abstract buildFromContainerfile(
@@ -69,6 +68,8 @@ export abstract class PhysicalAiApi {
     options?: {
       generateSbom?: boolean;
       sbomFormat?: SbomFormat;
+      bundledTools?: HardenedApp[];
+      isFinalArtifact?: boolean;
       layerPlan?: LayerCacheBuildOptions['layerPlan'];
       bundleSimRuntime?: boolean;
     },
@@ -84,6 +85,12 @@ export abstract class PhysicalAiApi {
   /** Full SBOM text for one build history entry, identified by tag + startedAt (its stable
    * key). Undefined if the entry has aged out of history or has no recorded SBOM. */
   abstract getBuildHistorySbom(tag: string, startedAt: number): Promise<string | undefined>;
+  /** Run a bundled-tool smoke check inside the built image and persist the result on the history entry. */
+  abstract verifyBundledTool(
+    imageTag: string,
+    startedAt: number,
+    tool: HardenedApp,
+  ): Promise<BundledToolVerificationResult>;
   /** Number of recent builds retained in history (Preferences: physical-ai.build.historyLimit, 1–20). */
   abstract getBuildHistoryLimit(): Promise<number>;
   /** Validates and persists the build history limit (1–20). Throws a user-facing error if out of range. */

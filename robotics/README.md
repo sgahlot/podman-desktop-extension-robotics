@@ -89,6 +89,16 @@ Repo-level plan, design, and story tracking live in [`../docs/`](../docs/) (outs
 
 Backend runs in Podman Desktop's Node.js/Electron host. Frontend is a Svelte 5 SPA in a webview panel.
 
+## Quality gate
+
+Before merge (and in CI on `main`), run the integrated zero-errors gate from this directory:
+
+```bash
+npm run zero-errors-gate
+```
+
+That runs, in order: `typecheck`, `lint:check`, `svelte:check`, `format:check`, and `test`. From a git worktree root, `../scripts/run-zero-errors-gate.sh` wraps the same npm script with compact console output.
+
 ## Packaging
 
 The root `Containerfile` builds an OCI image of the extension. `packages/backend/README.md` and the icon ship inside the image (Readme may link GitLab raw GIFs under `robotics/docs/img/`; **Help** bundles the same files). Publish via `scripts/publish-extension-image.sh`.

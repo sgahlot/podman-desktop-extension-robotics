@@ -54,6 +54,11 @@ export interface BuildProgress {
   finishedAt?: number;
   /** Live + final per-layer cache summary for Layers-wizard containerfile builds. */
   layerCacheStatus?: LayerCacheStatusEntry[];
+  /**
+   * Set after the base Recent Builds row is durably persisted. Unlike a “already queued” flag,
+   * this stays false when persistence fails so the finish/promise backup path can retry.
+   */
+  historyPersisted?: boolean;
 }
 
 export interface PushProgress {

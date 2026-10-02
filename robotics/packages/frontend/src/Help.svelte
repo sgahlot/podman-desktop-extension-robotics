@@ -152,9 +152,18 @@ let topicMonitorCaption =
         </div>
         <div class="text-xs font-semibold text-[var(--pd-content-header)] mt-3 mb-2">Build history</div>
         <div>
-          <strong>Recent builds</strong> — Below the build panels, Image Builder lists recent builds (tag, arch, duration,
-          success/failure). Expand an entry to see layer cache reuse (cache cake) and, when generated, an optional SBOM (fetched
-          on demand). History refreshes when a build finishes; SBOM generation can take minutes after the build completes.
+          <strong>Recent builds</strong> — Below the build panels, Image Builder lists recent builds (tag, arch,
+          duration, success/failure). Expand an entry to see layer cache reuse (cache cake) and, when generated, an SBOM
+          (fetched on demand). Select the Syft companion in the Layers wizard to enable the external Red Hat Syft scan;
+          Recent Builds shows a <strong>Generating SBOM</strong> status while Syft runs after the image build finishes
+          (large images can take several minutes). Keep Podman Desktop running until the SBOM appears or an error is
+          shown — quitting during this step interrupts the scan. If the scan fails, the message appears on that row; the
+          image build itself still succeeded. Final images with baked-in tools show a collapsible
+          <strong>Bundled apps</strong>
+          section (like SBOM). Verify one app at a time or use <strong>Verify all bundled apps</strong> when several are
+          listed. Each check runs the CLI inside the image (for example <span class="font-mono">cosign version</span>,
+          <span class="font-mono">curl --version</span>, <span class="font-mono">kubectl version --client</span>) — not
+          OCI signature verification. Output is saved per app and remains after you leave the page.
         </div>
         <div class="text-xs font-semibold text-[var(--pd-content-header)] mt-3 mb-2">Both tabs</div>
         <div>

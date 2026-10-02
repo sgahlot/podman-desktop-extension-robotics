@@ -129,6 +129,7 @@ function lastWrittenBuildHistory(): BuildHistoryEntry[] {
 function mockStatefulBuildHistoryFile(): void {
   let stored: string | undefined;
   const pendingByTmpPath = new Map<string, string>();
+  const previousRead = vi.mocked(readFile).getMockImplementation();
   vi.mocked(writeFile).mockImplementation(async (path, content) => {
     const p = String(path);
     if (p.includes('build-history.json')) {
@@ -142,9 +143,12 @@ function mockStatefulBuildHistoryFile(): void {
       pendingByTmpPath.delete(op);
     }
   });
-  vi.mocked(readFile).mockImplementation(async path => {
+  vi.mocked(readFile).mockImplementation(async (path, ...rest) => {
     if (String(path).endsWith('build-history.json') && stored !== undefined) {
       return stored as unknown as Awaited<ReturnType<typeof readFile>>;
+    }
+    if (previousRead) {
+      return await previousRead(path, ...rest);
     }
     throw new Error('ENOENT');
   });
@@ -740,7 +744,7 @@ describe('PhysicalAiApiImpl', () => {
       mockConfigWithBuildHistoryLimit(undefined);
     });
 
-    it('records a completed base-image build (no sbom — base/sim builds never opt in)', async () => {
+    it('records a completed base-image build without an SBOM when Syft is not selected', async () => {
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
@@ -761,8 +765,55 @@ describe('PhysicalAiApiImpl', () => {
       expect(history[0]).toEqual(expect.objectContaining({ tag: 'my-tag:latest', arch: 'amd64', success: true }));
       expect(history[0].sbom).toBeUndefined();
       expect(history[0].errorMessage).toBeUndefined();
-      // Base-image builds never invoke syft.
+      // Syft is opt-in for every build path.
       expect(extensionApi.process.exec).not.toHaveBeenCalledWith('podman', expect.arrayContaining(['syft']));
+    });
+
+    it('runs the external Syft scan for a base-image build when selected', async () => {
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+      const sbomJson = JSON.stringify({ components: [{ name: 'base-package' }] });
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: sbomJson,
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
+      await api.buildBaseImage(
+        'my-tag:latest',
+        {
+          robot: 'turtlebot3',
+          distro: 'humble',
+          middleware: 'dds',
+          engine: 'gazebo',
+          baseImage: 'sloretz' as const,
+          targetArch: 'amd64',
+        },
+        { generateSbom: true, sbomFormat: 'cyclonedx-json' },
+      );
+      await vi.runAllTimersAsync();
+
+      expect(extensionApi.process.exec).toHaveBeenCalledWith('podman', [
+        'save',
+        '--format',
+        'oci-archive',
+        '--output',
+        expect.stringContaining('/image.tar'),
+        'my-tag:latest',
+      ]);
+      expect(extensionApi.process.exec).toHaveBeenCalledWith('podman', [
+        'run',
+        '--rm',
+        '--volume',
+        expect.stringContaining(':/scan/image.tar:ro'),
+        'registry.access.redhat.com/hi/syft:latest',
+        'oci-archive:/scan/image.tar',
+        '--output',
+        'cyclonedx-json',
+        '--select-catalogers=-file',
+      ]);
     });
 
     it('records a failed build with an error message', async () => {
@@ -785,6 +836,45 @@ describe('PhysicalAiApiImpl', () => {
         expect.objectContaining({ tag: 'my-tag:latest', success: false, errorMessage: 'build failed' }),
       );
       expect(history[0].sbom).toBeUndefined();
+    });
+
+    it('still records history when the first persist attempt fails and the build promise settles after finish', async () => {
+      mockStatefulBuildHistoryFile();
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+
+      vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation((_ctx, cb, _opts) => {
+        queueMicrotask(() => {
+          cb('finish', 'Successfully tagged my-tag:latest');
+        });
+        return Promise.resolve(undefined);
+      });
+
+      let historyWriteAttempts = 0;
+      const previousWrite = vi.mocked(writeFile).getMockImplementation();
+      vi.mocked(writeFile).mockImplementation(async (path, content) => {
+        const p = String(path);
+        if (p.includes('build-history.json')) {
+          historyWriteAttempts += 1;
+          if (historyWriteAttempts === 1) {
+            throw new Error('simulated disk full');
+          }
+        }
+        return previousWrite?.(path, content);
+      });
+
+      await api.buildBaseImage('my-tag:latest', {
+        robot: 'turtlebot3',
+        distro: 'humble',
+        middleware: 'dds',
+        engine: 'gazebo',
+        baseImage: 'sloretz' as const,
+      });
+      await vi.runAllTimersAsync();
+
+      expect(historyWriteAttempts).toBeGreaterThanOrEqual(2);
+      expect(lastWrittenBuildHistory()[0]).toEqual(expect.objectContaining({ tag: 'my-tag:latest', success: true }));
     });
 
     it('does not record a cancelled build', async () => {
@@ -829,19 +919,68 @@ describe('PhysicalAiApiImpl', () => {
       expect(extensionApi.process.exec).toHaveBeenCalledWith('podman', [
         'run',
         '--rm',
-        'my-layer:latest',
-        'syft',
-        'dir:/',
-        '-o',
+        '--volume',
+        expect.stringContaining(':/scan/image.tar:ro'),
+        'registry.access.redhat.com/hi/syft:latest',
+        'oci-archive:/scan/image.tar',
+        '--output',
         'cyclonedx-json',
-        '--select-catalogers',
-        '-file',
+        '--select-catalogers=-file',
       ]);
       const history = lastWrittenBuildHistory();
       expect(history[0].sbom).toBe(sbomJson);
       expect(history[0].sbomFormat).toBe('cyclonedx-json');
       expect(history[0].sbomPackageCount).toBe(1);
       expect(history[0].success).toBe(true);
+    });
+
+    it('persists bundled-tool and final-artifact metadata with build history', async () => {
+      mockStatefulBuildHistoryFile();
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '',
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
+      await api.buildFromContainerfile('final:latest', 'FROM scratch\n', undefined, {
+        bundledTools: ['cosign'],
+        isFinalArtifact: true,
+      });
+      await vi.runAllTimersAsync();
+
+      expect(lastWrittenBuildHistory()[0]).toEqual(
+        expect.objectContaining({ bundledTools: ['cosign'], isFinalArtifact: true }),
+      );
+    });
+
+    it('preserves concurrent build-history entries while asynchronous SBOM scans attach', async () => {
+      mockStatefulBuildHistoryFile();
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: JSON.stringify({ components: [{ name: 'component' }] }),
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
+      await Promise.all(
+        ['base:latest', 'hardened:latest', 'sim:latest'].map(tag =>
+          api.buildFromContainerfile(tag, 'FROM scratch\n', undefined, {
+            generateSbom: true,
+            bundledTools: tag.startsWith('hardened') ? ['cosign'] : [],
+            isFinalArtifact: tag.startsWith('sim'),
+          }),
+        ),
+      );
+      await vi.runAllTimersAsync();
+
+      expect(lastWrittenBuildHistory()).toHaveLength(3);
     });
 
     it('buildFromContainerfile with an explicit sbomFormat:"spdx-json" runs syft with that format', async () => {
@@ -866,13 +1005,13 @@ describe('PhysicalAiApiImpl', () => {
       expect(extensionApi.process.exec).toHaveBeenCalledWith('podman', [
         'run',
         '--rm',
-        'my-layer:latest',
-        'syft',
-        'dir:/',
-        '-o',
+        '--volume',
+        expect.stringContaining(':/scan/image.tar:ro'),
+        'registry.access.redhat.com/hi/syft:latest',
+        'oci-archive:/scan/image.tar',
+        '--output',
         'spdx-json',
-        '--select-catalogers',
-        '-file',
+        '--select-catalogers=-file',
       ]);
       const history = lastWrittenBuildHistory();
       expect(history[0].sbom).toBe(sbomJson);
@@ -881,11 +1020,17 @@ describe('PhysicalAiApiImpl', () => {
 
     it('SBOM generation failure leaves the sbom field absent without failing the build', async () => {
       const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockStatefulBuildHistoryFile();
       vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
         createMockConnection(),
       ] as unknown as extensionApi.ProviderContainerConnection[]);
       vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
-      vi.mocked(extensionApi.process.exec).mockRejectedValue(new Error('syft: command not found'));
+      vi.mocked(extensionApi.process.exec).mockImplementation((_cmd, args) => {
+        if (args?.includes('registry.access.redhat.com/hi/syft:latest')) {
+          return Promise.reject(new Error('syft: command not found'));
+        }
+        return Promise.resolve({ stdout: '', stderr: '', command: 'podman' } as extensionApi.RunResult);
+      });
 
       await api.buildFromContainerfile('my-layer:latest', 'FROM scratch\n', undefined, { generateSbom: true });
       await vi.runAllTimersAsync();
@@ -893,6 +1038,7 @@ describe('PhysicalAiApiImpl', () => {
       const history = lastWrittenBuildHistory();
       expect(history[0].success).toBe(true);
       expect(history[0].sbom).toBeUndefined();
+      expect(history[0].sbomErrorMessage).toBe('syft: command not found');
       expect(consoleError).toHaveBeenCalledWith(
         '[physical-ai] SBOM generation for "my-layer:latest" failed (non-fatal):',
         expect.objectContaining({ message: 'syft: command not found' }),
@@ -946,7 +1092,7 @@ describe('PhysicalAiApiImpl', () => {
 
       let resolveSyft!: (v: extensionApi.RunResult) => void;
       vi.mocked(extensionApi.process.exec).mockImplementation((_command, args) => {
-        if (args?.includes('syft')) {
+        if (args?.includes('registry.access.redhat.com/hi/syft:latest')) {
           return new Promise(resolve => {
             resolveSyft = resolve;
           });
@@ -1089,6 +1235,51 @@ describe('PhysicalAiApiImpl', () => {
     it('returns undefined when no entry matches', async () => {
       vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
       expect(await api.getBuildHistorySbom('missing:tag', 123)).toBeUndefined();
+    });
+  });
+
+  describe('verifyBundledTool', () => {
+    it('runs cosign version inside the image, persists the result, and returns it', async () => {
+      vi.mocked(mkdir).mockResolvedValue(undefined);
+      vi.mocked(mkdtemp).mockResolvedValue('/tmp/physical-ai-layer-build-verify');
+      vi.mocked(rm).mockResolvedValue(undefined);
+      mockStatefulBuildHistoryFile();
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockResolvedValue(undefined);
+
+      await api.buildFromContainerfile('my-layer:latest', 'FROM scratch\n', undefined, {
+        bundledTools: ['cosign'],
+        isFinalArtifact: true,
+      });
+      await vi.runAllTimersAsync();
+      const [entry] = lastWrittenBuildHistory();
+
+      vi.mocked(extensionApi.process.exec).mockImplementation((_cmd, args) => {
+        if (args?.[0] === 'run') {
+          return Promise.resolve({
+            stdout: 'GitVersion: v3.1.3',
+            stderr: '',
+            command: 'podman',
+          } as extensionApi.RunResult);
+        }
+        return Promise.resolve({ stdout: '', stderr: '', command: 'podman' } as extensionApi.RunResult);
+      });
+
+      const result = await api.verifyBundledTool(entry.tag, entry.startedAt, 'cosign');
+      expect(result.success).toBe(true);
+      expect(result.output).toContain('v3.1.3');
+      const runCall = vi.mocked(extensionApi.process.exec).mock.calls.find(call => (call[1] as string[])[0] === 'run');
+      expect(runCall).toEqual([
+        'podman',
+        ['run', '--rm', '--entrypoint', '/usr/local/bin/cosign', 'my-layer:latest', 'version'],
+      ]);
+
+      const [stored] = lastWrittenBuildHistory();
+      expect(stored.bundledToolVerifications?.[0]).toEqual(
+        expect.objectContaining({ tool: 'cosign', success: true, output: expect.stringContaining('v3.1.3') }),
+      );
     });
   });
 
@@ -1605,6 +1796,47 @@ RUN apt-get install -y ros-jazzy-desktop
         api.buildSimulationImage('sim-tag:latest', { ...supportedConfig, distro: 'rolling' }),
       ).rejects.toThrow(/No simulation image available for rolling\/turtlebot3\/dds\/gazebo/);
       expect(extensionApi.containerEngine.buildImage).not.toHaveBeenCalled();
+    });
+
+    it('records build history when the simulation build finishes (finish event + promise)', async () => {
+      mockStatefulBuildHistoryFile();
+      vi.mocked(mkdir).mockResolvedValue(undefined);
+      vi.mocked(rm).mockResolvedValue(undefined);
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue('ecosystem-appeng'),
+      } as unknown as extensionApi.Configuration);
+
+      vi.mocked(extensionApi.containerEngine.buildImage).mockImplementation((_ctx, cb, _opts) => {
+        queueMicrotask(() => {
+          cb('finish', 'Successfully tagged sim-tag:noble');
+        });
+        return Promise.resolve(undefined);
+      });
+
+      await api.buildSimulationImage(
+        'quay.io/ecosystem-appeng/ros2-jazzy-sim:noble-custom',
+        { ...supportedConfig, distro: 'jazzy', baseImage: 'jazzy-noble' },
+        {
+          generateSbom: true,
+          bundledTools: ['cosign'],
+          isFinalArtifact: true,
+        },
+      );
+      await vi.runAllTimersAsync();
+
+      const stored = lastWrittenBuildHistory();
+      expect(stored).toHaveLength(1);
+      expect(stored[0]).toEqual(
+        expect.objectContaining({
+          tag: 'quay.io/ecosystem-appeng/ros2-jazzy-sim:noble-custom',
+          success: true,
+          isFinalArtifact: true,
+          bundledTools: ['cosign'],
+        }),
+      );
     });
 
     it('builds jazzy simulation image with LOCAL_BASE_IMAGE :noble', async () => {
