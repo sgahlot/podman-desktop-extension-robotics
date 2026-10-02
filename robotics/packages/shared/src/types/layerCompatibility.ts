@@ -10,6 +10,16 @@
  */
 import { hummingbirdToolBakeContainerfileLines } from '../build/hummingbirdToolBake';
 import { generateCustomSimulationContainerfile, resolveCustomSimulationTemplate } from './CustomSimulationTemplates';
+import {
+  BASE_OS_CAPABILITY,
+  BASE_OS_IMAGE_REF,
+  FEDORA_LYRICAL_REPOSITORY,
+  INSTALL_CLEANUP,
+  INSTALL_COMMAND,
+  ROS_DESKTOP_PACKAGES,
+  ROS_DISTRO,
+  SIMULATION_PACKAGES,
+} from './layerStackConfig';
 import { generateSimOperationalLayerFragment, selectionNeedsBundledSimRuntime } from './simOperationalLayer';
 
 export { selectionNeedsBundledSimRuntime } from './simOperationalLayer';
@@ -247,96 +257,6 @@ export const SIM_OPTIONS: readonly LayerOption<SimLayer>[] = [
  * repository; the other dnf-based bootc bases have no supported package set today. This
  * table is the single place to flip a fact if upstream packaging changes (or add a base).
  */
-interface BaseOsCapability {
-  /** a bootc (bootable-container) base rather than the plain Ubuntu base */
-  isBootc: boolean;
-  /** OS package manager the base ships with */
-  packaging: 'apt' | 'dnf';
-  /** pulling the base image needs a Red Hat subscription (registry.redhat.io) */
-  requiresSubscription: boolean;
-  /** ROS 2 distros installable on this base today. */
-  supportedRosDistros: readonly string[];
-  /** ROS 2 distros with a supported Gazebo/Nav2/TurtleBot3 stack on this base. */
-  supportedSimDistros: readonly string[];
-  /** a ROS package repository exists for this base and selected distro */
-  hasRosRepo: boolean;
-}
-
-const BASE_OS_CAPABILITY: Record<BaseOsLayer, BaseOsCapability> = {
-  custom: {
-    isBootc: false,
-    packaging: 'apt',
-    requiresSubscription: false,
-    supportedRosDistros: ['jazzy', 'humble'],
-    supportedSimDistros: ['jazzy', 'humble'],
-    hasRosRepo: true,
-  },
-  'ubuntu-noble': {
-    isBootc: false,
-    packaging: 'apt',
-    requiresSubscription: false,
-    supportedRosDistros: ['jazzy', 'humble'],
-    supportedSimDistros: ['jazzy', 'humble'],
-    hasRosRepo: true,
-  },
-  'centos-bootc-stream9': {
-    isBootc: true,
-    packaging: 'dnf',
-    requiresSubscription: false,
-    supportedRosDistros: [],
-    supportedSimDistros: [],
-    hasRosRepo: true,
-  },
-  'centos-bootc-stream10': {
-    isBootc: true,
-    packaging: 'dnf',
-    requiresSubscription: false,
-    supportedRosDistros: [],
-    supportedSimDistros: [],
-    hasRosRepo: true,
-  },
-  'fedora-bootc-42': {
-    isBootc: true,
-    packaging: 'dnf',
-    requiresSubscription: false,
-    supportedRosDistros: [],
-    supportedSimDistros: [],
-    hasRosRepo: false,
-  },
-  'fedora-bootc-43': {
-    isBootc: true,
-    packaging: 'dnf',
-    requiresSubscription: false,
-    supportedRosDistros: ['lyrical'],
-    supportedSimDistros: ['lyrical'],
-    hasRosRepo: true,
-  },
-  'fedora-bootc-44': {
-    isBootc: true,
-    packaging: 'dnf',
-    requiresSubscription: false,
-    supportedRosDistros: [],
-    supportedSimDistros: [],
-    hasRosRepo: false,
-  },
-  'rhel-bootc': {
-    isBootc: true,
-    packaging: 'dnf',
-    requiresSubscription: true,
-    supportedRosDistros: [],
-    supportedSimDistros: [],
-    hasRosRepo: true,
-  },
-  'rhel10-bootc': {
-    isBootc: true,
-    packaging: 'dnf',
-    requiresSubscription: true,
-    supportedRosDistros: [],
-    supportedSimDistros: [],
-    hasRosRepo: true,
-  },
-};
-
 function labelForBaseOs(baseOs: BaseOsLayer, customBaseImage?: string): string {
   if (baseOs === 'custom') {
     const imageRef = customBaseImage?.trim();
@@ -504,27 +424,10 @@ function customBaseMatchesTemplateMetadata(
   return Boolean(sel.customBaseImage?.trim()) && Boolean(template.osFamily && template.osVersion && template.rosDistro);
 }
 
-const BASE_OS_IMAGE_REF: Record<Exclude<BaseOsLayer, 'custom'>, string> = {
-  'ubuntu-noble': 'docker.io/library/ubuntu:24.04',
-  'centos-bootc-stream9': 'quay.io/centos-bootc/centos-bootc:stream9',
-  'centos-bootc-stream10': 'quay.io/centos-bootc/centos-bootc:stream10',
-  'fedora-bootc-42': 'quay.io/fedora/fedora-bootc:42',
-  'fedora-bootc-43': 'quay.io/fedora/fedora-bootc:43',
-  'fedora-bootc-44': 'quay.io/fedora/fedora-bootc:44',
-  'rhel-bootc': 'registry.redhat.io/rhel9/rhel-bootc:latest',
-  'rhel10-bootc': 'registry.redhat.io/rhel10/rhel-bootc:latest',
-};
-
 /** Full image reference this wizard would pull/FROM for a given base OS layer. */
 export function baseOsImageRef(baseOs: BaseOsLayer, customBaseImage?: string): string {
   return baseOs === 'custom' ? (customBaseImage?.trim() ?? '') : BASE_OS_IMAGE_REF[baseOs];
 }
-
-const ROS_DISTRO: Record<Exclude<RosLayer, 'none' | 'provided-by-parent'>, string> = {
-  'ros2-jazzy': 'jazzy',
-  'ros2-humble': 'humble',
-  'ros2-lyrical': 'lyrical',
-};
 
 export function labelFor<TId extends string>(options: readonly LayerOption<TId>[], id: TId): string {
   return options.find(o => o.id === id)?.label ?? id;
@@ -578,26 +481,11 @@ export function generateLayerContainerfile(sel: LayerSelection, targetArch: 'amd
   // Package manager matches the base's actual packaging (BASE_OS_CAPABILITY) so generated
   // dnf-based bootc builds use the base's native installer.
   const cap = BASE_OS_CAPABILITY[sel.baseOs];
-  const installCmd =
-    cap.packaging === 'dnf'
-      ? sel.baseOs === 'fedora-bootc-43'
-        ? 'dnf --releasever=43 install -y'
-        : 'dnf install -y'
-      : 'apt-get update && apt-get install -y';
-  const installCleanup = sel.baseOs === 'fedora-bootc-43' ? ' && dnf clean all' : '';
+  const installCmd = INSTALL_COMMAND[sel.baseOs];
+  const installCleanup = INSTALL_CLEANUP[sel.baseOs];
 
   if (sel.baseOs === 'fedora-bootc-43' && sel.ros === 'ros2-lyrical') {
-    sections.push(
-      '# ROS 2 Lyrical Fedora 43 x86_64 testing repository\n' +
-        "RUN cat > /etc/yum.repos.d/ros2-lyrical-testing.repo <<'EOF'\n" +
-        '[ros2-lyrical-testing]\n' +
-        'name=ROS 2 Lyrical Fedora 43 x86_64 (testing)\n' +
-        'baseurl=https://repo.ros2.org/fedora/testing/43/x86_64/\n' +
-        'enabled=1\n' +
-        'gpgcheck=0\n' +
-        'gpgkey=https://repo.ros2.org/repos.key\n' +
-        'EOF',
-    );
+    sections.push(FEDORA_LYRICAL_REPOSITORY);
   }
 
   // The base OS images are bare (no ROS apt source configured), unlike the tested-preset
@@ -619,32 +507,15 @@ export function generateLayerContainerfile(sel: LayerSelection, targetArch: 'amd
 
   if (sel.ros !== 'none' && sel.ros !== 'provided-by-parent') {
     const distro = ROS_DISTRO[sel.ros];
-    const desktopPackage = sel.ros === 'ros2-lyrical' ? `ros-${distro}-desktop-runtime` : `ros-${distro}-desktop`;
-    const lyricalDesktopPackages =
-      sel.ros === 'ros2-lyrical' ? `${desktopPackage} ros-${distro}-desktop-devel` : desktopPackage;
+    const desktopPackages = ROS_DESKTOP_PACKAGES[distro].map(packageName => `ros-${distro}-${packageName}`);
     sections.push(
-      `# Layer 3 — ROS: ${labelFor(ROS_OPTIONS, sel.ros)}\nRUN ${installCmd} ${lyricalDesktopPackages}${installCleanup}`,
+      `# Layer 3 — ROS: ${labelFor(ROS_OPTIONS, sel.ros)}\nRUN ${installCmd} ${desktopPackages.join(' ')}${installCleanup}`,
     );
   }
 
   if (sel.sim !== 'none') {
     const distro = sel.ros !== 'none' && sel.ros !== 'provided-by-parent' ? ROS_DISTRO[sel.ros] : 'jazzy';
-    const simulationPackages =
-      sel.ros === 'ros2-lyrical'
-        ? [
-            `ros-${distro}-navigation2-runtime`,
-            `ros-${distro}-navigation2-devel`,
-            `ros-${distro}-nav2-bringup-runtime`,
-            `ros-${distro}-nav2-bringup-devel`,
-            `ros-${distro}-nav2-minimal-tb3-sim-runtime`,
-            `ros-${distro}-nav2-minimal-tb3-sim-devel`,
-            `ros-${distro}-turtlebot3-gazebo-runtime`,
-            `ros-${distro}-turtlebot3-gazebo-devel`,
-            `ros-${distro}-ros-gz-sim-runtime`,
-            `ros-${distro}-ros-gz-sim-devel`,
-          ].join(' ')
-        : `ros-${distro}-navigation2 ros-${distro}-nav2-bringup ` +
-          `ros-${distro}-nav2-minimal-tb3-sim ros-${distro}-ros-gz-sim`;
+    const simulationPackages = SIMULATION_PACKAGES[distro].map(packageName => `ros-${distro}-${packageName}`).join(' ');
     sections.push(
       `# Layer 4 — Simulation: ${labelFor(SIM_OPTIONS, sel.sim)}\n` +
         `RUN ${installCmd} ${simulationPackages}${installCleanup}`,
