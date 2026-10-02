@@ -6,12 +6,14 @@ import type { BuildHistoryEntry } from '/@shared/src/types/BuildHistory';
 const mockGetBuildHistory = vi.fn();
 const mockGetBuildHistorySbom = vi.fn();
 const mockCopyToClipboard = vi.fn();
+const mockVerifyBundledTool = vi.fn();
 
 vi.mock('../api/client', () => ({
   physicalAiClient: {
     getBuildHistory: (...args: unknown[]) => mockGetBuildHistory(...args),
     getBuildHistorySbom: (...args: unknown[]) => mockGetBuildHistorySbom(...args),
     copyToClipboard: (...args: unknown[]) => mockCopyToClipboard(...args),
+    verifyBundledTool: (...args: unknown[]) => mockVerifyBundledTool(...args),
   },
 }));
 
@@ -23,6 +25,12 @@ describe('BuildHistoryPanel', () => {
     mockGetBuildHistory.mockResolvedValue([]);
     mockGetBuildHistorySbom.mockResolvedValue(undefined);
     mockCopyToClipboard.mockResolvedValue(undefined);
+    mockVerifyBundledTool.mockResolvedValue({
+      tool: 'cosign',
+      success: true,
+      output: '',
+      verifiedAt: Date.now(),
+    });
   });
 
   afterEach(() => {
@@ -74,6 +82,89 @@ describe('BuildHistoryPanel', () => {
     expect(screen.getByText('↻ rebuilt')).toBeTruthy();
     expect(screen.getAllByText('✓ cached').length).toBe(3);
     expect(screen.queryByRole('button', { name: /Layer cache/ })).toBeNull();
+  });
+
+  it('shows Verify bundled apps for a final image and persists per-app output after refresh', async () => {
+    const startedAt = 1_700_000_000_000;
+    const entry: BuildHistoryEntry = {
+      tag: 'quay.io/ns/robotics-sim:latest',
+      arch: 'arm64',
+      startedAt,
+      durationMs: 1_000,
+      success: true,
+      bundledTools: ['cosign'],
+      isFinalArtifact: true,
+    };
+    mockGetBuildHistory.mockResolvedValue([entry]);
+    mockVerifyBundledTool.mockResolvedValue({
+      tool: 'cosign',
+      success: true,
+      output: 'GitVersion: v3.1.3',
+      verifiedAt: Date.now(),
+    });
+    mockGetBuildHistory.mockResolvedValueOnce([entry]).mockResolvedValueOnce([
+      {
+        ...entry,
+        bundledToolVerifications: [
+          { tool: 'cosign', success: true, output: 'GitVersion: v3.1.3', verifiedAt: Date.now() },
+        ],
+      },
+    ]);
+
+    render(BuildHistoryPanel);
+
+    await screen.findByText(entry.tag);
+    await fireEvent.click(screen.getByRole('button', { name: /Bundled apps/ }));
+    const verify = await screen.findByRole('button', { name: 'Verify Cosign' });
+    await fireEvent.click(verify);
+    expect(mockVerifyBundledTool).toHaveBeenCalledWith(entry.tag, startedAt, 'cosign');
+    expect(await screen.findByText(/v3\.1\.3/)).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Copy output' }));
+    expect(mockCopyToClipboard).toHaveBeenCalledWith('GitVersion: v3.1.3');
+  });
+
+  it('renders a persisted bundled-tool check collapsed until the user expands it', async () => {
+    const entry: BuildHistoryEntry = {
+      tag: 'quay.io/ns/robotics-sim:latest',
+      arch: 'arm64',
+      startedAt: 1,
+      durationMs: 1_000,
+      success: true,
+      bundledTools: ['cosign'],
+      isFinalArtifact: true,
+      bundledToolVerifications: [
+        { tool: 'cosign', success: true, output: 'GitVersion: v3.1.3', verifiedAt: 1 },
+      ],
+    };
+    mockGetBuildHistory.mockResolvedValue([entry]);
+
+    render(BuildHistoryPanel);
+
+    await screen.findByText(entry.tag);
+    const sectionToggle = screen.getByRole('button', { name: /Bundled apps/ });
+    expect(sectionToggle.textContent).toContain('✓');
+    expect(screen.queryByText(/v3\.1\.3/)).toBeNull();
+    await fireEvent.click(sectionToggle);
+    expect(await screen.findByText(/v3\.1\.3/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Verify Cosign' })).toBeTruthy();
+  });
+
+  it('hides bundled-tool check when final-artifact or bundled-tool metadata is missing', async () => {
+    const entry: BuildHistoryEntry = {
+      tag: 'quay.io/ns/robotics-sim:legacy',
+      arch: 'arm64',
+      startedAt: Date.now(),
+      durationMs: 1_000,
+      success: true,
+      bundledTools: ['cosign'],
+    };
+    mockGetBuildHistory.mockResolvedValue([entry]);
+
+    render(BuildHistoryPanel);
+
+    await screen.findByText(entry.tag);
+    expect(screen.queryByRole('button', { name: /Bundled apps/ })).toBeNull();
   });
 
   it('formats a duration over a minute as minutes and seconds', async () => {
@@ -348,7 +439,14 @@ describe('BuildHistoryPanel', () => {
 
   it('refreshAfterBuild(true) keeps polling on sbomWatchIntervalMs until sbomWatchDurationMs elapses, then stops', async () => {
     vi.useFakeTimers();
-    mockGetBuildHistory.mockResolvedValue([]);
+    const pendingSbom: BuildHistoryEntry = {
+      tag: 'quay.io/ns/pending:latest',
+      arch: 'amd64',
+      startedAt: 1,
+      durationMs: 1000,
+      success: true,
+    };
+    mockGetBuildHistory.mockResolvedValue([pendingSbom]);
 
     const { component } = render(BuildHistoryPanel, {
       props: { sbomWatchIntervalMs: 3000, sbomWatchDurationMs: 9000 },
@@ -371,6 +469,44 @@ describe('BuildHistoryPanel', () => {
     // The 9s watch window has elapsed — further time must not trigger more refreshes.
     await vi.advanceTimersByTimeAsync(30_000);
     expect(mockGetBuildHistory).toHaveBeenCalledTimes(5);
+  });
+
+  it('shows a generating status on the newest entry while refreshAfterBuild(true) is waiting for Syft', async () => {
+    vi.useFakeTimers();
+    const entry: BuildHistoryEntry = {
+      tag: 'quay.io/ns/robotics-ubuntu-noble:latest',
+      arch: 'arm64',
+      startedAt: 1,
+      durationMs: 3400,
+      success: true,
+    };
+    mockGetBuildHistory.mockResolvedValue([entry]);
+
+    const { component } = render(BuildHistoryPanel, {
+      props: { sbomWatchIntervalMs: 3000, sbomWatchDurationMs: 60_000 },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    void component.refreshAfterBuild(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(screen.getByText(/Generating SBOM/)).toBeTruthy();
+  });
+
+  it('shows SBOM scan errors on the build row without marking the build as failed', async () => {
+    const entry: BuildHistoryEntry = {
+      tag: 'quay.io/ns/robotics-ubuntu-noble:latest',
+      arch: 'arm64',
+      startedAt: 1,
+      durationMs: 3400,
+      success: true,
+      sbomErrorMessage: 'syft: command not found',
+    };
+    mockGetBuildHistory.mockResolvedValue([entry]);
+
+    render(BuildHistoryPanel);
+    expect(await screen.findByText(/SBOM scan failed:/)).toBeTruthy();
+    expect(screen.getByText(/syft: command not found/)).toBeTruthy();
+    expect(screen.getByText('✅')).toBeTruthy();
   });
 
   it('refreshAfterBuild(true) stops as soon as the newest entry gets its SBOM, without waiting out the full ceiling', async () => {
@@ -405,5 +541,33 @@ describe('BuildHistoryPanel', () => {
     // Well past the 5-minute ceiling — since it already stopped, no further calls.
     await vi.advanceTimersByTimeAsync(10 * 60_000);
     expect(mockGetBuildHistory).toHaveBeenCalledTimes(4);
+  });
+
+  it('refreshAfterBuild(true) stops when the newest entry records an SBOM error', async () => {
+    vi.useFakeTimers();
+    const withoutSbom: BuildHistoryEntry = {
+      tag: 'quay.io/ns/robotics-ubuntu-noble:latest',
+      arch: 'arm64',
+      startedAt: 1,
+      durationMs: 3400,
+      success: true,
+    };
+    const withError: BuildHistoryEntry = { ...withoutSbom, sbomErrorMessage: 'pull access denied' };
+    mockGetBuildHistory.mockResolvedValueOnce([withoutSbom]);
+    mockGetBuildHistory.mockResolvedValueOnce([withoutSbom]);
+    mockGetBuildHistory.mockResolvedValueOnce([withError]);
+
+    const { component } = render(BuildHistoryPanel, {
+      props: { sbomWatchIntervalMs: 3000, sbomWatchDurationMs: 60_000 },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const watch = component.refreshAfterBuild(true);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(3000);
+    await watch;
+
+    expect(mockGetBuildHistory).toHaveBeenCalledTimes(3);
+    expect(screen.getByText(/pull access denied/)).toBeTruthy();
   });
 });

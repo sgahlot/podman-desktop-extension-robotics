@@ -93,6 +93,37 @@ describe('BuildPushPanel', () => {
     expect(screen.queryByText(/Image exists in registry/)).toBeNull();
   });
 
+  it('re-checks image status after a short debounce when the tag is edited', async () => {
+    const newTag = 'quay.io/ns/ros2-jazzy-base:new-tag';
+    mockListLocalImages.mockImplementation(async () => [TAG]);
+    mockGetImageTags.mockResolvedValue([{ name: 'noble' }]);
+
+    render(BuildPushPanel, {
+      props: {
+        buildImage,
+        tag: TAG,
+        tagInputId: 'phase1-tag',
+      },
+    });
+
+    expect(await screen.findByText(/Image exists locally/)).toBeTruthy();
+
+    const input = screen.getByLabelText('Image tag');
+    mockListLocalImages.mockImplementation(async () => [newTag]);
+    mockGetImageTags.mockResolvedValue([{ name: 'new-tag' }]);
+    await fireEvent.input(input, { target: { value: newTag } });
+    expect(screen.queryByText(/Image exists locally/)).toBeNull();
+
+    await waitFor(
+      () => {
+        expect(screen.getByText(/Image exists locally/)).toBeTruthy();
+        expect(screen.getByText(/Image exists in registry/)).toBeTruthy();
+      },
+      { timeout: 2000 },
+    );
+    expect(mockListLocalImages.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
   it('starts build and shows Cancel while in progress', async () => {
     let resolveBuild!: () => void;
     buildImage.mockImplementation(
@@ -291,7 +322,7 @@ describe('BuildPushPanel', () => {
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Build' }));
     await waitFor(() => {
-      expect(onBuildComplete).toHaveBeenCalledOnce();
+      expect(onBuildComplete).toHaveBeenCalledWith(TAG);
     });
   });
 

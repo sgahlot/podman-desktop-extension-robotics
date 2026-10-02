@@ -46,15 +46,26 @@ import {
   HUMMINGBIRD_NGINX_CONTAINER_NAME,
 } from '/@shared/src/openshift/manifests';
 import { readFile, writeFile, mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join as pathJoin } from 'node:path';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
-import type { BuildHistoryEntry, SbomFormat } from '/@shared/src/types/BuildHistory';
+import type {
+  BuildHistoryEntry,
+  BundledToolVerificationResult,
+  SbomFormat,
+} from '/@shared/src/types/BuildHistory';
+import {
+  bundledToolSmokePodmanExecArgs,
+  isBundledToolSmokeCheckSupported,
+} from '/@shared/src/build/bundledToolSmokeCheck';
 import {
   BUILD_HISTORY_LIMIT_DEFAULT,
   assertBuildHistoryLimit,
   SBOM_FORMAT_DEFAULT,
   parseSbomPackageCount,
+  formatSbomScanErrorMessage,
+  buildHistoryRecordKey,
+  upsertBuildHistoryEntry,
 } from '/@shared/src/types/BuildHistory';
 import {
   BuildCacheStreamParser,
@@ -289,6 +300,10 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   private activePushes = new Map<string, PushProgress>();
   private pushAbortControllers = new Map<string, AbortController>();
   private progressCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Serializes build-history read/modify/write operations while SBOM scans run concurrently. */
+  private buildHistoryMutationQueue: Promise<void> = Promise.resolve();
+  /** One in-flight `#recordBuildHistory` per build attempt (finish + promise share the same key). */
+  private buildHistoryRecordInFlight = new Map<string, Promise<void>>();
   /**
    * Nav2 pre-warm state per robot, keyed by a logical scope (see #warmKey): set
    * to 'warming' when #prewarmNav2 starts, 'ready' once the stack is up, 'failed'
@@ -566,9 +581,22 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
     await assertBuildContextReady(contextDir, containerfileContent);
 
-    this.#runContainerBuild(tag, contextDir, 'Containerfile', buildargs, platform, undefined, layerCacheParser, () => {
-      void rm(contextDir, { recursive: true, force: true }).catch(() => {});
-    });
+    this.#runContainerBuild(
+      tag,
+      contextDir,
+      'Containerfile',
+      buildargs,
+      platform,
+      undefined,
+      layerCacheParser,
+      () => {
+        void rm(contextDir, { recursive: true, force: true }).catch(() => {});
+      },
+      cacheOptions?.generateSbom,
+      cacheOptions?.sbomFormat ?? SBOM_FORMAT_DEFAULT,
+      cacheOptions?.bundledTools ?? [],
+      cacheOptions?.isFinalArtifact ?? false,
+    );
   }
 
   /**
@@ -589,6 +617,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     onSettled?: () => void,
     generateSbom?: boolean,
     sbomFormat: SbomFormat = SBOM_FORMAT_DEFAULT,
+    bundledTools: HardenedApp[] = [],
+    isFinalArtifact = false,
   ): void {
     const podmanConnection = this.#getRunningPodmanConnection();
 
@@ -661,7 +691,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
               progress.finishedAt = Date.now();
               appendProgressLog(progress.logs, data?.trim() ? data.trim() : 'Build finished with errors');
               this.#finalizeLayerCache(tag, progress);
-              void this.#recordBuildHistory(tag, platform, progress, generateSbom, sbomFormat);
+              this.#queueBuildHistoryRecord(
+                tag,
+                platform,
+                progress,
+                generateSbom,
+                sbomFormat,
+                bundledTools,
+                isFinalArtifact,
+              );
             } else {
               progress.status = 'Complete';
               progress.done = true;
@@ -671,7 +709,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
               }
               appendProgressLog(progress.logs, data?.trim() ? data.trim() : 'Build finished');
               this.#finalizeLayerCache(tag, progress);
-              void this.#recordBuildHistory(tag, platform, progress, generateSbom, sbomFormat);
+              this.#queueBuildHistoryRecord(
+                tag,
+                platform,
+                progress,
+                generateSbom,
+                sbomFormat,
+                bundledTools,
+                isFinalArtifact,
+              );
               this.#schedulePostBuildImageCleanup(tag, supersededImageIdPromise);
             }
             this.buildAbortControllers.delete(tag);
@@ -707,9 +753,32 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
             progress.done = true;
             progress.finishedAt = Date.now();
             this.#finalizeLayerCache(tag, progress);
-            void this.#recordBuildHistory(tag, platform, progress, generateSbom, sbomFormat);
+            this.#queueBuildHistoryRecord(
+              tag,
+              platform,
+              progress,
+              generateSbom,
+              sbomFormat,
+              bundledTools,
+              isFinalArtifact,
+            );
             this.#schedulePostBuildImageCleanup(tag, supersededImageIdPromise);
           }
+        } else if (
+          progress?.done &&
+          !progress.historyPersisted &&
+          PhysicalAiApiImpl.#shouldPersistBuildHistory(progress)
+        ) {
+          // Finish handler may have run first; if its persist failed, retry here.
+          this.#queueBuildHistoryRecord(
+            tag,
+            platform,
+            progress,
+            generateSbom,
+            sbomFormat,
+            bundledTools,
+            isFinalArtifact,
+          );
         }
         this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
       })
@@ -731,8 +800,30 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
             progress.finishedAt = Date.now();
             progress.error = err instanceof Error ? err.message : String(err);
             this.#finalizeLayerCache(tag, progress);
-            void this.#recordBuildHistory(tag, platform, progress, generateSbom, sbomFormat);
+            this.#queueBuildHistoryRecord(
+              tag,
+              platform,
+              progress,
+              generateSbom,
+              sbomFormat,
+              bundledTools,
+              isFinalArtifact,
+            );
           }
+        } else if (
+          progress?.done &&
+          !progress.historyPersisted &&
+          PhysicalAiApiImpl.#shouldPersistBuildHistory(progress)
+        ) {
+          this.#queueBuildHistoryRecord(
+            tag,
+            platform,
+            progress,
+            generateSbom,
+            sbomFormat,
+            bundledTools,
+            isFinalArtifact,
+          );
         }
         this.#scheduleProgressCleanup(this.activeBuilds, tag, 'build');
       })
@@ -792,9 +883,14 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     progress: BuildProgress,
     generateSbom: boolean | undefined,
     sbomFormat: SbomFormat,
+    bundledTools: HardenedApp[],
+    isFinalArtifact: boolean,
   ): Promise<void> {
     const success = progress.status === 'Complete' && !progress.error;
     const startedAt = progress.startedAt ?? Date.now();
+    if (progress.startedAt === undefined) {
+      progress.startedAt = startedAt;
+    }
     const finishedAt = progress.finishedAt ?? Date.now();
 
     try {
@@ -811,12 +907,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         success,
         ...(success ? {} : { errorMessage: progress.error ?? 'Build failed' }),
         ...(progress.layerCacheStatus?.length ? { layerCacheStatus: progress.layerCacheStatus } : {}),
+        ...(bundledTools.length ? { bundledTools } : {}),
+        ...(isFinalArtifact ? { isFinalArtifact: true } : {}),
       };
 
-      const limit = await this.getBuildHistoryLimit();
-      const history = await this.#readBuildHistory();
-      history.unshift(entry);
-      await this.#writeBuildHistory(history.slice(0, limit));
+      await this.#enqueueBuildHistoryMutation(async () => {
+        const history = await this.#readBuildHistory();
+        await this.#persistBuildHistory(upsertBuildHistoryEntry(history, entry));
+      });
+      progress.historyPersisted = true;
     } catch (err) {
       console.error(`[physical-ai] Failed to record build history for "${tag}" (non-fatal):`, err);
       return;
@@ -826,26 +925,61 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     // scan. Best-effort: an SBOM failure must never fail the build or block history.
     if (!success || !generateSbom) return;
     try {
-      const sbom = await this.#generateSbom(tag, sbomFormat);
-      if (!sbom) return;
-      const history = await this.#readBuildHistory();
-      const idx = history.findIndex(e => e.tag === tag && e.startedAt === startedAt);
-      if (idx === -1) return; // entry aged out of the retained limit while the SBOM ran
-      const sbomPackageCount = parseSbomPackageCount(sbom, sbomFormat);
-      history[idx] = { ...history[idx], sbom, sbomFormat, sbomPackageCount };
-      await this.#writeBuildHistory(history);
+      const generated = await this.#generateSbom(tag, sbomFormat);
+      await this.#enqueueBuildHistoryMutation(async () => {
+        let history = await this.#readBuildHistory();
+        let idx = history.findIndex(e => e.tag === tag && e.startedAt === startedAt);
+        if (idx === -1) {
+          history = upsertBuildHistoryEntry(history, entry);
+          idx = history.findIndex(e => e.tag === tag && e.startedAt === startedAt);
+        }
+        if ('sbom' in generated) {
+          const sbomPackageCount = parseSbomPackageCount(generated.sbom, sbomFormat);
+          history[idx] = { ...history[idx], sbom: generated.sbom, sbomFormat, sbomPackageCount };
+        } else {
+          history[idx] = {
+            ...history[idx],
+            sbomErrorMessage: formatSbomScanErrorMessage(generated.errorMessage),
+          };
+        }
+        await this.#persistBuildHistory(history);
+      });
     } catch (err) {
       console.error(`[physical-ai] Failed to attach SBOM to build history for "${tag}" (non-fatal):`, err);
+      try {
+        await this.#enqueueBuildHistoryMutation(async () => {
+          let history = await this.#readBuildHistory();
+          let idx = history.findIndex(e => e.tag === tag && e.startedAt === startedAt);
+          if (idx === -1) {
+            history = upsertBuildHistoryEntry(history, entry);
+            idx = history.findIndex(e => e.tag === tag && e.startedAt === startedAt);
+          }
+          const message = err instanceof Error ? err.message : String(err);
+          history[idx] = { ...history[idx], sbomErrorMessage: formatSbomScanErrorMessage(message) };
+          await this.#persistBuildHistory(history);
+        });
+      } catch {
+        // best-effort — build already succeeded
+      }
     }
   }
 
+  #enqueueBuildHistoryMutation(mutation: () => Promise<void>): Promise<void> {
+    const next = this.buildHistoryMutationQueue.then(mutation);
+    this.buildHistoryMutationQueue = next.catch(err => {
+      console.error('[physical-ai] Build history mutation failed (non-fatal):', err);
+    });
+    return next;
+  }
+
   /**
-   * Run syft against the freshly built image's own filesystem (the binary was just baked
-   * in via COPY --from when the user selected the Hummingbird `syft` tool). Best-effort:
-   * any failure (syft missing, non-zero exit, etc.) is logged and the SBOM is left absent
-   * for this history entry — it must never fail the build.
+   * Export the freshly built local image and scan it with Red Hat's external Syft image.
+   * Best-effort: any failure (export, scan, network, non-zero exit, etc.) is logged and the
+   * SBOM is left absent for this history entry — it must never fail the build. The archive is
+   * staged below the user's home directory because Podman Machine on macOS cannot bind-mount
+   * arbitrary paths such as node's tmpdir into the VM.
    *
-   * `--select-catalogers -file` disables syft's file-integrity catalogers (file-content/
+   * `--select-catalogers=-file` disables syft's file-integrity catalogers (file-content/
    * -digest/-executable/-metadata), which by default emit one component/package PER FILE
    * in the image (a SHA-1/SHA-256 hash manifest) — unrelated to what's actually installed.
    * Confirmed empirically on a real 2588-package robotics image: this was 115,498 of
@@ -853,24 +987,36 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
    * zero loss of real package/library data — our use case is "what's installed," not a
    * file-integrity manifest.
    */
-  async #generateSbom(tag: string, format: SbomFormat): Promise<string | undefined> {
+  async #generateSbom(tag: string, format: SbomFormat): Promise<{ sbom: string } | { errorMessage: string }> {
+    const stagingDir = await mkdtemp(pathJoin(homedir(), '.physical-ai-syft-'));
+    const archivePath = pathJoin(stagingDir, 'image.tar');
     try {
+      await extensionApi.process.exec('podman', ['save', '--format', 'oci-archive', '--output', archivePath, tag]);
       const result = await extensionApi.process.exec('podman', [
         'run',
         '--rm',
-        tag,
-        'syft',
-        'dir:/',
-        '-o',
+        '--volume',
+        `${archivePath}:/scan/image.tar:ro`,
+        'registry.access.redhat.com/hi/syft:latest',
+        'oci-archive:/scan/image.tar',
+        '--output',
         format,
-        '--select-catalogers',
-        '-file',
+        '--select-catalogers=-file',
       ]);
       const sbom = result.stdout?.trim();
-      return sbom || undefined;
+      if (!sbom) {
+        const detail = result.stderr?.trim();
+        return {
+          errorMessage: detail ? `Syft produced no SBOM output. ${detail}` : 'Syft produced no SBOM output.',
+        };
+      }
+      return { sbom };
     } catch (err) {
       console.error(`[physical-ai] SBOM generation for "${tag}" failed (non-fatal):`, err);
-      return undefined;
+      const message = err instanceof Error ? err.message : String(err);
+      return { errorMessage: formatSbomScanErrorMessage(message) };
+    } finally {
+      await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
     }
   }
 
@@ -913,6 +1059,74 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     await rename(tmpPath, finalPath);
   }
 
+  async #persistBuildHistory(history: BuildHistoryEntry[]): Promise<void> {
+    const limit = await this.getBuildHistoryLimit();
+    const trimmed = history.slice(0, limit);
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await this.#writeBuildHistory(trimmed);
+        return;
+      } catch (err) {
+        lastErr = err;
+        if (attempt < 2) {
+          await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1)));
+        }
+      }
+    }
+    throw lastErr;
+  }
+
+  static #shouldPersistBuildHistory(progress: BuildProgress): boolean {
+    if (progress.cancelled || progress.status === 'Cancelled') {
+      return false;
+    }
+    return progress.status === 'Complete' || progress.status === 'Failed';
+  }
+
+  /**
+   * Queue build-history for a settled build. Finish and promise both call this — coalesce on
+   * `(tag, startedAt)` while one `#recordBuildHistory` is in flight; retry when persistence
+   * failed (`historyPersisted` still false) via the other settle path.
+   */
+  #queueBuildHistoryRecord(
+    tag: string,
+    platform: string | undefined,
+    progress: BuildProgress,
+    generateSbom: boolean | undefined,
+    sbomFormat: SbomFormat,
+    bundledTools: HardenedApp[],
+    isFinalArtifact: boolean,
+  ): void {
+    if (!PhysicalAiApiImpl.#shouldPersistBuildHistory(progress)) {
+      return;
+    }
+    if (progress.historyPersisted) {
+      return;
+    }
+    const startedAt = progress.startedAt ?? Date.now();
+    if (progress.startedAt === undefined) {
+      progress.startedAt = startedAt;
+    }
+    const key = buildHistoryRecordKey(tag, startedAt);
+    if (this.buildHistoryRecordInFlight.has(key)) {
+      return;
+    }
+    const promise = this.#recordBuildHistory(
+      tag,
+      platform,
+      progress,
+      generateSbom,
+      sbomFormat,
+      bundledTools,
+      isFinalArtifact,
+    ).finally(() => {
+      this.buildHistoryRecordInFlight.delete(key);
+    });
+    this.buildHistoryRecordInFlight.set(key, promise);
+    void promise;
+  }
+
   /** Recent build results (newest first), persisted across restarts. See BuildHistoryEntry.
    * Strips the (potentially tens-of-MB) `sbom` text — this is polled every few seconds by
    * the UI, so the payload must stay small regardless of SBOM size (APPENG-6265). Use
@@ -934,6 +1148,58 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   async getBuildHistorySbom(tag: string, startedAt: number): Promise<string | undefined> {
     const history = await this.#readBuildHistory();
     return history.find(e => e.tag === tag && e.startedAt === startedAt)?.sbom;
+  }
+
+  /**
+   * Smoke-check that a bake-in Hummingbird tool binary runs inside the built image (e.g. cosign
+   * version). Persists the outcome on the matching build-history entry.
+   */
+  async verifyBundledTool(
+    imageTag: string,
+    startedAt: number,
+    tool: HardenedApp,
+  ): Promise<BundledToolVerificationResult> {
+    if (!isBundledToolSmokeCheckSupported(tool)) {
+      throw new Error(`Bundled tool "${tool}" does not support a smoke check yet.`);
+    }
+
+    const verifiedAt = Date.now();
+    let result: BundledToolVerificationResult;
+    try {
+      const exec = await extensionApi.process.exec(
+        'podman',
+        bundledToolSmokePodmanExecArgs(imageTag, tool),
+      );
+      const output = exec.stdout?.trim() || exec.stderr?.trim();
+      if (!output) {
+        result = {
+          tool,
+          success: false,
+          errorMessage: 'Smoke check produced no output.',
+          verifiedAt,
+        };
+      } else {
+        result = { tool, success: true, output, verifiedAt };
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      result = { tool, success: false, errorMessage: message, verifiedAt };
+    }
+
+    await this.#enqueueBuildHistoryMutation(async () => {
+      const history = await this.#readBuildHistory();
+      const idx = history.findIndex(e => e.tag === imageTag && e.startedAt === startedAt);
+      if (idx === -1) return;
+      const existing = history[idx].bundledToolVerifications ?? [];
+      const withoutTool = existing.filter(v => v.tool !== tool);
+      history[idx] = {
+        ...history[idx],
+        bundledToolVerifications: [...withoutTool, result],
+      };
+      await this.#persistBuildHistory(history);
+    });
+
+    return result;
   }
 
   async getBuildHistoryLimit(): Promise<number> {
@@ -1048,6 +1314,10 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       {
         kind: 'preset-base',
         layerPlan: options?.layerPlan ?? layerCachePlanFromSimulationConfig(config, { includeSim: false }),
+        generateSbom: options?.generateSbom,
+        sbomFormat: options?.sbomFormat,
+        bundledTools: [],
+        isFinalArtifact: false,
       },
     );
   }
@@ -1072,7 +1342,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const baseImage = resolveSimulationBaseImage(config.baseImage);
     const localBaseTag = `quay.io/${ns}/${profile.baseImageName}:${config.baseImage === CUSTOM_SIMULATION_BASE_IMAGE ? 'custom' : baseImage.imageTag}${archTagSuffix(config.targetArch)}`;
 
-    const containerfile = generatePresetHardenedContainerfile(options.hummingbirdTools);
+    const containerfile = generatePresetHardenedContainerfile(options.hummingbirdTools, config.targetArch);
     this.#assertCanStartOp(this.activeBuilds, tag, 'build');
     this.#getRunningPodmanConnection();
 
@@ -1101,6 +1371,10 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         () => {
           void rm(contextDir, { recursive: true, force: true }).catch(() => {});
         },
+        undefined,
+        SBOM_FORMAT_DEFAULT,
+        options.hummingbirdTools,
+        options.isFinalArtifact ?? false,
       );
     } catch (err) {
       await rm(contextDir, { recursive: true, force: true }).catch(() => {});
@@ -1134,6 +1408,10 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       {
         kind: 'preset-sim',
         layerPlan: options?.layerPlan ?? layerCachePlanFromSimulationConfig(config, { includeSim: true }),
+        generateSbom: options?.generateSbom,
+        sbomFormat: options?.sbomFormat,
+        bundledTools: options?.bundledTools ?? [],
+        isFinalArtifact: options?.isFinalArtifact ?? false,
       },
     );
   }
@@ -1198,6 +1476,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     options?: {
       generateSbom?: boolean;
       sbomFormat?: SbomFormat;
+      bundledTools?: HardenedApp[];
+      isFinalArtifact?: boolean;
       layerPlan?: LayerCacheBuildOptions['layerPlan'];
       bundleSimRuntime?: boolean;
     },
@@ -1235,6 +1515,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         },
         options?.generateSbom,
         options?.sbomFormat ?? SBOM_FORMAT_DEFAULT,
+        options?.bundledTools ?? [],
+        options?.isFinalArtifact ?? false,
       );
     } catch (err) {
       // buildImage never kicked off (e.g. no running Podman) — remove the context now.

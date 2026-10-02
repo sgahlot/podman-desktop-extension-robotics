@@ -336,13 +336,12 @@ describe('generateLayerContainerfile', () => {
     expect(containerfile).toContain('registry.access.redhat.com/hi/postgresql');
   });
 
-  it('a hummingbird tool (jq) is baked in with a real COPY --from line', () => {
+  it('a hummingbird tool (jq) is baked in with an isolated glibc bundle', () => {
     const containerfile = generateLayerContainerfile(
       sel({ baseOs: 'ubuntu-noble', hardened: 'hummingbird-app', hummingbirdApps: ['jq'] }),
     );
-    expect(containerfile).toContain(
-      'COPY --from=registry.access.redhat.com/hi/jq:latest /usr/bin/jq /usr/local/bin/jq',
-    );
+    expect(containerfile).toContain('/opt/hummingbird/jq/lib64/');
+    expect(containerfile).toContain('/usr/local/bin/jq');
   });
 
   it('a hummingbird companion (nginx) is a pull-alongside comment, not a COPY --from', () => {
@@ -417,14 +416,15 @@ describe('Hummingbird app catalog', () => {
     }
   });
 
-  it('syft is a tool app with no explicit binPath, relying on the /usr/bin/<id> default', () => {
-    const syft = HUMMINGBIRD_TOOL_OPTIONS.find(o => o.id === 'syft');
+  it('syft is a companion app and never adds a bundled COPY --from line', () => {
+    const syft = HUMMINGBIRD_COMPANION_OPTIONS.find(o => o.id === 'syft');
     expect(syft).toBeDefined();
     expect(syft!.binPath).toBeUndefined();
 
     const containerfile = generateLayerContainerfile(sel({ hardened: 'hummingbird-app', hummingbirdApps: ['syft'] }));
     expect(containerfile).toContain(
-      'COPY --from=registry.access.redhat.com/hi/syft:latest /usr/bin/syft /usr/local/bin/syft',
+      'companion image (pull & run alongside): registry.access.redhat.com/hi/syft:latest',
     );
+    expect(containerfile).not.toContain('COPY --from=registry.access.redhat.com/hi/syft');
   });
 });

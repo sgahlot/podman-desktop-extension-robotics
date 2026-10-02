@@ -1,5 +1,49 @@
 import { describe, it, expect } from 'vitest';
-import { assertBuildHistoryLimit, BUILD_HISTORY_LIMIT_MIN, BUILD_HISTORY_LIMIT_MAX } from './BuildHistory';
+import {
+  assertBuildHistoryLimit,
+  BUILD_HISTORY_LIMIT_MIN,
+  BUILD_HISTORY_LIMIT_MAX,
+  formatSbomScanErrorMessage,
+  upsertBuildHistoryEntry,
+} from './BuildHistory';
+import type { BuildHistoryEntry } from './BuildHistory';
+
+describe('formatSbomScanErrorMessage', () => {
+  it('maps libpod image export EOF to a Podman Desktop quit message', () => {
+    const raw =
+      'Command execution failed with exit code 125: Error: Get "http://d/v6.0.2/libpod/images/export?references=quay.io%2Ffoo%3Abar": EOF';
+    expect(formatSbomScanErrorMessage(raw)).toContain('Podman Desktop');
+    expect(formatSbomScanErrorMessage(raw)).not.toContain('libpod/images/export');
+  });
+});
+
+describe('upsertBuildHistoryEntry', () => {
+  const base = (overrides: Partial<BuildHistoryEntry> = {}): BuildHistoryEntry => ({
+    tag: 'img:latest',
+    arch: 'amd64',
+    startedAt: 100,
+    durationMs: 1,
+    success: true,
+    ...overrides,
+  });
+
+  it('prepends a new row when the key is absent', () => {
+    const entry = base({ tag: 'new:latest', startedAt: 200 });
+    const next = upsertBuildHistoryEntry([base()], entry);
+    expect(next).toHaveLength(2);
+    expect(next[0]).toEqual(entry);
+  });
+
+  it('merges into an existing row for the same tag and startedAt', () => {
+    const existing = base({ success: false, errorMessage: 'old' });
+    const updated = base({ success: true, bundledTools: ['cosign'] });
+    const next = upsertBuildHistoryEntry([existing], updated);
+    expect(next).toHaveLength(1);
+    expect(next[0]).toEqual(
+      expect.objectContaining({ success: true, bundledTools: ['cosign'], errorMessage: 'old' }),
+    );
+  });
+});
 
 describe('assertBuildHistoryLimit', () => {
   it('accepts integers in range', () => {

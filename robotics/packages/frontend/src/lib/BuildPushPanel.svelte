@@ -31,7 +31,7 @@ export let tagInputId = 'image-tag';
 /** True while a build or push is in progress — bind from parent to freeze wizard controls. */
 export let busy = false;
 /** Called when a build settles (success or failure) so parents can refresh history. */
-export let onBuildComplete: (() => void) | undefined = undefined;
+export let onBuildComplete: ((builtTag: string) => void) | undefined = undefined;
 /** When true, the Build button is disabled (e.g. waiting for a prerequisite). */
 export let disabled = false;
 /** Whether the containing page is currently visible. Re-check image status on return. */
@@ -106,6 +106,22 @@ function looksLikeTransientMirrorFailure(buildLogs: string[]): boolean {
 $: transientMirrorIssue = !!buildError && looksLikeTransientMirrorFailure(logs);
 /** Bumps on each image presence check so stale responses are ignored. */
 let imageCheckGen = 0;
+/** Debounced re-check after tag edits (avoids waiting for blur or the background poll). */
+const TAG_STATUS_DEBOUNCE_MS = 350;
+let tagStatusDebounceTimer: number | undefined;
+
+/** Enough structure to look up local tags / Quay refs — not a full OCI reference validator. */
+function looksLikeCompleteImageRef(imageTag: string): boolean {
+  const t = imageTag.trim();
+  return t.length > 0 && /^[^\s:]+(\/[^\s:]+)+:[^\s:]+$/.test(t);
+}
+
+function cancelTagStatusDebounce(): void {
+  if (tagStatusDebounceTimer !== undefined) {
+    window.clearTimeout(tagStatusDebounceTimer);
+    tagStatusDebounceTimer = undefined;
+  }
+}
 
 async function checkLocalImage(imageTag: string = inputValue) {
   if (!imageTag) {
@@ -164,17 +180,30 @@ async function checkRegistryImage(imageTag: string = inputValue, gen: number = i
   }
 }
 
-function clearTagStatus() {
+function onTagInput() {
   imageCheckGen++;
   imageExistsLocally = false;
   imageExistsInRegistry = null;
   registryCheckError = false;
+
+  cancelTagStatusDebounce();
+  const value = inputValue.trim();
+  if (!looksLikeCompleteImageRef(value) || building || pushing) {
+    return;
+  }
+  tagStatusDebounceTimer = window.setTimeout(() => {
+    tagStatusDebounceTimer = undefined;
+    if (active && !building && !pushing && inputValue.trim() === value) {
+      void checkLocalImage(value);
+    }
+  }, TAG_STATUS_DEBOUNCE_MS);
 }
 
 function commitTag() {
+  cancelTagStatusDebounce();
   lastSyncedTag = inputValue;
   tag = inputValue;
-  checkLocalImage(inputValue);
+  void checkLocalImage(inputValue);
 }
 
 async function startBuild() {
@@ -293,7 +322,7 @@ function startPolling(mode: 'build' | 'push') {
               imageExistsLocally = true;
               lastSuccessfulBuildAt = Date.now();
             }
-            onBuildComplete?.();
+            onBuildComplete?.(inputValue);
           }
         }
       } else {
@@ -372,6 +401,7 @@ $: if (!active) wasActive = false;
 
 onDestroy(() => {
   stopPolling();
+  cancelTagStatusDebounce();
   if (imageStatusTimer !== undefined) window.clearInterval(imageStatusTimer);
 });
 
@@ -407,7 +437,7 @@ $: pushDurationSec =
         bind:value={inputValue}
         disabled={building || pushing || disabled}
         on:change={commitTag}
-        on:input={clearTagStatus}
+        on:input={onTagInput}
         class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] w-96"
         placeholder={tagPlaceholder} />
     </div>

@@ -8,6 +8,7 @@
  * No Svelte, no I/O — safe to unit test directly and to share between the extension
  * backend and the future wizard UI.
  */
+import { hummingbirdToolBakeContainerfileLines } from '../build/hummingbirdToolBake';
 import { generateCustomSimulationContainerfile, resolveCustomSimulationTemplate } from './CustomSimulationTemplates';
 import { generateSimOperationalLayerFragment, selectionNeedsBundledSimRuntime } from './simOperationalLayer';
 
@@ -168,6 +169,12 @@ export const HUMMINGBIRD_APP_OPTIONS: readonly HummingbirdAppOption[] = [
   },
   { id: 'prometheus', label: 'Prometheus', note: 'Hardened Prometheus (fleet metrics)', kind: 'companion' },
   { id: 'grafana', label: 'Grafana', note: 'Hardened Grafana (fleet dashboards)', kind: 'companion' },
+  {
+    id: 'syft',
+    label: 'Syft',
+    note: 'External Red Hat Syft scan for an SBOM of the built image',
+    kind: 'companion',
+  },
   // Tools — hardened CLI binaries baked into the built image with a real COPY --from.
   // binPath values verified against the actual quay.io/hummingbird/<id>:latest image
   // filesystem (podman create + export + tar -t) — all five ship at /usr/bin/<id>.
@@ -199,12 +206,6 @@ export const HUMMINGBIRD_APP_OPTIONS: readonly HummingbirdAppOption[] = [
     note: 'Hardened helm CLI (chart deploys from the image)',
     kind: 'tool',
     binPath: '/usr/bin/helm',
-  },
-  {
-    id: 'syft',
-    label: 'Syft',
-    note: 'Real use case: generates an actual Software Bill of Materials (SBOM) for your built image, shown in Recent Builds after the build completes',
-    kind: 'tool',
   },
 ];
 
@@ -535,7 +536,10 @@ export function labelFor<TId extends string>(options: readonly LayerOption<TId>[
  * built once secure bootc/Hummingbird layers are available. No I/O, no validation beyond
  * skipping layers set to 'none'.
  */
-export function generateLayerContainerfile(sel: LayerSelection): string {
+export function generateLayerContainerfile(
+  sel: LayerSelection,
+  targetArch: 'amd64' | 'arm64' = 'amd64',
+): string {
   const sections: string[] = [];
 
   sections.push(
@@ -561,11 +565,9 @@ export function generateLayerContainerfile(sel: LayerSelection): string {
         for (const app of companions) {
           lines.push(`# companion image (pull & run alongside): ${hummingbirdImageRef(app)}`);
         }
-        // Tools are baked in with a real COPY --from from the hardened image.
+        // Tools are baked in with COPY --from (see hummingbirdToolBake for curl/jq libs).
         for (const app of tools) {
-          const binPath = optionById.get(app)?.binPath ?? `/usr/bin/${app}`;
-          lines.push(`# ${app} — hardened CLI baked in from ${hummingbirdImageRef(app)}`);
-          lines.push(`COPY --from=${hummingbirdImageRef(app)} ${binPath} /usr/local/bin/${app}`);
+          lines.push(...hummingbirdToolBakeContainerfileLines(app, targetArch));
         }
       }
     } else {

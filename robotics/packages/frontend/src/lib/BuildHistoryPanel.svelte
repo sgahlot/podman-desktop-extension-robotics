@@ -2,7 +2,14 @@
 import { physicalAiClient } from '../api/client';
 import { onMount, onDestroy } from 'svelte';
 import type { BuildHistoryEntry } from '/@shared/src/types/BuildHistory';
-import { parseSbomPackageCount, sbomItemLabel } from '/@shared/src/types/BuildHistory';
+import type { HardenedApp } from '/@shared/src/types/layerCompatibility';
+import {
+  bundledToolVerificationFor,
+  parseSbomPackageCount,
+  sbomItemLabel,
+  verifiableBundledTools,
+} from '/@shared/src/types/BuildHistory';
+import { bundledToolSmokeCheckLabel } from '/@shared/src/build/bundledToolSmokeCheck';
 import LayerCacheCake from './LayerCacheCake.svelte';
 import { formatDurationSeconds } from './formatDuration';
 
@@ -22,6 +29,15 @@ export let sbomWatchDurationMs = 5 * 60_000;
 
 let history: BuildHistoryEntry[] = [];
 let destroyed = false;
+/** Entry key while refreshAfterBuild(true) is polling for an async Syft SBOM attach. */
+let sbomWatchingKey: string | null = null;
+/** Client-side message when the watch window elapses without sbomFormat or sbomErrorMessage. */
+let sbomWatchTimedOut: Record<string, string> = {};
+
+const SBOM_GENERATING_MESSAGE =
+  'Generating SBOM (Syft scan of the saved image)… Large images can take several minutes.';
+const SBOM_WATCH_TIMEOUT_MESSAGE =
+  'SBOM is not ready yet. The image built successfully — wait a bit and refresh this page, or rebuild with Syft selected to try again.';
 
 /**
  * Per-build UI/derived state, keyed by the same stable `${tag}-${startedAt}` string used
@@ -53,6 +69,13 @@ let copyFeedback: Record<string, string> = {};
 /** Full error message for the last failed copy, shown as a tooltip on the button — the
  * button label itself just says "Copy failed", which isn't enough to diagnose why. */
 let copyError: Record<string, string> = {};
+let verifyCopyFeedback: Record<string, string> = {};
+/** Whole "Bundled apps" block per build row — collapsed by default (like SBOM). */
+let bundledAppsSectionExpanded: Record<string, boolean> = {};
+/** Per-tool command output inside an expanded Bundled apps section. */
+let bundledCheckExpanded: Record<string, boolean> = {};
+let bundledAppsBatchRunning: Record<string, boolean> = {};
+let bundledAppRunning: Record<string, boolean> = {};
 
 function entryKey(entry: BuildHistoryEntry): string {
   return `${entry.tag}-${entry.startedAt}`;
@@ -77,15 +100,38 @@ export async function refresh(): Promise<void> {
  * rather than polling indefinitely, matching the backend's own "best-effort, never blocks"
  * treatment of SBOM generation.
  */
-export async function refreshAfterBuild(watchForSbom = false): Promise<void> {
-  await refresh();
+export async function refreshAfterBuild(watchForSbom = false, expectedTag?: string): Promise<void> {
+  const settleDeadline = Date.now() + 10_000;
+  while (Date.now() < settleDeadline) {
+    await refresh();
+    if (!expectedTag || history.some(entry => entry.tag === expectedTag)) break;
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
   if (!watchForSbom) return;
 
+  const newest =
+    (expectedTag ? history.find(entry => entry.tag === expectedTag) : undefined) ?? history[0];
+  if (!newest?.success) return;
+
+  const watchKey = entryKey(newest);
+  sbomWatchingKey = watchKey;
+  sbomWatchTimedOut = { ...sbomWatchTimedOut, [watchKey]: '' };
+
   const deadline = Date.now() + sbomWatchDurationMs;
-  while (!destroyed && !history[0]?.sbomFormat && Date.now() < deadline) {
+  while (!destroyed) {
+    const entry = history.find(e => entryKey(e) === watchKey);
+    if (!entry) break;
+    if (entry.sbomFormat || entry.sbomErrorMessage) break;
+    if (Date.now() >= deadline) break;
     await new Promise(resolve => setTimeout(resolve, sbomWatchIntervalMs));
     if (destroyed) return;
     await refresh();
+  }
+
+  sbomWatchingKey = null;
+  const final = history.find(e => entryKey(e) === watchKey);
+  if (final && !final.sbomFormat && !final.sbomErrorMessage) {
+    sbomWatchTimedOut = { ...sbomWatchTimedOut, [watchKey]: SBOM_WATCH_TIMEOUT_MESSAGE };
   }
 }
 
@@ -168,6 +214,122 @@ async function copySbom(entry: BuildHistoryEntry): Promise<void> {
   }
 }
 
+function formatVerificationOutput(output: string): string {
+  try {
+    return JSON.stringify(JSON.parse(output), null, 2);
+  } catch {
+    return output;
+  }
+}
+
+function verifyRunningKey(key: string, tool: HardenedApp): string {
+  return `${key}:${tool}`;
+}
+
+function formattedVerificationOutput(output: string): string {
+  return formatVerificationOutput(output);
+}
+
+function toggleBundledCheck(runKey: string): void {
+  bundledCheckExpanded = { ...bundledCheckExpanded, [runKey]: !bundledCheckExpanded[runKey] };
+}
+
+function bundledAppOutputToggleLabel(expanded: boolean): string {
+  return expanded ? '▼ Output' : '▶ Output';
+}
+
+function bundledAppStatusKind(saved: ReturnType<typeof bundledToolVerificationFor>): 'unchecked' | 'passed' | 'failed' {
+  if (!saved) return 'unchecked';
+  return saved.success ? 'passed' : 'failed';
+}
+
+function bundledAppsAllVerified(entry: BuildHistoryEntry, tools: HardenedApp[]): boolean {
+  if (tools.length === 0) return false;
+  return tools.every(tool => bundledToolVerificationFor(entry, tool)?.success);
+}
+
+function bundledAppVerifyDisabled(key: string, runKey: string): boolean {
+  return !!bundledAppsBatchRunning[key] || !!bundledAppRunning[runKey];
+}
+
+function bundledAppsSectionTitleSuffix(entry: BuildHistoryEntry, tools: HardenedApp[]): string {
+  let verified = 0;
+  let failed = 0;
+  for (const tool of tools) {
+    const v = bundledToolVerificationFor(entry, tool);
+    if (!v) continue;
+    if (v.success) verified++;
+    else failed++;
+  }
+  if (failed > 0) return ` (${failed} failed)`;
+  if (verified > 0 && verified === tools.length) return '';
+  if (verified > 0) return ` (${verified}/${tools.length} verified)`;
+  return '';
+}
+
+function toggleBundledAppsSection(key: string, entry: BuildHistoryEntry, tools: HardenedApp[]): void {
+  const wasExpanded = !!bundledAppsSectionExpanded[key];
+  bundledAppsSectionExpanded = { ...bundledAppsSectionExpanded, [key]: !wasExpanded };
+  if (!wasExpanded && tools.length === 1) {
+    const saved = bundledToolVerificationFor(entry, tools[0]);
+    if (saved) {
+      const runKey = verifyRunningKey(key, tools[0]);
+      bundledCheckExpanded = { ...bundledCheckExpanded, [runKey]: true };
+    }
+  }
+}
+
+function expandSingleBundledAppOutputIfNeeded(key: string, tools: HardenedApp[]): void {
+  if (tools.length !== 1) return;
+  bundledCheckExpanded = { ...bundledCheckExpanded, [verifyRunningKey(key, tools[0])]: true };
+}
+
+async function runSingleBundledAppCheck(
+  entry: BuildHistoryEntry,
+  key: string,
+  tool: HardenedApp,
+  tools: HardenedApp[],
+): Promise<void> {
+  const runKey = verifyRunningKey(key, tool);
+  bundledAppRunning = { ...bundledAppRunning, [runKey]: true };
+  try {
+    await physicalAiClient.verifyBundledTool(entry.tag, entry.startedAt, tool);
+    await refresh();
+    bundledCheckExpanded = { ...bundledCheckExpanded, [runKey]: true };
+    if (tools.length === 1) {
+      expandSingleBundledAppOutputIfNeeded(key, tools);
+    }
+  } finally {
+    bundledAppRunning = { ...bundledAppRunning, [runKey]: false };
+  }
+}
+
+async function runAllBundledAppChecks(entry: BuildHistoryEntry, key: string, tools: HardenedApp[]): Promise<void> {
+  bundledAppsBatchRunning = { ...bundledAppsBatchRunning, [key]: true };
+  try {
+    for (const tool of tools) {
+      await physicalAiClient.verifyBundledTool(entry.tag, entry.startedAt, tool);
+    }
+    await refresh();
+    expandSingleBundledAppOutputIfNeeded(key, tools);
+  } finally {
+    bundledAppsBatchRunning = { ...bundledAppsBatchRunning, [key]: false };
+  }
+}
+
+async function copyVerification(key: string, tool: HardenedApp, output: string): Promise<void> {
+  const copyKey = verifyRunningKey(key, tool);
+  try {
+    await physicalAiClient.copyToClipboard(output);
+    verifyCopyFeedback = { ...verifyCopyFeedback, [copyKey]: 'Copied' };
+    setTimeout(() => {
+      verifyCopyFeedback = { ...verifyCopyFeedback, [copyKey]: '' };
+    }, 1500);
+  } catch {
+    verifyCopyFeedback = { ...verifyCopyFeedback, [copyKey]: 'Copy failed' };
+  }
+}
+
 function formatDuration(ms: number): string {
   return formatDurationSeconds(ms / 1000);
 }
@@ -211,6 +373,16 @@ onDestroy(() => {
           {#if entry.layerCacheStatus?.length}
             <LayerCacheCake entries={entry.layerCacheStatus} />
           {/if}
+          {#if entry.success && !entry.sbomFormat && sbomWatchingKey === key}
+            <p class="text-xs pai-text-muted" role="status">{SBOM_GENERATING_MESSAGE}</p>
+          {:else if entry.sbomErrorMessage}
+            <p class="text-xs pai-text-error" role="status">
+              <span class="font-medium">SBOM scan failed:</span>
+              {entry.sbomErrorMessage}
+            </p>
+          {:else if sbomWatchTimedOut[key] && !entry.sbomFormat}
+            <p class="text-xs pai-text-muted" role="status">{sbomWatchTimedOut[key]}</p>
+          {/if}
           {#if entry.sbomFormat}
             <div class="flex flex-col gap-1">
               <div class="flex flex-row items-center gap-2 flex-wrap">
@@ -242,6 +414,105 @@ onDestroy(() => {
                     {sbomFormatted[key] ?? sbomRaw[key]}
                   </div>
                 {/if}
+              {/if}
+            </div>
+          {/if}
+          {#if entry.success && entry.isFinalArtifact && verifiableBundledTools(entry).length}
+            {@const bundledApps = verifiableBundledTools(entry)}
+            {@const bundledAppsSuffix = bundledAppsSectionTitleSuffix(entry, bundledApps)}
+            {@const bundledAppsAllPass = bundledAppsAllVerified(entry, bundledApps)}
+            <div class="flex flex-col gap-1">
+              <button
+                type="button"
+                class="pai-btn pai-btn-sm self-start inline-flex items-center gap-1"
+                aria-expanded={bundledAppsSectionExpanded[key] ? 'true' : 'false'}
+                on:click={() => toggleBundledAppsSection(key, entry, bundledApps)}>
+                <span>{bundledAppsSectionExpanded[key] ? '▼' : '▶'} Bundled apps{bundledAppsSuffix}</span>
+                {#if bundledAppsAllPass}
+                  <span class="pai-text-success" aria-label="All bundled apps verified">✓</span>
+                {/if}
+              </button>
+              {#if bundledAppsSectionExpanded[key]}
+                <div class="flex flex-col gap-2 pl-1 border-l-2 border-[var(--pd-content-card-border)]">
+                  {#if bundledApps.length > 1}
+                    <div class="flex flex-col gap-1">
+                      <button
+                        type="button"
+                        class="pai-btn pai-btn-sm self-start"
+                        title="Runs each baked-in CLI inside the image (not OCI signature verification)"
+                        on:click={() => runAllBundledAppChecks(entry, key, bundledApps)}
+                        disabled={bundledAppsBatchRunning[key]}>
+                        {bundledAppsBatchRunning[key] ? 'Verifying all…' : 'Verify all bundled apps'}
+                      </button>
+                    </div>
+                  {/if}
+                  <ul class="flex flex-col gap-2 list-none m-0 p-0">
+                    {#each bundledApps as tool (tool)}
+                      {@const toolLabel = bundledToolSmokeCheckLabel(tool)}
+                      {@const saved = bundledToolVerificationFor(entry, tool)}
+                      {@const runKey = verifyRunningKey(key, tool)}
+                      {@const statusKind = bundledAppStatusKind(saved)}
+                      <li class="flex flex-col gap-1">
+                        <div class="flex flex-row items-center gap-2 flex-wrap">
+                          <span class="text-xs font-medium text-[var(--pd-content-header)] min-w-[4.5rem]"
+                            >{toolLabel}</span>
+                          {#if statusKind === 'passed'}
+                            <span class="text-xs min-w-[5.5rem] pai-text-success">✓ Passed</span>
+                          {:else if statusKind === 'failed'}
+                            <span class="text-xs min-w-[5.5rem] pai-text-error">Failed</span>
+                          {:else}
+                            <span class="text-xs min-w-[5.5rem] pai-text-muted">Not checked</span>
+                          {/if}
+                          <button
+                            type="button"
+                            class="pai-btn pai-btn-sm"
+                            aria-label="Verify {toolLabel}"
+                            title="Run this CLI inside the image (not OCI signature verification)"
+                            disabled={bundledAppVerifyDisabled(key, runKey)}
+                            on:click={() => runSingleBundledAppCheck(entry, key, tool, bundledApps)}>
+                            {bundledAppRunning[runKey]
+                              ? 'Verifying…'
+                              : saved
+                                ? 'Re-verify'
+                                : 'Verify'}
+                          </button>
+                          {#if saved}
+                            <button
+                              type="button"
+                              class="pai-btn pai-btn-sm"
+                              aria-expanded={bundledCheckExpanded[runKey] ? 'true' : 'false'}
+                              on:click={() => toggleBundledCheck(runKey)}>
+                              {bundledAppOutputToggleLabel(!!bundledCheckExpanded[runKey])}
+                            </button>
+                            {#if saved.success && saved.output}
+                              <button
+                                type="button"
+                                class="pai-btn pai-btn-sm"
+                                on:click={() =>
+                                  copyVerification(key, tool, formattedVerificationOutput(saved.output!))}>
+                                {verifyCopyFeedback[runKey] || 'Copy output'}
+                              </button>
+                            {/if}
+                          {/if}
+                        </div>
+                        {#if saved && bundledCheckExpanded[runKey]}
+                          {#if !saved.success && saved.errorMessage}
+                            <div class="text-xs p-2 rounded pai-banner-error">
+                              <span class="font-medium">{toolLabel}:</span>
+                              {saved.errorMessage}
+                            </div>
+                          {:else if saved.success && saved.output}
+                            <pre
+                              class="rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] font-mono text-xs text-[var(--pd-content-text)]"
+                              style="max-height: 300px; overflow: auto; padding: 8px; white-space: pre-wrap; word-break: break-all;">{formattedVerificationOutput(
+                                saved.output,
+                              )}</pre>
+                          {/if}
+                        {/if}
+                      </li>
+                    {/each}
+                  </ul>
+                </div>
               {/if}
             </div>
           {/if}
