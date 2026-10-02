@@ -4,6 +4,7 @@ import { hummingbirdToolBakeContainerfileLines, type HummingbirdBakeArch } from 
 import { BASE_OS_OPTIONS, HUMMINGBIRD_TOOL_OPTIONS, labelFor, ROS_OPTIONS, SIM_OPTIONS } from './layerCompatibility';
 import type { SimulationConfig } from './SimulationConfig';
 import { resolveCustomSimulationTemplate } from './CustomSimulationTemplates';
+import { resolveStackConfig } from './stackConfigResolver';
 import { resolveSimulationProfile } from './SimulationProfiles';
 import {
   CUSTOM_SIMULATION_BASE_IMAGE,
@@ -58,9 +59,10 @@ export function isLayerCompositionContainerfile(containerfile: string): boolean 
 
 /** Layer labels for a Layers-wizard selection — same names in preset and containerfile builds. */
 export function layerCachePlanFromSelection(sel: LayerSelection): LayerCachePlanEntry[] {
+  const stack = resolveStackConfig(sel);
   const baseLabel =
     sel.baseOs === 'custom' && sel.customBaseImage?.trim()
-      ? shortImageRef(sel.customBaseImage)
+      ? shortImageRef(stack.baseImageRef)
       : labelForBaseOsSelection(sel);
   const templateBuild = sel.sim === 'custom-template';
   const plan: LayerCachePlanEntry[] = [{ layerId: 'base-os', label: `Base OS · ${baseLabel}`, reused: templateBuild }];
@@ -73,7 +75,7 @@ export function layerCachePlanFromSelection(sel: LayerSelection): LayerCachePlan
     plan.push({ layerId: 'hardened', label: 'Hummingbird app' });
   }
 
-  if (sel.ros !== 'none') {
+  if (stack.layerOrder.includes('ros')) {
     const rosLabel = labelFor(ROS_OPTIONS, sel.ros);
     plan.push({
       layerId: 'ros',
@@ -82,7 +84,7 @@ export function layerCachePlanFromSelection(sel: LayerSelection): LayerCachePlan
     });
   }
 
-  if (sel.sim !== 'none') {
+  if (stack.layerOrder.includes('sim')) {
     const template =
       sel.sim === 'custom-template' ? resolveCustomSimulationTemplate(sel.customSimulationTemplateId ?? '') : undefined;
     plan.push({ layerId: 'sim', label: template ? `Simulation · ${template.label}` : labelFor(SIM_OPTIONS, sel.sim) });

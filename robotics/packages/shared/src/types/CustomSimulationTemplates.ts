@@ -1,3 +1,5 @@
+import { packageManagerCleanCommand, resolveStackConfig } from './stackConfigResolver';
+
 export type CustomSimulationCapability = 'packages-only';
 export type SupportedArchitecture = 'amd64' | 'arm64';
 
@@ -49,10 +51,22 @@ export function assertCustomBaseImageRef(value: string): string {
 
 export function generateCustomSimulationContainerfile(baseImage: string, template: CustomSimulationTemplate): string {
   const ref = assertCustomBaseImageRef(baseImage);
+  const stack = resolveStackConfig({
+    baseOs: 'custom',
+    customBaseImage: ref,
+    customBaseOsFamily: template.osFamily,
+    customBaseOsVersion: template.osVersion,
+    customBaseRosDistro: template.rosDistro,
+    customBasePackaging: template.packageManager,
+    hardened: 'none',
+    ros: 'provided-by-parent',
+    sim: 'custom-template',
+  });
   const packages = template.packages.join(' ');
+  const installCleanupSuffix = stack.installCleanup || ` && ${packageManagerCleanCommand(stack.packaging)}`;
   return [
     `# Layer 1 — Base OS: ${template.osFamily} ${template.osVersion} custom parent`,
-    `FROM ${ref}`,
+    `FROM ${stack.baseImageRef}`,
     '',
     `# Layer 3 — ROS: ROS ${template.rosDistro} (provided by parent)`,
     `# Layer 4 — Simulation: ${template.label}`,
@@ -63,7 +77,7 @@ export function generateCustomSimulationContainerfile(baseImage: string, templat
     `LABEL io.physical-ai.simulation.ros-distro="${template.rosDistro}"`,
     `LABEL io.physical-ai.simulation.capability="${template.capability}"`,
     `LABEL io.physical-ai.simulation.ros-setup="${template.rosSetupPath}"`,
-    `RUN ${template.packageManager} install -y ${packages} && ${template.packageManager} clean all`,
+    `RUN ${stack.installCommand} ${packages}${installCleanupSuffix}`,
     '',
   ].join('\n');
 }

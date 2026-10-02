@@ -10,19 +10,11 @@
  */
 import { hummingbirdToolBakeContainerfileLines } from '../build/hummingbirdToolBake';
 import { generateCustomSimulationContainerfile, resolveCustomSimulationTemplate } from './CustomSimulationTemplates';
-import {
-  BASE_OS_CAPABILITY,
-  BASE_OS_IMAGE_REF,
-  FEDORA_LYRICAL_REPOSITORY,
-  INSTALL_CLEANUP,
-  INSTALL_COMMAND,
-  ROS_DESKTOP_PACKAGES,
-  ROS_DISTRO,
-  SIMULATION_PACKAGES,
-} from './layerStackConfig';
-import { generateSimOperationalLayerFragment, selectionNeedsBundledSimRuntime } from './simOperationalLayer';
+import { BASE_OS_IMAGE_REF } from './layerStackConfig';
+import { generateSimOperationalLayerFragment } from './simOperationalLayer';
+import { resolveStackConfig } from './stackConfigResolver';
 
-export { selectionNeedsBundledSimRuntime } from './simOperationalLayer';
+export { managedSimVerifyHooks, resolveStackConfig, selectionNeedsBundledSimRuntime } from './stackConfigResolver';
 
 export type BaseOsLayer =
   | 'custom'
@@ -68,6 +60,7 @@ export interface LayerSelection {
   customBaseOsFamily?: string;
   customBaseOsVersion?: string;
   customBaseRosDistro?: string;
+  customBasePackaging?: 'apt' | 'dnf';
   hardened: HardenedLayer;
   ros: RosLayer;
   sim: SimLayer;
@@ -268,6 +261,20 @@ function labelForBaseOs(baseOs: BaseOsLayer, customBaseImage?: string): string {
 
 const LEVEL_RANK: Record<CompatMessage['level'], number> = { info: 0, warn: 1, error: 2 };
 
+/** Enrich custom-template selections with registered template contract fields for stack resolution. */
+function selectionForStackResolution(sel: LayerSelection): LayerSelection {
+  if (sel.sim !== 'custom-template') return sel;
+  const template = resolveCustomSimulationTemplate(sel.customSimulationTemplateId ?? '');
+  if (!template) return sel;
+  return {
+    ...sel,
+    customBaseOsFamily: sel.customBaseOsFamily?.trim() ? sel.customBaseOsFamily : template.osFamily,
+    customBaseOsVersion: sel.customBaseOsVersion?.trim() ? sel.customBaseOsVersion : template.osVersion,
+    customBaseRosDistro: sel.customBaseRosDistro?.trim() ? sel.customBaseRosDistro : template.rosDistro,
+    customBasePackaging: sel.customBasePackaging ?? template.packageManager,
+  };
+}
+
 /**
  * Derive the compatibility verdict for a layer selection from the base OS capability
  * model above. The logic is three ordered concerns — (1) build-feasibility errors,
@@ -276,11 +283,25 @@ const LEVEL_RANK: Record<CompatMessage['level'], number> = { info: 0, warn: 1, e
  */
 export function evaluateStack(sel: LayerSelection): CompatResult {
   const messages: CompatMessage[] = [];
-  const cap = BASE_OS_CAPABILITY[sel.baseOs];
+  const resolvedSel = selectionForStackResolution(sel);
+  let stack: ReturnType<typeof resolveStackConfig>;
+  try {
+    stack = resolveStackConfig(resolvedSel);
+  } catch (error) {
+    return {
+      level: 'blocked',
+      buildable: false,
+      messages: [
+        { level: 'error', text: error instanceof Error ? error.message : 'Unable to resolve the selected stack.' },
+      ],
+      failsAtStep: 'base-os',
+    };
+  }
+  const cap = stack.capability;
   const baseLabel = labelForBaseOs(sel.baseOs, sel.customBaseImage);
   const wantsRos = sel.ros !== 'none';
   const wantsSim = sel.sim !== 'none';
-  const selectedRosDistro = sel.ros in ROS_DISTRO ? ROS_DISTRO[sel.ros as keyof typeof ROS_DISTRO] : undefined;
+  const selectedRosDistro = stack.rosDistro;
   const supportsSelectedRos =
     sel.ros === 'provided-by-parent' ||
     Boolean(selectedRosDistro && cap.supportedRosDistros.includes(selectedRosDistro));
@@ -387,7 +408,7 @@ export function evaluateStack(sel: LayerSelection): CompatResult {
         level: 'warn',
         text: `Builds ${cap.isBootc ? 'a bootc base image' : 'a base image'}, but it has no ROS layer — not a robotics image yet.`,
       });
-    } else if (selectionNeedsBundledSimRuntime(sel)) {
+    } else if (stack.managedSimEligible) {
       messages.push({
         level: 'info',
         text: 'Builds a managed simulation image — ROS/sim packages plus bundled entrypoints, noVNC, and worlds for OpenShift deploy.',
@@ -440,16 +461,16 @@ export function labelFor<TId extends string>(options: readonly LayerOption<TId>[
  * skipping layers set to 'none'.
  */
 export function generateLayerContainerfile(sel: LayerSelection, targetArch: 'amd64' | 'arm64' = 'amd64'): string {
-  const sections: string[] = [];
-
-  sections.push(
-    `# Layer 1 — Base OS: ${labelForBaseOs(sel.baseOs, sel.customBaseImage)}\nFROM ${baseOsImageRef(sel.baseOs, sel.customBaseImage)}`,
-  );
-
-  if (sel.sim === 'custom-template') {
+  if (sel.sim === 'custom-template' && sel.baseOs === 'custom') {
     const template = resolveCustomSimulationTemplate(sel.customSimulationTemplateId ?? '');
     if (template) return generateCustomSimulationContainerfile(sel.customBaseImage ?? '', template);
   }
+
+  const resolvedSel = selectionForStackResolution(sel);
+  const sections: string[] = [];
+  const stack = resolveStackConfig(resolvedSel);
+
+  sections.push(`# Layer 1 — Base OS: ${labelForBaseOs(sel.baseOs, sel.customBaseImage)}\nFROM ${stack.baseImageRef}`);
 
   if (sel.hardened !== 'none') {
     const lines = [`# Layer 2 — Hardened application layer: ${labelFor(HARDENED_OPTIONS, sel.hardened)}`];
@@ -480,42 +501,26 @@ export function generateLayerContainerfile(sel: LayerSelection, targetArch: 'amd
 
   // Package manager matches the base's actual packaging (BASE_OS_CAPABILITY) so generated
   // dnf-based bootc builds use the base's native installer.
-  const cap = BASE_OS_CAPABILITY[sel.baseOs];
-  const installCmd = INSTALL_COMMAND[sel.baseOs];
-  const installCleanup = INSTALL_CLEANUP[sel.baseOs];
+  const cap = stack.capability;
+  const installCmd = stack.installCommand;
+  const installCleanup = stack.installCleanup;
 
-  if (sel.baseOs === 'fedora-bootc-43' && sel.ros === 'ros2-lyrical') {
-    sections.push(FEDORA_LYRICAL_REPOSITORY);
-  }
+  sections.push(...stack.repositoryFragments);
 
   // The base OS images are bare (no ROS apt source configured), unlike the tested-preset
   // path which FROMs an already-ROS-baked image — without this, "apt-get install ros-*"
   // fails with "Unable to locate package" even on an otherwise-buildable Ubuntu base.
-  if (cap.packaging === 'apt' && (sel.ros !== 'none' || sel.sim !== 'none')) {
-    sections.push(
-      '# ROS 2 apt repository (required before installing any ros-* package on Ubuntu)\n' +
-        'RUN apt-get update && apt-get install -y curl gnupg lsb-release && ' +
-        "if ! grep -Rqs 'packages.ros.org/ros2/ubuntu' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null; then " +
-        '/usr/bin/curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key ' +
-        '-o /usr/share/keyrings/ros-archive-keyring.gpg && ' +
-        'echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] ' +
-        'http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" ' +
-        '| tee /etc/apt/sources.list.d/ros2.list > /dev/null; ' +
-        'fi',
-    );
-  }
-
   if (sel.ros !== 'none' && sel.ros !== 'provided-by-parent') {
-    const distro = ROS_DISTRO[sel.ros];
-    const desktopPackages = ROS_DESKTOP_PACKAGES[distro].map(packageName => `ros-${distro}-${packageName}`);
+    const distro = stack.rosDistro!;
+    const desktopPackages = stack.rosPackages.map(packageName => `ros-${distro}-${packageName}`);
     sections.push(
       `# Layer 3 — ROS: ${labelFor(ROS_OPTIONS, sel.ros)}\nRUN ${installCmd} ${desktopPackages.join(' ')}${installCleanup}`,
     );
   }
 
   if (sel.sim !== 'none') {
-    const distro = sel.ros !== 'none' && sel.ros !== 'provided-by-parent' ? ROS_DISTRO[sel.ros] : 'jazzy';
-    const simulationPackages = SIMULATION_PACKAGES[distro].map(packageName => `ros-${distro}-${packageName}`).join(' ');
+    const distro = stack.rosDistro ?? 'jazzy';
+    const simulationPackages = stack.simulationPackages.map(packageName => `ros-${distro}-${packageName}`).join(' ');
     sections.push(
       `# Layer 4 — Simulation: ${labelFor(SIM_OPTIONS, sel.sim)}\n` +
         `RUN ${installCmd} ${simulationPackages}${installCleanup}`,
@@ -523,8 +528,13 @@ export function generateLayerContainerfile(sel: LayerSelection, targetArch: 'amd
   }
 
   let containerfile = sections.join('\n\n') + '\n';
-  if (selectionNeedsBundledSimRuntime(sel)) {
-    containerfile += '\n' + generateSimOperationalLayerFragment(sel, cap.packaging);
+  if (stack.managedSimEligible) {
+    containerfile +=
+      '\n' +
+      generateSimOperationalLayerFragment(sel, cap.packaging, {
+        install: stack.installCommand,
+        cleanup: stack.installCleanup,
+      });
   }
   return containerfile;
 }

@@ -1,3 +1,4 @@
+import { MANAGED_SIM_CONTEXT_PATHS, MANAGED_SIM_VERIFY_HOOK } from '../types/managedSimRuntime';
 import { SIM_RUNTIME_LAYER_MARKER, containerfileNeedsBundledSimRuntime } from '../types/simOperationalLayer';
 
 export type BuildContextIssueKind =
@@ -13,16 +14,7 @@ export interface BuildContextIssue {
 }
 
 /** Relative paths the sim operational layer expects in the build context. */
-export const SIM_RUNTIME_CONTEXT_PATHS = [
-  'entrypoint-gazebo.sh',
-  'entrypoint-spawn-robot.sh',
-  'entrypoint-nav2.sh',
-  'lib/load-validate-input.sh',
-  'lib/validate-input.sh',
-  'lib/patch-nav2-params.py',
-  'config/cyclonedds-qos.xml',
-  'worlds',
-] as const;
+export const SIM_RUNTIME_CONTEXT_PATHS = MANAGED_SIM_CONTEXT_PATHS;
 
 /**
  * Parse `COPY`/`ADD` source paths from a Containerfile. Skips multi-stage
@@ -105,10 +97,11 @@ function hasContextPath(contextFiles: ReadonlySet<string>, relPath: string): boo
 export function verifyBuildContext(
   containerfile: string,
   contextFiles: ReadonlySet<string>,
-  options?: { bundleSimRuntime?: boolean },
+  options?: { bundleSimRuntime?: boolean; verifyHooks?: readonly string[] },
 ): BuildContextIssue[] {
   const issues: BuildContextIssue[] = [];
-  const needsRuntime = options?.bundleSimRuntime ?? containerfileNeedsBundledSimRuntime(containerfile);
+  const hookRuntime = options?.verifyHooks?.includes(MANAGED_SIM_VERIFY_HOOK) ?? false;
+  const needsRuntime = options?.bundleSimRuntime ?? (hookRuntime || containerfileNeedsBundledSimRuntime(containerfile));
   const managedSim = containerfileIsManagedSimImage(containerfile);
 
   for (const src of parseContainerfileCopySources(containerfile)) {

@@ -28,7 +28,13 @@ describe('evaluateStack', () => {
 
   it('accepts a custom Debian-compatible base OS for ROS and simulation layers', () => {
     const result = evaluateStack(
-      sel({ baseOs: 'custom', customBaseImage: 'docker.io/library/ubuntu:24.04', ros: 'ros2-jazzy', sim: 'none' }),
+      sel({
+        baseOs: 'custom',
+        customBaseImage: 'docker.io/library/ubuntu:24.04',
+        customBaseOsFamily: 'Ubuntu',
+        ros: 'ros2-jazzy',
+        sim: 'none',
+      }),
     );
     expect(result.buildable).toBe(true);
   });
@@ -281,6 +287,7 @@ describe('generateLayerContainerfile', () => {
       sel({
         baseOs: 'custom',
         customBaseImage: 'docker.io/library/ros:jazzy-ros-base',
+        customBaseOsFamily: 'Ubuntu',
         ros: 'ros2-jazzy',
         hardened: 'hummingbird-app',
         hummingbirdApps: ['curl', 'cosign'],
@@ -295,6 +302,7 @@ describe('generateLayerContainerfile', () => {
       sel({
         baseOs: 'custom',
         customBaseImage: 'docker.io/library/ros:jazzy-ros-base',
+        customBaseOsFamily: 'Ubuntu',
         ros: 'ros2-jazzy',
       }),
     );

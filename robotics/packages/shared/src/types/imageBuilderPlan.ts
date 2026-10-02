@@ -2,6 +2,7 @@ import type { CustomSimulationTemplate, SupportedArchitecture } from './CustomSi
 import { CUSTOM_SIMULATION_TEMPLATES, resolveCustomSimulationTemplate } from './CustomSimulationTemplates';
 import type { BaseSource, ImageBuilderRecipe } from './ImageBuilderRecipe';
 import { validateImageBuilderRecipe } from './ImageBuilderRecipe';
+import { resolveStackConfig } from './stackConfigResolver';
 
 export type CompatibilityKind = 'compatible' | 'user-declared-compatible' | 'packages-only' | 'blocked';
 
@@ -42,6 +43,27 @@ function presetProfileMatchesDistro(profileId: string, distro: string): boolean 
 export function evaluateImageBuilderCompatibility(recipe: ImageBuilderRecipe): CompatibilityResult {
   const issues = validateImageBuilderRecipe(recipe);
   if (issues.length > 0) return { kind: 'blocked', buildable: false, reason: issues[0].message };
+  if (recipe.base.kind === 'custom') {
+    try {
+      resolveStackConfig({
+        baseOs: 'custom',
+        customBaseImage: recipe.base.imageRef,
+        customBaseOsFamily: recipe.base.osFamily,
+        customBaseOsVersion: recipe.base.osVersion,
+        customBaseRosDistro: recipe.base.rosDistro,
+        customBasePackaging: recipe.base.packaging,
+        hardened: 'none',
+        ros: 'provided-by-parent',
+        sim: 'none',
+      });
+    } catch (error) {
+      return {
+        kind: 'blocked',
+        buildable: false,
+        reason: error instanceof Error ? error.message : 'Invalid custom base contract.',
+      };
+    }
+  }
   if (recipe.simulation.kind === 'none') {
     return recipe.base.kind === 'custom'
       ? { kind: 'user-declared-compatible', buildable: true, reason: 'The custom parent metadata is user-declared.' }

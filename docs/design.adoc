@@ -296,6 +296,21 @@ cleanup, and OCI capability labels. Its `packages-only` contract intentionally
 does not satisfy the managed Local/OpenShift, noVNC, Navigate, or diagnostics
 launch contract; those capabilities require a future operational template.
 
+==== Stack configuration resolution
+
+`packages/shared/src/types/stackConfigResolver.ts` is the composition boundary for
+curated and custom layer selections. `resolveStackConfig(selection)` resolves the
+base image, package manager, ROS distro, repository fragments, package sets, layer
+order, operational copy sources, and verification hooks from one selection. Curated
+base capabilities remain table-driven; custom parents use an explicit `packaging`
+contract when supplied, or infer `apt` / `dnf` only for known OS families. Unknown
+families without a declared package manager are blocked rather than silently given
+the wrong installer. Compatibility verdicts, generated Containerfiles, cache plans,
+and Image Builder custom-parent checks consume this resolver so Fedora/Lyrical
+parents use dnf and Lyrical package sets consistently. Managed sim builds expose
+`verifyHooks` (`verify-sim-runtime`) and `copySources` (see `managedSimRuntime.ts`)
+to build-context verification and Layers wizard staging.
+
 Build calls explicitly pass `rm: true` and `forcerm: true` so successful and failed
 builds remove intermediate Buildah containers. The Podman Desktop build API does
 not return a build ID, Buildah container ID, or ownership handle. Therefore an
