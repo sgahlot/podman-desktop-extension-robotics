@@ -72,6 +72,8 @@ export abstract class PhysicalAiApi {
       isFinalArtifact?: boolean;
       layerPlan?: LayerCacheBuildOptions['layerPlan'];
       bundleSimRuntime?: boolean;
+      /** From `resolveStackConfig(selection).verifyHooks` for managed sim builds. */
+      verifyHooks?: readonly string[];
     },
   ): Promise<void>;
   abstract cancelBuild(tag: string): Promise<void>;

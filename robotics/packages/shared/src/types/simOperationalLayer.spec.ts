@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { LayerSelection } from './layerCompatibility';
+import { selectionNeedsBundledSimRuntime } from './stackConfigResolver';
 import {
   SIM_RUNTIME_LAYER_MARKER,
   containerfileNeedsBundledSimRuntime,
   generateSimOperationalLayerFragment,
-  selectionNeedsBundledSimRuntime,
 } from './simOperationalLayer';
 
 function sel(overrides: Partial<LayerSelection> = {}): LayerSelection {

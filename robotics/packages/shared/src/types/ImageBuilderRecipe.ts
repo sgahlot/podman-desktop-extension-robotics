@@ -9,6 +9,7 @@ export type BaseSource =
       osFamily: string;
       osVersion: string;
       rosDistro: string;
+      packaging?: 'apt' | 'dnf';
     };
 
 export type SimulationSource =

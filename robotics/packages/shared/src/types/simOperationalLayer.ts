@@ -12,17 +12,6 @@ export const SIM_RUNTIME_BUNDLE_ASSET_DIR = 'ros2-jazzy-sim';
 /** Marker comment in generated Containerfiles — backend stages bundled assets when present. */
 export const SIM_RUNTIME_LAYER_MARKER = '# Layer 5 — Sim runtime:';
 
-/**
- * Any Customize build with Gazebo + Nav2 + TurtleBot3 needs the operational layer
- * appended and bundled assets staged into the throwaway build context.
- *
- * Preset mode still uses `buildSimulationImage` + the full asset Containerfile (separate
- * code path); this gate applies to `buildFromContainerfile` / generated Containerfiles.
- */
-export function selectionNeedsBundledSimRuntime(sel: LayerSelection): boolean {
-  return sel.sim === 'gazebo-nav2-tb3';
-}
-
 export function containerfileNeedsBundledSimRuntime(containerfile: string): boolean {
   return containerfile.includes(SIM_RUNTIME_LAYER_MARKER);
 }
@@ -37,19 +26,38 @@ function resolveRosDistro(sel: LayerSelection): string {
   return 'jazzy';
 }
 
-function dnfInstallCmd(baseOs: BaseOsLayer): string {
-  return baseOs === 'fedora-bootc-43' ? 'dnf --releasever=43 install -y' : 'dnf install -y';
+export interface SimOperationalInstallCommands {
+  install: string;
+  cleanup: string;
 }
 
-function dnfCleanup(baseOs: BaseOsLayer): string {
-  return baseOs === 'fedora-bootc-43' ? ' && dnf clean all' : '';
+function dnfInstallCmd(baseOs: BaseOsLayer, sel: LayerSelection): string {
+  if (baseOs === 'fedora-bootc-43') return 'dnf --releasever=43 install -y';
+  const family = sel.customBaseOsFamily?.trim().toLowerCase() ?? '';
+  if (baseOs === 'custom' && family.includes('fedora') && sel.customBaseOsVersion?.trim() === '43') {
+    return 'dnf --releasever=43 install -y';
+  }
+  return 'dnf install -y';
+}
+
+function dnfCleanup(baseOs: BaseOsLayer, sel: LayerSelection): string {
+  if (baseOs === 'fedora-bootc-43') return ' && dnf clean all';
+  const family = sel.customBaseOsFamily?.trim().toLowerCase() ?? '';
+  if (baseOs === 'custom' && family.includes('fedora') && sel.customBaseOsVersion?.trim() === '43') {
+    return ' && dnf clean all';
+  }
+  return '';
 }
 
 /**
  * Containerfile fragment for noVNC + extension entrypoints on top of a packages layer.
  * Requires `SIM_RUNTIME_BUNDLE_ASSET_DIR` files in the build context (staged by the backend).
  */
-export function generateSimOperationalLayerFragment(sel: LayerSelection, packaging: 'apt' | 'dnf'): string {
+export function generateSimOperationalLayerFragment(
+  sel: LayerSelection,
+  packaging: 'apt' | 'dnf',
+  installCommands?: SimOperationalInstallCommands,
+): string {
   const distro = resolveRosDistro(sel);
   const rosSetup = `/opt/ros/${distro}/setup.bash`;
   const simDir = `/opt/ros/${distro}/share/nav2_minimal_tb3_sim`;
@@ -64,8 +72,8 @@ export function generateSimOperationalLayerFragment(sel: LayerSelection, packagi
   ];
 
   if (packaging === 'dnf') {
-    const install = dnfInstallCmd(sel.baseOs);
-    const cleanup = dnfCleanup(sel.baseOs);
+    const install = installCommands?.install ?? dnfInstallCmd(sel.baseOs, sel);
+    const cleanup = installCommands?.cleanup ?? dnfCleanup(sel.baseOs, sel);
     lines.push(
       '# Display stack: Xvfb + VNC + noVNC + Mesa software GL/EGL for in-cluster sensors',
       `RUN ${install} ` +

@@ -24,7 +24,7 @@ describe('custom simulation templates', () => {
     const template = CUSTOM_SIMULATION_TEMPLATES[0];
     const output = generateCustomSimulationContainerfile('quay.io/example/ros:f43', template);
     expect(output).toContain('FROM quay.io/example/ros:f43');
-    expect(output).toContain('dnf install -y');
+    expect(output).toContain('dnf --releasever=43 install -y');
     expect(output).toContain('io.physical-ai.simulation.capability="packages-only"');
     expect(output).toContain('io.physical-ai.simulation.template-version="1"');
     expect(output).toContain('io.physical-ai.simulation.os-family="Fedora"');

@@ -28,7 +28,7 @@ export async function listBuildContextPaths(contextDir: string): Promise<Set<str
 export async function assertBuildContextReady(
   contextDir: string,
   containerfile: string,
-  options?: { bundleSimRuntime?: boolean },
+  options?: { bundleSimRuntime?: boolean; verifyHooks?: readonly string[] },
 ): Promise<void> {
   const contextFiles = await listBuildContextPaths(contextDir);
   const issues = verifyBuildContext(containerfile, contextFiles, options);

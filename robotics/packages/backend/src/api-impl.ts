@@ -1467,6 +1467,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       isFinalArtifact?: boolean;
       layerPlan?: LayerCacheBuildOptions['layerPlan'];
       bundleSimRuntime?: boolean;
+      verifyHooks?: readonly string[];
     },
   ): Promise<void> {
     if (!containerfile?.trim()) {
@@ -1488,7 +1489,10 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
 
     try {
-      await assertBuildContextReady(contextDir, containerfile, { bundleSimRuntime });
+      await assertBuildContextReady(contextDir, containerfile, {
+        bundleSimRuntime,
+        verifyHooks: options?.verifyHooks,
+      });
       this.#runContainerBuild(
         tag,
         contextDir,
