@@ -69,8 +69,7 @@ export let lockLayerSelection = false;
  * only ever showed up in Recent Builds once the panel's own periodic poll happened to
  * catch it). `watchForSbom` should be true only for a build that opted into SBOM
  * generation — its SBOM is attached asynchronously well after the build itself completes. */
-export let onBuildComplete: ((opts: { watchForSbom: boolean; builtTag: string }) => void) | undefined =
-  undefined;
+export let onBuildComplete: ((opts: { watchForSbom: boolean; builtTag: string }) => void) | undefined = undefined;
 
 // Environment loaded once on mount.
 let ns = '';
@@ -379,16 +378,17 @@ onDestroy(() => {
                         <input type="radio" class="mt-0.5" bind:group={sbomFormat} value="cyclonedx-json" />
                         <span
                           >CycloneDX <span class="pai-text-muted"
-                            >(recommended) — same package data without SPDX's per-package CPE-variant overhead; typically
-                            much smaller, especially for images with many small packages (e.g. ROS/Nav2 stacks)</span
+                            >(recommended) — same package data without SPDX's per-package CPE-variant overhead;
+                            typically much smaller, especially for images with many small packages (e.g. ROS/Nav2
+                            stacks)</span
                           ></span>
                       </label>
                       <label class="flex flex-row items-start gap-2 text-xs text-[var(--pd-content-text)]">
                         <input type="radio" class="mt-0.5" bind:group={sbomFormat} value="spdx-json" />
                         <span
                           >SPDX <span class="pai-text-muted"
-                            >— includes richer CPE metadata some vulnerability-scanning tools specifically require, but can
-                            run significantly larger for images with many packages</span
+                            >— includes richer CPE metadata some vulnerability-scanning tools specifically require, but
+                            can run significantly larger for images with many packages</span
                           ></span>
                       </label>
                     </div>
@@ -648,8 +648,8 @@ onDestroy(() => {
           {#if !simParentReady || (needsHardened && hardenedBusy)}
             <p class="text-sm p-3 rounded pai-banner-warning">
               {#if needsHardened && hardenedBusy}
-                Wait for the hardened image build to finish — the simulation image must layer on top of that
-                result, not an older image still tagged locally.
+                Wait for the hardened image build to finish — the simulation image must layer on top of that result, not
+                an older image still tagged locally.
               {:else if needsHardened && !hardenedImageExists}
                 Build the hardened image (step 2) first — the simulation image layers on top of it.
               {:else}

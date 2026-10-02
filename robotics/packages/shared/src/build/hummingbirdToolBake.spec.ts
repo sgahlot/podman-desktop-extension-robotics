@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  hummingbirdToolBakeContainerfileLines,
-  hummingbirdToolImageDynamicLinkerPath,
-} from './hummingbirdToolBake';
+import { hummingbirdToolBakeContainerfileLines, hummingbirdToolImageDynamicLinkerPath } from './hummingbirdToolBake';
 
 describe('hummingbirdToolBakeContainerfileLines', () => {
   it('bundles jq with hi/jq lib64 and a wrapper script', () => {

@@ -536,10 +536,7 @@ export function labelFor<TId extends string>(options: readonly LayerOption<TId>[
  * built once secure bootc/Hummingbird layers are available. No I/O, no validation beyond
  * skipping layers set to 'none'.
  */
-export function generateLayerContainerfile(
-  sel: LayerSelection,
-  targetArch: 'amd64' | 'arm64' = 'amd64',
-): string {
+export function generateLayerContainerfile(sel: LayerSelection, targetArch: 'amd64' | 'arm64' = 'amd64'): string {
   const sections: string[] = [];
 
   sections.push(

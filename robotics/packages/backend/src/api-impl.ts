@@ -49,11 +49,7 @@ import { readFile, writeFile, mkdtemp, mkdir, rename, rm } from 'node:fs/promise
 import { homedir, tmpdir } from 'node:os';
 import { join as pathJoin } from 'node:path';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
-import type {
-  BuildHistoryEntry,
-  BundledToolVerificationResult,
-  SbomFormat,
-} from '/@shared/src/types/BuildHistory';
+import type { BuildHistoryEntry, BundledToolVerificationResult, SbomFormat } from '/@shared/src/types/BuildHistory';
 import {
   bundledToolSmokePodmanExecArgs,
   isBundledToolSmokeCheckSupported,
@@ -887,7 +883,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     isFinalArtifact: boolean,
   ): Promise<void> {
     const success = progress.status === 'Complete' && !progress.error;
-    const startedAt = progress.startedAt ??= Date.now();
+    const startedAt = (progress.startedAt ??= Date.now());
     const finishedAt = progress.finishedAt ?? Date.now();
 
     const entry: BuildHistoryEntry = {
@@ -1101,7 +1097,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     if (progress.historyPersisted) {
       return;
     }
-    const startedAt = progress.startedAt ??= Date.now();
+    const startedAt = (progress.startedAt ??= Date.now());
     const key = buildHistoryRecordKey(tag, startedAt);
     if (this.buildHistoryRecordInFlight.has(key)) {
       return;
@@ -1160,10 +1156,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const verifiedAt = Date.now();
     let result: BundledToolVerificationResult;
     try {
-      const exec = await extensionApi.process.exec(
-        'podman',
-        bundledToolSmokePodmanExecArgs(imageTag, tool),
-      );
+      const exec = await extensionApi.process.exec('podman', bundledToolSmokePodmanExecArgs(imageTag, tool));
       const output = exec.stdout?.trim() || exec.stderr?.trim();
       if (!output) {
         result = {

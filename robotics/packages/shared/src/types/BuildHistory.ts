@@ -161,10 +161,7 @@ export function buildHistoryRecordKey(tag: string, startedAt: number): string {
  * Insert or replace one build row by `(tag, startedAt)`. Never drops an entry silently —
  * callers persist the returned array.
  */
-export function upsertBuildHistoryEntry(
-  history: BuildHistoryEntry[],
-  entry: BuildHistoryEntry,
-): BuildHistoryEntry[] {
+export function upsertBuildHistoryEntry(history: BuildHistoryEntry[], entry: BuildHistoryEntry): BuildHistoryEntry[] {
   const idx = history.findIndex(e => e.tag === entry.tag && e.startedAt === entry.startedAt);
   if (idx === -1) {
     return [entry, ...history];

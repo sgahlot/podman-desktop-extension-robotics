@@ -39,9 +39,7 @@ describe('upsertBuildHistoryEntry', () => {
     const updated = base({ success: true, bundledTools: ['cosign'] });
     const next = upsertBuildHistoryEntry([existing], updated);
     expect(next).toHaveLength(1);
-    expect(next[0]).toEqual(
-      expect.objectContaining({ success: true, bundledTools: ['cosign'], errorMessage: 'old' }),
-    );
+    expect(next[0]).toEqual(expect.objectContaining({ success: true, bundledTools: ['cosign'], errorMessage: 'old' }));
   });
 });
 

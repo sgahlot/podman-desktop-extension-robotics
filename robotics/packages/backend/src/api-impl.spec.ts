@@ -874,9 +874,7 @@ describe('PhysicalAiApiImpl', () => {
       await vi.runAllTimersAsync();
 
       expect(historyWriteAttempts).toBeGreaterThanOrEqual(2);
-      expect(lastWrittenBuildHistory()[0]).toEqual(
-        expect.objectContaining({ tag: 'my-tag:latest', success: true }),
-      );
+      expect(lastWrittenBuildHistory()[0]).toEqual(expect.objectContaining({ tag: 'my-tag:latest', success: true }));
     });
 
     it('does not record a cancelled build', async () => {
@@ -1272,9 +1270,7 @@ describe('PhysicalAiApiImpl', () => {
       const result = await api.verifyBundledTool(entry.tag, entry.startedAt, 'cosign');
       expect(result.success).toBe(true);
       expect(result.output).toContain('v3.1.3');
-      const runCall = vi
-        .mocked(extensionApi.process.exec)
-        .mock.calls.find(call => (call[1] as string[])[0] === 'run');
+      const runCall = vi.mocked(extensionApi.process.exec).mock.calls.find(call => (call[1] as string[])[0] === 'run');
       expect(runCall).toEqual([
         'podman',
         ['run', '--rm', '--entrypoint', '/usr/local/bin/cosign', 'my-layer:latest', 'version'],

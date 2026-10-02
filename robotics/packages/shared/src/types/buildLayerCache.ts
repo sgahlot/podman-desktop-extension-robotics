@@ -1,16 +1,7 @@
 import type { LayerCacheStatusEntry, SbomFormat } from './BuildHistory';
 import type { HardenedApp, LayerSelection } from './layerCompatibility';
-import {
-  hummingbirdToolBakeContainerfileLines,
-  type HummingbirdBakeArch,
-} from '../build/hummingbirdToolBake';
-import {
-  BASE_OS_OPTIONS,
-  HUMMINGBIRD_TOOL_OPTIONS,
-  labelFor,
-  ROS_OPTIONS,
-  SIM_OPTIONS,
-} from './layerCompatibility';
+import { hummingbirdToolBakeContainerfileLines, type HummingbirdBakeArch } from '../build/hummingbirdToolBake';
+import { BASE_OS_OPTIONS, HUMMINGBIRD_TOOL_OPTIONS, labelFor, ROS_OPTIONS, SIM_OPTIONS } from './layerCompatibility';
 import type { SimulationConfig } from './SimulationConfig';
 import { resolveCustomSimulationTemplate } from './CustomSimulationTemplates';
 import { resolveSimulationProfile } from './SimulationProfiles';

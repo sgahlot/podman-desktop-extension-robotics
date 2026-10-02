@@ -133,9 +133,7 @@ describe('BuildHistoryPanel', () => {
       success: true,
       bundledTools: ['cosign'],
       isFinalArtifact: true,
-      bundledToolVerifications: [
-        { tool: 'cosign', success: true, output: 'GitVersion: v3.1.3', verifiedAt: 1 },
-      ],
+      bundledToolVerifications: [{ tool: 'cosign', success: true, output: 'GitVersion: v3.1.3', verifiedAt: 1 }],
     };
     mockGetBuildHistory.mockResolvedValue([entry]);
 

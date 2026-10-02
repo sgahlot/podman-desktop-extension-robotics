@@ -109,8 +109,7 @@ export async function refreshAfterBuild(watchForSbom = false, expectedTag?: stri
   }
   if (!watchForSbom) return;
 
-  const newest =
-    (expectedTag ? history.find(entry => entry.tag === expectedTag) : undefined) ?? history[0];
+  const newest = (expectedTag ? history.find(entry => entry.tag === expectedTag) : undefined) ?? history[0];
   if (!newest?.success) return;
 
   const watchKey = entryKey(newest);
@@ -470,11 +469,7 @@ onDestroy(() => {
                             title="Run this CLI inside the image (not OCI signature verification)"
                             disabled={bundledAppVerifyDisabled(key, runKey)}
                             on:click={() => runSingleBundledAppCheck(entry, key, tool, bundledApps)}>
-                            {bundledAppRunning[runKey]
-                              ? 'Verifying…'
-                              : saved
-                                ? 'Re-verify'
-                                : 'Verify'}
+                            {bundledAppRunning[runKey] ? 'Verifying…' : saved ? 'Re-verify' : 'Verify'}
                           </button>
                           {#if saved}
                             <button
