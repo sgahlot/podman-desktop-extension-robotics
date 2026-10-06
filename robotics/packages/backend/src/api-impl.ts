@@ -76,10 +76,7 @@ import {
   SIM_RUNTIME_BUNDLE_ASSET_DIR,
   containerfileNeedsBundledSimRuntime,
 } from '/@shared/src/types/simOperationalLayer';
-import {
-  SIM_RUNTIME_STATUS_PATH,
-  parseSimRuntimeStatusEnv,
-} from '/@shared/src/types/simRuntimeStatus';
+import { SIM_RUNTIME_STATUS_PATH, parseSimRuntimeStatusEnv } from '/@shared/src/types/simRuntimeStatus';
 import { assertBuildContextReady } from './buildContextFs';
 import { stageBundledAssetDir, stageSimRuntimeAssetFiles } from './bundledAssets';
 import {
@@ -3189,9 +3186,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       const simContainer = containers.find(c => c.name === 'sim') ?? containers[0];
       const image = simContainer?.image;
       const hasHummingbirdSidecar = containers.some(c => c.name === HUMMINGBIRD_NGINX_CONTAINER_NAME);
-      const clusterGpuRequested = simContainer?.env?.some(
-        e => e.name === 'ROBOTICS_USE_GPU' && e.value === '1',
-      );
+      const clusterGpuRequested = simContainer?.env?.some(e => e.name === 'ROBOTICS_USE_GPU' && e.value === '1');
       const pinNodeHostname = d.spec?.template?.spec?.nodeSelector?.[KUBE_NODE_HOSTNAME_LABEL]?.trim();
       const routeUrl = await this.#readRouteUrl(ns, name, context);
       const ready = replicas > 0 && readyReplicas >= replicas;

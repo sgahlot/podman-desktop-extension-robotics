@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  gpuGuiFallbackUserMessage,
-  gpuGuiWorkloadUiTone,
-  parseSimRuntimeStatusEnv,
-} from './simRuntimeStatus';
+import { gpuGuiFallbackUserMessage, gpuGuiWorkloadUiTone, parseSimRuntimeStatusEnv } from './simRuntimeStatus';
 
 describe('parseSimRuntimeStatusEnv', () => {
   it('parses GPU + software GUI fallback', () => {
@@ -29,14 +25,10 @@ describe('gpuGuiWorkloadUiTone', () => {
   const base = { ready: true, clusterGpuRequested: true };
 
   it('flags software GUI as error when GPU was requested', () => {
-    expect(
-      gpuGuiWorkloadUiTone({ ...base, clusterGpuRequested: true, guiRenderMode: 'software' }),
-    ).toBe('error');
+    expect(gpuGuiWorkloadUiTone({ ...base, clusterGpuRequested: true, guiRenderMode: 'software' })).toBe('error');
   });
 
   it('flags virtualgl as success', () => {
-    expect(
-      gpuGuiWorkloadUiTone({ ...base, clusterGpuRequested: true, guiRenderMode: 'virtualgl' }),
-    ).toBe('success');
+    expect(gpuGuiWorkloadUiTone({ ...base, clusterGpuRequested: true, guiRenderMode: 'virtualgl' })).toBe('success');
   });
 });
