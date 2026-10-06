@@ -99,6 +99,20 @@ npm run zero-errors-gate
 
 That runs, in order: `typecheck`, `lint:check`, `svelte:check`, `format:check`, and `test`. From a git worktree root, `../scripts/run-zero-errors-gate.sh` wraps the same npm script with compact console output.
 
+### Integration (Podman — optional, not in `npm test`)
+
+Exercises **all three** Image Builder Presets quick starts (`ubuntu-jazzy-arm64`, `ubuntu-jazzy-amd64`, `fedora-bootc43-lyrical-amd64`). Requires Podman and network (pull base images, Fedora ROS testing repo, apt). Build logs are suppressed unless a step fails. Images tagged `physical-ai-integration-*:local` are removed when each phase finishes (including on failure).
+
+```bash
+npm run integration:smoke   # Ubuntu: Phase 1 base per arch; Lyrical: desktop-runtime RPM only (faster than full preset)
+npm run integration:full    # Ubuntu: base + sim per arch; Lyrical: full layer Containerfile
+npm run integration         # smoke then full
+```
+
+Tune timeouts with `SMOKE_LYRICAL_TIMEOUT_SEC`, `SMOKE_UBUNTU_TIMEOUT_SEC`, `FULL_*` (see `scripts/integration/image-builder-presets.sh`).
+
+Canonical Lyrical Containerfile logic: `packages/shared/src/build/presetContainerfile.ts` (unit tests + snapshots under `packages/shared/src/build/`).
+
 ## Packaging
 
 The root `Containerfile` builds an OCI image of the extension. `packages/backend/README.md` and the icon ship inside the image (Readme may link GitLab raw GIFs under `robotics/docs/img/`; **Help** bundles the same files). Publish via `scripts/publish-extension-image.sh`.

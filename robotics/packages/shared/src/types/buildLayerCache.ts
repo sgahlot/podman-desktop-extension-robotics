@@ -4,6 +4,7 @@ import { hummingbirdToolBakeContainerfileLines, type HummingbirdBakeArch } from 
 import { BASE_OS_OPTIONS, HUMMINGBIRD_TOOL_OPTIONS, labelFor, ROS_OPTIONS, SIM_OPTIONS } from './layerCompatibility';
 import type { SimulationConfig } from './SimulationConfig';
 import { resolveCustomSimulationTemplate } from './CustomSimulationTemplates';
+import { rosDistroDisplayLabel } from '../config/rosDistroCatalog';
 import { resolveStackConfig } from './stackConfigResolver';
 import { resolveSimulationProfile } from './SimulationProfiles';
 import {
@@ -123,7 +124,7 @@ export function layerCachePlanFromSimulationConfig(
   const profile = resolveSimulationProfile(config);
   if (!profile) return plan;
 
-  const rosName = config.distro === 'humble' ? 'ROS Humble' : 'ROS Jazzy';
+  const rosName = rosDistroDisplayLabel(config.distro);
   plan.push({ layerId: 'ros', label: rosName });
 
   if (opts.includeSim && profile.assetDir) {

@@ -44,6 +44,7 @@ import {
   PART_OF_LABEL,
   PART_OF_VALUE,
   HUMMINGBIRD_NGINX_CONTAINER_NAME,
+  KUBE_NODE_HOSTNAME_LABEL,
 } from '/@shared/src/openshift/manifests';
 import { readFile, writeFile, mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
@@ -75,6 +76,10 @@ import {
   SIM_RUNTIME_BUNDLE_ASSET_DIR,
   containerfileNeedsBundledSimRuntime,
 } from '/@shared/src/types/simOperationalLayer';
+import {
+  SIM_RUNTIME_STATUS_PATH,
+  parseSimRuntimeStatusEnv,
+} from '/@shared/src/types/simRuntimeStatus';
 import { assertBuildContextReady } from './buildContextFs';
 import { stageBundledAssetDir, stageSimRuntimeAssetFiles } from './bundledAssets';
 import {
@@ -1452,8 +1457,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
   }
 
-  async #stageSimRuntimeBuildContext(contextDir: string): Promise<void> {
-    await stageSimRuntimeAssetFiles(this.extensionContext.extensionUri, SIM_RUNTIME_BUNDLE_ASSET_DIR, contextDir);
+  async #stageSimRuntimeBuildContext(contextDir: string, assetDir?: string): Promise<void> {
+    await stageSimRuntimeAssetFiles(
+      this.extensionContext.extensionUri,
+      assetDir?.trim() ? assetDir.trim() : SIM_RUNTIME_BUNDLE_ASSET_DIR,
+      contextDir,
+    );
   }
 
   async buildFromContainerfile(
@@ -1467,6 +1476,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       isFinalArtifact?: boolean;
       layerPlan?: LayerCacheBuildOptions['layerPlan'];
       bundleSimRuntime?: boolean;
+      simRuntimeAssetDir?: string;
       verifyHooks?: readonly string[];
     },
   ): Promise<void> {
@@ -1481,7 +1491,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     try {
       await writeFile(pathJoin(contextDir, 'Containerfile'), containerfile, 'utf8');
       if (bundleSimRuntime) {
-        await this.#stageSimRuntimeBuildContext(contextDir);
+        await this.#stageSimRuntimeBuildContext(contextDir, options?.simRuntimeAssetDir);
       }
     } catch (err) {
       await rm(contextDir, { recursive: true, force: true }).catch(() => {});
@@ -3158,7 +3168,16 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         metadata?: { name?: string };
         spec?: {
           replicas?: number;
-          template?: { spec?: { containers?: Array<{ name?: string; image?: string }> } };
+          template?: {
+            spec?: {
+              nodeSelector?: Record<string, string>;
+              containers?: Array<{
+                name?: string;
+                image?: string;
+                env?: Array<{ name?: string; value?: string }>;
+              }>;
+            };
+          };
         };
         status?: { readyReplicas?: number };
       };
@@ -3167,18 +3186,36 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       const replicas = d.spec?.replicas ?? 0;
       const readyReplicas = d.status?.readyReplicas ?? 0;
       const containers = d.spec?.template?.spec?.containers ?? [];
-      const image = containers[0]?.image;
+      const simContainer = containers.find(c => c.name === 'sim') ?? containers[0];
+      const image = simContainer?.image;
       const hasHummingbirdSidecar = containers.some(c => c.name === HUMMINGBIRD_NGINX_CONTAINER_NAME);
+      const clusterGpuRequested = simContainer?.env?.some(
+        e => e.name === 'ROBOTICS_USE_GPU' && e.value === '1',
+      );
+      const pinNodeHostname = d.spec?.template?.spec?.nodeSelector?.[KUBE_NODE_HOSTNAME_LABEL]?.trim();
       const routeUrl = await this.#readRouteUrl(ns, name, context);
+      const ready = replicas > 0 && readyReplicas >= replicas;
+      let runtimeStatus: ReturnType<typeof parseSimRuntimeStatusEnv>;
+      let scheduledNodeName: string | undefined;
+      if (ready) {
+        runtimeStatus = await this.#readOpenShiftSimRuntimeStatus(ns, name, context);
+        scheduledNodeName = await this.#readOpenShiftScheduledNodeName(ns, name, context);
+      }
       workloads.push({
         name,
         namespace: ns,
         replicas,
         readyReplicas,
-        ready: replicas > 0 && readyReplicas >= replicas,
+        ready,
         image,
         routeUrl,
         hasHummingbirdSidecar,
+        ...(clusterGpuRequested ? { clusterGpuRequested: true } : {}),
+        ...(pinNodeHostname ? { pinNodeHostname } : {}),
+        ...(scheduledNodeName ? { scheduledNodeName } : {}),
+        ...(runtimeStatus
+          ? { guiRenderMode: runtimeStatus.guiRenderMode, guiRenderNote: runtimeStatus.guiRenderNote }
+          : {}),
       });
     }
     return workloads;
@@ -3372,6 +3409,59 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
     const target = { kind: 'oc', pod, namespace: ns, context } as const;
     return this.#robotSensorDiagnosticsFor(target, distro, safeRobot);
+  }
+
+  async #readOpenShiftScheduledNodeName(
+    namespace: string,
+    deploymentName: string,
+    context?: string,
+  ): Promise<string | undefined> {
+    try {
+      const contextArgs = context ? ['--context', context] : [];
+      const res = await extensionApi.process.exec('oc', [
+        ...contextArgs,
+        'get',
+        'pods',
+        '-n',
+        namespace,
+        '-l',
+        `app=${deploymentName}`,
+        '--field-selector=status.phase=Running',
+        '-o',
+        'jsonpath={.items[0].spec.nodeName}',
+      ]);
+      const node = res.stdout?.trim();
+      return node || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Best-effort read of managed-sim GUI render status from a running pod (OpenShift transparency). */
+  async #readOpenShiftSimRuntimeStatus(
+    namespace: string,
+    deploymentName: string,
+    context?: string,
+  ): Promise<ReturnType<typeof parseSimRuntimeStatusEnv> | undefined> {
+    try {
+      const pod = await this.#resolveOpenShiftPod(namespace, deploymentName, context);
+      const contextArgs = context ? ['--context', context] : [];
+      const res = await extensionApi.process.exec('oc', [
+        ...contextArgs,
+        'exec',
+        pod,
+        '-n',
+        namespace,
+        '-c',
+        'sim',
+        '--',
+        'cat',
+        SIM_RUNTIME_STATUS_PATH,
+      ]);
+      return parseSimRuntimeStatusEnv(res.stdout ?? '');
+    } catch {
+      return undefined;
+    }
   }
 
   /** Name of a Running pod for the deployment (selected by the `app=<name>` label). */

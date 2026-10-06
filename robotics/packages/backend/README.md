@@ -117,6 +117,34 @@ On Jazzy sim images, each spawned robot has **Navigate** (target X/Y in the map 
 - **Default guaranteed CPUs** — seeds the **Guaranteed CPUs (sim container)** field on the OpenShift tab (1–64, default 8 for software-render deploys).
 - Image Builder wizard defaults (robot, distro, middleware, engine, base preset)
 
+### Adding a layer recipe
+
+Shared catalogs live under `packages/shared/src/config/`:
+
+| File | Purpose |
+|------|---------|
+| `layer-recipes.json` | Preset base OS stacks (image, capability, packages, `ui`, `layer5Bundle`) |
+| `layer-wizard-options.json` | Layers wizard labels for hardened / ROS / sim (base OS labels come from recipes) |
+| `ros-distros.json` | ROS distro ids, Nav2 flags, image-ref hints, layer option mapping |
+| `simulation-profiles.json` | Image Builder profile matrix (`id`, robot, distro, asset dirs) |
+| `simulation-base-images.json` | Phase 1 base image presets and digests |
+| `quick-starts.json` | Preset tab quick starts |
+| `custom-simulation-templates.json` | Custom-parent simulation templates |
+| `hummingbird-apps.json` | Hardened app/tool catalog for the Layers wizard |
+| `platform-defaults.json` | Catalog allowlist defaults, managed sim runtime paths, Image Builder defaults |
+
+Add a layer recipe under `layer-recipes.json` → `recipes` with the base image reference,
+capability flags, package-manager commands, `ui` (label + note), ROS repository snippet,
+ROS and simulation package lists, and an optional `layer5Bundle` reference for managed
+simulation assets (`assetDir` under
+`packages/backend/assets/`, plus `verifyHook` for build-context checks). Fedora 43 /
+Lyrical presets reuse `ros2-jazzy-sim` for the operational Layer 5 bundle (entrypoints,
+worlds, noVNC helpers) until a lyrical-specific asset tree ships. Catalog entries are
+validated when the shared module loads; `evaluateStack` surfaces resolver failures
+(including missing recipe fields) as blocked compatibility errors before Containerfile
+generation. Add or update resolver specs alongside every new distro; custom parent images
+remain metadata-driven and do not need a catalog entry.
+
 ### Custom Phase 1 parent image
 
 In **Image Builder → Configure**, choose **Custom image…** in the Base image selector and enter the parent OCI image reference, for example `quay.io/org/ros2:jazzy-desktop`. This input controls the `FROM` image used for the Phase 1 build. It is distinct from the output tag in the Build panel, which names the image you are building or pushing. The custom parent reference is saved with the Image Builder preferences.
@@ -174,9 +202,15 @@ On **amd64**, launch always forces `llvmpipe` (no GPU passthrough).
 
 **In-cluster CPU sizing (no GPU):** software rendering is CPU-bound — the `gz sim -g` GUI client alone needs ~2.3 cores to render the scene for noVNC, and during _active_ Nav2 navigation the planner/controller/costmaps add ~1 more. On a 2-core pod the sim's real-time factor collapses to ~0.1 (goals never finish); at 4 cores goals complete but active-nav utilization hits ~90%, so RTF sags to ~0.3–0.6 and motion is slow and jerky. The software-rendering Deployment therefore requests **8 guaranteed CPUs by default** (`requests == limits`), which keeps utilization comfortable with headroom so navigation runs at ~real-time (RTF ~1.0, a warm ~2 m trip in ~33 s). The count is **configurable** via **Guaranteed CPUs (sim container)** on the OpenShift tab (`OpenShiftDeployConfig.cpu`, validated 1–64) so you can dial it to your node sizes — note an N-CPU Guaranteed pod only schedules on a node with ≥ N _allocatable_ CPU. The bottleneck is the GUI (not the depth camera), so dropping sensors doesn't lower the requirement — a GPU does. A residual micro-stutter used to remain because the container sees all host CPUs but is CFS-throttled to the quota (Gazebo/Ogre size thread pools to the visible count); `entrypoint-gazebo.sh` now caps the render/physics thread pools (`OMP_/OPENBLAS_/LP_/MESA_/GALLIUM_NUM_THREADS`) to the cgroup quota to remove it (takes effect after an image rebuild + push).
 
-**In-cluster with a GPU (OpenShift + NVIDIA GPU operator):** the **OpenShift** tab has a **"Cluster has a GPU"** toggle. When on, the Deployment requests `nvidia.com/gpu: 1` and sets `ROBOTICS_USE_GPU=1` (dropping the software-rendering env). The entrypoint renders the server off-screen via **hardware EGL** (`--headless-rendering`, no `surfaceless`/llvmpipe override); the GUI (`gz sim -g`) GPU-renders via **VirtualGL** (`vglrun -d egl`, APPENG-6083). Sensor rendering stays on software EGL to avoid a known long-run GPU driver issue.
+**In-cluster with a GPU (OpenShift + NVIDIA GPU operator):** the **OpenShift** tab has a **"Cluster has a GPU"** toggle. When on, the Deployment requests `nvidia.com/gpu: 1` and sets `ROBOTICS_USE_GPU=1` (dropping the software-rendering env). The entrypoint renders the **Gazebo server** (sensors) off-screen via **software EGL** (`EGL_PLATFORM=surfaceless`, Mesa vendor) on purpose — a known long-run NVIDIA driver issue when sensors use the GPU. The **noVNC GUI** (`gz sim -g`) uses **VirtualGL** (`vglrun -d egl`, APPENG-6083) only after a startup probe (`vglrun -d egl eglinfo -e`) succeeds on the **scheduled worker**. If VirtualGL cannot bind headless EGL, the entrypoint **falls back to a software-rendered GUI** so noVNC still shows the world map (higher CPU on the viewer; Nav2 and sensors unchanged).
 
-**GPU offloads rendering, not physics or Nav2** — you still need enough guaranteed CPU for Gazebo, physics, and navigation. On a `g5.2xlarge` GPU node, use **6 guaranteed CPUs** for the simulation container with or without the Hummingbird sidecar; the sidecar keeps its own small CPU request. Values like 2–3 schedule but simulation runs below real time and **Navigate** looks slow, frozen, or jerky. Set via **Guaranteed CPUs (sim container)** on the OpenShift tab. **Validated live:** single robot at 6 CPUs with GPU + Hummingbird, smooth Nav2 navigation at ~real time. Multi-robot behavior on this path has not yet been characterized. The default (toggle off) is the tested software path above.
+**Heterogeneous GPU workers (black or empty noVNC):** the same image digest can show a normal Gazebo viewport on one GPU node and fail VirtualGL on another. Some workers report usable EGL to generic tools but still fail `vglrun` (VirtualGL error 214). **Symptoms:** route loads, noVNC connects, viewport stays black or empty with **Cluster has a GPU** on — often only on certain nodes. **Mitigation:** (1) Use a current sim image (entrypoint probes VirtualGL before enabling GPU GUI and publishes render status for the UI). (2) **Pin to node** with a worker that shows a green VirtualGL banner in **Deployed simulations**. (3) If you cannot pin, accept the software-GUI fallback (warning banner) — the world map and navigation still work. Unpinned scheduling is nondeterministic across mixed workers.
+
+**GPU offloads rendering, not physics or Nav2** — you still need enough guaranteed CPU for Gazebo, physics, and navigation. On a `g5.2xlarge` GPU node, use **6 guaranteed CPUs** for the simulation container with or without the Hummingbird sidecar; the sidecar keeps its own small CPU request. Values like 2–3 schedule but simulation runs below real time and **Navigate** looks slow, frozen, or jerky. Set via **Guaranteed CPUs (sim container)** on the OpenShift tab. **Validated live:** single robot at 6 CPUs with GPU + Hummingbird, smooth Nav2 navigation at ~real time; VirtualGL vs software-GUI fallback validated on heterogeneous workers. Multi-robot behavior on this path has not yet been characterized. The default (toggle off) is the tested software path above.
+
+**Pin to node (optional)** — On the OpenShift tab, enter a worker node `NAME` from `oc get nodes` to set `nodeSelector.kubernetes.io/hostname` on the Deployment (reproducing GPU/VirtualGL behavior or avoiding bad workers; leave blank for normal scheduling). A future release may offer a cluster node dropdown instead of free text.
+
+**GPU GUI transparency** — When **Cluster has a GPU** is on, each deployed workload shows whether the noVNC GUI is **VirtualGL** (GPU viewport), still starting, or **software-rendered** (CPU fallback), including the scheduled node name when known. Rebuild and push the sim image after entrypoint changes so status and fallback logic match what the UI expects.
 
 **Ogre2 Sensors (2026-08 re-verification):** The `gz-sim-sensors-system` plugin no longer segfaults on current Gazebo Harmonic + Mesa (llvmpipe or virtio-gpu). It is re-enabled in `tb3_sandbox.sdf.xacro`. Lidar (`/scan`) and IMU topics are available after spawn.
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MANAGED_SIM_CONTEXT_PATHS, MANAGED_SIM_VERIFY_HOOK } from './managedSimRuntime';
 import { resolveStackConfig } from './stackConfigResolver';
+import { validateLayerRecipe } from './layerRecipe';
 
 const base = {
   hardened: 'none' as const,
@@ -18,7 +19,24 @@ describe('resolveStackConfig', () => {
     expect(config.managedSimEligible).toBe(true);
     expect(config.verifyHooks).toEqual([MANAGED_SIM_VERIFY_HOOK]);
     expect(config.copySources).toEqual([...MANAGED_SIM_CONTEXT_PATHS]);
+    expect(config.simRuntimeAssetDir).toBe('ros2-jazzy-sim');
     expect(config.repositoryFragments[0]).toContain('packages.ros.org/ros2/ubuntu');
+    expect(config.repositoryFragments[0]).toContain('# ROS 2 apt repository');
+  });
+
+  it('loads Fedora 43 lyrical sim from the external recipe catalog', () => {
+    const config = resolveStackConfig({
+      hardened: 'none',
+      baseOs: 'fedora-bootc-43',
+      ros: 'ros2-lyrical',
+      sim: 'gazebo-nav2-tb3',
+    });
+    expect(config.rosDistro).toBe('lyrical');
+    expect(config.installCommand).toBe('dnf --releasever=43 install -y');
+    expect(config.simulationPackages).toContain('ros-gz-sim-runtime');
+    expect(config.repositoryFragments[0]).toContain('ros2-lyrical-testing.repo');
+    expect(config.simRuntimeAssetDir).toBe('ros2-jazzy-sim');
+    expect(config.verifyHooks).toEqual([MANAGED_SIM_VERIFY_HOOK]);
   });
 
   it('resolves a Fedora Lyrical custom parent to dnf and Lyrical packages', () => {
@@ -58,5 +76,25 @@ describe('resolveStackConfig', () => {
         customBaseImage: 'docker.io/library/ubuntu:24.04',
       }),
     ).toThrow('Declare the custom parent OS family or packaging');
+  });
+
+  it('rejects an invalid external recipe with its id and field', () => {
+    expect(() =>
+      validateLayerRecipe('fedora-bootc-43', {
+        ui: { label: 'Fedora', note: 'test' },
+        imageRef: 'fedora',
+        capability: {
+          isBootc: true,
+          packaging: 'dnf',
+          requiresSubscription: false,
+          supportedRosDistros: [],
+          supportedSimDistros: [],
+          hasRosRepo: true,
+        },
+        installCleanup: '',
+        rosPackages: {},
+        simulationPackages: {},
+      }),
+    ).toThrow(/Invalid layer recipe "fedora-bootc-43": installCommand/);
   });
 });

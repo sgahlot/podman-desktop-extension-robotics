@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "customBaseOs": {
+    "label": "Custom image reference",
+    "note": "Assumes a Debian/Ubuntu-compatible image"
+  },
+  "hardened": [
+    { "id": "none", "label": "None", "note": "Skip the hardened application layer" },
+    {
+      "id": "hummingbird-app",
+      "label": "Hummingbird app",
+      "note": "Hardened nginx/python-class application images"
+    }
+  ],
+  "ros": [
+    { "id": "none", "label": "None", "note": "No ROS layer" },
+    {
+      "id": "provided-by-parent",
+      "label": "Provided by custom parent",
+      "note": "The selected custom parent already contains ROS"
+    },
+    { "id": "ros2-jazzy", "label": "ROS2 Jazzy", "note": "Installs via apt on Ubuntu", "rosDistroId": "jazzy" },
+    { "id": "ros2-humble", "label": "ROS2 Humble", "note": "Installs via apt on Ubuntu", "rosDistroId": "humble" },
+    {
+      "id": "ros2-lyrical",
+      "label": "ROS2 Lyrical",
+      "note": "Installs via dnf on Fedora bootc 43 (x86_64 testing)",
+      "rosDistroId": "lyrical"
+    }
+  ],
+  "sim": [
+    { "id": "none", "label": "None", "note": "No simulation layer" },
+    {
+      "id": "gazebo-nav2-tb3",
+      "label": "Gazebo + Nav2 + TurtleBot3",
+      "note": "Requires a ROS layer beneath it"
+    },
+    {
+      "id": "custom-template",
+      "label": "Registered simulation template",
+      "note": "Uses a checked-in package template"
+    }
+  ]
+}

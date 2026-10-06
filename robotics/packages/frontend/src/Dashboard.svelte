@@ -32,8 +32,11 @@ import { router } from 'tinro';
 import LayoutSwitcher from './lib/LayoutSwitcher.svelte';
 import { resolveOpenShiftNamespace } from './lib/resolveOpenShiftNamespace';
 
+export let active = true;
 export let layout: 'sidebar' | 'tabs' | 'cards' = 'cards';
 export let onLayoutChange: ((next: 'sidebar' | 'tabs' | 'cards') => void) | undefined = undefined;
+
+let wasActive = false;
 
 let status = 'Loading...';
 let localRos2ImageCount = 0;
@@ -54,13 +57,7 @@ function openExternal(url: string): void {
   void physicalAiClient.openUrlInBrowser(url);
 }
 
-onMount(async () => {
-  try {
-    status = await physicalAiClient.getStatus();
-  } catch {
-    status = 'Unable to connect to backend';
-  }
-
+async function refreshOverviewMetrics(): Promise<void> {
   try {
     const images = await physicalAiClient.listLocalImages();
     localRos2ImageCount = images.filter(ref => imageName(ref).includes('ros2-')).length;
@@ -72,7 +69,7 @@ onMount(async () => {
 
   try {
     const containers = await physicalAiClient.listSimulationContainers();
-    localSimCount = containers.length;
+    localSimCount = containers.filter(c => c.state === 'running').length;
   } catch {
     localSimCount = 0;
   } finally {
@@ -84,13 +81,29 @@ onMount(async () => {
     if (resolved?.namespace) {
       const workloads = await physicalAiClient.listOpenShiftDeployments(resolved.namespace, resolved.context);
       openShiftSimCount = workloads.length;
+    } else {
+      openShiftSimCount = 0;
     }
   } catch {
     openShiftSimCount = 0;
   } finally {
     openShiftSimCountLoaded = true;
   }
+}
+
+onMount(async () => {
+  try {
+    status = await physicalAiClient.getStatus();
+  } catch {
+    status = 'Unable to connect to backend';
+  }
 });
+
+$: if (active && !wasActive) {
+  wasActive = true;
+  void refreshOverviewMetrics();
+}
+$: if (!active) wasActive = false;
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">

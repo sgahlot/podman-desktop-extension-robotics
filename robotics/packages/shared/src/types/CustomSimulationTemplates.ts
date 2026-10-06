@@ -1,45 +1,16 @@
 import { packageManagerCleanCommand, resolveStackConfig } from './stackConfigResolver';
 
-export type CustomSimulationCapability = 'packages-only';
-export type SupportedArchitecture = 'amd64' | 'arm64';
+export type {
+  CustomSimulationCapability,
+  SupportedArchitecture,
+  CustomSimulationTemplate,
+} from '../config/customSimulationTemplateCatalog';
+export {
+  CUSTOM_SIMULATION_TEMPLATES,
+  resolveCustomSimulationTemplate,
+} from '../config/customSimulationTemplateCatalog';
 
-export interface CustomSimulationTemplate {
-  id: string;
-  version: string;
-  label: string;
-  osFamily: string;
-  osVersion: string;
-  rosDistro: string;
-  packageManager: 'dnf' | 'apt';
-  packages: readonly string[];
-  rosSetupPath: string;
-  architectures: readonly SupportedArchitecture[];
-  capability: CustomSimulationCapability;
-  description: string;
-  validationGuidance: string;
-}
-
-export const CUSTOM_SIMULATION_TEMPLATES: readonly CustomSimulationTemplate[] = [
-  {
-    id: 'fedora43-lyrical-dnf',
-    version: '1',
-    label: 'Fedora 43 + ROS 2 Lyrical (dnf)',
-    osFamily: 'Fedora',
-    osVersion: '43',
-    rosDistro: 'lyrical',
-    packageManager: 'dnf',
-    packages: ['ros-lyrical-nav2-minimal-tb3-sim', 'ros-lyrical-ros-gz-sim'],
-    rosSetupPath: '/opt/ros/lyrical/setup.bash',
-    architectures: ['amd64'],
-    capability: 'packages-only',
-    description: 'Adds fixed TurtleBot3, Gazebo, and Nav2 packages to a ROS-ready Fedora parent.',
-    validationGuidance: 'Use a Fedora 43 parent with ROS 2 Lyrical and the Lyrical testing repository configured.',
-  },
-];
-
-export function resolveCustomSimulationTemplate(id: string): CustomSimulationTemplate | undefined {
-  return CUSTOM_SIMULATION_TEMPLATES.find(template => template.id === id);
-}
+import type { CustomSimulationTemplate } from '../config/customSimulationTemplateCatalog';
 
 export function assertCustomBaseImageRef(value: string): string {
   const ref = value.trim();

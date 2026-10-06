@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "fedora43-lyrical-dnf",
+      "version": "1",
+      "label": "Fedora 43 + ROS 2 Lyrical (dnf)",
+      "osFamily": "Fedora",
+      "osVersion": "43",
+      "rosDistro": "lyrical",
+      "packageManager": "dnf",
+      "packages": ["ros-lyrical-nav2-minimal-tb3-sim", "ros-lyrical-ros-gz-sim"],
+      "rosSetupPath": "/opt/ros/lyrical/setup.bash",
+      "architectures": ["amd64"],
+      "capability": "packages-only",
+      "description": "Adds fixed TurtleBot3, Gazebo, and Nav2 packages to a ROS-ready Fedora parent.",
+      "validationGuidance": "Use a Fedora 43 parent with ROS 2 Lyrical and the Lyrical testing repository configured."
+    }
+  ]
+}

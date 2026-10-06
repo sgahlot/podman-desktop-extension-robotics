@@ -339,7 +339,9 @@ let topicMonitorCaption =
         </div>
         <div>
           <strong>Cluster has a GPU</strong> — Toggle for NVIDIA GPU Operator clusters: requests
-          <span class="font-mono">nvidia.com/gpu</span> and uses hardware rendering for the noVNC GUI (VirtualGL).
+          <span class="font-mono">nvidia.com/gpu</span> and uses VirtualGL for the noVNC GUI when headless EGL works on
+          the scheduled node; otherwise the entrypoint falls back to a software-rendered GUI so the viewer still works.
+          The OpenShift deployed-workloads list shows a warning when GPU is on but the GUI is software-rendered.
           Sensor rendering stays on software EGL to avoid a known long-run GPU driver issue. You still need enough CPU
           for the GUI, physics, and Nav2 &mdash; see <strong>Guaranteed CPUs</strong> below.
         </div>
@@ -358,6 +360,20 @@ let topicMonitorCaption =
           <span class="font-mono">registry.access.redhat.com/hi/nginx</span> companion container to the pod, reverse-proxying
           noVNC through it, to demonstrate the Hummingbird companion-image pattern live.
         </div>
+        <div>
+          <strong>Pin to node (optional)</strong> — Node <span class="font-mono">NAME</span> from
+          <span class="font-mono">oc get nodes</span>. When set, the Deployment uses
+          <span class="font-mono">nodeSelector.kubernetes.io/hostname</span> so the sim pod lands on that worker (for
+          debugging or clusters with heterogeneous GPU nodes). Leave blank for normal scheduling.
+        </div>
+        <div>
+          <strong>Deployed simulations layout</strong> — The list below the deploy form uses the full panel width (inline
+          <strong>Show Viewer</strong>, robot controls, and status banners).
+        </div>
+        <p class="text-xs pai-text-muted mt-1">
+          Rendering paths, CPU sizing theory, and black-viewer troubleshooting are in <strong>Technical notes</strong>
+          below.
+        </p>
 
         <hr class="border-[var(--pd-content-card-border)] my-3 opacity-60" />
 
@@ -446,6 +462,63 @@ let topicMonitorCaption =
         <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-jazzy-base:latest</p>
         <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-jazzy-base:noble</p>
         <p class="font-mono text-xs">quay.io/&lt;ns&gt;/ros2-jazzy-sim:noble</p>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
+      <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Technical notes</h2>
+      <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-3">
+        <div>
+          <h3 class="text-sm font-medium text-[var(--pd-content-header)] mb-1">GPU and rendering</h3>
+          <p class="mb-2">
+            <strong>Mac (arm64):</strong> Podman Machine exposes the host GPU via virtio-gpu when
+            <strong>Simulation GPU passthrough</strong> is on (Preferences). The entrypoint uses <span class="font-mono"
+              >/dev/dri</span
+            >
+            when present; otherwise <span class="font-mono">llvmpipe</span>. Local <span class="font-mono">amd64</span> sim
+            launch always uses software rendering.
+          </p>
+          <p class="mb-2">
+            <strong>OpenShift, no GPU:</strong> the Gazebo <em>server</em> renders sensors off-screen with Mesa EGL
+            (<span class="font-mono">EGL_PLATFORM=surfaceless</span>, <span class="font-mono">--headless-rendering</span>).
+            Without that path, spawning a robot can segfault the pod under pure llvmpipe. The noVNC GUI still draws on
+            Xvfb. Default <strong>8</strong> guaranteed CPUs for the sim container — see OpenShift Deployment above.
+          </p>
+          <p class="mb-2">
+            <strong>OpenShift, GPU on:</strong> the Deployment requests <span class="font-mono">nvidia.com/gpu</span>.
+            Sensors stay on software EGL; the noVNC viewport uses VirtualGL (<span class="font-mono">vglrun -d egl</span>)
+            only when a startup probe succeeds on the scheduled node. Otherwise the entrypoint uses a
+            <strong>software-rendered GUI</strong> so the world map still appears (warning banner in
+            <strong>Deployed simulations</strong>).
+          </p>
+          <p>
+            <strong>Black or empty noVNC with GPU on:</strong> common on heterogeneous clusters — the same image can work
+            on one GPU worker and fail VirtualGL on another. Rebuild/push the sim image after entrypoint updates; use
+            <strong>Pin to node</strong> to stick to a worker that shows a success banner; or use software-GUI fallback
+            (higher CPU for the viewer). GPU does not remove the need for enough guaranteed CPU for physics and Nav2
+            (<strong>6</strong> on a typical <span class="font-mono">g5.2xlarge</span> GPU node).
+          </p>
+        </div>
+        <div>
+          <h3 class="text-sm font-medium text-[var(--pd-content-header)] mb-1">Single container architecture</h3>
+          <p>
+            Local simulation runs ROS&nbsp;2, Gazebo, Nav2 helpers, and noVNC in one container (not a multi-container pod).
+            That avoids extra overhead that made Nav2 OOM on Mac; robots are added with <span class="font-mono"
+              >podman exec</span
+            >, not separate containers.
+          </p>
+        </div>
+        <div>
+          <h3 class="text-sm font-medium text-[var(--pd-content-header)] mb-1">Two-phase image build</h3>
+          <p>
+            Image Builder builds a reusable base image (Phase&nbsp;1) and layers the simulation image on top (Phase&nbsp;2).
+            Base changes are rare, so sim rebuilds are faster and pushes are smaller when the base is already in your registry.
+          </p>
+        </div>
+        <p class="text-xs pai-text-muted">
+          The extension OCI image also ships a longer <span class="font-mono">README.md</span> with the same topics for
+          offline reference.
+        </p>
       </div>
     </div>
 

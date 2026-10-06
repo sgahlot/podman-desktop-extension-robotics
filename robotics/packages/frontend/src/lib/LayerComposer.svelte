@@ -8,13 +8,14 @@ import {
   SIM_OPTIONS,
   baseOsImageRef,
   evaluateStack,
-  generateLayerContainerfile,
   hummingbirdImageRef,
+  managedSimBundleAssetDir,
   managedSimVerifyHooks,
   selectionNeedsBundledSimRuntime,
   type HardenedApp,
   type LayerSelection,
 } from '/@shared/src/types/layerCompatibility';
+import { rosLayerOptionToDistroId } from '/@shared/src/config/rosDistroCatalog';
 import { layerCachePlanForPresetPhase, layerCachePlanFromSelection } from '/@shared/src/types/buildLayerCache';
 import { SBOM_FORMAT_DEFAULT, type SbomFormat } from '/@shared/src/types/BuildHistory';
 import {
@@ -26,13 +27,7 @@ import {
 } from '/@shared/src/types/SimulationProfiles';
 import { defaultBaseImageForDistro, shortImageRef } from '/@shared/src/types/SimulationBaseImages';
 import { CUSTOM_SIMULATION_TEMPLATES } from '/@shared/src/types/CustomSimulationTemplates';
-import {
-  FEDORA_LYRICAL_REPOSITORY,
-  INSTALL_CLEANUP,
-  INSTALL_COMMAND,
-  ROS_DESKTOP_PACKAGES,
-  SIMULATION_PACKAGES,
-} from '/@shared/src/types/layerStackConfig';
+import { buildLayerStackContainerfile } from '/@shared/src/build/presetContainerfile';
 import { QUICK_STARTS } from '/@shared/src/types/QuickStarts';
 import type { SimulationConfig, TargetArch } from '/@shared/src/types/SimulationConfig';
 import { physicalAiClient } from '../api/client';
@@ -128,7 +123,7 @@ $: if (quickStartId && quickStartId !== appliedQuickStartId) {
 }
 
 $: result = evaluateStack(selection);
-$: containerfile = previewContainerfile(selection, targetArch);
+$: containerfile = buildLayerStackContainerfile(selection, targetArch);
 $: baseOsNote =
   selection.sim === 'custom-template' && selection.baseOs === 'custom'
     ? `Expected parent: ${selectedCustomTemplate.osFamily} ${selectedCustomTemplate.osVersion} with ROS 2 ${selectedCustomTemplate.rosDistro}`
@@ -155,36 +150,6 @@ function syncSimulationSource(): void {
     // Reset to default when switching away from custom-template
     selection.ros = 'ros2-jazzy';
   }
-}
-
-function previewContainerfile(sel: LayerSelection, arch: TargetArch): string {
-  try {
-    const generated = generateLayerContainerfile(sel, arch);
-    return ensureFedoraLyricalPreview(sel, generated);
-  } catch {
-    // Keep the preview useful while the custom parent contract is incomplete. The
-    // compatibility banner still blocks builds until the required metadata is set.
-    const baseRef = baseOsImageRef(sel.baseOs, sel.customBaseImage);
-    if (!baseRef) return '';
-    if (sel.baseOs !== 'fedora-bootc-43' || sel.ros !== 'ros2-lyrical') {
-      return `# Layer 1 — Base OS\nFROM ${baseRef}\n`;
-    }
-    const install = INSTALL_COMMAND['fedora-bootc-43'];
-    const cleanup = INSTALL_CLEANUP['fedora-bootc-43'];
-    const ros = ROS_DESKTOP_PACKAGES.lyrical.map(pkg => `ros-lyrical-${pkg}`).join(' ');
-    const sim = SIMULATION_PACKAGES.lyrical.map(pkg => `ros-lyrical-${pkg}`).join(' ');
-    return (
-      `# Layer 1 — Base OS\nFROM ${baseRef}\n\n${FEDORA_LYRICAL_REPOSITORY}\n\n` +
-      `RUN ${install} ${ros}${cleanup}\n\nRUN ${install} ${sim}${cleanup}\n`
-    );
-  }
-}
-
-function ensureFedoraLyricalPreview(sel: LayerSelection, generated: string): string {
-  if (sel.baseOs !== 'fedora-bootc-43' || sel.ros !== 'ros2-lyrical' || generated.includes('baseurl=')) {
-    return generated;
-  }
-  return `${generated}\n${FEDORA_LYRICAL_REPOSITORY}\n`;
 }
 
 function safeLayerCachePlan(
@@ -246,7 +211,7 @@ $: layerCachePlanBase = safeLayerCachePlan(selection, 'base');
 $: layerCachePlanHardened = safeLayerCachePlan(selection, 'hardened');
 $: layerCachePlanSim = safeLayerCachePlan(selection, 'sim');
 
-$: presetDistro = selection.ros === 'ros2-humble' ? 'humble' : 'jazzy';
+$: presetDistro = rosLayerOptionToDistroId(selection.ros) ?? 'jazzy';
 $: presetConfig = {
   robot: 'turtlebot3',
   distro: presetDistro,
@@ -769,6 +734,7 @@ onDestroy(() => {
             isFinalArtifact: true,
             layerPlan: layerCachePlan,
             bundleSimRuntime: selectionNeedsBundledSimRuntime(selection),
+            simRuntimeAssetDir: managedSimBundleAssetDir(selection),
             verifyHooks: managedSimVerifyHooks(selection),
           })}
         onBuildComplete={builtTag => {

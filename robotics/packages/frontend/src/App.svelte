@@ -42,8 +42,8 @@ onMount(async () => {
   <main class="flex flex-col w-screen h-screen overflow-hidden bg-[var(--pd-content-bg)]">
     <!-- min-h-0 lets the active page become the scroll container instead of growing past the viewport -->
     <NavShell layout={navigationLayout} onLayoutChange={setNavigationLayout}>
-      <Route path="/" breadcrumb="Dashboard">
-        <Dashboard layout={navigationLayout} onLayoutChange={setNavigationLayout} />
+      <Route path="/" breadcrumb="Dashboard" let:active>
+        <Dashboard active={active} layout={navigationLayout} onLayoutChange={setNavigationLayout} />
       </Route>
       <Route path="/images" breadcrumb="Image Catalog" let:active>
         <ImageCatalog active={active} />

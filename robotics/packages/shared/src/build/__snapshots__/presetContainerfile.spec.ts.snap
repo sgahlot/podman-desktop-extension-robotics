@@ -1,0 +1,56 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildPresetContainerfile > golden snapshot for fedora-bootc43-lyrical-amd64 1`] = `
+"# Layer 1 — Base OS: Fedora bootc 43
+FROM quay.io/fedora/fedora-bootc:43
+
+# ROS 2 Lyrical Fedora 43 x86_64 testing repository
+RUN cat > /etc/yum.repos.d/ros2-lyrical-testing.repo <<'EOF'
+[ros2-lyrical-testing]
+name=ROS 2 Lyrical Fedora 43 x86_64 (testing)
+baseurl=https://repo.ros2.org/fedora/testing/43/x86_64/
+enabled=1
+gpgcheck=0
+gpgkey=https://repo.ros2.org/repos.key
+EOF
+
+# Layer 3 — ROS: ROS2 Lyrical
+RUN dnf --releasever=43 install -y ros-lyrical-desktop-runtime ros-lyrical-desktop-devel && dnf clean all
+
+# Layer 4 — Simulation: Gazebo + Nav2 + TurtleBot3
+RUN dnf --releasever=43 install -y ros-lyrical-navigation2-runtime ros-lyrical-navigation2-devel ros-lyrical-nav2-bringup-runtime ros-lyrical-nav2-bringup-devel ros-lyrical-nav2-minimal-tb3-sim-runtime ros-lyrical-nav2-minimal-tb3-sim-devel ros-lyrical-turtlebot3-gazebo-runtime ros-lyrical-turtlebot3-gazebo-devel ros-lyrical-ros-gz-sim-runtime ros-lyrical-ros-gz-sim-devel && dnf clean all
+
+# Layer 5 — Sim runtime: noVNC display stack + extension entrypoints
+LABEL io.physical-ai.simulation.capability="managed"
+ENV ROBOTICS_ROS_SETUP=/opt/ros/lyrical/setup.bash
+ENV ROBOTICS_SIM_DIR=/opt/ros/lyrical/share/nav2_minimal_tb3_sim
+ENV ROBOTICS_NAV2_MAP=/opt/ros/lyrical/share/nav2_bringup/maps/tb3_sandbox.yaml
+# Display stack: Xvfb + VNC + noVNC + Mesa software GL/EGL for in-cluster sensors
+RUN dnf --releasever=43 install -y mesa-libGL mesa-libEGL mesa-dri-drivers mesa-libgbm mesa-demos xorg-x11-server-Xvfb x11vnc openbox xterm python3 novnc python3-websockify wget && dnf clean all
+# VirtualGL: optional GPU-rendered GUI viewport on NVIDIA headless EGL clusters (APPENG-6083)
+ARG VIRTUALGL_VERSION=3.1.5
+RUN dnf --releasever=43 install -y wget && VGL_ARCH="$(uname -m)" && wget -q "https://github.com/VirtualGL/virtualgl/releases/download/\${VIRTUALGL_VERSION}/VirtualGL-\${VIRTUALGL_VERSION}.\${VGL_ARCH}.rpm" -O /tmp/virtualgl.rpm && dnf --releasever=43 install -y /tmp/virtualgl.rpm && rm -f /tmp/virtualgl.rpm && dnf clean all
+ENV PATH="/opt/VirtualGL/bin:\${PATH}"
+RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
+# noVNC landing: autoconnect + auto-reconnect for background browser tabs
+RUN printf '<!DOCTYPE html>\\n<html><head><meta http-equiv="refresh" content="0;url=vnc.html?autoconnect=true&reconnect=true&reconnect_delay=2000&resize=scale"></head></html>\\n' \\
+    > /usr/share/novnc/index.html
+WORKDIR /opt/ros2-demo
+COPY entrypoint-gazebo.sh /entrypoint-gazebo.sh
+COPY entrypoint-spawn-robot.sh /entrypoint-spawn-robot.sh
+COPY entrypoint-nav2.sh /entrypoint-nav2.sh
+COPY lib/validate-input.sh /usr/local/lib/robotics/validate-input.sh
+COPY lib/load-validate-input.sh /usr/local/lib/robotics/load-validate-input.sh
+COPY lib/patch-nav2-params.py /usr/local/lib/robotics/patch-nav2-params.py
+COPY config/cyclonedds-qos.xml /opt/ros2-demo/config/cyclonedds-qos.xml
+COPY worlds/ /opt/ros2-demo/worlds/
+COPY www/ /opt/ros2-demo/www/
+RUN chmod +x /entrypoint-gazebo.sh /entrypoint-spawn-robot.sh /entrypoint-nav2.sh \\
+    && chmod 644 /usr/local/lib/robotics/validate-input.sh \\
+                 /usr/local/lib/robotics/load-validate-input.sh \\
+                 /usr/local/lib/robotics/patch-nav2-params.py
+ENV TURTLEBOT3_MODEL=waffle
+EXPOSE 6080 8080
+ENTRYPOINT ["/bin/bash"]
+"
+`;

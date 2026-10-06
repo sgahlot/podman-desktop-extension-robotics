@@ -301,15 +301,35 @@ launch contract; those capabilities require a future operational template.
 `packages/shared/src/types/stackConfigResolver.ts` is the composition boundary for
 curated and custom layer selections. `resolveStackConfig(selection)` resolves the
 base image, package manager, ROS distro, repository fragments, package sets, layer
-order, operational copy sources, and verification hooks from one selection. Curated
-base capabilities remain table-driven; custom parents use an explicit `packaging`
-contract when supplied, or infer `apt` / `dnf` only for known OS families. Unknown
-families without a declared package manager are blocked rather than silently given
-the wrong installer. Compatibility verdicts, generated Containerfiles, cache plans,
-and Image Builder custom-parent checks consume this resolver so Fedora/Lyrical
-parents use dnf and Lyrical package sets consistently. Managed sim builds expose
-`verifyHooks` (`verify-sim-runtime`) and `copySources` (see `managedSimRuntime.ts`)
-to build-context verification and Layers wizard staging.
+order, operational copy sources, and verification hooks from one selection.
+
+Curated preset stacks (Ubuntu Noble, Fedora BootC 43, RHEL BootC, and siblings) load
+from the versioned catalog `packages/shared/src/config/layer-recipes.json`. Each entry
+defines `ui` (wizard label/note), `imageRef`, `capability`, `rosRepository`, install
+commands, ROS/simulation package lists, and an optional `layer5Bundle` (`assetDir` +
+`verifyHook`) for managed simulation staging. Companion catalogs under the same
+`config/` directory hold Layers wizard options (`layer-wizard-options.json`), ROS distro
+capabilities (`ros-distros.json`), Image Builder profiles and base presets
+(`simulation-profiles.json`, `simulation-base-images.json`), quick starts, custom
+simulation templates, Hummingbird app metadata, and platform defaults (catalog
+allowlist, managed sim context paths). TypeScript loaders validate JSON at module load;
+invalid fields throw with the catalog id and field name. Custom parent images remain
+metadata-driven and do not require a layer recipe entry.
+
+Custom parents use an explicit `packaging` contract when supplied, or infer `apt` /
+`dnf` only for known OS families. Unknown families without a declared package manager
+are blocked rather than silently given the wrong installer. `evaluateStack` catches
+resolver failures (including recipe load errors) and surfaces them as blocked
+compatibility messages before Containerfile generation.
+
+Compatibility verdicts, generated Containerfiles, cache plans, and Image Builder
+custom-parent checks consume this resolver so Fedora/Lyrical parents use dnf and
+Lyrical package sets consistently. Managed sim builds expose `verifyHooks` (from the
+recipe `layer5Bundle` or the default `verify-sim-runtime`), `copySources` (see
+`managedSimRuntime.ts`), and `simRuntimeAssetDir` (extension assets under
+`packages/backend/assets/<assetDir>/`; Fedora Lyrical reuses `ros2-jazzy-sim` until a
+distro-specific operational bundle exists) to build-context verification, backend
+staging, and the Layers wizard.
 
 Build calls explicitly pass `rm: true` and `forcerm: true` so successful and failed
 builds remove intermediate Buildah containers. The Podman Desktop build API does
@@ -484,6 +504,10 @@ The extension contributes settings under page-oriented sections in **Settings �
 | `physical-ai.openshift.deployImageAllowlist` | string | _(empty)_ | **Not enforced** — UI convenience only, narrows the OpenShift deploy tab's Image picker dropdown suggestions. The field still accepts and deploys any free-text value regardless. Empty = suggest every genuinely-amd64 local image (real architecture metadata, not tag naming — APPENG-6259), regardless of name.
 |===
 
+=== OpenShift deploy follow-ups
+
+* **Node pin dropdown** — The Simulation → OpenShift tab exposes optional `pinNodeHostname` (text) → `nodeSelector.kubernetes.io/hostname`. Follow-up: `listOpenShiftNodes` API + dropdown populated from the selected kube context (same pattern as context/namespace pickers), with an empty “Any node” option.
+
 == Key Technical Decisions
 
 [cols="1,2,2"]
@@ -588,7 +612,7 @@ The extension contributes settings under page-oriented sections in **Settings �
 
 | In-cluster GPU rendering (deploy-time toggle)
 | "Cluster has a GPU" checkbox on Deploy to OpenShift
-| One amd64 image serves both cluster types without a rebuild. **Off (default):** software env forces llvmpipe + headless EGL (row above). **On:** Deployment requests `nvidia.com/gpu: 1` and sets `PHYSICAL_AI_USE_GPU=1`; the entrypoint sees a GPU request without `/dev/dri` (the NVIDIA GPU operator exposes `/dev/nvidia*`, not DRI) and renders off-screen via **hardware EGL** (`--headless-rendering`, no surfaceless override). GPU-on path is **implemented but unverified** (no GPU cluster available).
+| One amd64 image serves both cluster types without a rebuild. **Off (default):** software env forces llvmpipe + headless EGL (row above). **On:** Deployment requests `nvidia.com/gpu: 1` and sets `PHYSICAL_AI_USE_GPU=1`; the entrypoint keeps **server sensors on software EGL** (Mesa surfaceless) and uses **VirtualGL** (`vglrun -d egl`) for the noVNC GUI when a startup probe succeeds on the scheduled worker; otherwise **software-rendered GUI** fallback (heterogeneous GPU nodes). Extension UI surfaces render mode + optional `pinNodeHostname`. Validated live on GPU workers; see backend README § GPU and rendering.
 
 | In-cluster CPU sizing
 | Configurable guaranteed CPUs for the sim container on both software and GPU paths
@@ -600,7 +624,7 @@ The extension contributes settings under page-oriented sections in **Settings �
 * **noVNC vs alternatives:** noVNC chosen and implemented. Xvfb + x11vnc + websockify stack baked into the simulation image, served on port 6080. Lightweight and works without GPU.
 * **Mac GPU and rendering:** On arm64 Mac, simulation launch passes `/dev/dri` and sets `PHYSICAL_AI_USE_GPU=1` (preference **Simulation GPU passthrough**, default on). The entrypoint uses virtio-gpu when `/dev/dri` is present; otherwise falls back to `llvmpipe`. amd64 always uses software rendering. Xvfb + noVNC stack is unchanged.
 * **Ogre2 Sensors plugin:** Re-enabled in world SDF (2026-08). A 2026-07 segfault under llvmpipe is **not reproduced** on current Gazebo Harmonic + Mesa (`scripts/test-sensors-gpu.sh`) — **on arm64/virtio-gpu**. Lidar (`/scan`) and IMU publish after spawn; on Jazzy, Nav2 is launched locally for the **Navigate** button (`navigate_to_pose`, APPENG-5981) — see Nav2 row in Key Technical Decisions.
-* **In-cluster sensor rendering (amd64/llvmpipe):** The arm64 "no segfault" result does **not** carry over to OpenShift. On amd64 with pure llvmpipe (no GPU) the sensors plugin still **SIGSEGVs** on spawn (on-screen GLX under software GL). Fixed by rendering the Gazebo server off-screen via **EGL** (`--headless-rendering` + `EGL_PLATFORM=surfaceless` + mesa-EGL packages). A deploy-time **"Cluster has a GPU"** toggle switches to hardware EGL (`nvidia.com/gpu`) for GPU clusters (unverified). See the in-cluster rows in Key Technical Decisions.
+* **In-cluster sensor rendering (amd64/llvmpipe):** The arm64 "no segfault" result does **not** carry over to OpenShift. On amd64 with pure llvmpipe (no GPU) the sensors plugin still **SIGSEGVs** on spawn (on-screen GLX under software GL). Fixed by rendering the Gazebo server off-screen via **EGL** (`--headless-rendering` + `EGL_PLATFORM=surfaceless` + mesa-EGL packages). With **"Cluster has a GPU"** on, sensors stay on that software EGL path; the GPU is reserved for an optional VirtualGL noVNC viewport with per-node fallback. See the in-cluster rows in Key Technical Decisions.
 * **In-cluster Navigate hang (no GPU):** After the EGL fix, Navigate initially hung on "Navigating…" in-cluster. Root cause was **two independent bugs**, neither in the Nav2/TF/bridge logic (that stack was healthy). (1) The extension's `oc exec` ROS calls ran with `HOME=/` (not writable), so every rclcpp command aborted (`Failed to create log directory`) and the goal never reached Nav2 — fixed by exporting `HOME`/`ROS_HOME`/`ROS_LOG_DIR` on the `oc` path. (2) **CPU sizing**: once goals flowed, 2 cores pinned RTF at ~0.1 (never finishes) and 4 cores sagged to ~0.3–0.6 during active nav (slow/jerky); raising the software-rendering pod to **6 guaranteed CPUs** gives RTF ~1.0 and smooth navigation (warm ~2 m trip ~33 s); the default is a configurable **8 CPUs** on the software path and **6** (`GPU_POD_CPU`, also user-dialable) on the GPU path. See the "In-cluster CPU sizing" row in Key Technical Decisions and APPENG-5777 follow-up notes.
 
 == Open Questions

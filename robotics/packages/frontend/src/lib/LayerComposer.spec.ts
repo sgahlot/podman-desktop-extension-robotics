@@ -421,4 +421,28 @@ describe('LayerComposer', () => {
       });
     });
   });
+
+  describe('Presets Lyrical quick start (fedora-layers)', () => {
+    it('passes a containerfile with the Lyrical testing repo before desktop RPMs', async () => {
+      mockBuildFromContainerfile.mockResolvedValue(undefined);
+      render(LayerComposer, {
+        props: {
+          targetArch: 'amd64',
+          hostArch: 'amd64',
+          quickStartId: 'fedora-bootc43-lyrical-amd64',
+          lockLayerSelection: true,
+          hideTargetArch: true,
+        },
+      });
+
+      const buildButton = screen.getByRole('button', { name: 'Build' });
+      await fireEvent.click(buildButton);
+
+      await waitFor(() => expect(mockBuildFromContainerfile).toHaveBeenCalled());
+      const containerfile = mockBuildFromContainerfile.mock.calls[0][1] as string;
+      expect(containerfile).toContain('ros-lyrical-desktop-runtime');
+      expect(containerfile.indexOf('ros2-lyrical-testing')).toBeLessThan(containerfile.indexOf('ros-lyrical-desktop'));
+      expect(containerfile).toMatch(/baseurl=https:\/\/repo\.ros2\.org\/fedora\/testing\/43/);
+    });
+  });
 });

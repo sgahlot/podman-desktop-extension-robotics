@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { buildLayerStackContainerfile } from '../build/presetContainerfile';
 import {
   evaluateStack,
   generateLayerContainerfile,
@@ -8,6 +9,7 @@ import {
   HUMMINGBIRD_TOOL_OPTIONS,
   type LayerSelection,
 } from './layerCompatibility';
+import * as layerRecipe from './layerRecipe';
 
 function sel(overrides: Partial<LayerSelection>): LayerSelection {
   return {
@@ -24,6 +26,17 @@ describe('evaluateStack', () => {
     const result = evaluateStack(sel({ baseOs: 'custom', ros: 'none', sim: 'none' }));
     expect(result.level).toBe('blocked');
     expect(result.messages[0].text).toContain('custom base image reference is required');
+  });
+
+  it('surfaces layer recipe resolution errors as blocked compatibility', () => {
+    const spy = vi.spyOn(layerRecipe, 'loadLayerRecipe').mockImplementation(() => {
+      throw new Error('Invalid layer recipe "fedora-bootc-43": installCommand is required or has an invalid value.');
+    });
+    const result = evaluateStack(sel({ baseOs: 'fedora-bootc-43', ros: 'ros2-lyrical', sim: 'none' }));
+    spy.mockRestore();
+    expect(result.level).toBe('blocked');
+    expect(result.buildable).toBe(false);
+    expect(result.messages[0]?.text).toContain('Invalid layer recipe "fedora-bootc-43": installCommand');
   });
 
   it('accepts a custom Debian-compatible base OS for ROS and simulation layers', () => {
@@ -252,9 +265,9 @@ describe('generateLayerContainerfile', () => {
   });
 
   it('fedora 43 + Lyrical adds the x86_64 testing repository before installing ROS and sim packages', () => {
-    const containerfile = generateLayerContainerfile(
-      sel({ baseOs: 'fedora-bootc-43', ros: 'ros2-lyrical', sim: 'gazebo-nav2-tb3' }),
-    );
+    const selection = sel({ baseOs: 'fedora-bootc-43', ros: 'ros2-lyrical', sim: 'gazebo-nav2-tb3' });
+    const containerfile = buildLayerStackContainerfile(selection);
+    expect(containerfile).toBe(generateLayerContainerfile(selection));
     expect(containerfile).toContain('FROM quay.io/fedora/fedora-bootc:43');
     expect(containerfile).toContain("RUN cat > /etc/yum.repos.d/ros2-lyrical-testing.repo <<'EOF'");
     expect(containerfile).toContain('[ros2-lyrical-testing]');
@@ -262,6 +275,7 @@ describe('generateLayerContainerfile', () => {
     expect(containerfile).toContain(
       'RUN dnf --releasever=43 install -y ros-lyrical-desktop-runtime ros-lyrical-desktop-devel',
     );
+    expect(containerfile).not.toMatch(/EOF && dnf/);
     expect(containerfile).toContain(
       'RUN dnf --releasever=43 install -y ros-lyrical-navigation2-runtime ' +
         'ros-lyrical-navigation2-devel ' +

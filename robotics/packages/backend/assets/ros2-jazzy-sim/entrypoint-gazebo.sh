@@ -369,24 +369,50 @@ if [[ -n "${ROBOTICS_GUI_LP_THREADS}" ]]; then
     echo "[gazebo] WARN: ignoring invalid ROBOTICS_GUI_LP_THREADS '${ROBOTICS_GUI_LP_THREADS}' (want a positive integer)"
   fi
 fi
+# True when VirtualGL can bind NVIDIA headless EGL on *this* node (same env as gz sim -g).
+# Plain `eglinfo -e` is not sufficient — some GPU workers report EGL devices to Mesa
+# while `vglrun -d egl` still fails (VGL 214), which left noVNC black in a relaunch loop.
+_pai_vgl_egl_usable() {
+  [[ "${GUI_GPU}" == "1" ]] || return 1
+  [[ "${GUI_FORCE_SOFTWARE:-0}" == "1" ]] && return 1
+  command -v vglrun >/dev/null 2>&1 || return 1
+  "${VGL_GUI[@]+"${VGL_GUI[@]}"}" vglrun -d egl eglinfo -e 2>/dev/null | grep -q "egl[0-9]"
+}
+
+# Set when the current GUI child was started via VirtualGL (supervisor recycle only).
+GUI_USE_VGL=0
+
+# Key=value file for the extension / `oc exec` (see shared SIM_RUNTIME_STATUS_PATH).
+_pai_publish_gui_render_status() {
+  local mode="$1"
+  local note="${2:-}"
+  {
+    printf 'ROBOTICS_GPU_REQUESTED=%s\n' "${ROBOTICS_USE_GPU:-0}"
+    printf 'ROBOTICS_GUI_RENDER_MODE=%s\n' "${mode}"
+    if [[ -n "${note}" ]]; then printf 'ROBOTICS_GUI_RENDER_NOTE=%s\n' "${note}"; fi
+  } > /tmp/robotics-sim-runtime-status.env
+}
+
 # _pai_launch_gui: (re)launches `gz sim -g` and sets GZ_GUI_PID. Used both for the
 # initial launch and by the supervisor loop below to relaunch after a crash or a
-# proactive recycle. On the GPU path it re-checks EGL device availability every time
-# (not just at startup) so a relaunch after the GPU wedges also falls back to software
-# instead of failing silently (APPENG-6110).
+# proactive recycle. Re-probes VirtualGL EGL every time so a wedged GPU or a bad node
+# falls back to software instead of a black noVNC loop (APPENG-6110).
 _pai_launch_gui() {
-  if [[ "${GUI_GPU}" == "1" ]]; then
-    if eglinfo -e 2>/dev/null | grep -q "egl[0-9]"; then
-      echo "[gazebo]   EGL devices available; launching GPU-rendered GUI via VirtualGL..."
-      "${GUI_NICE[@]+"${GUI_NICE[@]}"}" "${VGL_GUI[@]}" vglrun -d egl gz sim -g &
-    else
-      echo "[gazebo]   WARN: no EGL devices found (GPU may be corrupted); falling back to software-rendered GUI"
-      "${GUI_NICE[@]+"${GUI_NICE[@]}"}" "${XVFB_GUI_GL[@]+"${XVFB_GUI_GL[@]}"}" "${GUI_THREADS[@]+"${GUI_THREADS[@]}"}" gz sim -g &
-    fi
+  GUI_USE_VGL=0
+  if _pai_vgl_egl_usable; then
+    echo "[gazebo]   VirtualGL EGL usable; launching GPU-rendered GUI..."
+    _pai_publish_gui_render_status virtualgl ""
+    "${GUI_NICE[@]+"${GUI_NICE[@]}"}" "${VGL_GUI[@]}" vglrun -d egl gz sim -g &
+    GUI_USE_VGL=1
+  elif [[ "${GUI_GPU}" == "1" ]]; then
+    echo "[gazebo]   WARN: VirtualGL EGL unavailable on this node; using software-rendered GUI (GPU deploy — GUI on CPU)"
+    _pai_publish_gui_render_status software vgl_egl_unavailable
+    "${GUI_NICE[@]+"${GUI_NICE[@]}"}" "${XVFB_GUI_GL[@]+"${XVFB_GUI_GL[@]}"}" "${GUI_THREADS[@]+"${GUI_THREADS[@]}"}" gz sim -g &
   else
     # Software path: prefixes stack — nice (deprioritize) + XVFB_GUI_GL (software GL/
     # Mesa EGL on the no-DRI path; empty elsewhere) + GUI_THREADS (clamp the llvmpipe
     # pool). All use the [@]+ guard so an empty array expands to nothing under `set -u`.
+    _pai_publish_gui_render_status software ""
     "${GUI_NICE[@]+"${GUI_NICE[@]}"}" "${XVFB_GUI_GL[@]+"${XVFB_GUI_GL[@]}"}" "${GUI_THREADS[@]+"${GUI_THREADS[@]}"}" gz sim -g &
   fi
   GZ_GUI_PID=$!
@@ -429,11 +455,15 @@ _pai_gui_supervisor() {
         break
       fi
       echo "[gazebo] GUI process died; relaunching (attempt ${restart_count})..."
+      if [[ "${GUI_USE_VGL}" == "1" ]] && (( restart_count >= 2 )); then
+        echo "[gazebo]   WARN: GPU GUI failed repeatedly; forcing software GUI for subsequent relaunches"
+        GUI_FORCE_SOFTWARE=1
+      fi
       _pai_launch_gui
       gui_started=$(date +%s)
       continue
     fi
-    if [[ "${GUI_GPU}" == "1" ]] && [[ -n "${ROBOTICS_GUI_RESTART_SEC}" ]] \
+    if [[ "${GUI_USE_VGL}" == "1" ]] && [[ -n "${ROBOTICS_GUI_RESTART_SEC}" ]] \
        && (( $(date +%s) - gui_started >= ROBOTICS_GUI_RESTART_SEC )); then
       echo "[gazebo] Proactively recycling GPU GUI after ${ROBOTICS_GUI_RESTART_SEC}s (APPENG-6110 mitigation for the NVIDIA sustained-EGL leak)..."
       # `wait` on a SIGTERM'd process returns its exit status (143, non-zero); under

@@ -9,12 +9,24 @@
  * backend and the future wizard UI.
  */
 import { hummingbirdToolBakeContainerfileLines } from '../build/hummingbirdToolBake';
+import {
+  buildBaseOsOptions,
+  buildHardenedOptions,
+  buildRosOptions,
+  buildSimOptions,
+} from '../config/layerWizardCatalog';
+import { HUMMINGBIRD_APP_DEFINITIONS, hummingbirdImageRefFromCatalog } from '../config/hummingbirdAppsCatalog';
 import { generateCustomSimulationContainerfile, resolveCustomSimulationTemplate } from './CustomSimulationTemplates';
 import { BASE_OS_IMAGE_REF } from './layerStackConfig';
 import { generateSimOperationalLayerFragment } from './simOperationalLayer';
 import { resolveStackConfig } from './stackConfigResolver';
 
-export { managedSimVerifyHooks, resolveStackConfig, selectionNeedsBundledSimRuntime } from './stackConfigResolver';
+export {
+  managedSimBundleAssetDir,
+  managedSimVerifyHooks,
+  resolveStackConfig,
+  selectionNeedsBundledSimRuntime,
+} from './stackConfigResolver';
 
 export type BaseOsLayer =
   | 'custom'
@@ -116,101 +128,20 @@ export interface HummingbirdAppOption extends LayerOption<HardenedApp> {
  * tag/digest rather than reintroducing a mixed-registry split.
  */
 export function hummingbirdImageRef(app: HardenedApp): string {
-  return `registry.access.redhat.com/hi/${app}:latest`;
+  return hummingbirdImageRefFromCatalog(app);
 }
 
-export const BASE_OS_OPTIONS: readonly LayerOption<BaseOsLayer>[] = [
-  { id: 'custom', label: 'Custom image reference', note: 'Assumes a Debian/Ubuntu-compatible image' },
-  { id: 'ubuntu-noble', label: 'Ubuntu Noble', note: 'ROS-ready (current default)' },
-  {
-    id: 'centos-bootc-stream9',
-    label: 'CentOS bootc (Stream 9)',
-    note: 'bootc — core RPMs only, arm64 repo empty, unsigned',
-  },
-  {
-    id: 'centos-bootc-stream10',
-    label: 'CentOS bootc (Stream 10)',
-    note: 'bootc — core RPMs only, unsigned',
-  },
-  { id: 'fedora-bootc-42', label: 'Fedora bootc 42', note: 'bootc — no ROS repo' },
-  {
-    id: 'fedora-bootc-43',
-    label: 'Fedora bootc 43',
-    note: 'bootc — ROS 2 Lyrical x86_64 testing repository available',
-  },
-  { id: 'fedora-bootc-44', label: 'Fedora bootc 44', note: 'bootc — no ROS repo' },
-  { id: 'rhel-bootc', label: 'RHEL bootc 9', note: 'bootc — requires Red Hat subscription' },
-  { id: 'rhel10-bootc', label: 'RHEL bootc 10', note: 'bootc — requires Red Hat subscription' },
-];
+export const BASE_OS_OPTIONS = buildBaseOsOptions() as readonly LayerOption<BaseOsLayer>[];
 
-export const HARDENED_OPTIONS: readonly LayerOption<HardenedLayer>[] = [
-  { id: 'none', label: 'None', note: 'Skip the hardened application layer' },
-  { id: 'hummingbird-app', label: 'Hummingbird app', note: 'Hardened nginx/python-class application images' },
-];
+export const HARDENED_OPTIONS = buildHardenedOptions() as readonly LayerOption<HardenedLayer>[];
 
-export const HUMMINGBIRD_APP_OPTIONS: readonly HummingbirdAppOption[] = [
-  // Companions — pulled and run as separate service images alongside the robotics image.
-  {
-    id: 'nginx',
-    label: 'Nginx',
-    note: 'Hardened web server / reverse proxy (dashboards, noVNC)',
-    kind: 'companion',
-  },
-  { id: 'python', label: 'Python', note: 'Hardened Python runtime (ROS 2 nodes & tooling)', kind: 'companion' },
-  { id: 'nodejs', label: 'Node.js', note: 'Hardened Node.js runtime (web dashboards & tooling)', kind: 'companion' },
-  {
-    id: 'postgresql',
-    label: 'PostgreSQL',
-    note: 'Hardened PostgreSQL (telemetry / state store)',
-    kind: 'companion',
-  },
-  {
-    id: 'valkey',
-    label: 'Valkey',
-    note: 'Hardened Redis-compatible store (cache / message backing)',
-    kind: 'companion',
-  },
-  { id: 'prometheus', label: 'Prometheus', note: 'Hardened Prometheus (fleet metrics)', kind: 'companion' },
-  { id: 'grafana', label: 'Grafana', note: 'Hardened Grafana (fleet dashboards)', kind: 'companion' },
-  {
-    id: 'syft',
-    label: 'Syft',
-    note: 'External Red Hat Syft scan for an SBOM of the built image',
-    kind: 'companion',
-  },
-  // Tools — hardened CLI binaries baked into the built image with a real COPY --from.
-  // binPath values verified against the actual quay.io/hummingbird/<id>:latest image
-  // filesystem (podman create + export + tar -t) — all five ship at /usr/bin/<id>.
-  {
-    id: 'cosign',
-    label: 'Cosign',
-    note: 'Hardened cosign CLI (sign & verify images)',
-    kind: 'tool',
-    binPath: '/usr/bin/cosign',
-  },
-  {
-    id: 'curl',
-    label: 'curl',
-    note: 'Hardened curl CLI (health checks, fetches)',
-    kind: 'tool',
-    binPath: '/usr/bin/curl',
-  },
-  { id: 'jq', label: 'jq', note: 'Hardened jq CLI (JSON wrangling in scripts)', kind: 'tool', binPath: '/usr/bin/jq' },
-  {
-    id: 'kubectl',
-    label: 'kubectl',
-    note: 'Hardened kubectl CLI (cluster ops from the image)',
-    kind: 'tool',
-    binPath: '/usr/bin/kubectl',
-  },
-  {
-    id: 'helm',
-    label: 'Helm',
-    note: 'Hardened helm CLI (chart deploys from the image)',
-    kind: 'tool',
-    binPath: '/usr/bin/helm',
-  },
-];
+export const HUMMINGBIRD_APP_OPTIONS = HUMMINGBIRD_APP_DEFINITIONS.map(def => ({
+  id: def.id as HardenedApp,
+  label: def.label,
+  note: def.note,
+  kind: def.kind,
+  binPath: def.binPath,
+})) as readonly HummingbirdAppOption[];
 
 /** Companion Hummingbird apps — pulled & run alongside; not baked into the image. */
 export const HUMMINGBIRD_COMPANION_OPTIONS: readonly HummingbirdAppOption[] = HUMMINGBIRD_APP_OPTIONS.filter(
@@ -222,23 +153,9 @@ export const HUMMINGBIRD_TOOL_OPTIONS: readonly HummingbirdAppOption[] = HUMMING
   o => o.kind === 'tool',
 );
 
-export const ROS_OPTIONS: readonly LayerOption<RosLayer>[] = [
-  { id: 'none', label: 'None', note: 'No ROS layer' },
-  {
-    id: 'provided-by-parent',
-    label: 'Provided by custom parent',
-    note: 'The selected custom parent already contains ROS',
-  },
-  { id: 'ros2-jazzy', label: 'ROS2 Jazzy', note: 'Installs via apt on Ubuntu' },
-  { id: 'ros2-humble', label: 'ROS2 Humble', note: 'Installs via apt on Ubuntu' },
-  { id: 'ros2-lyrical', label: 'ROS2 Lyrical', note: 'Installs via dnf on Fedora bootc 43 (x86_64 testing)' },
-];
+export const ROS_OPTIONS = buildRosOptions() as readonly LayerOption<RosLayer>[];
 
-export const SIM_OPTIONS: readonly LayerOption<SimLayer>[] = [
-  { id: 'none', label: 'None', note: 'No simulation layer' },
-  { id: 'gazebo-nav2-tb3', label: 'Gazebo + Nav2 + TurtleBot3', note: 'Requires a ROS layer beneath it' },
-  { id: 'custom-template', label: 'Registered simulation template', note: 'Uses a checked-in package template' },
-];
+export const SIM_OPTIONS = buildSimOptions() as readonly LayerOption<SimLayer>[];
 
 /**
  * Declarative capability model for each base OS. The compatibility verdict is *derived*
