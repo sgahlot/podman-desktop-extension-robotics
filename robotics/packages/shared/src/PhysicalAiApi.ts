@@ -57,7 +57,8 @@ export abstract class PhysicalAiApi {
   /** Build an image from an in-memory Containerfile (layer-composition wizard). The
    * Containerfile is written to a throwaway build context. When `bundleSimRuntime` is true
    * (or the Containerfile includes the sim-runtime layer marker), bundled entrypoint/world
-   * assets from `assets/ros2-jazzy-sim/` are copied into that context before `podman build`.
+   * assets from `packages/backend/assets/<bundle>/` (default `ros2-jazzy-sim`, or the stack
+   * recipe `layer5Bundle.assetDir`) are copied into that context before `podman build`.
    * `options.generateSbom` runs the external Syft image against the built image afterward and records the SBOM in build history,
    * in `options.sbomFormat` (defaults to SBOM_FORMAT_DEFAULT — see BuildHistory.ts for why
    * CycloneDX is the recommended default over SPDX). */
@@ -72,6 +73,8 @@ export abstract class PhysicalAiApi {
       isFinalArtifact?: boolean;
       layerPlan?: LayerCacheBuildOptions['layerPlan'];
       bundleSimRuntime?: boolean;
+      /** From `resolveStackConfig(selection).simRuntimeAssetDir` when set. */
+      simRuntimeAssetDir?: string;
       /** From `resolveStackConfig(selection).verifyHooks` for managed sim builds. */
       verifyHooks?: readonly string[];
     },

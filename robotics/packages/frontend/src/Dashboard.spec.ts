@@ -38,7 +38,7 @@ describe('Dashboard', () => {
     mockListLocalImages.mockResolvedValue(['quay.io/x/ros2-jazzy-sim:noble', 'docker.io/lib/nginx']);
     mockListSimulationContainers.mockResolvedValue([
       { id: 'c1', name: 'pai-sim-1', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [], labels: {} },
-      { id: 'c2', name: 'pai-sim-2', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [], labels: {} },
+      { id: 'c2', name: 'pai-sim-2', imageTag: 'ros2-jazzy-sim:noble', state: 'exited', ports: [], labels: {} },
     ]);
     mockGetOpenShiftContext.mockResolvedValue({ context: 'ctx1', kubeconfigPath: '/x', namespace: 'team-ns' });
     mockListOpenShiftDeployments.mockResolvedValue([
@@ -185,7 +185,7 @@ describe('Dashboard', () => {
     expect(imagesTile).toBeTruthy();
     expect(await within(imagesTile as HTMLElement).findByText('1')).toBeTruthy();
     const localTile = metricButton('Local simulations');
-    expect(within(localTile).getByText('2')).toBeTruthy();
+    expect(within(localTile).getByText('1')).toBeTruthy();
     const openShiftTile = metricButton('OpenShift simulations');
     expect(await within(openShiftTile).findByText('1')).toBeTruthy();
   });
@@ -211,9 +211,24 @@ describe('Dashboard', () => {
     expect(imagesTile).toBeTruthy();
     expect(await within(imagesTile as HTMLElement).findByText('1')).toBeTruthy();
     const localTile = metricButton('Local simulations');
-    expect(within(localTile).getByText('2')).toBeTruthy();
+    expect(within(localTile).getByText('1')).toBeTruthy();
     const openShiftTile = metricButton('OpenShift simulations');
     expect(await within(openShiftTile).findByText('1')).toBeTruthy();
+  });
+
+  it('refreshes local sim count when the dashboard becomes active again', async () => {
+    mockListSimulationContainers
+      .mockResolvedValueOnce([
+        { id: 'c1', name: 'pai-sim-1', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [], labels: {} },
+      ])
+      .mockResolvedValueOnce([]);
+    const { rerender } = render(Dashboard, { active: true });
+    const localTile = metricButton('Local simulations');
+    expect(await within(localTile).findByText('1')).toBeTruthy();
+    await rerender({ active: false });
+    await rerender({ active: true });
+    expect(await within(localTile).findByText('0')).toBeTruthy();
+    expect(mockListSimulationContainers).toHaveBeenCalledTimes(2);
   });
 
   it('opens the ROS 2 docs URL when the explore card is clicked', async () => {

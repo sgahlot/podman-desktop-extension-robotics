@@ -1,3 +1,5 @@
+import type { GuiRenderMode } from './simRuntimeStatus';
+
 /**
  * Types for the "Deploy to OpenShift" flow (APPENG-5777).
  * Milestone 1 deploys a single simulation container (Gazebo + noVNC) reachable
@@ -36,6 +38,13 @@ export interface OpenShiftDeployConfig {
    * A bare `key:effect` (no value) tolerates the taint via `Exists`.
    */
   gpuToleration?: string;
+  /**
+   * Optional worker node NAME to pin the pod (`spec.nodeSelector.kubernetes.io/hostname`).
+   * Empty/undefined = scheduler chooses any eligible node. Use `oc get nodes` for names.
+   * Follow-up: replace the OpenShift tab text field with a cluster node dropdown
+   * (`listOpenShiftNodes` API) so users do not type hostnames manually.
+   */
+  pinNodeHostname?: string;
   /**
    * Kubeconfig context name to deploy into (S8-10), overriding the kubeconfig's
    * current-context — lets the user target a cluster other than the default one
@@ -102,4 +111,13 @@ export interface OpenShiftWorkload {
    * correct across extension restarts and reflects the cluster's actual current state.
    */
   hasHummingbirdSidecar: boolean;
+  /** From Deployment env: `ROBOTICS_USE_GPU=1` when the cluster-has-GPU toggle was used. */
+  clusterGpuRequested?: boolean;
+  /** From the running pod's runtime status file when the image bundles the managed entrypoint. */
+  guiRenderMode?: GuiRenderMode;
+  guiRenderNote?: string;
+  /** Deployment `nodeSelector.kubernetes.io/hostname` when the deploy form pinned a worker. */
+  pinNodeHostname?: string;
+  /** `spec.nodeName` of the running pod, when scheduled. */
+  scheduledNodeName?: string;
 }

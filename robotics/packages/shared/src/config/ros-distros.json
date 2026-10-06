@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "distros": {
+    "humble": {
+      "label": "ROS 2 Humble",
+      "shortLabel": "Humble",
+      "layerRosOptionId": "ros2-humble",
+      "imageRefHints": ["humble"],
+      "nav2": false,
+      "nav2Prewarm": false
+    },
+    "jazzy": {
+      "label": "ROS 2 Jazzy",
+      "shortLabel": "Jazzy",
+      "layerRosOptionId": "ros2-jazzy",
+      "imageRefHints": ["jazzy"],
+      "nav2": true,
+      "nav2Prewarm": true
+    },
+    "lyrical": {
+      "label": "ROS 2 Lyrical",
+      "shortLabel": "Lyrical",
+      "layerRosOptionId": "ros2-lyrical",
+      "imageRefHints": ["lyrical"],
+      "nav2": true,
+      "nav2Prewarm": true
+    }
+  }
+}

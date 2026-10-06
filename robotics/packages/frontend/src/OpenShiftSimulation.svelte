@@ -5,6 +5,12 @@ import { router } from 'tinro';
 import { simulationImageTag } from '/@shared/src/types/SimulationProfiles';
 import { imageRefMatchesAllowlist } from '/@shared/src/security/simImageTrust';
 import { DEFAULT_GPU_TOLERATION, GPU_POD_CPU } from '/@shared/src/openshift/manifests';
+import {
+  gpuGuiFallbackWorkloadMessage,
+  gpuGuiPendingUserMessage,
+  gpuGuiSuccessUserMessage,
+  gpuGuiWorkloadUiTone,
+} from '/@shared/src/types/simRuntimeStatus';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import type { OpenShiftContext, OpenShiftDeployResult, OpenShiftWorkload } from '/@shared/src/types/OpenShiftDeploy';
 import RobotControls, { type RobotEntry } from './RobotControls.svelte';
@@ -99,6 +105,8 @@ let cpu = 8;
  * Only sent when GPU is enabled.
  */
 let gpuToleration = DEFAULT_GPU_TOLERATION;
+/** Optional worker node NAME (`oc get nodes`) — sets Deployment nodeSelector when non-empty. */
+let pinNodeHostname = '';
 /**
  * Middleware selection (APPENG-5775), seeded from the current sim config on mount
  * (same fetch already used to default `image` below). 'zenoh' sets RMW_IMPLEMENTATION
@@ -167,6 +175,7 @@ $: config = {
   useGpu,
   cpu,
   gpuToleration: useGpu ? gpuToleration : undefined,
+  pinNodeHostname: pinNodeHostname.trim() || undefined,
   context: selectedContext || undefined,
   middleware,
   useHummingbirdSidecar,
@@ -1013,6 +1022,21 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
       {/if}
 
       <div class="flex flex-col gap-1">
+        <label for="dep-pin-node" class="text-xs text-[var(--pd-content-text)]">Pin to node (optional)</label>
+        <input
+          id="dep-pin-node"
+          bind:value={pinNodeHostname}
+          disabled={deploying}
+          placeholder="e.g. ip-10-0-167-79.us-east-2.compute.internal"
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
+        <span class="text-xs pai-text-muted">
+          Node <span class="font-mono">NAME</span> from <span class="font-mono">oc get nodes</span> — sets
+          <span class="font-mono">nodeSelector.kubernetes.io/hostname</span>. Leave blank to let the scheduler choose.
+          The node must still satisfy GPU tolerations and CPU/GPU capacity when GPU is on.
+        </span>
+      </div>
+
+      <div class="flex flex-col gap-1">
         <label class="flex flex-row items-center gap-2 text-sm text-[var(--pd-content-text)]">
           <input type="checkbox" bind:checked={useHummingbirdSidecar} disabled={deploying} />
           Hummingbird nginx sidecar
@@ -1115,8 +1139,8 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
 
     <hr class="border-[var(--pd-content-card-border)] my-2" />
 
-    <!-- Deployed workloads -->
-    <div class="max-w-2xl flex flex-col gap-2">
+    <!-- Deployed workloads (full width — viewer and robot controls need horizontal room) -->
+    <div class="w-full flex flex-col gap-2">
       <div class="flex flex-row items-center gap-3">
         <h2 class="text-xl text-[var(--pd-content-header)]">Deployed simulations</h2>
         <button on:click={() => refreshWorkloads()} disabled={listBusy || !namespace} class="pai-btn text-sm">
@@ -1135,44 +1159,87 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
       {:else}
         <div class="flex flex-col gap-2">
           {#each workloads as w (w.name)}
+            {@const gpuUi = gpuGuiWorkloadUiTone(w)}
             <div
-              class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3 flex flex-col gap-1">
-              <div class="flex flex-row items-center justify-between gap-3">
-                <div class="font-medium text-[var(--pd-content-header)] font-mono">{w.name}</div>
-                <div class="flex flex-row items-center gap-2">
-                  <span class="text-xs {w.ready ? 'pai-text-success' : 'pai-text-warning'}">
-                    {w.readyReplicas}/{w.replicas} ready
-                  </span>
-                  <button
-                    on:click={() => remove(w)}
-                    disabled={deletingName === w.name}
-                    class="pai-btn pai-btn-danger text-xs">
-                    {deletingName === w.name ? 'Deleting…' : 'Delete'}
-                  </button>
-                </div>
+              class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 flex flex-col gap-3">
+              <div class="flex flex-col gap-1">
+                <span class="text-xs font-medium text-[var(--pd-content-text)] opacity-80">Deployment</span>
+                <div class="font-medium text-[var(--pd-content-header)] font-mono text-base">{w.name}</div>
               </div>
               {#if w.image}
-                <div class="text-xs font-mono opacity-70 break-all">{w.image}</div>
+                <div class="flex flex-col gap-1">
+                  <span class="text-xs font-medium text-[var(--pd-content-text)] opacity-80">Image</span>
+                  <div class="text-sm font-mono break-all text-[var(--pd-content-text)]">{w.image}</div>
+                </div>
               {/if}
+
+              {#if w.clusterGpuRequested}
+                {#if gpuUi === 'success'}
+                  <p class="text-sm p-3 rounded pai-banner-success font-medium" role="status">
+                    {gpuGuiSuccessUserMessage(w)}
+                  </p>
+                {:else if gpuUi === 'error'}
+                  <p class="text-sm p-3 rounded pai-banner-error font-medium" role="alert">
+                    {gpuGuiFallbackWorkloadMessage(w)}
+                  </p>
+                {:else if gpuUi === 'pending'}
+                  <p class="text-sm p-3 rounded pai-banner-warning font-medium" role="status">
+                    {w.ready ? gpuGuiPendingUserMessage(w) : 'GPU enabled — waiting for the pod to become ready…'}
+                  </p>
+                {/if}
+              {:else if w.ready}
+                <p class="text-sm p-3 rounded pai-banner-info" role="status">
+                  Software rendering (GPU not requested for this deployment).
+                </p>
+              {/if}
+
               <!-- Only offer the route link once the pod is ready AND the route is admitted
                    (S8-5): a route can be admitted before the pod serves, so opening it early
                    just yields a 503. -->
-              {#if w.ready && w.routeUrl}
-                <div class="flex items-center gap-2">
+              <div class="flex flex-col gap-3 pt-1 border-t border-[var(--pd-content-card-border)]">
+                {#if w.ready && w.routeUrl}
                   <button
                     on:click={() => openRoute(w.routeUrl)}
-                    class="pai-link pai-link-sm self-start break-all text-left">
+                    class="pai-link pai-link-sm self-start break-all text-left text-sm">
                     Open {w.routeUrl}
                   </button>
-                  <button on:click={() => toggleViewer(w.name)} class="pai-btn text-xs shrink-0">
-                    {expandedViewerNames.includes(w.name) ? 'Hide Viewer' : 'Show Viewer'}
-                  </button>
-                </div>
-              {:else if w.routeUrl}
-                <span class="text-xs pai-text-muted">Route admitted; waiting for the pod to be ready…</span>
-              {:else}
-                <span class="text-xs pai-text-muted">Route not admitted yet.</span>
-              {/if}
+                  <div class="flex flex-row items-start justify-between gap-4">
+                    <button on:click={() => toggleViewer(w.name)} class="pai-btn text-sm shrink-0">
+                      {expandedViewerNames.includes(w.name) ? 'Hide Viewer' : 'Show Viewer'}
+                    </button>
+                    <div class="flex flex-col items-end gap-1 shrink-0">
+                      <button
+                        on:click={() => remove(w)}
+                        disabled={deletingName === w.name}
+                        class="pai-btn pai-btn-danger text-sm">
+                        {deletingName === w.name ? 'Deleting…' : 'Delete deployment'}
+                      </button>
+                      <span class="text-sm {w.ready ? 'pai-text-success' : 'pai-text-warning'}">
+                        {w.readyReplicas}/{w.replicas} ready
+                      </span>
+                    </div>
+                  </div>
+                {:else}
+                  {#if w.routeUrl}
+                    <span class="text-sm pai-text-muted">Route admitted; waiting for the pod to be ready…</span>
+                  {:else}
+                    <span class="text-sm pai-text-muted">Route not admitted yet.</span>
+                  {/if}
+                  <div class="flex flex-row justify-end">
+                    <div class="flex flex-col items-end gap-1">
+                      <button
+                        on:click={() => remove(w)}
+                        disabled={deletingName === w.name}
+                        class="pai-btn pai-btn-danger text-sm">
+                        {deletingName === w.name ? 'Deleting…' : 'Delete deployment'}
+                      </button>
+                      <span class="text-sm {w.ready ? 'pai-text-success' : 'pai-text-warning'}">
+                        {w.readyReplicas}/{w.replicas} ready
+                      </span>
+                    </div>
+                  </div>
+                {/if}
+              </div>
 
               {#if w.ready && w.routeUrl && expandedViewerNames.includes(w.name)}
                 <iframe

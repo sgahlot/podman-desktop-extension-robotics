@@ -1,3 +1,4 @@
+import { SIM_RUNTIME_BUNDLE_ASSET_DIR } from '../config/platformDefaultsCatalog';
 import type { BaseOsLayer, LayerSelection, RosLayer } from './layerCompatibility';
 
 const ROS_DISTRO: Record<Exclude<RosLayer, 'none' | 'provided-by-parent'>, string> = {
@@ -7,7 +8,7 @@ const ROS_DISTRO: Record<Exclude<RosLayer, 'none' | 'provided-by-parent'>, strin
 };
 
 /** Bundled asset dir under `packages/backend/assets/` (reused across distros via env overrides). */
-export const SIM_RUNTIME_BUNDLE_ASSET_DIR = 'ros2-jazzy-sim';
+export { SIM_RUNTIME_BUNDLE_ASSET_DIR };
 
 /** Marker comment in generated Containerfiles — backend stages bundled assets when present. */
 export const SIM_RUNTIME_LAYER_MARKER = '# Layer 5 — Sim runtime:';

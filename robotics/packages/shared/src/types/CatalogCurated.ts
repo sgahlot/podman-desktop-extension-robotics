@@ -4,10 +4,12 @@
  * Examples: `ros2-*-base`, `ros2-humble-turtlebot3`
  */
 
-export const DEFAULT_CATALOG_VIEW_MODE = 'all' as const;
+import { defaultCatalogViewMode, defaultCuratedAllowlistFromCatalog } from '../config/platformDefaultsCatalog';
+
+export const DEFAULT_CATALOG_VIEW_MODE = defaultCatalogViewMode();
 export type CatalogViewMode = 'all' | 'curated';
 
-export const DEFAULT_CURATED_ALLOWLIST = 'ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*';
+export const DEFAULT_CURATED_ALLOWLIST = defaultCuratedAllowlistFromCatalog();
 
 export function parseCuratedAllowlist(raw: string | undefined | null): string[] {
   if (!raw?.trim()) {

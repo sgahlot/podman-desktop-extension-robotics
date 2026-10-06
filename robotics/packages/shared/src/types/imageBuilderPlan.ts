@@ -1,5 +1,6 @@
 import type { CustomSimulationTemplate, SupportedArchitecture } from './CustomSimulationTemplates';
 import { CUSTOM_SIMULATION_TEMPLATES, resolveCustomSimulationTemplate } from './CustomSimulationTemplates';
+import { resolveSimulationProfileById } from './SimulationProfiles';
 import type { BaseSource, ImageBuilderRecipe } from './ImageBuilderRecipe';
 import { validateImageBuilderRecipe } from './ImageBuilderRecipe';
 import { resolveStackConfig } from './stackConfigResolver';
@@ -37,6 +38,8 @@ function customBaseMatchesTemplate(
 }
 
 function presetProfileMatchesDistro(profileId: string, distro: string): boolean {
+  const profile = resolveSimulationProfileById(profileId);
+  if (profile) return profile.distro.toLowerCase() === distro.toLowerCase();
   return profileId.toLowerCase().includes(distro.toLowerCase());
 }
 

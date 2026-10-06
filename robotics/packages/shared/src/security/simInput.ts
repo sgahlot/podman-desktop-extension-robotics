@@ -6,13 +6,21 @@
  * packages/backend/assets/ros2-jazzy-sim/lib/validate-input.sh
  */
 
+import {
+  assertCatalogRosDistro,
+  type CatalogRosDistroId,
+  distroFromImageRefHints,
+  distroSupportsNav2FromCatalog,
+  distroSupportsNav2PrewarmFromCatalog,
+} from '../config/rosDistroCatalog';
+
 /** Robot names used in spawn / nav (ROS namespace / Gazebo model). */
 export const ROBOT_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
 
 /** ROS 2 topic names (absolute, simple path segments). */
 export const ROS_TOPIC_NAME_RE = /^(\/[a-zA-Z][a-zA-Z0-9_]*)+$/;
 
-export type SupportedRosDistro = 'humble' | 'jazzy' | 'lyrical';
+export type SupportedRosDistro = CatalogRosDistroId;
 
 export function assertRobotName(name: string): string {
   if (!ROBOT_NAME_RE.test(name)) {
@@ -31,28 +39,26 @@ export function assertRosTopicName(name: string): string {
 }
 
 export function assertRosDistro(distro: string): SupportedRosDistro {
-  if (distro === 'humble' || distro === 'jazzy' || distro === 'lyrical') {
-    return distro;
-  }
-  throw new Error(`Unsupported ROS distro "${distro}".`);
+  return assertCatalogRosDistro(distro);
 }
 
-/** Nav2 obstacle-aware navigation (pre-warm + Navigate) — Jazzy and Fedora Lyrical sim images. */
+/** Nav2 obstacle-aware navigation (pre-warm + Navigate) — configured per distro in `ros-distros.json`. */
 export function distroSupportsNav2(distro: SupportedRosDistro): boolean {
-  return distro === 'jazzy' || distro === 'lyrical';
+  return distroSupportsNav2FromCatalog(distro);
 }
 
 /** Infer ROS distro from an OCI image reference (tag or path segment). */
 export function distroFromImageRef(image: string): SupportedRosDistro {
-  if (image.includes('humble')) return 'humble';
-  if (image.includes('lyrical')) return 'lyrical';
-  if (image.includes('jazzy')) return 'jazzy';
-  throw new Error(`Unsupported ROS distro for image "${image}". Tag must include "humble", "jazzy", or "lyrical".`);
+  return distroFromImageRefHints(image);
 }
 
 /** Whether spawn should show Nav2 pre-warm and start background bringup. */
 export function imageSupportsNav2Prewarm(image: string): boolean {
-  return image.includes('jazzy') || image.includes('lyrical');
+  try {
+    return distroSupportsNav2PrewarmFromCatalog(distroFromImageRefHints(image));
+  } catch {
+    return false;
+  }
 }
 
 /** Numeric pose / duration strings for spawn argv (no shell metacharacters). */

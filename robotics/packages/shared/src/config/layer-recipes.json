@@ -1,0 +1,215 @@
+{
+  "version": 1,
+  "recipes": {
+    "ubuntu-noble": {
+      "imageRef": "docker.io/library/ubuntu:24.04",
+      "capability": {
+        "isBootc": false,
+        "packaging": "apt",
+        "requiresSubscription": false,
+        "supportedRosDistros": [
+          "jazzy",
+          "humble"
+        ],
+        "supportedSimDistros": [
+          "jazzy",
+          "humble"
+        ],
+        "hasRosRepo": true
+      },
+      "rosRepository": "# ROS 2 apt repository (required before installing any ros-* package on Ubuntu)\nRUN apt-get update && apt-get install -y curl gnupg lsb-release && if ! grep -Rqs 'packages.ros.org/ros2/ubuntu' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null; then /usr/bin/curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg && echo \"deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main\" | tee /etc/apt/sources.list.d/ros2.list > /dev/null; fi",
+      "installCommand": "apt-get update && apt-get install -y",
+      "installCleanup": "",
+      "rosPackages": {
+        "jazzy": [
+          "desktop"
+        ],
+        "humble": [
+          "desktop"
+        ]
+      },
+      "simulationPackages": {
+        "jazzy": [
+          "navigation2",
+          "nav2-bringup",
+          "nav2-minimal-tb3-sim",
+          "ros-gz-sim"
+        ],
+        "humble": [
+          "navigation2",
+          "nav2-bringup",
+          "nav2-minimal-tb3-sim",
+          "ros-gz-sim"
+        ]
+      },
+      "layer5Bundle": {
+        "assetDir": "ros2-jazzy-sim",
+        "verifyHook": "verify-sim-runtime"
+      },
+      "ui": {
+        "label": "Ubuntu Noble",
+        "note": "ROS-ready (current default)"
+      }
+    },
+    "centos-bootc-stream9": {
+      "imageRef": "quay.io/centos-bootc/centos-bootc:stream9",
+      "capability": {
+        "isBootc": true,
+        "packaging": "dnf",
+        "requiresSubscription": false,
+        "supportedRosDistros": [],
+        "supportedSimDistros": [],
+        "hasRosRepo": true
+      },
+      "installCommand": "dnf install -y",
+      "installCleanup": "",
+      "rosPackages": {},
+      "simulationPackages": {},
+      "ui": {
+        "label": "CentOS bootc (Stream 9)",
+        "note": "bootc — core RPMs only, arm64 repo empty, unsigned"
+      }
+    },
+    "centos-bootc-stream10": {
+      "imageRef": "quay.io/centos-bootc/centos-bootc:stream10",
+      "capability": {
+        "isBootc": true,
+        "packaging": "dnf",
+        "requiresSubscription": false,
+        "supportedRosDistros": [],
+        "supportedSimDistros": [],
+        "hasRosRepo": true
+      },
+      "installCommand": "dnf install -y",
+      "installCleanup": "",
+      "rosPackages": {},
+      "simulationPackages": {},
+      "ui": {
+        "label": "CentOS bootc (Stream 10)",
+        "note": "bootc — core RPMs only, unsigned"
+      }
+    },
+    "fedora-bootc-42": {
+      "imageRef": "quay.io/fedora/fedora-bootc:42",
+      "capability": {
+        "isBootc": true,
+        "packaging": "dnf",
+        "requiresSubscription": false,
+        "supportedRosDistros": [],
+        "supportedSimDistros": [],
+        "hasRosRepo": false
+      },
+      "installCommand": "dnf install -y",
+      "installCleanup": "",
+      "rosPackages": {},
+      "simulationPackages": {},
+      "ui": {
+        "label": "Fedora bootc 42",
+        "note": "bootc — no ROS repo"
+      }
+    },
+    "fedora-bootc-43": {
+      "imageRef": "quay.io/fedora/fedora-bootc:43",
+      "capability": {
+        "isBootc": true,
+        "packaging": "dnf",
+        "requiresSubscription": false,
+        "supportedRosDistros": [
+          "lyrical"
+        ],
+        "supportedSimDistros": [
+          "lyrical"
+        ],
+        "hasRosRepo": true
+      },
+      "rosRepository": "# ROS 2 Lyrical Fedora 43 x86_64 testing repository\nRUN cat > /etc/yum.repos.d/ros2-lyrical-testing.repo <<'EOF'\n[ros2-lyrical-testing]\nname=ROS 2 Lyrical Fedora 43 x86_64 (testing)\nbaseurl=https://repo.ros2.org/fedora/testing/43/x86_64/\nenabled=1\ngpgcheck=0\ngpgkey=https://repo.ros2.org/repos.key\nEOF",
+      "installCommand": "dnf --releasever=43 install -y",
+      "installCleanup": " && dnf clean all",
+      "rosPackages": {
+        "lyrical": [
+          "desktop-runtime",
+          "desktop-devel"
+        ]
+      },
+      "simulationPackages": {
+        "lyrical": [
+          "navigation2-runtime",
+          "navigation2-devel",
+          "nav2-bringup-runtime",
+          "nav2-bringup-devel",
+          "nav2-minimal-tb3-sim-runtime",
+          "nav2-minimal-tb3-sim-devel",
+          "turtlebot3-gazebo-runtime",
+          "turtlebot3-gazebo-devel",
+          "ros-gz-sim-runtime",
+          "ros-gz-sim-devel"
+        ]
+      },
+      "layer5Bundle": {
+        "assetDir": "ros2-jazzy-sim",
+        "verifyHook": "verify-sim-runtime"
+      },
+      "ui": {
+        "label": "Fedora bootc 43",
+        "note": "bootc — ROS 2 Lyrical x86_64 testing repository available"
+      }
+    },
+    "fedora-bootc-44": {
+      "imageRef": "quay.io/fedora/fedora-bootc:44",
+      "capability": {
+        "isBootc": true,
+        "packaging": "dnf",
+        "requiresSubscription": false,
+        "supportedRosDistros": [],
+        "supportedSimDistros": [],
+        "hasRosRepo": false
+      },
+      "installCommand": "dnf install -y",
+      "installCleanup": "",
+      "rosPackages": {},
+      "simulationPackages": {},
+      "ui": {
+        "label": "Fedora bootc 44",
+        "note": "bootc — no ROS repo"
+      }
+    },
+    "rhel-bootc": {
+      "imageRef": "registry.redhat.io/rhel9/rhel-bootc:latest",
+      "capability": {
+        "isBootc": true,
+        "packaging": "dnf",
+        "requiresSubscription": true,
+        "supportedRosDistros": [],
+        "supportedSimDistros": [],
+        "hasRosRepo": true
+      },
+      "installCommand": "dnf install -y",
+      "installCleanup": "",
+      "rosPackages": {},
+      "simulationPackages": {},
+      "ui": {
+        "label": "RHEL bootc 9",
+        "note": "bootc — requires Red Hat subscription"
+      }
+    },
+    "rhel10-bootc": {
+      "imageRef": "registry.redhat.io/rhel10/rhel-bootc:latest",
+      "capability": {
+        "isBootc": true,
+        "packaging": "dnf",
+        "requiresSubscription": true,
+        "supportedRosDistros": [],
+        "supportedSimDistros": [],
+        "hasRosRepo": true
+      },
+      "installCommand": "dnf install -y",
+      "installCleanup": "",
+      "rosPackages": {},
+      "simulationPackages": {},
+      "ui": {
+        "label": "RHEL bootc 10",
+        "note": "bootc — requires Red Hat subscription"
+      }
+    }
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "id": "turtlebot3-humble-dds-gazebo",
+      "robot": "turtlebot3",
+      "distro": "humble",
+      "middleware": "dds",
+      "engine": "gazebo",
+      "baseAssetDir": "ros2-humble-base",
+      "baseImageName": "ros2-humble-base",
+      "assetDir": "ros2-humble-turtlebot3",
+      "imageName": "ros2-humble-turtlebot3",
+      "hardenedImageName": "ros2-humble-hardened",
+      "label": "ROS2 Humble + TurtleBot3 + Gazebo (DDS)"
+    },
+    {
+      "id": "turtlebot3-jazzy-dds-gazebo",
+      "robot": "turtlebot3",
+      "distro": "jazzy",
+      "middleware": "dds",
+      "engine": "gazebo",
+      "baseAssetDir": "ros2-jazzy-base",
+      "baseImageName": "ros2-jazzy-base",
+      "assetDir": "ros2-jazzy-sim",
+      "imageName": "ros2-jazzy-sim",
+      "hardenedImageName": "ros2-jazzy-hardened",
+      "label": "ROS2 Jazzy + TurtleBot3 + Gazebo + noVNC"
+    },
+    {
+      "id": "turtlebot3-jazzy-zenoh-gazebo",
+      "robot": "turtlebot3",
+      "distro": "jazzy",
+      "middleware": "zenoh",
+      "engine": "gazebo",
+      "baseAssetDir": "ros2-jazzy-base",
+      "baseImageName": "ros2-jazzy-base",
+      "assetDir": "ros2-jazzy-sim",
+      "imageName": "ros2-jazzy-sim",
+      "hardenedImageName": "ros2-jazzy-hardened",
+      "label": "ROS2 Jazzy + TurtleBot3 + Gazebo + noVNC (Zenoh)"
+    },
+    {
+      "id": "turtlebot3-lyrical-gazebo",
+      "robot": "turtlebot3",
+      "distro": "lyrical",
+      "middleware": "dds",
+      "engine": "gazebo",
+      "baseAssetDir": "ros2-jazzy-base",
+      "baseImageName": "ros2-lyrical-base",
+      "assetDir": "ros2-jazzy-sim",
+      "imageName": "ros2-lyrical-sim",
+      "label": "ROS 2 Lyrical + TurtleBot3 + Gazebo + Nav2 (Layers wizard / Fedora bootc 43)"
+    }
+  ]
+}

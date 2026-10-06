@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "catalog": {
+    "defaultViewMode": "all",
+    "defaultCuratedAllowlist": "ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*"
+  },
+  "managedSimRuntime": {
+    "defaultVerifyHook": "verify-sim-runtime",
+    "defaultBundleAssetDir": "ros2-jazzy-sim",
+    "contextPaths": [
+      "entrypoint-gazebo.sh",
+      "entrypoint-spawn-robot.sh",
+      "entrypoint-nav2.sh",
+      "lib/load-validate-input.sh",
+      "lib/validate-input.sh",
+      "lib/patch-nav2-params.py",
+      "config/cyclonedds-qos.xml",
+      "worlds",
+      "www"
+    ]
+  },
+  "imageBuilder": {
+    "defaultBaseImagePresetId": "jazzy-noble",
+    "defaultQuickStartId": "ubuntu-jazzy-arm64",
+    "legacyBaseImagePresetIds": {
+      "sloretz-multiarch": "sloretz",
+      "osrf-official": "osrf",
+      "jazzy-arm64": "jazzy-noble"
+    }
+  }
+}

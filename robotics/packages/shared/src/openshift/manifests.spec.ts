@@ -5,6 +5,8 @@ import {
   assertNamespace,
   assertImageRef,
   parseGpuToleration,
+  parsePinNodeHostname,
+  KUBE_NODE_HOSTNAME_LABEL,
   toYaml,
   manifestsToYaml,
   NOVNC_CONTAINER_PORT,
@@ -22,6 +24,7 @@ interface DeploymentManifest {
     template: {
       spec: {
         tolerations?: { key: string; operator: string; value?: string; effect: string }[];
+        nodeSelector?: Record<string, string>;
         containers: {
           image: string;
           command: string[];
@@ -276,6 +279,19 @@ describe('buildOpenShiftManifests', () => {
     expect(() => buildOpenShiftManifests({ ...config, namespace: 'BAD NS' })).toThrow();
     expect(() => buildOpenShiftManifests({ ...config, image: 'evil; rm -rf /' })).toThrow();
   });
+
+  it('omits nodeSelector when pinNodeHostname is empty', () => {
+    const [deployment] = buildOpenShiftManifests(config);
+    const spec = (deployment as unknown as DeploymentManifest).spec.template.spec;
+    expect(spec.nodeSelector).toBeUndefined();
+  });
+
+  it('sets nodeSelector.kubernetes.io/hostname when pinNodeHostname is set', () => {
+    const hostname = 'ip-10-0-167-79.us-east-2.compute.internal';
+    const [deployment] = buildOpenShiftManifests({ ...config, pinNodeHostname: hostname });
+    const spec = (deployment as unknown as DeploymentManifest).spec.template.spec;
+    expect(spec.nodeSelector).toEqual({ [KUBE_NODE_HOSTNAME_LABEL]: hostname });
+  });
 });
 
 describe('buildOpenShiftManifests — Hummingbird nginx sidecar (APPENG-6227)', () => {
@@ -353,6 +369,25 @@ describe('buildOpenShiftManifests — Hummingbird nginx sidecar (APPENG-6227)', 
     expect(simContainer.resources.limits['nvidia.com/gpu']).toBe('1');
 
     expect((service as unknown as ServiceManifest).spec.ports[0].targetPort).toBe(HUMMINGBIRD_NGINX_CONTAINER_PORT);
+  });
+});
+
+describe('parsePinNodeHostname', () => {
+  it('returns undefined for empty input', () => {
+    expect(parsePinNodeHostname(undefined)).toBeUndefined();
+    expect(parsePinNodeHostname('')).toBeUndefined();
+    expect(parsePinNodeHostname('   ')).toBeUndefined();
+  });
+
+  it('normalizes valid node names', () => {
+    expect(parsePinNodeHostname('ip-10-0-167-79.us-east-2.compute.internal')).toBe(
+      'ip-10-0-167-79.us-east-2.compute.internal',
+    );
+  });
+
+  it('rejects invalid hostnames', () => {
+    expect(() => parsePinNodeHostname('bad name')).toThrow(/Invalid node hostname/);
+    expect(() => parsePinNodeHostname('_bad')).toThrow();
   });
 });
 

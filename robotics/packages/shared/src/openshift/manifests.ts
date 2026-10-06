@@ -133,6 +133,27 @@ const TOLERATION_KEY_RE = /^([a-z0-9]([a-z0-9.-]*[a-z0-9])?\/)?[A-Za-z0-9]([A-Za
  * The effect is split off first (only when it's a known effect), so keys that
  * contain a '/' prefix (e.g. `nvidia.com/gpu`) parse correctly.
  */
+/** Node label used when pinning a Deployment to a specific worker (`oc get nodes` NAME column). */
+export const KUBE_NODE_HOSTNAME_LABEL = 'kubernetes.io/hostname';
+
+/**
+ * Parse optional node pin from the deploy form. Empty/whitespace = no nodeSelector.
+ * Accepts the node NAME from `kubectl get nodes` (letters, digits, dots, hyphens).
+ */
+export function parsePinNodeHostname(raw: string | undefined): string | undefined {
+  const hostname = raw?.trim();
+  if (!hostname) return undefined;
+  if (hostname.length > 253) {
+    throw new Error(`Node hostname is too long (${hostname.length} characters, max 253).`);
+  }
+  if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/i.test(hostname)) {
+    throw new Error(
+      `Invalid node hostname "${hostname}". Use the node NAME from oc get nodes (letters, digits, dots, hyphens).`,
+    );
+  }
+  return hostname.toLowerCase();
+}
+
 export function parseGpuToleration(raw: string): KubeToleration {
   if (typeof raw !== 'string' || raw.trim() === '') {
     throw new Error(`Invalid GPU toleration "${raw}". Expected key[=value][:effect], e.g. g5-gpu=true:NoSchedule.`);
@@ -246,6 +267,8 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
   // taint or the pod sits Pending on the only nodes that have a GPU. Software pods
   // don't want a GPU node, so no toleration there.
   const tolerations = useGpu ? [parseGpuToleration(config.gpuToleration ?? DEFAULT_GPU_TOLERATION)] : undefined;
+  const pinHostname = parsePinNodeHostname(config.pinNodeHostname);
+  const nodeSelector = pinHostname ? { [KUBE_NODE_HOSTNAME_LABEL]: pinHostname } : undefined;
 
   // Hummingbird nginx sidecar (APPENG-6227): a second container in the same pod,
   // reverse-proxying noVNC over localhost (sidecar containers share the pod's
@@ -296,6 +319,7 @@ export function buildOpenShiftManifests(config: OpenShiftDeployConfig): Record<s
         metadata: { labels },
         spec: {
           ...(tolerations ? { tolerations } : {}),
+          ...(nodeSelector ? { nodeSelector } : {}),
           containers: [
             {
               name: 'sim',

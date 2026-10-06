@@ -11,6 +11,8 @@ import {
   type BaseOsCapability,
 } from './layerStackConfig';
 import { MANAGED_SIM_CONTEXT_PATHS, MANAGED_SIM_VERIFY_HOOK } from './managedSimRuntime';
+import { SIM_RUNTIME_BUNDLE_ASSET_DIR } from './simOperationalLayer';
+import { loadLayerRecipe } from './layerRecipe';
 
 export function packageManagerCleanCommand(packaging: 'apt' | 'dnf'): string {
   return packaging === 'dnf' ? 'dnf clean all' : 'apt-get clean';
@@ -29,19 +31,14 @@ export interface ResolvedStackConfig {
   layerOrder: readonly ('base-os' | 'hardened' | 'ros' | 'sim')[];
   copySources: readonly string[];
   verifyHooks: readonly string[];
+  /** Bundled extension asset dir for Layer 5 staging (`packages/backend/assets/<name>/`). */
+  simRuntimeAssetDir?: string;
   managedSimEligible: boolean;
 }
 
-const ROS_REPOSITORY =
-  '# ROS 2 apt repository (required before installing any ros-* package on Ubuntu)\n' +
-  'RUN apt-get update && apt-get install -y curl gnupg lsb-release && ' +
-  "if ! grep -Rqs 'packages.ros.org/ros2/ubuntu' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null; then " +
-  '/usr/bin/curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key ' +
-  '-o /usr/share/keyrings/ros-archive-keyring.gpg && ' +
-  'echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] ' +
-  'http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" ' +
-  '| tee /etc/apt/sources.list.d/ros2.list > /dev/null; ' +
-  'fi';
+function defaultUbuntuRosRepository(): string {
+  return loadLayerRecipe('ubuntu-noble').rosRepository ?? '';
+}
 
 const ROS_DISTRO_BY_FAMILY: Record<string, readonly string[]> = {
   ubuntu: ['jazzy', 'humble'],
@@ -96,6 +93,7 @@ function customCapability(selection: LayerSelection): BaseOsCapability {
 
 export function resolveStackConfig(selection: LayerSelection): ResolvedStackConfig {
   const customFamilyLower = selection.customBaseOsFamily?.trim().toLowerCase() ?? '';
+  const recipe = selection.baseOs === 'custom' ? undefined : loadLayerRecipe(selection.baseOs);
   const capability = selection.baseOs === 'custom' ? customCapability(selection) : BASE_OS_CAPABILITY[selection.baseOs];
   const baseImageRef =
     selection.baseOs === 'custom' ? (selection.customBaseImage?.trim() ?? '') : BASE_OS_IMAGE_REF[selection.baseOs];
@@ -114,10 +112,10 @@ export function resolveStackConfig(selection: LayerSelection): ResolvedStackConf
   const hasSimulationPackages = selection.sim === 'gazebo-nav2-tb3' && rosDistro;
   const repositoryFragments: string[] = [];
   if (capability.packaging === 'apt' && (selection.ros !== 'none' || selection.sim !== 'none')) {
-    repositoryFragments.push(ROS_REPOSITORY);
+    repositoryFragments.push(recipe?.rosRepository ?? defaultUbuntuRosRepository());
   }
   if (capability.packaging === 'dnf' && rosDistro === 'lyrical' && baseVersion === '43') {
-    repositoryFragments.push(FEDORA_LYRICAL_REPOSITORY);
+    repositoryFragments.push(recipe?.rosRepository ?? FEDORA_LYRICAL_REPOSITORY);
   }
 
   const layerOrder: ('base-os' | 'hardened' | 'ros' | 'sim')[] = ['base-os'];
@@ -126,6 +124,10 @@ export function resolveStackConfig(selection: LayerSelection): ResolvedStackConf
   if (selection.sim !== 'none') layerOrder.push('sim');
 
   const managedSimEligible = selection.sim === 'gazebo-nav2-tb3' && Boolean(rosDistro);
+  const simRuntimeAssetDir = managedSimEligible
+    ? (recipe?.layer5Bundle?.assetDir ?? SIM_RUNTIME_BUNDLE_ASSET_DIR)
+    : undefined;
+  const simVerifyHook = recipe?.layer5Bundle?.verifyHook ?? MANAGED_SIM_VERIFY_HOOK;
 
   return {
     baseImageRef,
@@ -134,22 +136,38 @@ export function resolveStackConfig(selection: LayerSelection): ResolvedStackConf
     installCommand:
       selection.baseOs === 'custom' && capability.packaging === 'dnf'
         ? customDnfInstallCommand(selection, customFamilyLower)
-        : INSTALL_COMMAND[selection.baseOs],
+        : (recipe?.installCommand ?? INSTALL_COMMAND[selection.baseOs]),
     installCleanup:
       selection.baseOs === 'custom' && capability.packaging === 'dnf'
         ? customFamilyLower.includes('fedora') && selection.customBaseOsVersion?.trim() === '43'
           ? ' && dnf clean all'
           : ''
-        : INSTALL_CLEANUP[selection.baseOs],
+        : (recipe?.installCleanup ?? INSTALL_CLEANUP[selection.baseOs]),
     rosDistro,
-    rosPackages: hasRosPackages ? ROS_DESKTOP_PACKAGES[rosDistro as keyof typeof ROS_DESKTOP_PACKAGES] : [],
-    simulationPackages: hasSimulationPackages ? SIMULATION_PACKAGES[rosDistro as keyof typeof SIMULATION_PACKAGES] : [],
+    rosPackages: hasRosPackages
+      ? (recipe?.rosPackages[rosDistro as keyof typeof recipe.rosPackages] ??
+        ROS_DESKTOP_PACKAGES[rosDistro as keyof typeof ROS_DESKTOP_PACKAGES])
+      : [],
+    simulationPackages: hasSimulationPackages
+      ? (recipe?.simulationPackages[rosDistro as keyof typeof recipe.simulationPackages] ??
+        SIMULATION_PACKAGES[rosDistro as keyof typeof SIMULATION_PACKAGES])
+      : [],
     repositoryFragments,
     layerOrder,
     copySources: managedSimEligible ? [...MANAGED_SIM_CONTEXT_PATHS] : [],
-    verifyHooks: managedSimEligible ? [MANAGED_SIM_VERIFY_HOOK] : [],
+    verifyHooks: managedSimEligible ? [simVerifyHook] : [],
+    simRuntimeAssetDir,
     managedSimEligible,
   };
+}
+
+/** Extension asset dir staged for managed sim builds (Layer 5), when eligible. */
+export function managedSimBundleAssetDir(selection: LayerSelection): string | undefined {
+  try {
+    return resolveStackConfig(selection).simRuntimeAssetDir;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Whether the selection should bundle managed sim runtime assets into the build context. */

@@ -616,7 +616,7 @@ describe('OpenShiftSimulation', () => {
 
     render(DeployOpenShift);
     await screen.findByText('ros2-jazzy-sim');
-    await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete deployment' }));
 
     await waitFor(() => {
       expect(mockDeleteOpenShiftDeployment).toHaveBeenCalledWith('sgahlot-pd-extn', 'ros2-jazzy-sim', 'ctx');
