@@ -252,6 +252,120 @@ describe('PhysicalAiApiImpl', () => {
     });
   });
 
+  describe('multi-registry catalog', () => {
+    it('reads configured registries and maps Docker Hub repositories and tags', async () => {
+      const registries = [
+        {
+          id: 'docker-hub',
+          displayName: 'Docker Hub',
+          kind: 'docker-hub',
+          host: 'docker.io',
+          namespace: 'library',
+        },
+      ];
+      const config = {
+        get: vi.fn((key: string) => (key === 'catalog.registries' ? JSON.stringify(registries) : undefined)),
+      };
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue(
+        config as unknown as extensionApi.Configuration,
+      );
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ results: [{ name: 'ubuntu', description: 'Ubuntu image' }] }),
+        } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ results: [{ name: '24.04', full_size: 123, last_updated: '2026-01-01T00:00:00Z' }] }),
+        } as Response);
+
+      expect(await api.getCatalogRegistries()).toEqual(registries);
+      expect(await api.listCatalogRepositories('docker-hub', 'library')).toEqual([
+        {
+          namespace: 'library',
+          name: 'ubuntu',
+          description: 'Ubuntu image',
+          is_public: true,
+          kind: 'image',
+          state: '',
+        },
+      ]);
+      expect(await api.getCatalogTags('docker-hub', 'library', 'ubuntu')).toEqual([
+        {
+          name: '24.04',
+          size: 123,
+          last_modified: '2026-01-01T00:00:00Z',
+          manifest_digest: '',
+          is_manifest_list: false,
+        },
+      ]);
+      expect(new URL(fetchSpy.mock.calls[0][0] as string).hostname).toBe('hub.docker.com');
+      expect(new URL(fetchSpy.mock.calls[1][0] as string).pathname).toContain('/repositories/library/ubuntu/tags');
+    });
+
+    it('falls back to the configured Quay namespace when registry settings are empty', async () => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn((key: string) => (key === 'general.quayNamespace' ? 'my-org' : undefined)),
+      } as unknown as extensionApi.Configuration);
+
+      await expect(api.getCatalogRegistries()).resolves.toEqual([
+        { id: 'quay', displayName: 'Quay.io', kind: 'quay', host: 'quay.io', namespace: 'my-org' },
+      ]);
+    });
+
+    it('normalizes Quay host settings even when kind is copied incorrectly', async () => {
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn((key: string) =>
+          key === 'catalog.registries'
+            ? JSON.stringify([
+                { id: 'quay', displayName: 'Quay', kind: 'docker-hub', host: 'quay.io', namespace: 'sgahlot' },
+              ])
+            : undefined,
+        ),
+      } as unknown as extensionApi.Configuration);
+
+      await expect(api.getCatalogRegistries()).resolves.toEqual([
+        { id: 'quay', displayName: 'Quay', kind: 'quay', host: 'quay.io', namespace: 'sgahlot' },
+      ]);
+    });
+
+    it('rejects malformed JSON and invalid registry entries', async () => {
+      const config = {
+        get: vi.fn().mockReturnValue('{"id":"quay"'),
+      };
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue(
+        config as unknown as extensionApi.Configuration,
+      );
+      await expect(api.getCatalogRegistries()).rejects.toThrow('Invalid catalog.registries JSON');
+
+      config.get.mockReturnValue('[{"id":"quay"}]');
+      await expect(api.getCatalogRegistries()).rejects.toThrow('Invalid catalog.registries entry 0');
+
+      config.get.mockReturnValue(
+        '[{"id":"same","displayName":"Docker Hub","kind":"docker-hub","host":"docker.io","namespace":"library"},' +
+          '{"id":"same","displayName":"Quay","kind":"quay","host":"quay.io","namespace":"sgahlot"}]',
+      );
+      await expect(api.getCatalogRegistries()).rejects.toThrow('Duplicate catalog.registries id "same"');
+    });
+
+    it('stores valid registry JSON compactly', async () => {
+      const value = [
+        { id: 'docker-hub', displayName: 'Docker Hub', kind: 'docker-hub', host: 'docker.io', namespace: 'library' },
+      ];
+      const update = vi.fn();
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn((key: string) =>
+          key === 'general.quayNamespace' ? 'sgahlot' : JSON.stringify(value, undefined, 2),
+        ),
+        update,
+      } as unknown as extensionApi.Configuration);
+
+      await api.setCatalogRegistriesJson(JSON.stringify(value, undefined, 2));
+      expect(update).toHaveBeenCalledWith('catalog.registries', JSON.stringify(value));
+    });
+  });
+
   describe('listCatalogImages', () => {
     it('fetches repositories from Quay API', async () => {
       const mockRepos = [{ name: 'ros2-base' }, { name: 'ros2-sim' }];

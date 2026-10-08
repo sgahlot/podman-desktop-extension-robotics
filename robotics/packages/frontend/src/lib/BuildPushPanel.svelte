@@ -18,6 +18,8 @@ import { onMount, onDestroy } from 'svelte';
 import { formatDurationSeconds } from './formatDuration';
 import type { LayerCacheStatusEntry } from '/@shared/src/types/BuildHistory';
 import { isBuildCacheHitLogLine } from '/@shared/src/types/buildLayerCache';
+import type { CatalogRegistry } from '/@shared/src/types/ImageCatalog';
+import { imageRefForRegistry } from '/@shared/src/types/ImageCatalog';
 import LayerCacheCake from './LayerCacheCake.svelte';
 
 /** Called to start a build for the current tag (fire-and-forget; progress via polling). */
@@ -45,6 +47,9 @@ export let buildLogsExpanded = true;
 
 let inputValue = tag;
 let lastSyncedTag = tag;
+/** Registry selected by the containing Image Builder tab. */
+export let pushRegistry: CatalogRegistry | undefined = undefined;
+let lastAppliedRegistryId = '';
 
 let imageExistsLocally = false;
 let lastSuccessfulBuildAt = 0;
@@ -204,6 +209,14 @@ function commitTag() {
   lastSyncedTag = inputValue;
   tag = inputValue;
   void checkLocalImage(inputValue);
+}
+
+function applyRegistry(registry: CatalogRegistry | undefined): void {
+  if (!registry || building || pushing || !inputValue.trim()) return;
+  const next = imageRefForRegistry(inputValue, registry);
+  if (next === inputValue) return;
+  inputValue = next;
+  commitTag();
 }
 
 async function startBuild() {
@@ -412,6 +425,11 @@ $: if (tag !== lastSyncedTag && !building && !pushing) {
   inputValue = tag;
   lastSyncedTag = tag;
   reset();
+}
+
+$: if (pushRegistry?.id && pushRegistry.id !== lastAppliedRegistryId && !building && !pushing) {
+  lastAppliedRegistryId = pushRegistry.id;
+  applyRegistry(pushRegistry);
 }
 
 $: busy = building || pushing;

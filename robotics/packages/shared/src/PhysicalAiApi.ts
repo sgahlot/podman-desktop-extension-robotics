@@ -1,4 +1,7 @@
 import type {
+  CatalogRegistry,
+  CatalogRepository,
+  CatalogTag,
   QuayRepository,
   QuayTag,
   PullProgress,
@@ -28,6 +31,11 @@ import type { LayerCacheBuildOptions } from './types/buildLayerCache';
 
 export abstract class PhysicalAiApi {
   abstract getStatus(): Promise<string>;
+  abstract getCatalogRegistries(): Promise<CatalogRegistry[]>;
+  abstract getCatalogRegistriesJson(): Promise<string>;
+  abstract setCatalogRegistriesJson(value: string): Promise<void>;
+  abstract listCatalogRepositories(registryId: string, namespace: string): Promise<CatalogRepository[]>;
+  abstract getCatalogTags(registryId: string, namespace: string, name: string): Promise<CatalogTag[]>;
   abstract listCatalogImages(namespace: string): Promise<QuayRepository[]>;
   abstract getImageTags(namespace: string, name: string): Promise<QuayTag[]>;
   abstract pullImage(fullImageName: string, tag: string): Promise<void>;

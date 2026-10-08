@@ -126,12 +126,15 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 
 | `src/App.svelte` | Root component, hash-based routing via tinro; wraps routed content in `NavShell` for the persistent Sidebar/Tabs layouts
 | `src/Dashboard.svelte` | Layout-aware Home: Quick Links grid in cards mode; welcome/get-started/metrics/explore dashboard under sidebar/tabs
-| `src/ImageCatalog.svelte` | Browse Quay repos (All/Curated), pull images, show local images
-| `src/SimulationSetup.svelte` | Image Builder — configure + build/push base and simulation images (Quick Start panels: Local host-native + OpenShift amd64)
+| `src/ImageCatalog.svelte` | Browse configured Quay, Docker Hub, or generic OCI repos (All/Curated), pull images, show local images
+| `src/RegistrySettings.svelte` | Shared registry configuration page used by Image Catalog and Image Builder
+| `src/SimulationSetup.svelte` | Image Builder — configure + build/push base and simulation images; one Registry selector applies to each active tab
 | `src/SimulationPage.svelte` | Simulation — launch containers, view status, open noVNC, add TurtleBot3
 | `src/TopicMonitor.svelte` | Topic Monitor — ROS2 topic list with message types and pub/sub counts, auto-poll
 | `src/Help.svelte` | In-extension documentation
 | `src/lib/BuildPushPanel.svelte` | Shared component for build/push/cancel lifecycle with polling
+| `src/lib/RegistryConfiguration.svelte` | Validated multiline JSON editor for shared registry definitions
+| `src/lib/RegistrySelector.svelte` | Tab-level Image Builder registry selector and Registry Settings link
 | `src/lib/NavShell.svelte` | Persistent nav shell wrapping routed content — renders Sidebar, Tabs, or nothing (Cards) per `physical-ai.general.navigationLayout`; highlights the active route via `$router.path` (S8-13)
 | `src/lib/LayoutSwitcher.svelte` | 3-way in-app radiogroup for the navigation layout (Sidebar / Tabs / Cards), mirrored by the PD preference (S8-13)
 | `src/lib/navItems.ts` | Single source of truth for nav destinations (route, label, icon, disabled state e.g. Fleet "Coming soon") (S8-13)
@@ -478,13 +481,16 @@ NOTE: Story 6 uses `podman exec` to spawn additional robots into a **single** si
 
 == Configuration Properties
 
-The extension contributes settings under page-oriented sections in **Settings → Preferences → Robotics**:
+The extension contributes user preferences under page-oriented sections in **Settings → Preferences → Robotics**. Registry
+definitions are intentionally not a Preferences field because the Podman Desktop schema does not support the multiline editor
+needed for this configuration. They are edited on the extension's **Registry Settings** page and persisted through the
+`catalog.registries` configuration value.
 
 [cols="2,1,1,2"]
 |===
 | Property | Type | Default | Description
 
-| `physical-ai.general.quayNamespace` | string | `ecosystem-appeng` | Quay.io namespace for catalog browsing and image tags
+| `physical-ai.general.quayNamespace` | string | `ecosystem-appeng` | Default Quay namespace used when no explicit registry namespace is configured
 | `physical-ai.openshift.defaultNamespace` | string | _(empty)_ | Default OpenShift/Kubernetes namespace used when the current kubeconfig context doesn't specify one (the context's own namespace, when present, always takes priority)
 | `physical-ai.build.robot` | string | `turtlebot3` | Robot type for Image Builder recipes
 | `physical-ai.build.distro` | string | `humble` | ROS distro (`humble` and `jazzy` both have bundled simulation images)

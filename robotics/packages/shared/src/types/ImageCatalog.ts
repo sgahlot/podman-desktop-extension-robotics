@@ -1,21 +1,47 @@
 import type { LayerCacheStatusEntry } from './BuildHistory';
 
-export interface QuayRepository {
+export type CatalogRegistryKind = 'quay' | 'docker-hub' | 'generic';
+
+export interface CatalogRegistry {
+  id: string;
+  displayName: string;
+  kind: CatalogRegistryKind;
+  host: string;
+  namespace: string;
+  curatedAllowlist?: string;
+}
+
+/** Rewrites an image reference to the configured registry while retaining its repository name and tag. */
+export function imageRefForRegistry(imageRef: string, registry: CatalogRegistry): string {
+  const value = imageRef.trim();
+  const tagSeparator = value.lastIndexOf(':');
+  const pathSeparator = value.lastIndexOf('/');
+  if (tagSeparator <= pathSeparator || tagSeparator < 1 || tagSeparator === value.length - 1) return value;
+  const repository = value.slice(pathSeparator + 1, tagSeparator);
+  const tag = value.slice(tagSeparator + 1);
+  return `${registry.host}/${registry.namespace}/${repository}:${tag}`;
+}
+
+export interface CatalogRepository {
   namespace: string;
   name: string;
-  description: string | null;
+  description?: string;
   is_public: boolean;
   kind: string;
   state: string;
 }
 
-export interface QuayTag {
+export type QuayRepository = CatalogRepository;
+
+export interface CatalogTag {
   name: string;
   size: number;
   last_modified: string;
   manifest_digest: string;
   is_manifest_list: boolean;
 }
+
+export type QuayTag = CatalogTag;
 
 /**
  * A local image tag with its reported CPU architecture — `arch` is Podman-specific

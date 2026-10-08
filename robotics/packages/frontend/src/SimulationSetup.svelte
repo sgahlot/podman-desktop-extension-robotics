@@ -5,6 +5,7 @@ import { router } from 'tinro';
 import BuildPushPanel from './lib/BuildPushPanel.svelte';
 import BuildHistoryPanel from './lib/BuildHistoryPanel.svelte';
 import LayerComposer from './lib/LayerComposer.svelte';
+import RegistrySelector from './lib/RegistrySelector.svelte';
 import QuickLinks from './lib/QuickLinks.svelte';
 import { navigationLayout } from './lib/navigationLayout';
 import {
@@ -22,6 +23,7 @@ import {
 } from '/@shared/src/types/SimulationBaseImages';
 import type { SimulationBaseImageSelection } from '/@shared/src/types/SimulationBaseImages';
 import type { SimulationConfig, TargetArch } from '/@shared/src/types/SimulationConfig';
+import { imageRefForRegistry, type CatalogRegistry } from '/@shared/src/types/ImageCatalog';
 import {
   CUSTOM_SIMULATION_TEMPLATES,
   type CustomSimulationTemplate,
@@ -70,6 +72,7 @@ let simBusy = false;
 let layerBusy = false;
 let baseLogsExpanded = true;
 let simLogsExpanded = true;
+let selectedPushRegistry: CatalogRegistry | undefined;
 let baseImageExists = false;
 let simImageExists = false;
 /** Guards the async existence check against stale responses. */
@@ -138,14 +141,16 @@ $: {
   }
 }
 $: {
-  const key = `${ns}|${robot}|${distro}|${middleware}|${engine}|${baseImage}|${customBaseImage}|${customSimulationMode}|${customSimulationTemplate.id}|${targetArch}`;
+  const key = `${ns}|${robot}|${distro}|${middleware}|${engine}|${baseImage}|${customBaseImage}|${customSimulationMode}|${customSimulationTemplate.id}|${targetArch}|${selectedPushRegistry?.id ?? ''}`;
   if (!buildBusy && key !== lastConfigKey) {
     lastConfigKey = key;
-    baseTag = baseImageTag(ns, currentConfig) ?? '';
-    simTag =
+    const defaultBaseTag = baseImageTag(ns, currentConfig) ?? '';
+    const defaultSimTag =
       baseImage === CUSTOM_SIMULATION_BASE_IMAGE && customSimulationMode === 'packages' && customBaseImage.trim()
         ? customSimulationImageTag(ns, customBaseImage, customSimulationTemplate, targetArch)
         : (simulationImageTag(ns, currentConfig) ?? '');
+    baseTag = selectedPushRegistry ? imageRefForRegistry(defaultBaseTag, selectedPushRegistry) : defaultBaseTag;
+    simTag = selectedPushRegistry ? imageRefForRegistry(defaultSimTag, selectedPushRegistry) : defaultSimTag;
   }
 }
 // Reactive existence check for BOTH images — re-runs whenever the resolved
@@ -357,7 +362,6 @@ function onQuickStartClick(id: QuickStartId) {
   <p class="text-sm text-[var(--pd-content-text)]">
     Configure, build, and push ROS2 base and simulation container images.
   </p>
-
   {#if loading}
     <div class="text-sm text-[var(--pd-content-text)]">Loading configuration...</div>
   {:else}
@@ -469,6 +473,7 @@ function onQuickStartClick(id: QuickStartId) {
             {robot} &middot; {distro} &middot; {middleware} &middot; {engine} &middot; {basePreset.label}
           </span>
         </div>
+        <RegistrySelector bind:selectedRegistry={selectedPushRegistry} disabled={buildBusy} />
 
         {#if showStep1}
           <div id="step1-build" class="flex flex-col gap-3 pt-3 border-t border-[var(--pd-content-card-border)]">
@@ -503,6 +508,7 @@ function onQuickStartClick(id: QuickStartId) {
                 active={active}
                 refreshIntervalSeconds={imageStatusRefreshIntervalSeconds}
                 localImageExistsFromParent={baseImageExists}
+                pushRegistry={selectedPushRegistry}
                 disabled={buildBusy}
                 buildImage={t => physicalAiClient.buildBaseImage(t, currentConfig)}
                 onBuildComplete={builtTag => {
@@ -588,6 +594,7 @@ function onQuickStartClick(id: QuickStartId) {
                 }}
                 tagPlaceholder="e.g. quay.io/ecosystem-appeng/ros2-jazzy-sim:noble"
                 tagInputId="simTag"
+                pushRegistry={selectedPushRegistry}
                 disabled={buildBusy ||
                   (baseImage === CUSTOM_SIMULATION_BASE_IMAGE && customSimulationMode === 'packages'
                     ? !customSimReady

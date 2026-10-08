@@ -1,7 +1,8 @@
 /**
  * Catalog curated-repo matching.
- * Patterns are comma-separated in preferences; `*` is a wildcard within a name segment.
- * Examples: `ros2-*-base`, `ros2-humble-turtlebot3`
+ * Patterns are comma-separated; `*` is a wildcard within a name. A pattern without `*`
+ * matches repository names containing that term, which is convenient for registry-specific
+ * names such as `box` matching `busybox`.
  */
 
 import { defaultCatalogViewMode, defaultCuratedAllowlistFromCatalog } from '../config/platformDefaultsCatalog';
@@ -24,12 +25,14 @@ export function parseCuratedAllowlist(raw: string | undefined | null): string[] 
 /** True if repo name matches any allowlist pattern (* = any chars). */
 export function repoMatchesAllowlist(repoName: string, patterns: string[]): boolean {
   if (patterns.length === 0) return false;
+  const normalizedRepoName = repoName.toLowerCase();
   return patterns.some(pattern => {
+    const normalizedPattern = pattern.toLowerCase();
     if (!pattern.includes('*')) {
-      return repoName === pattern;
+      return normalizedRepoName.includes(normalizedPattern);
     }
-    const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
-    return new RegExp(`^${escaped}$`).test(repoName);
+    const escaped = normalizedPattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+    return new RegExp(`^${escaped}$`).test(normalizedRepoName);
   });
 }
 

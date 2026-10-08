@@ -2,7 +2,7 @@
 import { physicalAiClient } from './api/client';
 import { onMount, onDestroy } from 'svelte';
 import { router } from 'tinro';
-import type { QuayRepository, QuayTag, PullProgress } from '/@shared/src/types/ImageCatalog';
+import type { CatalogRegistry, CatalogRepository, CatalogTag, PullProgress } from '/@shared/src/types/ImageCatalog';
 import { filterCuratedRepos, type CatalogViewMode, DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
 import QuickLinks from './lib/QuickLinks.svelte';
 import { navigationLayout } from './lib/navigationLayout';
@@ -11,19 +11,28 @@ import { navigationLayout } from './lib/navigationLayout';
 export let active = true;
 
 let namespace = '';
+let registries: CatalogRegistry[] = [];
+let selectedRegistryId = '';
+let selectedRegistry: CatalogRegistry | undefined;
+let registryHost = 'quay.io';
 let catalogWasActive = false;
 let filter = '';
-let repos: QuayRepository[] = [];
+let repos: CatalogRepository[] = [];
 let loading = false;
 let error = '';
 /** True after default namespace / prefs are applied — avoids a flash of "required" on first paint. */
 let catalogReady = false;
 
 let viewMode: CatalogViewMode = 'all';
-let curatedAllowlist = DEFAULT_CURATED_ALLOWLIST;
+let globalCuratedAllowlist = DEFAULT_CURATED_ALLOWLIST;
+let curatedOverride = '';
+let curatedOverrideError = '';
+let curatedOverrideSaved = false;
+let savingCuratedOverride = false;
 
 let expandedRepo: string | null = null;
-let tags: QuayTag[] = [];
+let tags: CatalogTag[] = [];
+let tagFilter = '';
 let loadingTags = false;
 let tagError = '';
 
@@ -37,12 +46,17 @@ let pollTimers: Map<string, number> = new Map();
 
 $: hasNamespace = namespace.trim().length > 0;
 $: namespaceMissing = catalogReady && !hasNamespace;
+$: selectedRegistry = registries.find(registry => registry.id === selectedRegistryId);
+$: registryHost = selectedRegistry?.host ?? 'quay.io';
+$: curatedAllowlist = selectedRegistry?.curatedAllowlist?.trim() || globalCuratedAllowlist;
+$: if (selectedRegistry) curatedOverride = selectedRegistry.curatedAllowlist ?? '';
 
 $: scopedRepos = viewMode === 'curated' ? filterCuratedRepos(repos, curatedAllowlist) : repos;
 $: filteredRepos = scopedRepos.filter(r => r.name.toLowerCase().includes(filter.toLowerCase()));
+$: filteredTags = tags.filter(tag => tag.name.toLowerCase().includes(tagFilter.toLowerCase()));
 
 $: localImagesForNamespace = hasNamespace
-  ? Array.from(localImages).filter(img => img.startsWith(`quay.io/${namespace.trim()}/`))
+  ? Array.from(localImages).filter(img => img.startsWith(`${registryHost}/${namespace.trim()}/`))
   : [];
 
 /** Clearing the namespace must drop stale results from the last Load (do not re-query with empty ns). */
@@ -50,6 +64,7 @@ $: if (!hasNamespace && repos.length > 0) {
   repos = [];
   expandedRepo = null;
   tags = [];
+  tagFilter = '';
   tagError = '';
   error = '';
 }
@@ -63,6 +78,35 @@ async function setViewMode(mode: CatalogViewMode) {
   }
 }
 
+async function saveCuratedOverride() {
+  if (!selectedRegistryId) return;
+  savingCuratedOverride = true;
+  curatedOverrideError = '';
+  curatedOverrideSaved = false;
+  try {
+    const raw = await physicalAiClient.getCatalogRegistriesJson();
+    const configured = raw.trim() ? JSON.parse(raw) : registries;
+    if (!Array.isArray(configured)) throw new Error('Registry configuration must be a JSON array.');
+    const next = configured.map((entry: CatalogRegistry) => {
+      if (entry.id !== selectedRegistryId) return entry;
+      const updated = { ...entry };
+      if (curatedOverride.trim()) updated.curatedAllowlist = curatedOverride.trim();
+      else delete updated.curatedAllowlist;
+      return updated;
+    });
+    if (!next.some((entry: CatalogRegistry) => entry.id === selectedRegistryId)) {
+      throw new Error(`Unknown catalog registry "${selectedRegistryId}".`);
+    }
+    await physicalAiClient.setCatalogRegistriesJson(JSON.stringify(next));
+    registries = await physicalAiClient.getCatalogRegistries();
+    curatedOverrideSaved = true;
+  } catch (e) {
+    curatedOverrideError = e instanceof Error ? e.message : 'Could not save curated patterns';
+  } finally {
+    savingCuratedOverride = false;
+  }
+}
+
 async function refreshLocalImages() {
   try {
     const tags = await physicalAiClient.listLocalImages();
@@ -73,7 +117,7 @@ async function refreshLocalImages() {
 }
 
 function isLocal(repoKey: string, tagName: string, _localSet: Set<string>): boolean {
-  return _localSet.has(`quay.io/${repoKey}:${tagName}`);
+  return _localSet.has(`${registryHost}/${repoKey}:${tagName}`);
 }
 
 function startPolling(pullKey: string, imageKey: string) {
@@ -117,7 +161,7 @@ function stopPolling(imageKey: string) {
 
 async function loadRepos() {
   const ns = namespace.trim();
-  if (!ns) {
+  if (!ns || !selectedRegistryId) {
     repos = [];
     return;
   }
@@ -127,10 +171,11 @@ async function loadRepos() {
   repos = [];
   expandedRepo = null;
   tags = [];
+  tagFilter = '';
   tagError = '';
 
   try {
-    repos = await physicalAiClient.listCatalogImages(ns);
+    repos = await physicalAiClient.listCatalogRepositories(selectedRegistryId, ns);
   } catch (e) {
     error = e instanceof Error ? e.message : 'Failed to load repositories';
   } finally {
@@ -138,12 +183,13 @@ async function loadRepos() {
   }
 }
 
-async function toggleTags(repo: QuayRepository) {
+async function toggleTags(repo: CatalogRepository) {
   const repoKey = `${repo.namespace}/${repo.name}`;
 
   if (expandedRepo === repoKey) {
     expandedRepo = null;
     tags = [];
+    tagFilter = '';
     tagError = '';
     return;
   }
@@ -151,10 +197,11 @@ async function toggleTags(repo: QuayRepository) {
   expandedRepo = repoKey;
   loadingTags = true;
   tags = [];
+  tagFilter = '';
   tagError = '';
 
   try {
-    tags = await physicalAiClient.getImageTags(repo.namespace, repo.name);
+    tags = await physicalAiClient.getCatalogTags(selectedRegistryId, repo.namespace, repo.name);
   } catch (e) {
     tagError = e instanceof Error ? e.message : 'Failed to load tags';
     tags = [];
@@ -163,16 +210,16 @@ async function toggleTags(repo: QuayRepository) {
   }
 }
 
-async function pullImage(repo: QuayRepository, tag: QuayTag) {
+async function pullImage(repo: CatalogRepository, tag: CatalogTag) {
   const pullKey = `${repo.namespace}/${repo.name}:${tag.name}`;
-  const imageKey = `quay.io/${repo.namespace}/${repo.name}:${tag.name}`;
+  const imageKey = `${registryHost}/${repo.namespace}/${repo.name}:${tag.name}`;
   pullingImages.add(pullKey);
   pullingImages = pullingImages;
   pullResults.delete(pullKey);
   pullResults = pullResults;
 
   try {
-    await physicalAiClient.pullImage(`${repo.namespace}/${repo.name}`, tag.name);
+    await physicalAiClient.pullImageByRef(imageKey);
     startPolling(pullKey, imageKey);
   } catch (e) {
     pullingImages.delete(pullKey);
@@ -195,7 +242,7 @@ function getProgress(
   tagName: string,
   _progressMap: Map<string, PullProgress>,
 ): { percent: number; text: string } | null {
-  const imageKey = `quay.io/${repoKey}:${tagName}`;
+  const imageKey = `${registryHost}/${repoKey}:${tagName}`;
   const progress = _progressMap.get(imageKey);
   if (!progress) return null;
   if (progress.currentMB !== undefined && progress.totalMB !== undefined && progress.totalMB > 0) {
@@ -217,6 +264,7 @@ function formatSize(bytes: number): string {
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return 'Not reported';
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
@@ -224,32 +272,66 @@ $: if (active) {
   if (!catalogWasActive) {
     catalogWasActive = true;
     void refreshLocalImages();
+    void refreshRegistryConfig();
   }
 } else {
   catalogWasActive = false;
 }
 
 onMount(async () => {
+  window.addEventListener('physical-ai-registries-updated', handleRegistrySettingsUpdated);
   try {
-    namespace = await physicalAiClient.getDefaultNamespace();
+    registries = await physicalAiClient.getCatalogRegistries();
+    selectedRegistryId = registries[0]?.id ?? '';
+    namespace =
+      registries[0]?.kind === 'quay' ? await physicalAiClient.getDefaultNamespace() : (registries[0]?.namespace ?? '');
     try {
       viewMode = await physicalAiClient.getCatalogViewMode();
-      curatedAllowlist = await physicalAiClient.getCatalogCuratedAllowlist();
+      globalCuratedAllowlist = await physicalAiClient.getCatalogCuratedAllowlist();
     } catch {
       // defaults are fine
     }
     if (active) {
       void refreshLocalImages();
     }
-    if (namespace.trim()) {
+    if (namespace.trim() && selectedRegistryId) {
       await loadRepos();
     }
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'Invalid catalog registry settings';
   } finally {
     catalogReady = true;
   }
 });
 
+async function selectRegistry(registryId: string) {
+  selectedRegistryId = registryId;
+  const registry = registries.find(item => item.id === registryId);
+  namespace = registry?.namespace ?? '';
+  await loadRepos();
+}
+
+async function refreshRegistryConfig(): Promise<void> {
+  try {
+    const next = await physicalAiClient.getCatalogRegistries();
+    const nextId = next.some(registry => registry.id === selectedRegistryId) ? selectedRegistryId : (next[0]?.id ?? '');
+    const nextRegistry = next.find(registry => registry.id === nextId);
+    registries = next;
+    selectedRegistryId = nextId;
+    namespace =
+      nextRegistry?.kind === 'quay' ? await physicalAiClient.getDefaultNamespace() : (nextRegistry?.namespace ?? '');
+    await loadRepos();
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'Invalid catalog registry settings';
+  }
+}
+
+function handleRegistrySettingsUpdated(): void {
+  if (active) void refreshRegistryConfig();
+}
+
 onDestroy(() => {
+  window.removeEventListener('physical-ai-registries-updated', handleRegistrySettingsUpdated);
   for (const timer of pollTimers.values()) {
     window.clearInterval(timer);
   }
@@ -262,16 +344,38 @@ onDestroy(() => {
   {/if}
   <h1 class="text-3xl text-[var(--pd-content-header)]">Image Catalog</h1>
   {#if $navigationLayout === 'cards'}
-    <QuickLinks links={[{ label: 'Image Builder', to: '/build' }]} />
+    <QuickLinks
+      links={[
+        { label: 'Image Builder', to: '/build' },
+        { label: 'Registry Settings', to: '/registries' },
+      ]} />
   {/if}
   <p class="text-sm text-[var(--pd-content-text)]">
-    Browse and pull ROS2 container images from a Quay.io organization. Curated pulls focus on Ubuntu + Jazzy sim/base
-    tags; build Fedora bootc 43 + ROS 2 Lyrical sims via <strong>Image Builder &rarr; Customize</strong>.
+    Browse and pull public ROS2 container images from a configured registry. Curated pulls focus on Ubuntu + Jazzy
+    sim/base tags; build Fedora bootc 43 + ROS 2 Lyrical sims via <strong>Image Builder &rarr; Customize</strong>.
+  </p>
+  <p class="text-sm text-[var(--pd-content-text)]">
+    <a href="#/registries" class="pai-link">Manage registries in Registry Settings</a>
   </p>
 
   <div class="flex flex-row gap-3 items-end flex-wrap">
+    {#if registries.length > 0}
+      <div class="flex flex-col gap-1">
+        <label for="registry" class="text-xs text-[var(--pd-content-text)]">Registry</label>
+        <select
+          id="registry"
+          value={selectedRegistryId}
+          on:change={event => selectRegistry((event.currentTarget as HTMLSelectElement).value)}
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]">
+          {#each registries as registry}
+            <option value={registry.id}>{registry.displayName} ({registry.host})</option>
+          {/each}
+        </select>
+      </div>
+    {/if}
     <div class="flex flex-col gap-1">
-      <label for="namespace" class="text-xs text-[var(--pd-content-text)]">Quay.io namespace</label>
+      <label for="namespace" class="text-xs text-[var(--pd-content-text)]"
+        >{selectedRegistry?.displayName ?? 'Registry'} namespace</label>
       <input
         id="namespace"
         type="text"
@@ -279,7 +383,7 @@ onDestroy(() => {
         class="px-3 py-1.5 text-sm rounded border bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] w-64 {namespaceMissing
           ? 'pai-input-error'
           : 'border-[var(--pd-content-card-border)]'}"
-        placeholder="e.g. ecosystem-appeng"
+        placeholder="e.g. ecosystem-appeng or library"
         aria-invalid={namespaceMissing}
         aria-describedby={namespaceMissing ? 'namespace-error' : undefined}
         required />
@@ -316,8 +420,30 @@ onDestroy(() => {
     </div>
   </div>
   {#if viewMode === 'curated'}
+    <div class="flex flex-row gap-3 items-end flex-wrap">
+      <div class="flex flex-col gap-1">
+        <label for="curated-override" class="text-xs text-[var(--pd-content-text)]">
+          Curated repository patterns for {selectedRegistry?.displayName ?? 'this registry'}
+        </label>
+        <input
+          id="curated-override"
+          aria-label="Curated repository patterns"
+          bind:value={curatedOverride}
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] w-96"
+          placeholder={globalCuratedAllowlist} />
+      </div>
+      <button on:click={saveCuratedOverride} disabled={savingCuratedOverride} class="pai-btn pai-btn-primary">
+        {savingCuratedOverride ? 'Saving...' : 'Save curated patterns'}
+      </button>
+      {#if curatedOverrideSaved}
+        <span class="text-xs pai-text-success">Saved for this registry.</span>
+      {/if}
+      {#if curatedOverrideError}
+        <div class="text-xs p-2 rounded pai-banner-error" role="alert">{curatedOverrideError}</div>
+      {/if}
+    </div>
     <p class="text-xs pai-text-muted">
-      Curated patterns (Settings → Preferences → Robotics): <span class="font-mono">{curatedAllowlist}</span>
+      Active patterns: <span class="font-mono">{curatedAllowlist}</span>. Leave the override empty to use the default.
     </p>
   {/if}
 
@@ -368,7 +494,7 @@ onDestroy(() => {
 
   {#if repos.length > 0}
     <div class="flex flex-col gap-1">
-      <label for="filter" class="text-xs text-[var(--pd-content-text)]">Filter by name</label>
+      <label for="filter" class="text-xs text-[var(--pd-content-text)]">Filter by repository name</label>
       <input
         id="filter"
         type="text"
@@ -397,8 +523,10 @@ onDestroy(() => {
       <div class="text-sm p-3 rounded pai-banner-warning">
         {#if viewMode === 'curated'}
           No curated repositories matched <span class="font-mono">{curatedAllowlist}</span> in this namespace. Switch to
-          All, or push <strong>public</strong> golden images (see Help), or edit the allowlist in Preferences. Private Quay
-          repos are not listed (Catalog uses the public Quay API).
+          All, or adjust the curated patterns above.
+          {#if selectedRegistry?.kind === 'quay'}
+            Private Quay repositories are not listed because this catalog uses Quay's public API.
+          {/if}
         {:else}
           No repositories match the name filter.
         {/if}
@@ -436,79 +564,93 @@ onDestroy(() => {
               {:else if tags.length === 0}
                 <div class="text-xs text-[var(--pd-content-text)]">No tags found</div>
               {:else}
-                <table class="w-full text-xs">
-                  <thead>
-                    <tr class="text-left text-[var(--pd-content-text)] border-b border-[var(--pd-content-card-border)]">
-                      <th class="pb-2 pr-4">Tag</th>
-                      <th class="pb-2 pr-4">Size</th>
-                      <th class="pb-2 pr-4">Last Modified</th>
-                      <th class="pb-2 pr-4">Digest</th>
-                      <th class="pb-2">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {#each tags as tag}
-                      {@const pullKey = `${repoKey}:${tag.name}`}
-                      {@const progress = getProgress(repoKey, tag.name, pullProgress)}
-                      {@const tagIsLocal = isLocal(repoKey, tag.name, localImages)}
-                      <tr class="border-b border-[var(--pd-content-card-border)] last:border-b-0">
-                        <td class="py-2 pr-4 font-medium text-[var(--pd-content-header)]">{tag.name}</td>
-                        <td class="py-2 pr-4 text-[var(--pd-content-text)]">{formatSize(tag.size)}</td>
-                        <td class="py-2 pr-4 text-[var(--pd-content-text)]">{formatDate(tag.last_modified)}</td>
-                        <td class="py-2 pr-4 text-[var(--pd-content-text)] font-mono"
-                          >{tag.manifest_digest.substring(7, 19)}</td>
-                        <td class="py-2 min-w-[260px]">
-                          {#if pullingImages.has(pullKey)}
-                            <div class="flex flex-col gap-1">
-                              <div class="pai-progress-track" style="max-width: 180px; height: 6px;">
-                                <div class="pai-progress-fill" style="width: {progress?.percent ?? 0}%;"></div>
+                <div class="flex flex-col gap-1 mb-3">
+                  <label for="tag-filter-{repoKey}" class="text-xs text-[var(--pd-content-text)]">Filter by tag</label>
+                  <input
+                    id="tag-filter-{repoKey}"
+                    type="text"
+                    bind:value={tagFilter}
+                    class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] w-64"
+                    placeholder="e.g. jazzy or latest" />
+                </div>
+                {#if filteredTags.length === 0}
+                  <div class="text-xs text-[var(--pd-content-text)]">No tags match the filter.</div>
+                {:else}
+                  <table class="w-full text-xs">
+                    <thead>
+                      <tr
+                        class="text-left text-[var(--pd-content-text)] border-b border-[var(--pd-content-card-border)]">
+                        <th class="pb-2 pr-4">Tag</th>
+                        <th class="pb-2 pr-4">Size</th>
+                        <th class="pb-2 pr-4">Last Modified</th>
+                        <th class="pb-2 pr-4">Digest</th>
+                        <th class="pb-2">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each filteredTags as tag}
+                        {@const pullKey = `${repoKey}:${tag.name}`}
+                        {@const progress = getProgress(repoKey, tag.name, pullProgress)}
+                        {@const tagIsLocal = isLocal(repoKey, tag.name, localImages)}
+                        <tr class="border-b border-[var(--pd-content-card-border)] last:border-b-0">
+                          <td class="py-2 pr-4 font-medium text-[var(--pd-content-header)]">{tag.name}</td>
+                          <td class="py-2 pr-4 text-[var(--pd-content-text)]">{formatSize(tag.size)}</td>
+                          <td class="py-2 pr-4 text-[var(--pd-content-text)]">{formatDate(tag.last_modified)}</td>
+                          <td class="py-2 pr-4 text-[var(--pd-content-text)] font-mono"
+                            >{tag.manifest_digest ? tag.manifest_digest.substring(7, 19) : 'Not reported'}</td>
+                          <td class="py-2 min-w-[260px]">
+                            {#if pullingImages.has(pullKey)}
+                              <div class="flex flex-col gap-1">
+                                <div class="pai-progress-track" style="max-width: 180px; height: 6px;">
+                                  <div class="pai-progress-fill" style="width: {progress?.percent ?? 0}%;"></div>
+                                </div>
+                                <span class="text-xs pai-text-accent">
+                                  {progress?.text ?? 'Pulling...'}
+                                </span>
                               </div>
-                              <span class="text-xs pai-text-accent">
-                                {progress?.text ?? 'Pulling...'}
-                              </span>
-                            </div>
-                          {:else if pullResults.has(pullKey)}
-                            {@const result = pullResults.get(pullKey)}
-                            <div class="flex flex-row items-center gap-2">
-                              {#if result?.success}
-                                <span class="text-xs pai-text-success">Pulled</span>
+                            {:else if pullResults.has(pullKey)}
+                              {@const result = pullResults.get(pullKey)}
+                              <div class="flex flex-row items-center gap-2">
+                                {#if result?.success}
+                                  <span class="text-xs pai-text-success">Pulled</span>
+                                  <button
+                                    on:click|stopPropagation={() => resetPullResult(pullKey)}
+                                    class="pai-link pai-link-sm">
+                                    Pull again
+                                  </button>
+                                {:else}
+                                  <span class="text-xs pai-text-error" title={result?.message}>
+                                    {truncateError(result?.message ?? 'Pull failed')}
+                                  </span>
+                                  <button
+                                    on:click|stopPropagation={() => resetPullResult(pullKey)}
+                                    class="pai-link pai-link-sm">
+                                    Retry
+                                  </button>
+                                {/if}
+                              </div>
+                            {:else if tagIsLocal}
+                              <div class="flex flex-row items-center gap-2">
+                                <span class="text-xs pai-text-success">&#10003; Local</span>
                                 <button
-                                  on:click|stopPropagation={() => resetPullResult(pullKey)}
+                                  on:click|stopPropagation={() => pullImage(repo, tag)}
                                   class="pai-link pai-link-sm">
                                   Pull again
                                 </button>
-                              {:else}
-                                <span class="text-xs pai-text-error" title={result?.message}>
-                                  {truncateError(result?.message ?? 'Pull failed')}
-                                </span>
-                                <button
-                                  on:click|stopPropagation={() => resetPullResult(pullKey)}
-                                  class="pai-link pai-link-sm">
-                                  Retry
-                                </button>
-                              {/if}
-                            </div>
-                          {:else if tagIsLocal}
-                            <div class="flex flex-row items-center gap-2">
-                              <span class="text-xs pai-text-success">&#10003; Local</span>
+                              </div>
+                            {:else}
                               <button
                                 on:click|stopPropagation={() => pullImage(repo, tag)}
-                                class="pai-link pai-link-sm">
-                                Pull again
+                                class="pai-btn pai-btn-sm pai-btn-primary">
+                                Pull
                               </button>
-                            </div>
-                          {:else}
-                            <button
-                              on:click|stopPropagation={() => pullImage(repo, tag)}
-                              class="pai-btn pai-btn-sm pai-btn-primary">
-                              Pull
-                            </button>
-                          {/if}
-                        </td>
-                      </tr>
-                    {/each}
-                  </tbody>
-                </table>
+                            {/if}
+                          </td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                {/if}
               {/if}
             </div>
           {/if}

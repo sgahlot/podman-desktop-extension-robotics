@@ -2,6 +2,9 @@ import type { ExtensionContext } from '@podman-desktop/api';
 import * as extensionApi from '@podman-desktop/api';
 import type { PhysicalAiApi } from '/@shared/src/PhysicalAiApi';
 import type {
+  CatalogRegistry,
+  CatalogRepository,
+  CatalogTag,
   QuayRepository,
   QuayTag,
   PullProgress,
@@ -141,6 +144,9 @@ import { parseRosTopicListDump, parseRosTopicListTypes, ROS_TOPIC_LIST_INFO_SCRI
 import { appendProgressLog } from './progressLogs';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
+const DOCKER_HUB_API_BASE = 'https://hub.docker.com/v2';
+const DEFAULT_QUAY_HOST = 'quay.io';
+const DEFAULT_QUAY_ID = 'quay';
 /** How long completed progress entries stay queryable for the UI. */
 const PROGRESS_RETENTION_MS = 30_000;
 /**
@@ -340,48 +346,226 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return 'Physical AI extension is running';
   }
 
-  async listCatalogImages(namespace: string): Promise<QuayRepository[]> {
+  async getCatalogRegistries(): Promise<CatalogRegistry[]> {
+    const config = extensionApi.configuration.getConfiguration('robotics');
+    const raw = config.get<string>('catalog.registries');
+    const fallback: CatalogRegistry = {
+      id: DEFAULT_QUAY_ID,
+      displayName: 'Quay.io',
+      kind: 'quay',
+      host: DEFAULT_QUAY_HOST,
+      namespace: config.get<string>('general.quayNamespace') ?? 'ecosystem-appeng',
+    };
+
+    return this.#parseCatalogRegistries(raw, fallback);
+  }
+
+  async getCatalogRegistriesJson(): Promise<string> {
+    const config = extensionApi.configuration.getConfiguration('robotics');
+    return config.get<string>('catalog.registries') ?? '';
+  }
+
+  async setCatalogRegistriesJson(value: string): Promise<void> {
+    const config = extensionApi.configuration.getConfiguration('robotics');
+    const fallback: CatalogRegistry = {
+      id: DEFAULT_QUAY_ID,
+      displayName: 'Quay.io',
+      kind: 'quay',
+      host: DEFAULT_QUAY_HOST,
+      namespace: config.get<string>('general.quayNamespace') ?? 'ecosystem-appeng',
+    };
+    const raw = value.trim();
+    const registries = this.#parseCatalogRegistries(raw, fallback);
+    if (!raw) {
+      await config.update('catalog.registries', '');
+      return;
+    }
+    const parsed = JSON.parse(raw) as unknown[];
+    await config.update('catalog.registries', JSON.stringify(parsed.length > 0 ? registries : parsed));
+  }
+
+  #parseCatalogRegistries(raw: string | undefined, fallback: CatalogRegistry): CatalogRegistry[] {
+    if (!raw?.trim()) return [fallback];
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`Invalid catalog.registries JSON: ${detail}`);
+    }
+    if (!Array.isArray(parsed)) {
+      throw new Error('Invalid catalog.registries JSON: expected a top-level array of registry objects.');
+    }
+
+    const registries = parsed.map((entry, index): CatalogRegistry => {
+      if (!entry || typeof entry !== 'object') {
+        throw new Error(
+          `Invalid catalog.registries entry ${index}: expected an object with id, displayName, kind, host, and namespace.`,
+        );
+      }
+      const value = entry as Partial<CatalogRegistry>;
+      const valid =
+        typeof value.id === 'string' &&
+        /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value.id) &&
+        typeof value.displayName === 'string' &&
+        typeof value.host === 'string' &&
+        /^[A-Za-z0-9.-]+(?::[0-9]+)?$/.test(value.host) &&
+        (value.kind === 'quay' || value.kind === 'docker-hub' || value.kind === 'generic') &&
+        typeof value.namespace === 'string' &&
+        value.namespace.trim().length > 0 &&
+        (value.curatedAllowlist === undefined || typeof value.curatedAllowlist === 'string');
+      if (!valid) {
+        throw new Error(
+          `Invalid catalog.registries entry ${index}: expected id, displayName, kind, host, and namespace. ` +
+            'kind must be quay, docker-hub, or generic; host must be a hostname.',
+        );
+      }
+      const registry = value as CatalogRegistry;
+      if (
+        parsed.slice(0, index).some(previous => {
+          return Boolean(
+            previous && typeof previous === 'object' && (previous as Partial<CatalogRegistry>).id === registry.id,
+          );
+        })
+      ) {
+        throw new Error(`Duplicate catalog.registries id "${registry.id}" at entry ${index}. Each id must be unique.`);
+      }
+      // Keep the common hosts safe for hand-authored settings: users often know the
+      // endpoint but accidentally copy the generic kind from an example.
+      return {
+        ...registry,
+        kind:
+          registry.host.toLowerCase() === 'quay.io'
+            ? 'quay'
+            : registry.host.toLowerCase() === 'docker.io'
+              ? 'docker-hub'
+              : registry.kind,
+      };
+    });
+    return registries.length > 0 ? registries : [fallback];
+  }
+
+  async listCatalogRepositories(registryId: string, namespace: string): Promise<CatalogRepository[]> {
+    const registry = await this.#getCatalogRegistry(registryId);
     const safeNs = assertQuayName(namespace, 'namespace');
-    const repos: QuayRepository[] = [];
-    let nextPage: string | undefined;
 
-    do {
-      const url = new URL(`${QUAY_API_BASE}/repository`);
-      url.searchParams.set('namespace', safeNs);
-      url.searchParams.set('public', 'true');
-      if (nextPage) {
-        url.searchParams.set('next_page', nextPage);
-      }
+    if (registry.kind === 'quay') {
+      const repos: CatalogRepository[] = [];
+      let nextPage: string | undefined;
+      do {
+        const url = new URL(`${QUAY_API_BASE}/repository`);
+        url.searchParams.set('namespace', safeNs);
+        url.searchParams.set('public', 'true');
+        if (nextPage) url.searchParams.set('next_page', nextPage);
+        const response = await fetch(url.toString());
+        if (!response.ok) throw new Error(`Quay API error: ${response.status} ${response.statusText}`);
+        const data = await response.json();
+        repos.push(...data.repositories);
+        nextPage = data.next_page;
+      } while (nextPage);
+      return repos;
+    }
 
+    if (registry.kind === 'docker-hub') {
+      const url = new URL(`${DOCKER_HUB_API_BASE}/repositories/${encodeURIComponent(safeNs)}/`);
+      url.searchParams.set('page_size', '100');
       const response = await fetch(url.toString());
-      if (!response.ok) {
-        throw new Error(`Quay API error: ${response.status} ${response.statusText}`);
-      }
-
+      if (!response.ok) throw new Error(`Docker Hub API error: ${response.status} ${response.statusText}`);
       const data = await response.json();
-      repos.push(...data.repositories);
-      nextPage = data.next_page;
-    } while (nextPage);
+      return (data.results ?? []).map((repo: { name: string; description?: string | null; last_updated?: string }) => ({
+        namespace: safeNs,
+        name: repo.name,
+        description: repo.description ?? undefined,
+        is_public: true,
+        kind: 'image',
+        state: repo.last_updated ?? '',
+      }));
+    }
 
-    return repos;
+    const url = new URL(`https://${registry.host}/v2/_catalog`);
+    url.searchParams.set('n', '100');
+    const response = await fetch(url.toString());
+    if (!response.ok) throw new Error(`${registry.host} registry error: ${response.status} ${response.statusText}`);
+    const data = await response.json();
+    const prefix = `${safeNs}/`;
+    return (data.repositories ?? [])
+      .filter(
+        (repository: unknown): repository is string => typeof repository === 'string' && repository.startsWith(prefix),
+      )
+      .map((repository: string) => ({
+        namespace: safeNs,
+        name: repository.slice(prefix.length),
+        description: undefined,
+        is_public: true,
+        kind: 'image',
+        state: '',
+      }));
+  }
+
+  async getCatalogTags(registryId: string, namespace: string, name: string): Promise<CatalogTag[]> {
+    const registry = await this.#getCatalogRegistry(registryId);
+    const safeNs = assertQuayName(namespace, 'namespace');
+    const safeName = assertQuayName(name, 'repository');
+
+    if (registry.kind === 'quay') {
+      const url = new URL(
+        `${QUAY_API_BASE}/repository/${encodeURIComponent(safeNs)}/${encodeURIComponent(safeName)}/tag/`,
+      );
+      url.searchParams.set('onlyActiveTags', 'true');
+      url.searchParams.set('limit', '50');
+      const response = await fetch(url.toString());
+      if (!response.ok) throw new Error(`Quay API error: ${response.status} ${response.statusText}`);
+      const data = await response.json();
+      return data.tags;
+    }
+
+    if (registry.kind === 'docker-hub') {
+      const url = new URL(
+        `${DOCKER_HUB_API_BASE}/repositories/${encodeURIComponent(safeNs)}/${encodeURIComponent(safeName)}/tags`,
+      );
+      url.searchParams.set('page_size', '50');
+      const response = await fetch(url.toString());
+      if (!response.ok) throw new Error(`Docker Hub API error: ${response.status} ${response.statusText}`);
+      const data = await response.json();
+      return (data.results ?? []).map(
+        (tag: { name: string; full_size?: number; last_updated?: string; images?: Array<{ digest?: string }> }) => ({
+          name: tag.name,
+          size: tag.full_size ?? 0,
+          last_modified: tag.last_updated ?? '',
+          manifest_digest: tag.images?.[0]?.digest ?? '',
+          is_manifest_list: (tag.images?.length ?? 0) > 1,
+        }),
+      );
+    }
+
+    const url = new URL(
+      `https://${registry.host}/v2/${encodeURIComponent(safeNs)}/${encodeURIComponent(safeName)}/tags/list`,
+    );
+    url.searchParams.set('n', '50');
+    const response = await fetch(url.toString());
+    if (!response.ok) throw new Error(`${registry.host} registry error: ${response.status} ${response.statusText}`);
+    const data = await response.json();
+    return (data.tags ?? []).map((tag: string) => ({
+      name: tag,
+      size: 0,
+      last_modified: '',
+      manifest_digest: '',
+      is_manifest_list: false,
+    }));
+  }
+
+  async listCatalogImages(namespace: string): Promise<QuayRepository[]> {
+    return this.listCatalogRepositories(DEFAULT_QUAY_ID, namespace);
   }
 
   async getImageTags(namespace: string, name: string): Promise<QuayTag[]> {
-    const safeNs = assertQuayName(namespace, 'namespace');
-    const safeName = assertQuayName(name, 'repository');
-    const url = new URL(
-      `${QUAY_API_BASE}/repository/${encodeURIComponent(safeNs)}/${encodeURIComponent(safeName)}/tag/`,
-    );
-    url.searchParams.set('onlyActiveTags', 'true');
-    url.searchParams.set('limit', '50');
+    return this.getCatalogTags(DEFAULT_QUAY_ID, namespace, name);
+  }
 
-    const response = await fetch(url.toString());
-    if (!response.ok) {
-      throw new Error(`Quay API error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    return data.tags;
+  async #getCatalogRegistry(registryId: string): Promise<CatalogRegistry> {
+    const registry = (await this.getCatalogRegistries()).find(item => item.id === registryId);
+    if (!registry) throw new Error(`Unknown catalog registry "${registryId}".`);
+    return registry;
   }
 
   async getPullProgress(image: string): Promise<PullProgress | undefined> {

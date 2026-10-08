@@ -33,12 +33,13 @@ describe('NavShell', () => {
     mockEmit = undefined;
   });
 
-  it('renders all 8 nav labels in sidebar layout', () => {
+  it('renders all 9 nav labels in sidebar layout', () => {
     render(NavShell, { layout: 'sidebar', onLayoutChange: vi.fn() });
     for (const label of [
       'Dashboard',
       'Image Builder',
       'Image Catalog',
+      'Registry Settings',
       'Simulation',
       'Topic Monitor',
       'Diagnostics',
@@ -49,12 +50,13 @@ describe('NavShell', () => {
     }
   });
 
-  it('renders all 8 nav labels + a tablist in tabs layout', () => {
+  it('renders all 9 nav labels + a tablist in tabs layout', () => {
     render(NavShell, { layout: 'tabs', onLayoutChange: vi.fn() });
     for (const label of [
       'Dashboard',
       'Image Builder',
       'Image Catalog',
+      'Registry Settings',
       'Simulation',
       'Topic Monitor',
       'Diagnostics',
