@@ -9,7 +9,7 @@ let dashboardCaption =
 let imageBuilderCaption =
   '<strong>Image Builder: Presets:</strong> — Quick Starts → Phase 1/Phase 2 build. <strong>Customize:</strong> choose different layers/options → build.';
 let imageCatalogCaption =
-  '<strong>Image Catalog</strong> — browse a Quay.io namespace and pull a pre-built image instead of building locally.';
+  '<strong>Image Catalog</strong> — browse a configured registry namespace and pull a pre-built image instead of building locally.';
 let showViewerCaption =
   '<strong>Show Viewer:</strong> (Simulation page, Local or OpenShift) — Launch → <strong>Show Viewer</strong> (embedded inline, no browser tab) → <em>toggle the embedded noVNC canvas on and off</em>.';
 let openshiftDeployCaption =
@@ -168,9 +168,12 @@ let topicMonitorCaption =
         <div class="text-xs font-semibold text-[var(--pd-content-header)] mt-3 mb-2">Both tabs</div>
         <div>
           <strong>Cancel / Push</strong> — Cancel aborts an in-progress <strong>build</strong> or <strong>push</strong>.
-          Push requires registry login via Podman Desktop &rarr; Settings &rarr; Registries. Image Builder also shows
-          whether the current <span class="font-mono">quay.io/…</span> tag exists on Quay (public repos only; private repos
-          show as unavailable).
+          Push requires registry login via Podman Desktop &rarr; Settings &rarr; Registries. In Image Builder, choose
+          the
+          <strong>Push registry</strong> at the top of the active tab; the configured host and namespace become the
+          image references used for every build and push in that tab. Image Builder also shows whether the current
+          <span class="font-mono">quay.io/…</span>
+          tag exists on Quay (public repos only; private repos show as unavailable).
         </div>
         <div>
           <strong>Build storage cleanup</strong> — Successful and failed builds remove their intermediate Buildah
@@ -193,22 +196,40 @@ let topicMonitorCaption =
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Image Catalog</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
         <div>
-          <strong>Browse repositories</strong> — Enter a Quay.io namespace and click Load. Expand any repository to see tags
-          with size, date, and digest.
+          <strong>Browse repositories</strong> — Choose a configured registry, enter its namespace, and click Load. Expand
+          any repository to see tags with size, date, and digest when the registry reports them.
         </div>
         <div>
           <strong>All vs Curated</strong> — Default view is <strong>All</strong> (every <strong>public</strong> repo in
-          the namespace; private Quay repos are not listed without auth). Switch to <strong>Curated</strong> to show
-          only names matching the allowlist (default
+          the namespace; private repos are not listed without registry authentication). Switch to
+          <strong>Curated</strong>
+          to show only names matching the allowlist (default
           <span class="font-mono">ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*</span>). Both the default view and the
           allowlist are configurable under Settings &rarr; Preferences &rarr; Robotics (comma-separated patterns;
           <span class="font-mono">*</span> is a wildcard).
         </div>
         <div>
-          <strong>Filter</strong> — Use "Filter by name" to further narrow the list.
+          <strong>Filter</strong> — Use "Filter by repository name" to narrow the repository list, then use "Filter by tag"
+          inside an expanded repository when it has many tags.
         </div>
         <div>
           <strong>Pull images</strong> — Click Pull on any tag. Progress shows aggregated layer download status.
+        </div>
+        <div>
+          <strong>Additional registries</strong> — Open <strong>Registry Settings</strong> from Image Catalog or Image Builder
+          to edit the shared multiline JSON configuration. The same validated registry list is used for browsing, pulling,
+          and selecting Image Builder push targets. Docker Hub uses its public API; generic OCI registries use the standard
+          catalog and tags endpoints. Anonymous Docker Hub access is rate-limited, so sign in through Podman Desktop before
+          repeated browsing, pulls, or pushes. Malformed JSON, duplicate IDs, or entries missing required fields are shown
+          before saving. Review image provenance and signatures before using downloaded images; the catalog does not verify
+          cosign signatures.
+        </div>
+        <div>
+          <strong>Curated overrides</strong> — Curated patterns default to the shared ROS image patterns. When a
+          registry uses different repository names, select <strong>Curated</strong>, enter comma-separated patterns for
+          that registry, and choose <strong>Save curated patterns</strong>. A plain term matches anywhere in a
+          repository name; <span class="font-mono">*</span> remains available for wildcard patterns. Leave the override empty
+          to use the default.
         </div>
         <div>
           <strong>Locally Available</strong> — Collapsible section lists images from this namespace already present

@@ -22,12 +22,13 @@ describe('CatalogCurated', () => {
     expect(parseCuratedAllowlist(nullValue)).toEqual(parseCuratedAllowlist(DEFAULT_CURATED_ALLOWLIST));
   });
 
-  it('matches exact and wildcard patterns', () => {
+  it('matches substring and wildcard patterns', () => {
     const patterns = parseCuratedAllowlist(DEFAULT_CURATED_ALLOWLIST);
     expect(repoMatchesAllowlist('ros2-humble-base', patterns)).toBe(true);
     expect(repoMatchesAllowlist('ros2-jazzy-base', patterns)).toBe(true);
     expect(repoMatchesAllowlist('ros2-humble-turtlebot3', patterns)).toBe(true);
     expect(repoMatchesAllowlist('ros2-jazzy-sim', patterns)).toBe(true);
+    expect(repoMatchesAllowlist('busybox', parseCuratedAllowlist('box'))).toBe(true);
     expect(repoMatchesAllowlist('aiobs-foo', patterns)).toBe(false);
   });
 

@@ -12,6 +12,7 @@ import ImageBuilder from './SimulationSetup.svelte';
 import Simulation from './Simulation.svelte';
 import TopicMonitor from './TopicMonitor.svelte';
 import Diagnostics from './Diagnostics.svelte';
+import RegistrySettings from './RegistrySettings.svelte';
 import { navigationLayout as navigationLayoutStore } from './lib/navigationLayout';
 
 router.mode.hash();
@@ -47,6 +48,9 @@ onMount(async () => {
       </Route>
       <Route path="/images" breadcrumb="Image Catalog" let:active>
         <ImageCatalog active={active} />
+      </Route>
+      <Route path="/registries" breadcrumb="Registry Settings">
+        <RegistrySettings />
       </Route>
       <Route path="/help" breadcrumb="Help">
         <Help />

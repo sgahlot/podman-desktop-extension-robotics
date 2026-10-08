@@ -4,14 +4,14 @@ Podman Desktop extension for Robotics robotics development. Provides a GUI-drive
 
 ## Features
 
-- **Image Catalog** — Browse and pull ROS2 images from Quay.io (All or Curated view; allowlist configurable in Preferences)
+- **Image Catalog** — Browse and pull ROS2 images from Quay.io, Docker Hub, or configured OCI registries (All or Curated view; allowlist configurable in Preferences)
 - **Image Builder** — Configure, build, and push ROS2 images (Jazzy sim + noVNC; Fedora 43 + ROS 2 Lyrical amd64 sim is also available from Presets; Humble exists but is not currently verified working — see Coming Soon). The builder provides **Presets** and **Customize** layouts. Quick Starts are available only in Presets layout; Customize can independently select the base image and simulation-layer source, with a live compatibility verdict.
 - **Simulation** — Launch Gazebo via Podman, open noVNC, add TurtleBot3 into a running world. Launch only allows images matching the simulation allowlist (default `ros2-*-sim*` / `ros2-*-turtlebot3`; optional exact tag/digest pins in Preferences). Local image content is trusted once selected — see Help → Image trust. A **Show Viewer** toggle next to **Open in Browser** embeds the noVNC canvas inline in the panel, no browser tab needed (APPENG-6283).
 - **OpenShift Deployment** — Deploy a pushed `amd64` image to an OpenShift cluster from the Simulation page's **OpenShift** tab: pick a namespace/context, preview generated manifests, Deploy, Open URL. Lists deployed sims with per-robot spawn/navigate/remove, delete/refresh, a **Cluster has a GPU** toggle, an optional [Hummingbird](#hummingbird-support) nginx sidecar demo, and the same inline **Show Viewer** toggle as local Simulation, over the route.
 - **Diagnostics** — Live diagnostics for spawned robots (local or OpenShift): TF tree, costmap, and a dynamic list of `sensor_msgs` topics (LaserScan and Imu peeked on refresh; other types listed). Deep-linkable via URL query params (`target=`, `containerId=`/context, `robot=`).
 - **Help** — In-extension documentation
 
-Current container bases are **Ubuntu interim** (official `ros` / OSRF / sloretz images). Fedora/RHEL migration is parked (APPENG-5809). Catalog lists **public** Quay repos only.
+Current container bases are **Ubuntu interim** (official `ros` / OSRF / sloretz images). Fedora/RHEL migration is parked (APPENG-5809). Catalog listings come from the configured public registry APIs; private repositories require the registry's supported authentication flow.
 
 <a id="hummingbird-support"></a>
 
@@ -32,7 +32,9 @@ Animated walkthroughs are bundled in **Help** (one GIF per section, works offlin
 
 ![Image Builder: Presets quick starts and Customize layers](https://gitlab.com/fedora/sigs/robotics/src/podman-desktop-extension-robotics/-/raw/main/robotics/docs/img/image-builder.gif)
 
-**Image Catalog:** browse a Quay.io namespace and pull a pre-built image instead of building locally.
+**Image Catalog:** browse a configured registry namespace and pull a pre-built image instead of building locally. The
+same registry configuration is available in Image Builder, where each tab has one **Registry** selector that applies the
+selected host and namespace to every build output and push target in that tab.
 
 ![Image Catalog: browse and pull an image](https://gitlab.com/fedora/sigs/robotics/src/podman-desktop-extension-robotics/-/raw/main/robotics/docs/img/image-catalog-pull.gif)
 
@@ -109,6 +111,12 @@ On Jazzy sim images, each spawned robot has **Navigate** (target X/Y in the map 
 ## Settings
 
 - **Default Namespace** — Quay.io namespace for catalog and image tags
+- **Registry Settings** — Open the extension's **Registry Settings** page from Image Catalog or Image Builder to edit the shared registry JSON configuration. Each entry has `id`, `displayName`, `kind` (`quay`, `docker-hub`, or `generic`), `host`, and `namespace`; `curatedAllowlist` is optional per registry. Quay.io remains the default when the configuration is empty.
+
+The Registry Settings page provides the shared multiline registry configuration editor; use a formatted JSON array. Invalid JSON, duplicate IDs, or entries missing required fields are reported before saving. Docker Hub browsing uses the public API and anonymous access is rate-limited. Sign in through Podman Desktop for repeated browsing, pulls, and pushes. Generic OCI registries must expose the standard `/v2/_catalog` and `/v2/<repository>/tags/list` endpoints. The catalog has separate repository and tag filters. Image Builder has one **Push registry** selector per tab, applied to every image in that tab; the selected registry host and namespace are applied before building, so each local image is ready for the existing Push action. Well-known `quay.io` and `docker.io` hosts are recognized from their host value even if the `kind` field is copied incorrectly. The catalog does not verify cosign signatures; review provenance and registry trust before using a pulled image.
+
+Curated view uses the shared ROS patterns by default. For a registry with different repository names, select **Curated** in Image Catalog, enter comma-separated patterns in **Curated repository patterns**, and choose **Save curated patterns**. A plain term matches anywhere in a repository name (`box` matches `busybox`); `*` remains available for wildcard patterns. An empty override returns to the shared default.
+
 - **Catalog view mode** — `all` (default) or `curated`
 - **Catalog curated allowlist** — comma-separated repo name patterns (`*` wildcard), default `ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*`
 - **Simulation image allowlist** — optional comma-separated image refs or patterns for Simulation launch. Empty = default `ros2-*-sim*` / `ros2-*-turtlebot3`. Pin exact tags or `@sha256:…` digests for demos. Local image _content_ is still trusted once selected.
@@ -121,17 +129,17 @@ On Jazzy sim images, each spawned robot has **Navigate** (target X/Y in the map 
 
 Shared catalogs live under `packages/shared/src/config/`:
 
-| File | Purpose |
-|------|---------|
-| `layer-recipes.json` | Preset base OS stacks (image, capability, packages, `ui`, `layer5Bundle`) |
-| `layer-wizard-options.json` | Layers wizard labels for hardened / ROS / sim (base OS labels come from recipes) |
-| `ros-distros.json` | ROS distro ids, Nav2 flags, image-ref hints, layer option mapping |
-| `simulation-profiles.json` | Image Builder profile matrix (`id`, robot, distro, asset dirs) |
-| `simulation-base-images.json` | Phase 1 base image presets and digests |
-| `quick-starts.json` | Preset tab quick starts |
-| `custom-simulation-templates.json` | Custom-parent simulation templates |
-| `hummingbird-apps.json` | Hardened app/tool catalog for the Layers wizard |
-| `platform-defaults.json` | Catalog allowlist defaults, managed sim runtime paths, Image Builder defaults |
+| File                               | Purpose                                                                          |
+| ---------------------------------- | -------------------------------------------------------------------------------- |
+| `layer-recipes.json`               | Preset base OS stacks (image, capability, packages, `ui`, `layer5Bundle`)        |
+| `layer-wizard-options.json`        | Layers wizard labels for hardened / ROS / sim (base OS labels come from recipes) |
+| `ros-distros.json`                 | ROS distro ids, Nav2 flags, image-ref hints, layer option mapping                |
+| `simulation-profiles.json`         | Image Builder profile matrix (`id`, robot, distro, asset dirs)                   |
+| `simulation-base-images.json`      | Phase 1 base image presets and digests                                           |
+| `quick-starts.json`                | Preset tab quick starts                                                          |
+| `custom-simulation-templates.json` | Custom-parent simulation templates                                               |
+| `hummingbird-apps.json`            | Hardened app/tool catalog for the Layers wizard                                  |
+| `platform-defaults.json`           | Catalog allowlist defaults, managed sim runtime paths, Image Builder defaults    |
 
 Add a layer recipe under `layer-recipes.json` → `recipes` with the base image reference,
 capability flags, package-manager commands, `ui` (label + note), ROS repository snippet,

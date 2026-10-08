@@ -10,6 +10,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Dashboard', to: '/' },
   { label: 'Image Builder', to: '/build' },
   { label: 'Image Catalog', to: '/images' },
+  { label: 'Registry Settings', to: '/registries' },
   { label: 'Simulation', to: '/simulation' },
   { label: 'Topic Monitor', to: '/topics' },
   { label: 'Diagnostics', to: '/diagnostics' },

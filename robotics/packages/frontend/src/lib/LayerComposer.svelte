@@ -30,9 +30,11 @@ import { CUSTOM_SIMULATION_TEMPLATES } from '/@shared/src/types/CustomSimulation
 import { buildLayerStackContainerfile } from '/@shared/src/build/presetContainerfile';
 import { QUICK_STARTS } from '/@shared/src/types/QuickStarts';
 import type { SimulationConfig, TargetArch } from '/@shared/src/types/SimulationConfig';
+import { imageRefForRegistry, type CatalogRegistry } from '/@shared/src/types/ImageCatalog';
 import { physicalAiClient } from '../api/client';
 import { onMount, onDestroy } from 'svelte';
 import BuildPushPanel from './BuildPushPanel.svelte';
+import RegistrySelector from './RegistrySelector.svelte';
 
 let selection: LayerSelection = {
   baseOs: 'ubuntu-noble',
@@ -66,6 +68,8 @@ export let quickStartId: string | undefined = undefined;
 export let hideTargetArch = false;
 /** Lock layer dropdowns (Presets fedora-layers quick start). */
 export let lockLayerSelection = false;
+/** Registry selected by the containing Image Builder tab for every image in this section. */
+export let pushRegistry: CatalogRegistry | undefined = undefined;
 /** Notifies the parent (SimulationSetup, which owns the BuildHistoryPanel instance) that a
  * build here just finished, so the Recent Builds list can refresh — this panel has no
  * history view of its own (APPENG-6265: previously missing entirely, so a Layers build
@@ -220,9 +224,43 @@ $: presetConfig = {
   baseImage: defaultBaseImageForDistro(presetDistro),
   targetArch,
 } as SimulationConfig;
-$: presetBaseTag = ns ? (baseImageTag(ns, presetConfig) ?? '') : '';
-$: presetHardenedTag = needsHardened && ns ? (hardenedImageTag(ns, presetConfig) ?? '') : '';
-$: presetSimTag = ns ? (simulationImageTag(ns, presetConfig) ?? '') : '';
+$: presetBaseTag = ns
+  ? imageRefForRegistry(
+      baseImageTag(ns, presetConfig) ?? '',
+      pushRegistry ?? {
+        id: 'quay-default',
+        displayName: 'Quay.io',
+        kind: 'quay',
+        host: 'quay.io',
+        namespace: ns,
+      },
+    )
+  : '';
+$: presetHardenedTag =
+  needsHardened && ns
+    ? imageRefForRegistry(
+        hardenedImageTag(ns, presetConfig) ?? '',
+        pushRegistry ?? {
+          id: 'quay-default',
+          displayName: 'Quay.io',
+          kind: 'quay',
+          host: 'quay.io',
+          namespace: ns,
+        },
+      )
+    : '';
+$: presetSimTag = ns
+  ? imageRefForRegistry(
+      simulationImageTag(ns, presetConfig) ?? '',
+      pushRegistry ?? {
+        id: 'quay-default',
+        displayName: 'Quay.io',
+        kind: 'quay',
+        host: 'quay.io',
+        namespace: ns,
+      },
+    )
+  : '';
 $: wantsSim = selection.sim !== 'none';
 $: needsHardened = bakeInTools.length > 0;
 
@@ -230,6 +268,14 @@ $: needsHardened = bakeInTools.length > 0;
 let baseTag = presetBaseTag;
 let hardenedTag = presetHardenedTag;
 let simTag = presetSimTag;
+let lastDefaultRegistryId = '';
+
+$: if ((pushRegistry?.id ?? '') !== lastDefaultRegistryId && !buildBusy) {
+  lastDefaultRegistryId = pushRegistry?.id ?? '';
+  baseTag = presetBaseTag;
+  hardenedTag = presetHardenedTag;
+  simTag = presetSimTag;
+}
 
 // Check existence against the actual tags (what the user built), not the presets
 $: baseImageExists = !!baseTag && localImages.includes(baseTag);
@@ -237,7 +283,16 @@ $: hardenedImageExists = !!hardenedTag && localImages.includes(hardenedTag);
 $: simParentReady = baseImageExists && (!needsHardened || hardenedImageExists);
 /** Sim must FROM a finished hardened parent — not an in-flight rebuild or stale tag race. */
 $: simBuildDisabled = !simParentReady || (needsHardened && hardenedBusy);
-$: containerfileTag = `${ns ? `quay.io/${ns}/` : ''}robotics-${selection.baseOs}:latest${archTagSuffix(targetArch)}`;
+$: containerfileTag = imageRefForRegistry(
+  `${ns ? `quay.io/${ns}/` : ''}robotics-${selection.baseOs}:latest${archTagSuffix(targetArch)}`,
+  pushRegistry ?? {
+    id: 'quay-default',
+    displayName: 'Quay.io',
+    kind: 'quay',
+    host: 'quay.io',
+    namespace: ns,
+  },
+);
 
 // --- Images this stack pulls -----------------------------------------------------
 // The generic Base OS ref (BASE_OS_IMAGE_REF) is only what the *generated Containerfile*
@@ -590,6 +645,7 @@ onDestroy(() => {
         </p>
       {/if}
     </div>
+    <RegistrySelector bind:selectedRegistry={pushRegistry} disabled={buildBusy} />
 
     {#if buildMode === 'preset'}
       <div class="text-sm p-3 rounded pai-banner-info">
@@ -624,7 +680,8 @@ onDestroy(() => {
             void refreshLocalImages();
             onBuildComplete?.({ watchForSbom: selectedHbApps.includes('syft'), builtTag });
           }}
-          disabled={buildBusy} />
+          disabled={buildBusy}
+          pushRegistry={pushRegistry} />
       </div>
 
       {#if needsHardened}
@@ -654,7 +711,8 @@ onDestroy(() => {
               void refreshLocalImages();
               onBuildComplete?.({ watchForSbom: false, builtTag });
             }}
-            disabled={buildBusy || !baseImageExists} />
+            disabled={buildBusy || !baseImageExists}
+            pushRegistry={pushRegistry} />
         </div>
       {/if}
 
@@ -696,7 +754,8 @@ onDestroy(() => {
               void refreshLocalImages();
               onBuildComplete?.({ watchForSbom: selectedHbApps.includes('syft'), builtTag });
             }}
-            disabled={buildBusy || simBuildDisabled} />
+            disabled={buildBusy || simBuildDisabled}
+            pushRegistry={pushRegistry} />
         </div>
       {/if}
     {:else}
@@ -741,7 +800,8 @@ onDestroy(() => {
           void refreshLocalImages();
           onBuildComplete?.({ watchForSbom: selectedHbApps.includes('syft'), builtTag });
         }}
-        disabled={buildDisabled} />
+        disabled={buildDisabled}
+        pushRegistry={pushRegistry} />
     {/if}
   </div>
 </div>
