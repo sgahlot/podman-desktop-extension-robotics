@@ -56,7 +56,7 @@ let lastSuccessfulBuildAt = 0;
 
 // Expose the actual tag being edited (what will be built) for parent to check existence
 $: actualTag = inputValue;
-/** null = not checked / N/A; true/false = Quay tag presence for quay.io refs */
+/** null = not checked / N/A; true/false = selected registry tag presence */
 let imageExistsInRegistry: boolean | null = null;
 let registryCheckError = false;
 
@@ -156,7 +156,23 @@ function pollImageStatus(): void {
   if (active && !building && !pushing) void checkLocalImage();
 }
 
-/** Parse quay.io/ns/name:tag — other registries are not checked. */
+function parseRegistryRef(
+  imageTag: string,
+  registry: CatalogRegistry,
+): { namespace: string; name: string; tag: string } | null {
+  const prefix = `${registry.host}/${registry.namespace}/`;
+  if (!imageTag.startsWith(prefix)) return null;
+
+  const repositoryAndTag = imageTag.slice(prefix.length);
+  const tagSeparator = repositoryAndTag.lastIndexOf(':');
+  if (tagSeparator <= 0 || tagSeparator === repositoryAndTag.length - 1) return null;
+
+  const name = repositoryAndTag.slice(0, tagSeparator);
+  const tag = repositoryAndTag.slice(tagSeparator + 1);
+  if (name.includes('/') || tag.includes('/')) return null;
+  return { namespace: registry.namespace, name, tag };
+}
+
 function parseQuayRef(imageTag: string): { namespace: string; name: string; tag: string } | null {
   const match = imageTag.match(/^quay\.io\/([^/]+)\/([^:]+):(.+)$/);
   if (!match) return null;
@@ -164,7 +180,7 @@ function parseQuayRef(imageTag: string): { namespace: string; name: string; tag:
 }
 
 async function checkRegistryImage(imageTag: string = inputValue, gen: number = imageCheckGen) {
-  const ref = parseQuayRef(imageTag);
+  const ref = pushRegistry ? parseRegistryRef(imageTag, pushRegistry) : parseQuayRef(imageTag);
   if (!ref) {
     if (gen === imageCheckGen) {
       imageExistsInRegistry = null;
@@ -173,7 +189,9 @@ async function checkRegistryImage(imageTag: string = inputValue, gen: number = i
     return;
   }
   try {
-    const tags = await physicalAiClient.getImageTags(ref.namespace, ref.name);
+    const tags = pushRegistry
+      ? await physicalAiClient.getCatalogTags(pushRegistry.id, ref.namespace, ref.name)
+      : await physicalAiClient.getImageTags(ref.namespace, ref.name);
     if (gen !== imageCheckGen) return;
     imageExistsInRegistry = tags.some(t => t.name === ref.tag);
     registryCheckError = false;

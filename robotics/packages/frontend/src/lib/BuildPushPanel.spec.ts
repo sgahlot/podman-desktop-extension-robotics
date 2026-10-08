@@ -4,6 +4,7 @@ import BuildPushPanel from './BuildPushPanel.svelte';
 
 const mockListLocalImages = vi.fn();
 const mockGetImageTags = vi.fn();
+const mockGetCatalogTags = vi.fn();
 const mockGetBuildProgress = vi.fn();
 const mockCancelBuild = vi.fn();
 const mockPushImage = vi.fn();
@@ -14,6 +15,7 @@ vi.mock('../api/client', () => ({
   physicalAiClient: {
     listLocalImages: (...args: unknown[]) => mockListLocalImages(...args),
     getImageTags: (...args: unknown[]) => mockGetImageTags(...args),
+    getCatalogTags: (...args: unknown[]) => mockGetCatalogTags(...args),
     getBuildProgress: (...args: unknown[]) => mockGetBuildProgress(...args),
     cancelBuild: (...args: unknown[]) => mockCancelBuild(...args),
     pushImage: (...args: unknown[]) => mockPushImage(...args),
@@ -32,6 +34,7 @@ describe('BuildPushPanel', () => {
     buildImage.mockResolvedValue(undefined);
     mockListLocalImages.mockResolvedValue([]);
     mockGetImageTags.mockResolvedValue([]);
+    mockGetCatalogTags.mockResolvedValue([]);
     mockGetBuildProgress.mockResolvedValue(undefined);
     mockGetPushProgress.mockResolvedValue(undefined);
     mockCancelBuild.mockResolvedValue(undefined);
@@ -69,6 +72,31 @@ describe('BuildPushPanel', () => {
     expect(await screen.findByRole('button', { name: 'Rebuild' })).toBeTruthy();
     expect(await screen.findByText(/Image exists locally/)).toBeTruthy();
     expect(await screen.findByText(/Image exists in registry/)).toBeTruthy();
+  });
+
+  it('checks the selected non-Quay registry for the remote tag', async () => {
+    const dockerHub = {
+      id: 'docker-hub',
+      displayName: 'Docker Hub',
+      kind: 'docker-hub',
+      host: 'docker.io',
+      namespace: 'sgahlot',
+    } as const;
+    const dockerTag = 'docker.io/sgahlot/ros2-jazzy-base:noble';
+    mockGetCatalogTags.mockResolvedValue([{ name: 'noble' }]);
+
+    render(BuildPushPanel, {
+      props: {
+        buildImage,
+        tag: dockerTag,
+        pushRegistry: dockerHub,
+        tagInputId: 'docker-tag',
+      },
+    });
+
+    expect(await screen.findByText(/Image exists in registry/)).toBeTruthy();
+    expect(mockGetCatalogTags).toHaveBeenCalledWith('docker-hub', 'sgahlot', 'ros2-jazzy-base');
+    expect(mockGetImageTags).not.toHaveBeenCalled();
   });
 
   it('clears old image status immediately when the tag is edited', async () => {
