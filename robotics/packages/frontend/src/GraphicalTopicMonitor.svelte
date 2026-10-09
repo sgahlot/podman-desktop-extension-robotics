@@ -1,76 +1,77 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
-  import { router } from 'tinro';
-  import type { SimContainerInfo } from '/@shared/src/types/SimulationContainer';
-  import type { TopicInfo } from '/@shared/src/types/TopicInfo';
-  import { physicalAiClient } from './api/client';
-  import QuickLinks from './lib/QuickLinks.svelte';
-  import { navigationLayout } from './lib/navigationLayout';
-  import { filterTopicsByName } from './lib/topicFilter';
+import { onDestroy, onMount } from 'svelte';
+import { router } from 'tinro';
+import type { SimContainerInfo } from '/@shared/src/types/SimulationContainer';
+import type { TopicInfo } from '/@shared/src/types/TopicInfo';
+import { physicalAiClient } from './api/client';
+import QuickLinks from './lib/QuickLinks.svelte';
+import { navigationLayout } from './lib/navigationLayout';
+import { filterTopicsByName } from './lib/topicFilter';
 
-  let containers: SimContainerInfo[] = [];
-  let topics: TopicInfo[] = [];
-  let selectedContainerId = '';
-  let filterQuery = '';
-  let loading = false;
-  let error = '';
-  let pollTimer: ReturnType<typeof setInterval> | null = null;
-  let pollInFlight = false;
+let containers: SimContainerInfo[] = [];
+let topics: TopicInfo[] = [];
+let selectedContainerId = '';
+let filterQuery = '';
+let loading = false;
+let error = '';
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+let pollInFlight = false;
 
-  $: runningContainers = containers.filter(container => container.state === 'running');
-  $: filteredTopics = filterTopicsByName(topics, filterQuery);
+$: runningContainers = containers.filter(container => container.state === 'running');
+$: filteredTopics = filterTopicsByName(topics, filterQuery);
 
-  async function refreshTopics() {
-    if (!selectedContainerId || pollInFlight) return;
-    pollInFlight = true;
-    try {
-      topics = await physicalAiClient.listRosTopicSummaries(selectedContainerId);
-      error = '';
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    } finally {
-      pollInFlight = false;
-    }
+async function refreshTopics() {
+  if (!selectedContainerId || pollInFlight) return;
+  pollInFlight = true;
+  try {
+    topics = await physicalAiClient.listRosTopicSummaries(selectedContainerId);
+    error = '';
+  } catch (e) {
+    error = e instanceof Error ? e.message : String(e);
+  } finally {
+    pollInFlight = false;
   }
+}
 
-  async function refresh() {
-    loading = true;
-    try {
-      await pollContainers();
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    } finally {
-      loading = false;
-    }
+async function refresh() {
+  loading = true;
+  try {
+    await pollContainers();
+  } catch (e) {
+    error = e instanceof Error ? e.message : String(e);
+  } finally {
+    loading = false;
   }
+}
 
-  async function pollContainers() {
-    try {
-      containers = await physicalAiClient.listSimulationContainers();
-      const nextRunningContainers = containers.filter(container => container.state === 'running');
-      const nextContainerId = nextRunningContainers.find(container => container.id === selectedContainerId)?.id
-        ?? nextRunningContainers[0]?.id
-        ?? '';
-      if (nextContainerId !== selectedContainerId) {
-        selectedContainerId = nextContainerId;
-        topics = [];
-      }
-      await refreshTopics();
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+async function pollContainers() {
+  try {
+    containers = await physicalAiClient.listSimulationContainers();
+    const nextRunningContainers = containers.filter(container => container.state === 'running');
+    const nextContainerId =
+      nextRunningContainers.find(container => container.id === selectedContainerId)?.id ??
+      nextRunningContainers[0]?.id ??
+      '';
+    if (nextContainerId !== selectedContainerId) {
+      selectedContainerId = nextContainerId;
+      topics = [];
     }
+    await refreshTopics();
+  } catch (e) {
+    error = e instanceof Error ? e.message : String(e);
   }
+}
 
-  onMount(() => {
-    void refresh();
-    pollTimer = setInterval(() => {
-      void pollContainers();
-    }, 5000);
-  });
+onMount(() => {
+  void refresh();
+  pollTimer = setInterval(() => {
+    void pollContainers();
+  }, 5000);
+});
 
-  onDestroy(() => {
-    if (pollTimer) clearInterval(pollTimer);
-  });
+onDestroy(() => {
+  if (pollTimer) clearInterval(pollTimer);
+});
 </script>
 
 <div class="flex flex-col p-4 gap-4 w-full flex-1 min-h-0 min-w-0 overflow-auto">
@@ -94,7 +95,8 @@
   {#if !runningContainers.length}
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-lg">
       <p class="text-sm text-[var(--pd-content-text)]">
-        No simulation is running. <button on:click={() => router.goto('/simulation')} class="pai-link">Launch one</button>
+        No simulation is running. <button on:click={() => router.goto('/simulation')} class="pai-link"
+          >Launch one</button>
         to inspect topics.
       </p>
     </div>
@@ -128,8 +130,10 @@
 
     {#if error}<div class="p-3 rounded text-sm pai-banner-error max-w-lg">{error}</div>{/if}
 
-    <section class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] overflow-hidden">
-      <div class="flex flex-row items-center justify-between gap-3 px-4 py-3 border-b border-[var(--pd-content-card-border)]">
+    <section
+      class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] overflow-hidden">
+      <div
+        class="flex flex-row items-center justify-between gap-3 px-4 py-3 border-b border-[var(--pd-content-card-border)]">
         <div>
           <h2 class="text-sm font-medium text-[var(--pd-content-header)]">Topology canvas</h2>
           <p class="text-xs pai-text-muted mt-1">
@@ -140,30 +144,41 @@
             {/if}
           </p>
         </div>
-        <span class="text-[10px] uppercase tracking-wide pai-text-muted border border-[var(--pd-content-card-border)] rounded px-2 py-1">
+        <span
+          class="text-[10px] uppercase tracking-wide pai-text-muted border border-[var(--pd-content-card-border)] rounded px-2 py-1">
           Preview
         </span>
       </div>
 
       {#if !filterQuery.trim()}
-        <div class="relative min-h-72 p-6 grid place-items-center overflow-hidden" role="img" aria-label="ROS topology canvas preview">
-          <div class="absolute inset-0 opacity-40" style="background-image: radial-gradient(var(--pd-content-card-border) 1px, transparent 1px); background-size: 20px 20px;"></div>
+        <div
+          class="relative min-h-72 p-6 grid place-items-center overflow-hidden"
+          role="img"
+          aria-label="ROS topology canvas preview">
+          <div
+            class="absolute inset-0 opacity-40"
+            style="background-image: radial-gradient(var(--pd-content-card-border) 1px, transparent 1px); background-size: 20px 20px;">
+          </div>
           <div class="relative w-full max-w-2xl h-48">
             <div class="absolute left-1/2 top-1/2 w-40 h-px bg-[var(--pd-content-card-border)] -translate-x-1/2"></div>
             <div class="absolute left-1/2 top-1/2 h-28 w-px bg-[var(--pd-content-card-border)] -translate-y-1/2"></div>
-            <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-lg border-2 border-[var(--pd-content-accent)] bg-[var(--pd-content-bg)] px-4 py-3 text-center shadow-sm">
+            <div
+              class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-lg border-2 border-[var(--pd-content-accent)] bg-[var(--pd-content-bg)] px-4 py-3 text-center shadow-sm">
               <div class="text-xs font-medium text-[var(--pd-content-header)]">ROS 2 graph</div>
               <div class="text-[10px] pai-text-muted mt-1">{topics.length} topics loaded</div>
             </div>
-            <div class="absolute left-0 top-1/2 -translate-y-1/2 rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] px-4 py-3 text-center">
+            <div
+              class="absolute left-0 top-1/2 -translate-y-1/2 rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] px-4 py-3 text-center">
               <div class="text-xs font-medium text-[var(--pd-content-header)]">Nodes</div>
               <div class="text-[10px] pai-text-muted mt-1">publishers</div>
             </div>
-            <div class="absolute right-0 top-1/2 -translate-y-1/2 rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] px-4 py-3 text-center">
+            <div
+              class="absolute right-0 top-1/2 -translate-y-1/2 rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] px-4 py-3 text-center">
               <div class="text-xs font-medium text-[var(--pd-content-header)]">Topics</div>
               <div class="text-[10px] pai-text-muted mt-1">subscribers</div>
             </div>
-            <div class="absolute left-1/2 bottom-0 -translate-x-1/2 rounded-lg border border-dashed border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] px-4 py-2 text-[10px] pai-text-muted">
+            <div
+              class="absolute left-1/2 bottom-0 -translate-x-1/2 rounded-lg border border-dashed border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] px-4 py-2 text-[10px] pai-text-muted">
               Detailed topology layout coming next
             </div>
           </div>
@@ -193,8 +208,10 @@
                   <tr class="border-b border-[var(--pd-content-card-border)] last:border-b-0">
                     <td class="p-3 font-mono text-[var(--pd-content-header)] break-all">{topic.name}</td>
                     <td class="p-3 font-mono text-[var(--pd-content-text)] break-all">{topic.type}</td>
-                    <td class="p-3 text-right text-[var(--pd-content-text)]">{topic.countsPending ? '—' : topic.publishers}</td>
-                    <td class="p-3 text-right text-[var(--pd-content-text)]">{topic.countsPending ? '—' : topic.subscribers}</td>
+                    <td class="p-3 text-right text-[var(--pd-content-text)]"
+                      >{topic.countsPending ? '—' : topic.publishers}</td>
+                    <td class="p-3 text-right text-[var(--pd-content-text)]"
+                      >{topic.countsPending ? '—' : topic.subscribers}</td>
                   </tr>
                 {/each}
               </tbody>
