@@ -2528,11 +2528,23 @@ RUN apt-get install -y ros-jazzy-desktop
     });
 
     it('returns a typed topology snapshot from the current topic list', async () => {
-      vi.mocked(extensionApi.process.exec).mockResolvedValue({
-        stdout: '/rosout [rcl_interfaces/msg/Log]\n',
-        stderr: '',
-        command: 'podman',
-      } as extensionApi.RunResult);
+      vi.mocked(extensionApi.process.exec)
+        .mockResolvedValueOnce({
+          stdout: '/rosout [rcl_interfaces/msg/Log]\n',
+          stderr: '',
+          command: 'podman',
+        } as extensionApi.RunResult)
+        .mockResolvedValueOnce({
+          stdout: [
+            'N\t/robot_1/controller',
+            '  Subscribers:',
+            '    /cmd_vel: geometry_msgs/msg/Twist',
+            '  Publishers:',
+            '    /odom: nav_msgs/msg/Odometry',
+          ].join('\n'),
+          stderr: '',
+          command: 'podman',
+        } as extensionApi.RunResult);
 
       const result = await api.getTopicTopology(CONTAINER_ID);
 
@@ -2545,8 +2557,35 @@ RUN apt-get install -y ros-jazzy-desktop
           countsPending: true,
         },
       ]);
-      expect(result.nodes).toEqual([]);
+      expect(result.nodes).toEqual([
+        {
+          nodeName: 'controller',
+          nodeNamespace: '/robot_1',
+          publishingTopics: ['/odom'],
+          subscribingTopics: ['/cmd_vel'],
+        },
+      ]);
       expect(result.capturedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    });
+
+    it('reuses node discovery during the short cache window', async () => {
+      vi.mocked(extensionApi.process.exec)
+        .mockResolvedValueOnce({
+          stdout: '/rosout [rcl_interfaces/msg/Log]\n',
+          stderr: '',
+          command: 'podman',
+        } as extensionApi.RunResult)
+        .mockResolvedValueOnce({ stdout: 'N\t/rosout\n', stderr: '', command: 'podman' } as extensionApi.RunResult)
+        .mockResolvedValueOnce({
+          stdout: '/rosout [rcl_interfaces/msg/Log]\n',
+          stderr: '',
+          command: 'podman',
+        } as extensionApi.RunResult);
+
+      await api.getTopicTopology(CONTAINER_ID);
+      await api.getTopicTopology(CONTAINER_ID);
+
+      expect(extensionApi.process.exec).toHaveBeenCalledTimes(3);
     });
 
     it('rejects non-simulation containers through the existing resolver', async () => {
