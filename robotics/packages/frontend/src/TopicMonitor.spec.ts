@@ -110,6 +110,24 @@ describe('TopicMonitor', () => {
     expect(screen.getByText(/2 active topics/)).toBeTruthy();
   });
 
+  it('filters topics by name without changing the refreshed source list', async () => {
+    mockListSimulationContainers.mockResolvedValue([
+      { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
+    ]);
+    mockListRosTopics.mockResolvedValue([
+      { name: '/rosout', type: 'rcl_interfaces/msg/Log', publishers: 1, subscribers: 0 },
+      { name: '/robot_1/cmd_vel', type: 'geometry_msgs/msg/Twist', publishers: 0, subscribers: 1 },
+    ]);
+
+    render(TopicMonitor);
+    await screen.findByText('/rosout');
+    await fireEvent.input(screen.getByRole('searchbox', { name: 'Filter topics' }), { target: { value: 'cmd_vel' } });
+
+    expect(screen.queryByText('/rosout')).toBeNull();
+    expect(screen.getByText('/robot_1/cmd_vel')).toBeTruthy();
+    expect(screen.getByText(/1 of 2 active topics/)).toBeTruthy();
+  });
+
   it('shows column headers', async () => {
     mockListSimulationContainers.mockResolvedValue([
       { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },

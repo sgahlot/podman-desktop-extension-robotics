@@ -13,6 +13,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Registry Settings', to: '/registries' },
   { label: 'Simulation', to: '/simulation' },
   { label: 'Topic Monitor', to: '/topics' },
+  { label: 'Graphical Topic Monitor', to: '/topics/graphical' },
   { label: 'Diagnostics', to: '/diagnostics' },
   { label: 'Fleet', tooltip: 'Coming soon — scale to a multi-robot local fleet' },
   { label: 'Help', to: '/help' },
