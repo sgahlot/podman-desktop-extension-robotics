@@ -11,6 +11,7 @@ import Help from './Help.svelte';
 import ImageBuilder from './SimulationSetup.svelte';
 import Simulation from './Simulation.svelte';
 import TopicMonitor from './TopicMonitor.svelte';
+import GraphicalTopicMonitor from './GraphicalTopicMonitor.svelte';
 import Diagnostics from './Diagnostics.svelte';
 import RegistrySettings from './RegistrySettings.svelte';
 import { navigationLayout as navigationLayoutStore } from './lib/navigationLayout';
@@ -63,6 +64,9 @@ onMount(async () => {
       </Route>
       <Route path="/topics" breadcrumb="Topic Monitor">
         <TopicMonitor />
+      </Route>
+      <Route path="/topics/graphical" breadcrumb="Graphical Topic Monitor">
+        <GraphicalTopicMonitor />
       </Route>
       <Route path="/diagnostics" breadcrumb="Diagnostics" let:meta>
         <Diagnostics query={meta.query} />

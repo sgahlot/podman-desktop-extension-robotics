@@ -15,6 +15,7 @@ import { topicSnapshotsEqual, mergeTopicSummaries, applyTopicCounts } from '/@sh
 import MessageTree from './lib/MessageTree.svelte';
 import QuickLinks from './lib/QuickLinks.svelte';
 import { navigationLayout } from './lib/navigationLayout';
+import { filterTopicsByName } from './lib/topicFilter';
 
 let containers: SimContainerInfo[] = [];
 let selectedContainerId = '';
@@ -24,6 +25,7 @@ let error = '';
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let pollInFlight = false;
 let countsInFlight = false;
+let filterQuery = '';
 
 let expandedTopic: string | null = null;
 let topicDetail: TopicDetailInfo | null = null;
@@ -47,6 +49,7 @@ $: runningContainers = containers.filter(c => c.state === 'running');
 $: hasRunning = runningContainers.length > 0;
 $: peekTree = peekResult?.message ? parseEchoYamlTree(peekResult.message) : [];
 $: peekTreeUsable = peekTree.length > 0;
+$: filteredTopics = filterTopicsByName(topics, filterQuery);
 
 $: if (hasRunning && !selectedContainerId) {
   selectedContainerId = runningContainers[0].id;
@@ -61,7 +64,7 @@ $: if (selectedContainerId && !runningContainers.find(c => c.id === selectedCont
   clearInspector();
 }
 
-$: if (expandedTopic && !topics.find(t => t.name === expandedTopic)) {
+$: if (expandedTopic && !filteredTopics.find(t => t.name === expandedTopic)) {
   expandedTopic = null;
   topicDetail = null;
   clearInspector();
@@ -307,6 +310,15 @@ onDestroy(() => {
       <button on:click={refresh} disabled={loading} class="pai-btn pai-btn-primary">
         {loading ? 'Refreshing...' : 'Refresh'}
       </button>
+      <div class="flex flex-col gap-1 min-w-56">
+        <label for="topicFilter" class="text-xs text-[var(--pd-content-text)]">Filter topics</label>
+        <input
+          id="topicFilter"
+          type="search"
+          bind:value={filterQuery}
+          placeholder="Filter by name"
+          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]" />
+      </div>
     </div>
 
     {#if error}
@@ -321,10 +333,12 @@ onDestroy(() => {
       </div>
     {:else if topics.length > 0}
       <div class="text-xs pai-text-muted">
-        {topics.length} active topics — more can appear as ROS2 nodes finish starting (e.g. Nav2 bring-up can take up to ~90s)
+        {filteredTopics.length} of {topics.length} active topics — more can appear as ROS2 nodes finish starting (e.g. Nav2 bring-up can take up to ~90s)
       </div>
 
-      <div
+      {#if filteredTopics.length === 0}
+        <div class="text-sm text-[var(--pd-content-text)]">No topics match the current filter.</div>
+      {:else}<div
         class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] overflow-x-auto">
         <table class="w-full text-xs table-fixed">
           <thead>
@@ -336,7 +350,7 @@ onDestroy(() => {
             </tr>
           </thead>
           <tbody>
-            {#each topics as topic (topic.name)}
+            {#each filteredTopics as topic (topic.name)}
               <tr
                 class="border-b border-[var(--pd-content-card-border)] cursor-pointer hover:bg-[var(--pd-content-bg)] transition-colors"
                 on:click={() => toggleTopicDetail(topic.name)}>
@@ -521,6 +535,7 @@ onDestroy(() => {
           </tbody>
         </table>
       </div>
+      {/if}
     {/if}
 
     {#if loading}
