@@ -93,6 +93,8 @@ import type {
   TopicNodeInfo,
   TopicPeekResult,
   TopicSchemaResult,
+  TopicGraphTopology,
+  TopicTelemetry,
 } from '/@shared/src/types/TopicInfo';
 import type { NavigationGoalResult, Nav2WarmStatus } from '/@shared/src/types/NavigationGoalResult';
 import {
@@ -2138,6 +2140,25 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
 
     return { topicName: safeTopic, type, publishers, subscribers };
+  }
+
+  async getTopicTopology(containerId: string): Promise<TopicGraphTopology> {
+    const topics = await this.listRosTopicSummaries(containerId);
+    return {
+      topics,
+      nodes: [],
+      capturedAt: new Date().toISOString(),
+    };
+  }
+
+  async getTopicTelemetry(containerId: string, topicNames: string[] = []): Promise<TopicTelemetry[]> {
+    await this.#resolveSimulationContainer(containerId);
+    const safeTopics = topicNames.map(topicName => assertRosTopicName(topicName));
+    const capturedAt = new Date().toISOString();
+
+    // Metrics collection is intentionally deferred to APPENG-6625. Returning a typed,
+    // timestamped empty snapshot keeps the RPC contract usable without implying data exists.
+    return safeTopics.map(topicName => ({ topicName, capturedAt }));
   }
 
   async peekRosTopic(containerId: string, topicName: string): Promise<TopicPeekResult> {

@@ -13,7 +13,14 @@ import type { BuildHistoryEntry, BundledToolVerificationResult, SbomFormat } fro
 import type { HardenedApp } from './types/layerCompatibility';
 import type { SimulationConfig } from './types/SimulationConfig';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from './types/SimulationContainer';
-import type { TopicInfo, TopicDetailInfo, TopicPeekResult, TopicSchemaResult } from './types/TopicInfo';
+import type {
+  TopicInfo,
+  TopicDetailInfo,
+  TopicPeekResult,
+  TopicSchemaResult,
+  TopicGraphTopology,
+  TopicTelemetry,
+} from './types/TopicInfo';
 import type { NavigationGoalResult, Nav2WarmStatus } from './types/NavigationGoalResult';
 import type {
   TfTreeResult,
@@ -153,6 +160,10 @@ export abstract class PhysicalAiApi {
   /** Fast names+types via `ros2 topic list -t` (pub/sub counts pending). */
   abstract listRosTopicSummaries(containerId: string): Promise<TopicInfo[]>;
   abstract getRosTopicDetail(containerId: string, topicName: string): Promise<TopicDetailInfo>;
+  /** Current graph snapshot; node discovery is filled by the graphical monitor backend slice. */
+  abstract getTopicTopology(containerId: string): Promise<TopicGraphTopology>;
+  /** Bounded telemetry snapshot for selected topics; unavailable metrics are omitted. */
+  abstract getTopicTelemetry(containerId: string, topicNames?: string[]): Promise<TopicTelemetry[]>;
   /** One live message via `ros2 topic echo --once` (bounded wait). */
   abstract peekRosTopic(containerId: string, topicName: string): Promise<TopicPeekResult>;
   /** Message structural definition via `ros2 interface show`. */

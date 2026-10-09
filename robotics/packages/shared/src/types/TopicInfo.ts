@@ -19,6 +19,30 @@ export interface TopicDetailInfo {
   subscribers: TopicNodeInfo[];
 }
 
+/** A ROS node and the topic endpoints it exposes. */
+export interface NodeDetail {
+  nodeName: string;
+  nodeNamespace: string;
+  publishingTopics: string[];
+  subscribingTopics: string[];
+}
+
+/** Snapshot of the node/topic relationships available to the graphical monitor. */
+export interface TopicGraphTopology {
+  topics: TopicInfo[];
+  nodes: NodeDetail[];
+  capturedAt: string;
+}
+
+/** Optional runtime metrics for a topic. Missing metrics mean they are not available yet. */
+export interface TopicTelemetry {
+  topicName: string;
+  publishHz?: number;
+  bandwidthBytesPerSecond?: number;
+  capturedAt: string;
+  error?: string;
+}
+
 /** One-shot snapshot from `ros2 topic echo --once`. */
 export interface TopicPeekResult {
   topicName: string;

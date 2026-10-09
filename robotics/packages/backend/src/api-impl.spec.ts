@@ -2518,6 +2518,67 @@ RUN apt-get install -y ros-jazzy-desktop
     });
   });
 
+  describe('getTopicTopology', () => {
+    const CONTAINER_ID = 'abc123def456';
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as unknown as extensionApi.ContainerInfo[]);
+    });
+
+    it('returns a typed topology snapshot from the current topic list', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '/rosout [rcl_interfaces/msg/Log]\n',
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
+      const result = await api.getTopicTopology(CONTAINER_ID);
+
+      expect(result.topics).toEqual([
+        {
+          name: '/rosout',
+          type: 'rcl_interfaces/msg/Log',
+          publishers: 0,
+          subscribers: 0,
+          countsPending: true,
+        },
+      ]);
+      expect(result.nodes).toEqual([]);
+      expect(result.capturedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    });
+
+    it('rejects non-simulation containers through the existing resolver', async () => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([]);
+
+      await expect(api.getTopicTopology(CONTAINER_ID)).rejects.toThrow('Not a Physical AI simulation container');
+    });
+  });
+
+  describe('getTopicTelemetry', () => {
+    const CONTAINER_ID = 'abc123def456';
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as unknown as extensionApi.ContainerInfo[]);
+    });
+
+    it('returns typed empty metrics for validated topics until collection is implemented', async () => {
+      const result = await api.getTopicTelemetry(CONTAINER_ID, ['/cmd_vel', '/scan']);
+
+      expect(result).toHaveLength(2);
+      expect(result.map(metric => metric.topicName)).toEqual(['/cmd_vel', '/scan']);
+      expect(result.every(metric => metric.publishHz === undefined)).toBe(true);
+      expect(result.every(metric => /^\d{4}-\d{2}-\d{2}T/.test(metric.capturedAt))).toBe(true);
+    });
+
+    it('rejects injectable topic names before returning metrics', async () => {
+      await expect(api.getTopicTelemetry(CONTAINER_ID, ['/cmd_vel; id'])).rejects.toThrow(/Invalid ROS topic/);
+    });
+  });
+
   describe('peekRosTopic', () => {
     const CONTAINER_ID = 'abc123def456';
 
