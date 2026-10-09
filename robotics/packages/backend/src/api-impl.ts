@@ -93,6 +93,7 @@ import type {
   TopicNodeInfo,
   TopicPeekResult,
   TopicSchemaResult,
+  NodeDetail,
   TopicGraphTopology,
   TopicTelemetry,
 } from '/@shared/src/types/TopicInfo';
@@ -143,6 +144,11 @@ import type {
 } from '/@shared/src/types/RobotDiagnostics';
 import { parseSpawnedRobotNames } from '/@shared/src/ros/robotNodeList';
 import { parseRosTopicListDump, parseRosTopicListTypes, ROS_TOPIC_LIST_INFO_SCRIPT } from '/@shared/src/ros/topicList';
+import {
+  parseTopicGraphDiscovery,
+  ROS_TOPIC_GRAPH_DISCOVERY_SCRIPT,
+  ROS_TOPIC_GRAPH_NODE_LIMIT,
+} from '/@shared/src/ros/topicGraph';
 import { appendProgressLog } from './progressLogs';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
@@ -177,6 +183,7 @@ const TF_DIAGNOSTIC_TIMEOUT_SEC = 5;
  * Only paid once per fresh Nav2 bringup (the warm path skips the clear entirely).
  */
 const NAV2_COSTMAP_REFILL_MS = 2000;
+const TOPIC_GRAPH_CACHE_MS = 3000;
 
 /** Build history JSON file name, written under ExtensionContext.storagePath. */
 const BUILD_HISTORY_FILE_NAME = 'build-history.json';
@@ -327,6 +334,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
    * settled that early, so the refill re-accumulates the phantoms.
    */
   private nav2ClearPending = new Set<string>();
+  private topicGraphCache = new Map<string, { expiresAt: number; nodes: NodeDetail[] }>();
+  private topicGraphInFlight = new Map<string, Promise<NodeDetail[]>>();
 
   /**
    * Podman Desktop hosts accept an optional AbortController as the 5th pushImage
@@ -2143,12 +2152,46 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async getTopicTopology(containerId: string): Promise<TopicGraphTopology> {
+    const { id, image } = await this.#resolveSimulationContainer(containerId);
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    const target = { kind: 'podman', id } as const;
     const topics = await this.listRosTopicSummaries(containerId);
+    const nodes = await this.#getTopicGraphNodes(target, distro, id);
     return {
       topics,
-      nodes: [],
+      nodes,
       capturedAt: new Date().toISOString(),
     };
+  }
+
+  async #getTopicGraphNodes(target: ExecTarget, distro: SupportedRosDistro, cacheKey: string): Promise<NodeDetail[]> {
+    const now = Date.now();
+    const cached = this.topicGraphCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) return cached.nodes;
+
+    const inFlight = this.topicGraphInFlight.get(cacheKey);
+    if (inFlight) return inFlight;
+
+    const request = this.#discoverTopicGraphNodes(target, distro, cacheKey).finally(() => {
+      this.topicGraphInFlight.delete(cacheKey);
+    });
+    this.topicGraphInFlight.set(cacheKey, request);
+    return request;
+  }
+
+  async #discoverTopicGraphNodes(
+    target: ExecTarget,
+    distro: SupportedRosDistro,
+    cacheKey: string,
+  ): Promise<NodeDetail[]> {
+    try {
+      const result = await this.#execRosBash(target, distro, ROS_TOPIC_GRAPH_DISCOVERY_SCRIPT);
+      const nodes = result.exitCode === 0 ? parseTopicGraphDiscovery(result.stdout, ROS_TOPIC_GRAPH_NODE_LIMIT) : [];
+      this.topicGraphCache.set(cacheKey, { nodes, expiresAt: Date.now() + TOPIC_GRAPH_CACHE_MS });
+      return nodes;
+    } catch {
+      return [];
+    }
   }
 
   async getTopicTelemetry(containerId: string, topicNames: string[] = []): Promise<TopicTelemetry[]> {
