@@ -10,7 +10,6 @@ import ImageCatalog from './ImageCatalog.svelte';
 import Help from './Help.svelte';
 import ImageBuilder from './SimulationSetup.svelte';
 import Simulation from './Simulation.svelte';
-import TopicMonitor from './TopicMonitor.svelte';
 import GraphicalTopicMonitor from './GraphicalTopicMonitor.svelte';
 import Diagnostics from './Diagnostics.svelte';
 import RegistrySettings from './RegistrySettings.svelte';
@@ -63,11 +62,9 @@ onMount(async () => {
         <Simulation active={active} />
       </Route>
       <Route path="/topics" breadcrumb="Topic Monitor">
-        <TopicMonitor />
-      </Route>
-      <Route path="/topics/graphical" breadcrumb="Graphical Topic Monitor">
         <GraphicalTopicMonitor />
       </Route>
+      <Route path="/topics/graphical" redirect="/topics" />
       <Route path="/diagnostics" breadcrumb="Diagnostics" let:meta>
         <Diagnostics query={meta.query} />
       </Route>

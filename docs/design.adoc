@@ -130,7 +130,9 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 | `src/RegistrySettings.svelte` | Shared registry configuration page used by Image Catalog and Image Builder
 | `src/SimulationSetup.svelte` | Image Builder — configure + build/push base and simulation images; one Registry selector applies to each active tab
 | `src/SimulationPage.svelte` | Simulation — launch containers, view status, open noVNC, add TurtleBot3
-| `src/TopicMonitor.svelte` | Topic Monitor — ROS2 topic list with message types and pub/sub counts, auto-poll
+| `src/GraphicalTopicMonitor.svelte` | Unified Topic Monitor route — List, Graph, and Cards views over the active simulation topology; shares filters across views and owns graph selection/inspector state
+| `src/TopicMonitor.svelte` | Embedded List view — topic rows, namespace grouping, role-aware filtering, schema, and Peek; retains its state while another view is active
+| `src/lib/TopicEndpoints.svelte` | Shared publisher/subscriber endpoint renderer with highlighted filter matches
 | `src/Help.svelte` | In-extension documentation
 | `src/lib/BuildPushPanel.svelte` | Shared component for build/push/cancel lifecycle with polling
 | `src/lib/RegistryConfiguration.svelte` | Validated multiline JSON editor for shared registry definitions
