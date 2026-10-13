@@ -40,6 +40,28 @@ select {
   --pai-tooltip-text: var(--pd-tooltip-text, #ffffff);
 }
 
+.pai-topic-filter {
+  background-color: var(--pd-content-card-bg, #fff);
+  border-color: color-mix(in srgb, var(--pd-content-text, #374151) 45%, var(--pd-content-card-bg, #fff));
+  color: var(--pd-content-text, #374151);
+  cursor: text;
+}
+
+.pai-topic-filter::placeholder {
+  color: var(--pd-content-text, #374151);
+  opacity: 0.7;
+}
+
+.pai-topic-filter:hover {
+  border-color: var(--pd-content-text, #374151);
+}
+
+.pai-topic-filter:focus {
+  border-color: var(--pai-accent, #7c3aed);
+  outline: 2px solid var(--pai-accent, #7c3aed);
+  outline-offset: 2px;
+}
+
 .pai-btn {
   padding: 0.375rem 1rem;
   font-size: 0.875rem;

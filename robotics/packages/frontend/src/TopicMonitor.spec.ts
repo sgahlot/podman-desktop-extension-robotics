@@ -12,6 +12,7 @@ const mockGetRosMessageSchema = vi.fn();
 const mockGetTopicPeekTimeoutSeconds = vi.fn();
 const mockCopyToClipboard = vi.fn();
 const mockGoto = vi.fn();
+const mockGetTopicTopology = vi.fn();
 
 vi.mock('./api/client', () => ({
   physicalAiClient: {
@@ -23,6 +24,7 @@ vi.mock('./api/client', () => ({
     getRosMessageSchema: (...args: unknown[]) => mockGetRosMessageSchema(...args),
     getTopicPeekTimeoutSeconds: (...args: unknown[]) => mockGetTopicPeekTimeoutSeconds(...args),
     copyToClipboard: (...args: unknown[]) => mockCopyToClipboard(...args),
+    getTopicTopology: (...args: unknown[]) => mockGetTopicTopology(...args),
   },
 }));
 
@@ -61,6 +63,7 @@ describe('TopicMonitor', () => {
     mockGetRosMessageSchema.mockResolvedValue({ type: '', schema: '' });
     mockGetTopicPeekTimeoutSeconds.mockResolvedValue(5);
     mockCopyToClipboard.mockResolvedValue(undefined);
+    mockGetTopicTopology.mockResolvedValue({ topics: [], nodes: [] });
   });
 
   afterEach(() => {
@@ -128,6 +131,81 @@ describe('TopicMonitor', () => {
     expect(screen.getByText(/1 of 2 active topics/)).toBeTruthy();
   });
 
+  it.each([false, true])('groups List topics after filtering (embedded=%s)', async embedded => {
+    mockListSimulationContainers.mockResolvedValue([{ id: 'c1', name: 'sim', state: 'running', ports: [] }]);
+    mockListRosTopics.mockResolvedValue(
+      ['/clock', '/robot_1/cmd_vel', '/robot_2/cmd_vel', '/robot_1/status', '/robot_1/sensors/scan'].map(name => ({
+        name,
+        type: 'std_msgs/msg/String',
+        publishers: 1,
+        subscribers: 1,
+      })),
+    );
+    render(TopicMonitor, { embedded });
+    await screen.findByText('/clock');
+    const grouping = screen.getByRole('checkbox', { name: 'Group by namespace' });
+    await fireEvent.click(grouping);
+    expect(screen.getByText('Topics grouped by namespace')).toBeTruthy();
+    expect(screen.getByRole('rowheader', { name: '/ (1 topics)' })).toBeTruthy();
+    expect(screen.getByRole('rowheader', { name: '/robot_1 (2 topics)' })).toBeTruthy();
+    expect(screen.getByRole('rowheader', { name: '/robot_2 (1 topics)' })).toBeTruthy();
+    expect(screen.getByRole('rowheader', { name: '/robot_1/sensors (1 topics)' })).toBeTruthy();
+    expect(screen.getByText(/4 namespaces/)).toBeTruthy();
+    expect(screen.getByRole('table').contains(grouping)).toBe(false);
+
+    const filter = screen.getByRole('searchbox', { name: 'Filter topics' });
+    await fireEvent.input(filter, { target: { value: 'cmd_vel' } });
+    expect(screen.getAllByRole('rowheader')).toHaveLength(2);
+    expect(screen.queryByText('/clock')).toBeNull();
+    expect(screen.queryByText('/robot_1/status')).toBeNull();
+    expect(screen.queryByRole('rowheader', { name: /sensors/ })).toBeNull();
+    expect(screen.getByText(/2 of 5 active topics/)).toBeTruthy();
+    await fireEvent.input(filter, { target: { value: 'no_match' } });
+    expect(screen.getByText('No topics match the current filter.')).toBeTruthy();
+    expect(screen.queryByRole('rowheader')).toBeNull();
+    await fireEvent.input(filter, { target: { value: '' } });
+    await fireEvent.click(grouping);
+    expect(screen.queryByRole('rowheader')).toBeNull();
+    expect(screen.getByText('/clock')).toBeTruthy();
+    expect(screen.getByText('/robot_1/status')).toBeTruthy();
+  });
+
+  it('preserves expanded details, schema, and peek when List grouping is toggled', async () => {
+    mockListSimulationContainers.mockResolvedValue([{ id: 'c1', name: 'sim', state: 'running', ports: [] }]);
+    mockListRosTopics.mockResolvedValue([
+      { name: '/robot_1/status', type: 'std_msgs/msg/String', publishers: 1, subscribers: 0 },
+    ]);
+    mockGetRosTopicDetail.mockResolvedValue({
+      topicName: '/robot_1/status',
+      type: 'std_msgs/msg/String',
+      publishers: [{ nodeName: 'source', nodeNamespace: '/robot_1' }],
+      subscribers: [],
+    });
+    mockGetRosMessageSchema.mockResolvedValue({ type: 'std_msgs/msg/String', schema: 'string data' });
+    mockPeekRosTopic.mockResolvedValue({
+      topicName: '/robot_1/status',
+      message: 'data: ready',
+      timedOut: false,
+      capturedAt: new Date().toISOString(),
+    });
+    render(TopicMonitor);
+    await fireEvent.click((await screen.findByText('/robot_1/status')).closest('tr')!);
+    await screen.findByText('/robot_1/source');
+    await fireEvent.click(screen.getByRole('button', { name: 'Show message schema' }));
+    await screen.findByText('string data');
+    await fireEvent.click(screen.getByRole('button', { name: 'Peek' }));
+    await screen.findByRole('region', { name: 'Peek message' });
+    const grouping = screen.getByRole('checkbox', { name: 'Group by namespace' });
+    for (let i = 0; i < 2; i++) {
+      await fireEvent.click(grouping);
+      expect(screen.getByText('/robot_1/source')).toBeTruthy();
+      expect(screen.getByText('string data')).toBeTruthy();
+      expect(screen.getByRole('region', { name: 'Peek message' })).toBeTruthy();
+    }
+    expect(mockGetRosTopicDetail).toHaveBeenCalledTimes(1);
+    expect(mockPeekRosTopic).toHaveBeenCalledTimes(1);
+  });
+
   it('shows column headers', async () => {
     mockListSimulationContainers.mockResolvedValue([
       { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
@@ -142,6 +220,127 @@ describe('TopicMonitor', () => {
     expect(screen.getByText('Message Type')).toBeTruthy();
     expect(screen.getByText('Pubs')).toBeTruthy();
     expect(screen.getByText('Subs')).toBeTruthy();
+  });
+
+  it.each([
+    ['publishers', 'publisher', 'status', false],
+    ['publishers', 'publisher', 'status', true],
+    ['subscribers', 'subscriber', 'other', false],
+    ['subscribers', 'subscriber', 'other', true],
+  ] as const)('filters List by %s with highlighted %s names (%s, grouped=%s)', async (kind, role, suffix, grouped) => {
+    mockListSimulationContainers.mockResolvedValue([{ id: 'c1', name: 'sim', state: 'running', ports: [] }]);
+    const topics = ['/robot_1/status', '/robot_1/other', '/robot_2/unrelated'].map(name => ({
+      name,
+      type: 'std_msgs/msg/String',
+      publishers: 2,
+      subscribers: 2,
+    }));
+    mockListRosTopics.mockResolvedValue(topics);
+    mockGetTopicTopology.mockResolvedValue({
+      topics,
+      nodes: [
+        {
+          nodeName: 'behavior_server',
+          nodeNamespace: '/',
+          publishingTopics: ['/robot_1/status'],
+          subscribingTopics: ['/robot_1/other'],
+        },
+        {
+          nodeName: 'other_node',
+          nodeNamespace: '/',
+          publishingTopics: topics.map(topic => topic.name),
+          subscribingTopics: topics.map(topic => topic.name),
+        },
+      ],
+    });
+    mockGetRosTopicDetail.mockResolvedValue({
+      topicName: `/robot_1/${suffix}`,
+      type: 'std_msgs/msg/String',
+      publishers: [
+        { nodeName: 'behavior_server', nodeNamespace: '/' },
+        { nodeName: 'other_node', nodeNamespace: '/' },
+      ],
+      subscribers: [
+        { nodeName: 'behavior_server', nodeNamespace: '/' },
+        { nodeName: 'other_node', nodeNamespace: '/' },
+      ],
+    });
+    render(TopicMonitor);
+    await screen.findByText('/robot_1/status');
+    if (grouped) await fireEvent.click(screen.getByRole('checkbox', { name: 'Group by namespace' }));
+    const topicInput = screen.getByRole('searchbox', { name: 'Filter topics' }) as HTMLInputElement;
+    await fireEvent.input(topicInput, { target: { value: 'unrelated' } });
+    await fireEvent.input(screen.getByRole('searchbox', { name: `Filter ${kind}` }), { target: { value: 'SERVER' } });
+    const match = await screen.findByTitle(`Matching ${role}`);
+    expect(match.textContent).toBe('/behavior_server');
+    expect(topicInput.value).toBe('');
+    expect(screen.queryByText('/robot_2/unrelated')).toBeNull();
+    expect(screen.queryByText(`/robot_1/${suffix === 'status' ? 'other' : 'status'}`)).toBeNull();
+    expect(screen.getByText(/1 of 3 active topics/)).toBeTruthy();
+    if (grouped) expect(screen.getByRole('rowheader', { name: '/robot_1 (1 topics)' })).toBeTruthy();
+    await fireEvent.click(match.closest('tr')!);
+    const heading = await screen.findByText(`${kind === 'publishers' ? 'Publishers' : 'Subscribers'} (1 matching)`);
+    expect(heading.parentElement!.textContent).toContain('/behavior_server');
+    expect(heading.parentElement!.textContent).not.toContain('/other_node');
+    expect(heading.parentElement!.querySelector('mark')?.textContent).toBe('/behavior_server');
+    await fireEvent.input(screen.getByRole('searchbox', { name: `Filter ${kind}` }), {
+      target: { value: 'no_matching_node' },
+    });
+    await screen.findByText('No topics match the current filter.');
+    expect(screen.queryByRole('rowheader')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear filter' }));
+    expect(screen.getByText('/robot_2/unrelated')).toBeTruthy();
+  });
+
+  it('uses the shared topology for List resource filters without another topology request', async () => {
+    mockListSimulationContainers.mockResolvedValue([{ id: 'c1', name: 'sim', state: 'running', ports: [] }]);
+    const topics = [{ name: '/status', type: 'std_msgs/msg/String', publishers: 1, subscribers: 0 }];
+    mockListRosTopics.mockResolvedValue(topics);
+    render(TopicMonitor, {
+      sharedContainerId: 'c1',
+      sharedTopology: {
+        topics,
+        nodes: [{ nodeName: 'server', nodeNamespace: '/', publishingTopics: ['/status'], subscribingTopics: [] }],
+        capturedAt: new Date().toISOString(),
+      },
+    });
+    await screen.findByText('/status');
+    await fireEvent.input(screen.getByRole('searchbox', { name: 'Filter publishers' }), {
+      target: { value: 'server' },
+    });
+    expect(screen.getByTitle('Matching publisher').textContent).toBe('/server');
+    expect(mockGetTopicTopology).not.toHaveBeenCalled();
+  });
+
+  it('shows only one loading indicator during initial topic retrieval', async () => {
+    mockListSimulationContainers.mockResolvedValue([{ id: 'c1', name: 'sim', state: 'running', ports: [] }]);
+    let resolveTopics!: (topics: unknown[]) => void;
+    mockListRosTopicSummaries.mockReturnValue(
+      new Promise(resolve => {
+        resolveTopics = resolve;
+      }),
+    );
+    render(TopicMonitor);
+    await screen.findByRole('searchbox', { name: 'Filter topics' });
+    expect(screen.getAllByText('Loading topics...')).toHaveLength(1);
+    resolveTopics([{ name: '/status', type: 'std_msgs/msg/String', publishers: 1, subscribers: 0 }]);
+    await screen.findByText('/status');
+    expect(screen.queryByText('Loading topics...')).toBeNull();
+  });
+
+  it('reports relationship retrieval failure instead of presenting it as an empty filter result', async () => {
+    mockListSimulationContainers.mockResolvedValue([{ id: 'c1', name: 'sim', state: 'running', ports: [] }]);
+    mockListRosTopics.mockResolvedValue([
+      { name: '/status', type: 'std_msgs/msg/String', publishers: 1, subscribers: 0 },
+    ]);
+    mockGetTopicTopology.mockRejectedValue(new Error('Topology unavailable'));
+    render(TopicMonitor);
+    await screen.findByText('/status');
+    await fireEvent.input(screen.getByRole('searchbox', { name: 'Filter publishers' }), {
+      target: { value: 'server' },
+    });
+    await screen.findByText('Topology unavailable');
+    expect(screen.queryByText('No topics match the current filter.')).toBeNull();
   });
 
   it('shows expand chevron on topic rows', async () => {

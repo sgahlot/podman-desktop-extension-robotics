@@ -437,7 +437,31 @@ let topicMonitorCaption =
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
         <div>
           <strong>Overview</strong> — Shows active ROS2 topics inside a running simulation container, including message types
-          and publisher/subscriber counts. Auto-refreshes every 5 seconds.
+          and publisher/subscriber counts. Use List, Graph, or Cards view to inspect topology and relationships. Auto-refreshes
+          every 5 seconds.
+        </div>
+        <div>
+          <strong>Cards grouping</strong> — Use <strong>Group by namespace</strong> in the Cards panel header to
+          organize topics under namespace headings. The control stays visible while scrolling the cards and reads
+          <strong>Topics grouped by namespace</strong> when enabled. Filters apply before grouping: publisher/subscriber filters
+          show only topics connected to a matching node in that role. Nonmatching topics and empty groups are hidden; matching
+          endpoint names are highlighted while all publishers and subscribers remain available in expanded cards. Namespace
+          headings use the topic's parent path and include filtered topic counts. The summary counts displayed topics, matching
+          nodes in the filtered role, and represented namespaces.
+        </div>
+        <div>
+          <strong>List grouping</strong> — Use <strong>Group by namespace</strong> above the List table to add namespace
+          headers and per-group topic counts. The label reads <strong>Topics grouped by namespace</strong> when enabled. Topic-name
+          filtering applies before grouping, and empty groups are hidden. The control stays above the scrolling table; toggling
+          grouping preserves expanded topic details, message schema, and peek results. List also supports publisher/subscriber
+          filters: only topics connected to matching nodes in that role appear, with highlighted matching names on each row.
+          Expanded details hide nonmatching nodes on the filtered side and retain opposite-side context. Topic, publisher,
+          and subscriber filters are mutually exclusive.
+        </div>
+        <div>
+          <strong>View switching</strong> — List, Cards, and Graph share the active filter type and text. Changing or clearing
+          a filter in one view updates all three. The views retain their grouping and inspection state during the page session.
+          Returning to List keeps its fetched topics rather than restarting initial loading.
         </div>
         <div>
           <strong>Access</strong> — Dashboard card, or <strong>View Topics</strong> button on a running simulation container
@@ -452,6 +476,17 @@ let topicMonitorCaption =
           <strong>Drill-down</strong> — Click a topic row to expand publishers and subscribers (<span class="font-mono"
             >ros2 topic info -v</span
           >).
+        </div>
+        <div>
+          <strong>Graph navigation</strong> — Select a topic to see its publishers and subscribers. Clicking a connected
+          node highlights it while preserving the topic view. The selected topic's full name stays in the panel header,
+          and its card stays in the visible graph area while scrolling or expanding connections, with arrows attached.
+          Selecting a filtered publisher shows only that publisher, its published topics, and their subscribers; a
+          filtered subscriber shows only that subscriber, its subscribed topics, and their publishers. The filter
+          remains visible. Use <strong>Back to results</strong> to return, or
+          <strong>Escape</strong> to clear a node highlight first, then return to results. Connected columns show up to
+          five nodes initially; use <strong>Show more</strong> and <strong>Show fewer</strong> to expand or collapse. Names
+          wrap in cards; hover to see the full name.
         </div>
         <div>
           <strong>Peek</strong> — On an expanded row, <strong>Peek</strong> captures one live message (<span
