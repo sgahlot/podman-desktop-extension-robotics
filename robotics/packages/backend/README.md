@@ -46,7 +46,7 @@ selected host and namespace to every build output and push target in that tab.
 
 ![Show Viewer toggle: embed the simulation inline](https://gitlab.com/fedora/sigs/robotics/src/podman-desktop-extension-robotics/-/raw/main/robotics/docs/img/show-viewer-toggle.gif)
 
-**Topic Monitor:** Switch between List, Graph, and Cards views. Filter topics or nodes, inspect publisher/subscriber relationships, view message schema, and peek at topic data.
+**Topic Monitor:** Switch between List, Graph, and Cards views. Filter topics or nodes, inspect publisher/subscriber relationships, view message schema, and peek at topic data. Live telemetry is opt-in via the **Live telemetry** checkbox in the toolbar (off by default); when enabled, the Graph inspector samples publish rate and bandwidth only for the selected topic. A no-sample result means no messages arrived during that short, bounded window; event-driven, idle, or slow topics may normally be quiet, so this alone does not prove the publisher is broken.
 
 If Peek repeatedly times out in a TurtleBot3 simulation, confirm the robot's Gazebo-to-ROS bridge is forwarding samples. The simulation spawn entrypoint checks for a live sample on that robot's `/robot_<name>/scan` topic and restarts a silent launch-managed bridge. Robot spawning uses detached `podman exec`, so wrapper status messages are not shown in the container's PID 1 logs. Inspect `/tmp/ros-home/spawn-<robot>.log` for ROS launch output and `/tmp/ros-home/bridge-<robot>.log` for standalone bridge output inside the simulation container.
 

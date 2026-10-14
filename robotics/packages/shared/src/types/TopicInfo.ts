@@ -34,9 +34,13 @@ export interface TopicGraphTopology {
   capturedAt: string;
 }
 
-/** Optional runtime metrics for a topic. Missing metrics mean they are not available yet. */
+/** `no-samples` means no data arrived during the bounded observation window; it is not proof of a dead publisher. */
+export type TopicTelemetryStatus = 'active' | 'no-samples' | 'unavailable';
+
+/** Bounded runtime measurement for one selected topic. */
 export interface TopicTelemetry {
   topicName: string;
+  status: TopicTelemetryStatus;
   publishHz?: number;
   bandwidthBytesPerSecond?: number;
   capturedAt: string;

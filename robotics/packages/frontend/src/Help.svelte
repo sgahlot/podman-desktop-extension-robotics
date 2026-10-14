@@ -489,6 +489,12 @@ let topicMonitorCaption =
           wrap in cards; hover to see the full name.
         </div>
         <div>
+          <strong>Live telemetry</strong> — Off by default. Enable the <strong>Live telemetry</strong> checkbox in the toolbar
+          to measure publish rate and bandwidth for the selected Graph topic. The inspector samples for 3 seconds and refreshes
+          every 8 seconds while enabled and selected. No messages during a short sample can be normal for event-driven, idle,
+          or slow topics; it does not alone prove the publisher is broken.
+        </div>
+        <div>
           <strong>Peek</strong> — On an expanded row, <strong>Peek</strong> captures one live message (<span
             class="font-mono">ros2 topic echo --once</span
           >). Timeout is configurable under Preferences → Robotics → <strong>Topic peek timeout</strong> (1–30 seconds,

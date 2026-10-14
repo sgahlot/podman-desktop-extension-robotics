@@ -7,6 +7,34 @@
   outline: 2px solid var(--pai-accent, #7c3aed);
   outline-offset: 4px;
 }
+
+.live-telemetry-toggle {
+  border: 1px solid var(--pai-accent, #7c3aed);
+  border-radius: 0.6rem;
+  background: var(--pd-button-secondary-bg, #ede9fe);
+  padding: 0.4rem 0.75rem;
+  box-shadow: 0 0 0 1px rgb(124 58 237 / 12%);
+  transition:
+    box-shadow 120ms ease,
+    background-color 120ms ease;
+}
+
+.live-telemetry-toggle:hover,
+.live-telemetry-toggle:focus-within {
+  box-shadow: 0 0 0 2px rgb(124 58 237 / 24%);
+}
+
+.live-telemetry-toggle.enabled {
+  border-width: 2px;
+  padding: calc(0.4rem - 1px) calc(0.75rem - 1px);
+  box-shadow: 0 0 0 2px rgb(124 58 237 / 24%);
+}
+
+.live-telemetry-toggle input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--pai-accent, #7c3aed);
+}
 </style>
 
 <script lang="ts">
@@ -20,6 +48,7 @@ import type {
   TopicInfo,
   TopicPeekResult,
   TopicSchemaResult,
+  TopicTelemetry,
 } from '/@shared/src/types/TopicInfo';
 import { physicalAiClient } from './api/client';
 import QuickLinks from './lib/QuickLinks.svelte';
@@ -31,6 +60,8 @@ import { filterTopicsByName, groupTopicsByNamespace } from './lib/topicFilter';
 const GRAPH_WIDTH = 1000;
 const GRAPH_MIN_HEIGHT = 160;
 const MAX_CONNECTED_NODES = 5;
+const TOPIC_TELEMETRY_REFRESH_MS = 8000;
+const TOPIC_TELEMETRY_SAMPLE_SECONDS = 3;
 
 type ViewMode = 'list' | 'graph' | 'cards';
 type FilterKind = 'topic' | 'publisher' | 'subscriber';
@@ -60,6 +91,14 @@ let inspectorLoading = false;
 let inspectorError = '';
 let schemaLoading = false;
 let peekLoading = false;
+let topicTelemetry: TopicTelemetry | null = null;
+let topicTelemetryLoading = false;
+let topicTelemetryError = '';
+let liveTelemetryEnabled = false;
+let topicTelemetryTimer: ReturnType<typeof setInterval> | null = null;
+let topicTelemetryGeneration = 0;
+let topicTelemetryInFlight = false;
+let queuedTopicTelemetry: { generation: number; containerId: string; topicName: string } | null = null;
 let filterReturn: { kind: FilterKind; value: string } | null = null;
 let graphScrollTop = 0;
 let graphViewportHeight = 0;
@@ -331,6 +370,7 @@ async function pollContainers() {
 }
 
 function clearSelection() {
+  stopTopicTelemetry();
   selectedTopic = '';
   selectedNode = null;
   filterReturn = null;
@@ -342,12 +382,98 @@ function clearSelection() {
   expandedSubscriberNodes = false;
 }
 
+function stopTopicTelemetry(): void {
+  topicTelemetryGeneration += 1;
+  if (topicTelemetryTimer) clearInterval(topicTelemetryTimer);
+  topicTelemetryTimer = null;
+  queuedTopicTelemetry = null;
+  topicTelemetry = null;
+  topicTelemetryLoading = false;
+  topicTelemetryError = '';
+}
+
+async function requestTopicTelemetry(generation: number, containerId: string, topicName: string): Promise<void> {
+  if (topicTelemetryInFlight) {
+    queuedTopicTelemetry = { generation, containerId, topicName };
+    return;
+  }
+
+  topicTelemetryInFlight = true;
+  topicTelemetryLoading = true;
+  topicTelemetryError = '';
+  try {
+    const [result] = await physicalAiClient.getTopicTelemetry(containerId, [topicName]);
+    if (generation !== topicTelemetryGeneration || selectedContainerId !== containerId || selectedTopic !== topicName) {
+      return;
+    }
+    topicTelemetry = result ?? {
+      topicName,
+      status: 'unavailable',
+      capturedAt: new Date().toISOString(),
+      error: 'No telemetry result was returned for the selected topic.',
+    };
+  } catch (e) {
+    if (generation === topicTelemetryGeneration && selectedContainerId === containerId && selectedTopic === topicName) {
+      topicTelemetryError = e instanceof Error ? e.message : String(e);
+    }
+  } finally {
+    topicTelemetryInFlight = false;
+    topicTelemetryLoading = false;
+    const queued = queuedTopicTelemetry;
+    queuedTopicTelemetry = null;
+    if (
+      queued &&
+      queued.generation === topicTelemetryGeneration &&
+      queued.containerId === selectedContainerId &&
+      queued.topicName === selectedTopic
+    ) {
+      void requestTopicTelemetry(queued.generation, queued.containerId, queued.topicName);
+    }
+  }
+}
+
+function startTopicTelemetry(topicName: string): void {
+  stopTopicTelemetry();
+  if (!liveTelemetryEnabled || !selectedContainerId || !topicName || viewMode !== 'graph') return;
+
+  const generation = topicTelemetryGeneration;
+  const containerId = selectedContainerId;
+  void requestTopicTelemetry(generation, containerId, topicName);
+  topicTelemetryTimer = setInterval(
+    () => void requestTopicTelemetry(generation, containerId, topicName),
+    TOPIC_TELEMETRY_REFRESH_MS,
+  );
+}
+
+function setViewMode(mode: ViewMode): void {
+  viewMode = mode;
+  if (liveTelemetryEnabled && mode === 'graph' && selectedTopic) startTopicTelemetry(selectedTopic);
+  else stopTopicTelemetry();
+}
+
+function toggleLiveTelemetry(event: Event): void {
+  liveTelemetryEnabled = (event.currentTarget as HTMLInputElement).checked;
+  if (liveTelemetryEnabled && selectedTopic && viewMode === 'graph') startTopicTelemetry(selectedTopic);
+  else stopTopicTelemetry();
+}
+
+function formatPublishRate(rate: number): string {
+  return `${rate < 1 ? rate.toFixed(2) : rate.toFixed(1)} Hz`;
+}
+
+function formatBandwidth(bytesPerSecond: number): string {
+  if (bytesPerSecond >= 1_000_000) return `${(bytesPerSecond / 1_000_000).toFixed(2)} MB/s`;
+  if (bytesPerSecond >= 1_000) return `${(bytesPerSecond / 1_000).toFixed(2)} kB/s`;
+  return `${bytesPerSecond.toFixed(0)} B/s`;
+}
+
 async function selectTopic(topicName: string) {
   if (selectedTopic === topicName) {
     if (filterReturn) restoreFilterResults();
     else clearSelection();
     return;
   }
+  stopTopicTelemetry();
   beginFilteredFocus();
   selectedTopic = topicName;
   selectedNode = null;
@@ -357,6 +483,7 @@ async function selectTopic(topicName: string) {
   schema = null;
   peekResult = null;
   inspectorError = '';
+  startTopicTelemetry(topicName);
   inspectorLoading = true;
   try {
     topicDetail = await physicalAiClient.getRosTopicDetail(selectedContainerId, topicName);
@@ -379,6 +506,7 @@ function selectNode(node: NodeDetail, role: 'publisher' | 'subscriber') {
     return;
   }
   beginFilteredFocus();
+  stopTopicTelemetry();
   selectedNode = node;
   selectedNodeRole = role;
   selectedTopic = '';
@@ -423,6 +551,7 @@ async function peekTopic() {
 async function inspectCardTopic(topicName: string) {
   if (selectedTopic !== topicName) await selectTopic(topicName);
   viewMode = 'graph';
+  if (liveTelemetryEnabled) startTopicTelemetry(topicName);
 }
 
 async function inspectCardNode(topicName: string, path: string, role: 'publisher' | 'subscriber') {
@@ -430,6 +559,7 @@ async function inspectCardNode(topicName: string, path: string, role: 'publisher
   const node = allNodes.find(candidate => nodePath(candidate) === path);
   if (node) selectNode(node, role);
   viewMode = 'graph';
+  if (liveTelemetryEnabled && selectedTopic) startTopicTelemetry(selectedTopic);
 }
 
 onMount(() => {
@@ -441,6 +571,7 @@ onMount(() => {
 onDestroy(() => {
   window.removeEventListener('keydown', handleWindowKeydown);
   if (pollTimer) clearInterval(pollTimer);
+  stopTopicTelemetry();
 });
 </script>
 
@@ -464,19 +595,37 @@ onDestroy(() => {
         class="px-4 py-2 text-sm pai-tab"
         class:pai-tab-active={viewMode === 'list'}
         aria-pressed={viewMode === 'list'}
-        on:click={() => (viewMode = 'list')}>List</button>
+        on:click={() => setViewMode('list')}>List</button>
       <button
         class="px-4 py-2 text-sm pai-tab"
         class:pai-tab-active={viewMode === 'graph'}
         aria-pressed={viewMode === 'graph'}
-        on:click={() => (viewMode = 'graph')}>Graph</button>
+        on:click={() => setViewMode('graph')}>Graph</button>
       <button
         class="px-4 py-2 text-sm pai-tab"
         class:pai-tab-active={viewMode === 'cards'}
         aria-pressed={viewMode === 'cards'}
-        on:click={() => (viewMode = 'cards')}>Cards</button>
+        on:click={() => setViewMode('cards')}>Cards</button>
     </div>
-    <span class="text-xs uppercase tracking-wide pai-text-muted">Live</span>
+    <div class="flex items-center gap-4">
+      <label
+        class="live-telemetry-toggle inline-flex cursor-pointer items-center gap-3 text-xs text-[var(--pd-content-text)]"
+        class:enabled={liveTelemetryEnabled}>
+        <input
+          type="checkbox"
+          aria-label="Live telemetry"
+          aria-describedby="liveTelemetryHint"
+          checked={liveTelemetryEnabled}
+          on:change={toggleLiveTelemetry} />
+        <span class="flex flex-col gap-0.5">
+          <span class="font-semibold text-[var(--pai-accent,#7c3aed)]">Live telemetry</span>
+          <span id="liveTelemetryHint" class="text-[10px] pai-text-muted">
+            {liveTelemetryEnabled ? 'Sampling selected topic' : 'Off by default · sample selected topic'}
+          </span>
+        </span>
+      </label>
+      <span class="text-xs uppercase tracking-wide pai-text-muted">Live</span>
+    </div>
   </div>
 
   {#if listVisited}
@@ -941,6 +1090,41 @@ onDestroy(() => {
               <div><span class="pai-text-muted">Type:</span> <span class="font-mono">{topicDetail.type}</span></div>
               <div><span class="pai-text-muted">Publishers:</span> {topicDetail.publishers.length}</div>
               <div><span class="pai-text-muted">Subscribers:</span> {topicDetail.subscribers.length}</div>
+              <div class="rounded border border-[var(--pd-content-card-border)] p-2" role="status" aria-live="polite">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-medium">Live telemetry</span>
+                  {#if topicTelemetryLoading}<span class="pai-text-muted">Measuring…</span>{/if}
+                </div>
+                {#if topicTelemetryError}
+                  <p class="mt-1 pai-text-error">{topicTelemetryError}</p>
+                {:else if !liveTelemetryEnabled}
+                  <p class="mt-1 pai-text-muted">Live telemetry is off. Enable it above to sample this topic.</p>
+                {:else if topicTelemetry?.status === 'active'}
+                  {#if topicTelemetry.publishHz !== undefined}
+                    <p class="mt-1">Publish rate: {formatPublishRate(topicTelemetry.publishHz)}</p>
+                  {/if}
+                  {#if topicTelemetry.bandwidthBytesPerSecond !== undefined}
+                    <p>Bandwidth: {formatBandwidth(topicTelemetry.bandwidthBytesPerSecond)}</p>
+                  {:else}
+                    <p class="pai-text-muted">Bandwidth unavailable</p>
+                  {/if}
+                {:else if topicTelemetry?.status === 'no-samples'}
+                  {#if topicDetail.publishers.length === 0}
+                    <p class="mt-1">No publishers discovered for this topic.</p>
+                  {:else}
+                    <p class="mt-1">
+                      No messages observed during this {TOPIC_TELEMETRY_SAMPLE_SECONDS}s sample. The topic may be
+                      event-driven, idle, or publishing more slowly than the sample window.
+                    </p>
+                  {/if}
+                {:else if topicTelemetry?.status === 'unavailable'}
+                  <p class="mt-1">{topicTelemetry.error ?? 'Telemetry is unavailable for this topic.'}</p>
+                {:else if topicTelemetryLoading}
+                  <p class="mt-1 pai-text-muted">Sampling the selected topic…</p>
+                {:else}
+                  <p class="mt-1 pai-text-muted">Select a topic to measure its publish rate.</p>
+                {/if}
+              </div>
               <div class="flex flex-wrap gap-2">
                 <button class="pai-btn text-xs" on:click={() => void loadSchema()} disabled={schemaLoading}>
                   {schemaLoading ? 'Loading...' : 'Schema'}

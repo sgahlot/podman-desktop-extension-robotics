@@ -149,6 +149,13 @@ import {
   ROS_TOPIC_GRAPH_DISCOVERY_SCRIPT,
   ROS_TOPIC_GRAPH_NODE_LIMIT,
 } from '/@shared/src/ros/topicGraph';
+import {
+  parseTopicTelemetryOutput,
+  ROS_TOPIC_TELEMETRY_CONCURRENCY,
+  ROS_TOPIC_TELEMETRY_MAX_TOPICS,
+  ROS_TOPIC_TELEMETRY_SAMPLE_SECONDS,
+  ROS_TOPIC_TELEMETRY_SCRIPT,
+} from '/@shared/src/ros/topicTelemetry';
 import { appendProgressLog } from './progressLogs';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
@@ -2194,14 +2201,57 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
   }
 
-  async getTopicTelemetry(containerId: string, topicNames: string[] = []): Promise<TopicTelemetry[]> {
-    await this.#resolveSimulationContainer(containerId);
-    const safeTopics = topicNames.map(topicName => assertRosTopicName(topicName));
-    const capturedAt = new Date().toISOString();
+  // Keep the optional second parameter free of a default value: MessageProxy uses function.length
+  // to enforce its RPC argument bound, and defaults would reduce that length to one.
+  async getTopicTelemetry(containerId: string, topicNames?: string[]): Promise<TopicTelemetry[]> {
+    const { id, image } = await this.#resolveSimulationContainer(containerId);
+    const safeTopics = (topicNames ?? []).map(topicName => assertRosTopicName(topicName));
+    if (safeTopics.length > ROS_TOPIC_TELEMETRY_MAX_TOPICS) {
+      throw new Error(`Topic telemetry supports at most ${ROS_TOPIC_TELEMETRY_MAX_TOPICS} topics per request.`);
+    }
+    if (safeTopics.length === 0) return [];
 
-    // Metrics collection is intentionally deferred to APPENG-6625. Returning a typed,
-    // timestamped empty snapshot keeps the RPC contract usable without implying data exists.
-    return safeTopics.map(topicName => ({ topicName, capturedAt }));
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    const target = { kind: 'podman', id } as const;
+    const metrics = new Array<TopicTelemetry>(safeTopics.length);
+    let nextIndex = 0;
+
+    const worker = async (): Promise<void> => {
+      while (nextIndex < safeTopics.length) {
+        const index = nextIndex++;
+        const topicName = safeTopics[index];
+        try {
+          const result = await this.#execRosBash(target, distro, ROS_TOPIC_TELEMETRY_SCRIPT, [
+            String(ROS_TOPIC_TELEMETRY_SAMPLE_SECONDS),
+            topicName,
+          ]);
+          const parsed = parseTopicTelemetryOutput(result.stdout, result.stderr);
+          const capturedAt = new Date().toISOString();
+          if (result.exitCode !== 0 && parsed.status !== 'active' && parsed.status !== 'unavailable') {
+            metrics[index] = {
+              topicName,
+              status: 'unavailable',
+              capturedAt,
+              error: result.stderr.trim().slice(0, 240) || `Telemetry command exited with code ${result.exitCode}.`,
+            };
+          } else {
+            metrics[index] = { topicName, capturedAt, ...parsed };
+          }
+        } catch (error) {
+          metrics[index] = {
+            topicName,
+            status: 'unavailable',
+            capturedAt: new Date().toISOString(),
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length: Math.min(ROS_TOPIC_TELEMETRY_CONCURRENCY, safeTopics.length) }, () => worker()),
+    );
+    return metrics;
   }
 
   async peekRosTopic(containerId: string, topicName: string): Promise<TopicPeekResult> {

@@ -10,6 +10,7 @@ const mockGetRosMessageSchema = vi.fn();
 const mockPeekRosTopic = vi.fn();
 const mockListRosTopics = vi.fn();
 const mockListRosTopicSummaries = vi.fn();
+const mockGetTopicTelemetry = vi.fn();
 
 vi.mock('./api/client', () => ({
   physicalAiClient: {
@@ -20,6 +21,7 @@ vi.mock('./api/client', () => ({
     peekRosTopic: (...args: unknown[]) => mockPeekRosTopic(...args),
     listRosTopics: (...args: unknown[]) => mockListRosTopics(...args),
     listRosTopicSummaries: (...args: unknown[]) => mockListRosTopicSummaries(...args),
+    getTopicTelemetry: (...args: unknown[]) => mockGetTopicTelemetry(...args),
     getTopicPeekTimeoutSeconds: async () => 5,
   },
 }));
@@ -39,6 +41,7 @@ describe('GraphicalTopicMonitor', () => {
     mockGetRosMessageSchema.mockResolvedValue({ type: '', schema: '' });
     mockListRosTopics.mockResolvedValue([]);
     mockListRosTopicSummaries.mockResolvedValue([]);
+    mockGetTopicTelemetry.mockResolvedValue([]);
     mockPeekRosTopic.mockResolvedValue({
       topicName: '',
       message: '',
@@ -121,6 +124,172 @@ describe('GraphicalTopicMonitor', () => {
 
     await fireEvent.click(topicButton);
     expect(await screen.findByText('Select a node or topic to inspect its relationships.')).toBeTruthy();
+  });
+
+  it('shows bounded live rate and bandwidth telemetry for the selected topic', async () => {
+    mockListSimulationContainers.mockResolvedValue([
+      { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
+    ]);
+    mockGetTopicTopology.mockResolvedValue({
+      topics: [{ name: '/cmd_vel', type: 'geometry_msgs/msg/Twist', publishers: 1, subscribers: 1 }],
+      nodes: [],
+    });
+    mockGetRosTopicDetail.mockResolvedValue({
+      topicName: '/cmd_vel',
+      type: 'geometry_msgs/msg/Twist',
+      publishers: [{ nodeName: 'teleop', nodeNamespace: '/' }],
+      subscribers: [{ nodeName: 'base', nodeNamespace: '/' }],
+    });
+    mockGetTopicTelemetry.mockResolvedValue([
+      {
+        topicName: '/cmd_vel',
+        status: 'active',
+        publishHz: 8.5,
+        bandwidthBytesPerSecond: 2000,
+        capturedAt: new Date().toISOString(),
+      },
+    ]);
+
+    render(GraphicalTopicMonitor);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Select topic /cmd_vel' }));
+
+    expect((screen.getByRole('checkbox', { name: 'Live telemetry' }) as HTMLInputElement).checked).toBe(false);
+    expect(mockGetTopicTelemetry).not.toHaveBeenCalled();
+    expect(screen.getByText(/Live telemetry is off/)).toBeTruthy();
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Live telemetry' }));
+
+    expect(await screen.findByText('Publish rate: 8.5 Hz')).toBeTruthy();
+    expect(screen.getByText('Bandwidth: 2.00 kB/s')).toBeTruthy();
+    expect(mockGetTopicTelemetry).toHaveBeenCalledWith('c1', ['/cmd_vel']);
+
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(mockGetTopicTelemetry).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows no-sample status and stops telemetry polling when selection is cleared', async () => {
+    mockListSimulationContainers.mockResolvedValue([
+      { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
+    ]);
+    mockGetTopicTopology.mockResolvedValue({
+      topics: [{ name: '/idle', type: 'std_msgs/msg/String', publishers: 1, subscribers: 0 }],
+      nodes: [],
+    });
+    mockGetRosTopicDetail.mockResolvedValue({
+      topicName: '/idle',
+      type: 'std_msgs/msg/String',
+      publishers: [{ nodeName: 'idle_publisher', nodeNamespace: '/' }],
+      subscribers: [],
+    });
+    mockGetTopicTelemetry.mockResolvedValue([
+      { topicName: '/idle', status: 'no-samples', capturedAt: new Date().toISOString() },
+    ]);
+
+    render(GraphicalTopicMonitor);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Select topic /idle' }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Live telemetry' }));
+    expect(await screen.findByText(/No messages observed during this 3s sample/)).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear topic selection' }));
+
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(mockGetTopicTelemetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops telemetry polling when the selected simulation container changes', async () => {
+    const container = (id: string) => ({
+      id,
+      name: `pai-sim-${id}`,
+      imageTag: 'ros2-jazzy-sim:noble',
+      state: 'running',
+      ports: [],
+    });
+    mockListSimulationContainers.mockResolvedValueOnce([container('c1')]).mockResolvedValue([container('c2')]);
+    mockGetTopicTopology.mockResolvedValue({
+      topics: [{ name: '/cmd_vel', type: 'geometry_msgs/msg/Twist', publishers: 1, subscribers: 1 }],
+      nodes: [],
+    });
+    mockGetRosTopicDetail.mockResolvedValue({
+      topicName: '/cmd_vel',
+      type: 'geometry_msgs/msg/Twist',
+      publishers: [{ nodeName: 'teleop', nodeNamespace: '/' }],
+      subscribers: [],
+    });
+    mockGetTopicTelemetry.mockResolvedValue([
+      { topicName: '/cmd_vel', status: 'active', publishHz: 8, capturedAt: new Date().toISOString() },
+    ]);
+
+    render(GraphicalTopicMonitor);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Select topic /cmd_vel' }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Live telemetry' }));
+    await screen.findByText('Publish rate: 8.0 Hz');
+    expect(mockGetTopicTelemetry).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(mockGetTopicTelemetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores an in-flight telemetry result after the selection changes', async () => {
+    let resolveScan!: (value: unknown[]) => void;
+    mockListSimulationContainers.mockResolvedValue([
+      { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
+    ]);
+    mockGetTopicTopology.mockResolvedValue({
+      topics: [
+        { name: '/scan', type: 'sensor_msgs/msg/LaserScan', publishers: 1, subscribers: 1 },
+        { name: '/tf', type: 'tf2_msgs/msg/TFMessage', publishers: 1, subscribers: 1 },
+      ],
+      nodes: [],
+    });
+    mockGetRosTopicDetail.mockImplementation(async (_containerId: string, topicName: string) => ({
+      topicName,
+      type: topicName === '/scan' ? 'sensor_msgs/msg/LaserScan' : 'tf2_msgs/msg/TFMessage',
+      publishers: [{ nodeName: 'publisher', nodeNamespace: '/' }],
+      subscribers: [],
+    }));
+    mockGetTopicTelemetry
+      .mockImplementationOnce(() => new Promise(resolve => (resolveScan = resolve)))
+      .mockResolvedValueOnce([
+        { topicName: '/tf', status: 'active', publishHz: 20, capturedAt: new Date().toISOString() },
+      ]);
+
+    render(GraphicalTopicMonitor);
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Live telemetry' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Select topic /scan' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Select topic /scan' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Select topic /tf' }));
+    resolveScan([{ topicName: '/scan', status: 'active', publishHz: 1, capturedAt: new Date().toISOString() }]);
+
+    expect(await screen.findByText('Publish rate: 20.0 Hz')).toBeTruthy();
+    expect(screen.queryByText('Publish rate: 1.0 Hz')).toBeNull();
+  });
+
+  it('clears the telemetry timer when the component unmounts', async () => {
+    mockListSimulationContainers.mockResolvedValue([
+      { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
+    ]);
+    mockGetTopicTopology.mockResolvedValue({
+      topics: [{ name: '/cmd_vel', type: 'geometry_msgs/msg/Twist', publishers: 1, subscribers: 1 }],
+      nodes: [],
+    });
+    mockGetRosTopicDetail.mockResolvedValue({
+      topicName: '/cmd_vel',
+      type: 'geometry_msgs/msg/Twist',
+      publishers: [{ nodeName: 'teleop', nodeNamespace: '/' }],
+      subscribers: [],
+    });
+    mockGetTopicTelemetry.mockResolvedValue([
+      { topicName: '/cmd_vel', status: 'active', publishHz: 8, capturedAt: new Date().toISOString() },
+    ]);
+
+    const { unmount } = render(GraphicalTopicMonitor);
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Live telemetry' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Select topic /cmd_vel' }));
+    await screen.findByText('Publish rate: 8.0 Hz');
+    expect(mockGetTopicTelemetry).toHaveBeenCalledTimes(1);
+
+    unmount();
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(mockGetTopicTelemetry).toHaveBeenCalledTimes(1);
   });
 
   it('shows the backend peek timeout message in the Graph inspector', async () => {

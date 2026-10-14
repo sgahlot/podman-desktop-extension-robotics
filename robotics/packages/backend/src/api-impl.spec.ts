@@ -2604,17 +2604,53 @@ RUN apt-get install -y ros-jazzy-desktop
       ] as unknown as extensionApi.ContainerInfo[]);
     });
 
-    it('returns typed empty metrics for validated topics until collection is implemented', async () => {
+    it('collects bounded rate and optional bandwidth metrics for a validated topic', async () => {
+      expect(api.getTopicTelemetry.length).toBe(2);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '__PAI_BW_BEGIN__\n24.99 KB/s from 10 messages\nMessage size mean: 2.94 KB\n',
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
       const result = await api.getTopicTelemetry(CONTAINER_ID, ['/cmd_vel', '/scan']);
 
       expect(result).toHaveLength(2);
       expect(result.map(metric => metric.topicName)).toEqual(['/cmd_vel', '/scan']);
-      expect(result.every(metric => metric.publishHz === undefined)).toBe(true);
+      expect(result.every(metric => metric.status === 'active')).toBe(true);
+      expect(result.every(metric => metric.publishHz === 8.5)).toBe(true);
+      expect(result.every(metric => metric.bandwidthBytesPerSecond === 24990)).toBe(true);
       expect(result.every(metric => /^\d{4}-\d{2}-\d{2}T/.test(metric.capturedAt))).toBe(true);
+      expect(extensionApi.process.exec).toHaveBeenCalledTimes(2);
+
+      const args = execArgs(0);
+      expect(args.join(' ')).toContain('timeout -k 1 "$sample_seconds" ros2 topic bw --window 10 "$topic"');
+      expect(args).toContain('/cmd_vel');
+      expect(args).toContain('3');
     });
 
     it('rejects injectable topic names before returning metrics', async () => {
       await expect(api.getTopicTelemetry(CONTAINER_ID, ['/cmd_vel; id'])).rejects.toThrow(/Invalid ROS topic/);
+    });
+
+    it('rejects more topics than the per-request bound', async () => {
+      await expect(api.getTopicTelemetry(CONTAINER_ID, ['/a', '/b', '/c', '/d', '/e'])).rejects.toThrow(
+        /at most 4 topics/,
+      );
+      expect(extensionApi.process.exec).not.toHaveBeenCalled();
+    });
+
+    it('returns an explicit no-samples status when the selected topic is idle', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '__PAI_BW_BEGIN__\nWARNING: topic [/idle] does not appear to be published yet\n',
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
+      const [result] = await api.getTopicTelemetry(CONTAINER_ID, ['/idle']);
+
+      expect(result.status).toBe('no-samples');
+      expect(result.publishHz).toBeUndefined();
+      expect(result.error).toBeUndefined();
     });
   });
 

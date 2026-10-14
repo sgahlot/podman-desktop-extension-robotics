@@ -130,7 +130,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 | `src/RegistrySettings.svelte` | Shared registry configuration page used by Image Catalog and Image Builder
 | `src/SimulationSetup.svelte` | Image Builder — configure + build/push base and simulation images; one Registry selector applies to each active tab
 | `src/SimulationPage.svelte` | Simulation — launch containers, view status, open noVNC, add TurtleBot3
-| `src/GraphicalTopicMonitor.svelte` | Unified Topic Monitor route — List, Graph, and Cards views over the active simulation topology; shares filters across views and owns graph selection/inspector state
+| `src/GraphicalTopicMonitor.svelte` | Unified Topic Monitor route — List, Graph, and Cards views over the active simulation topology; shares filters across views and owns graph selection/inspector state, including selected-topic telemetry polling
 | `src/TopicMonitor.svelte` | Embedded List view — topic rows, namespace grouping, role-aware filtering, schema, and Peek; retains its state while another view is active
 | `src/lib/TopicEndpoints.svelte` | Shared publisher/subscriber endpoint renderer with highlighted filter matches
 | `src/Help.svelte` | In-extension documentation
@@ -610,6 +610,10 @@ needed for this configuration. They are edited on the extension's **Registry Set
 | `ros_gz_bridge` using the installed TurtleBot3 bridge config
 | `entrypoint-spawn-robot.sh` waits for model creation and probes for a live sample on that robot's `/scan` topic. If the `spawn_tb3.launch.py` bridge remains alive but silent, the entrypoint stops its bridge child and starts `parameter_bridge` directly with the same config, then verifies the per-robot scan again. Direct-bridge diagnostics are written to `/tmp/ros-home/bridge-<robot>.log`. This connects Gazebo Transport topics to ROS 2/DDS; it does not replace the extension's separate `podman exec` + ROS CLI integration.
 
+| Topic publish telemetry
+| Opt-in bounded telemetry for the selected topic via `ros2 topic bw`
+| Live telemetry is off by default and enabled by the Topic Monitor toolbar checkbox. The Graph inspector requests metrics only for its selected local topic. One sensor-QoS ROS CLI observer reports bandwidth and mean message size, from which the backend derives publish Hz. It has a 3-second timeout, limits each request to 4 topics and at most 2 concurrent topic workers, and returns a finite snapshot. The UI refreshes every 8 seconds while enabled and selected, clearing polling on selection/container change, toggle-off, view switch, or unmount; it does not spawn work for every topic on each graph refresh.
+
 | Bash entrypoints vs Podman APIs
 | Keep in-image scripts; use PD/Podman for lifecycle + exec only
 | Podman/`@podman-desktop/api` manage images and containers (create/start/stop/list/build). They do not provide ROS 2/DDS, Gazebo spawn, or the Xvfb/noVNC stack. Entrypoints (`entrypoint-gazebo.sh`, `entrypoint-spawn-robot.sh`, …) orchestrate that stack inside the image; Gazebo topics reach ROS 2 via `ros_gz_bridge`, while Topic Monitor / Peek / nav still use `podman exec` + ROS CLI (`#execRosBash`). A native extension-side ROS client or in-container HTTP/WS bridge could reduce CLI execs but is a separate architecture bet — not “replace scripts with Podman.” See the Bash vs Podman API scope in this table.
@@ -641,7 +645,7 @@ needed for this configuration. They are edited on the extension's **Registry Set
 
 == Open Questions
 
-* **Topic monitor transport:** Topic Monitor currently uses `podman exec` + `ros2` CLI (acceptable; Podman has no ROS API). The simulation's `ros_gz_bridge` only connects Gazebo Transport to ROS 2/DDS. Open: keep CLI polling long-term, or add an extension-side ROS client / lightweight in-container HTTP/WS bridge for Hz/streaming (see Phase C/D in peek polish notes)?
+* **Topic monitor transport:** Graph discovery, Peek, and bounded selected-topic telemetry use `podman exec` + ROS CLI; the simulation's `ros_gz_bridge` connects Gazebo Transport to ROS 2/DDS. Open: keep bounded CLI sampling long-term, or add an extension-side ROS client / lightweight in-container HTTP/WS bridge for high-rate, continuous, or OpenShift telemetry (see Phase C/D in peek polish notes)?
 * **Multi-robot resource limits:** How many TurtleBot3 instances can run in a single container before the Podman VM hits memory limits?
 
 == References
