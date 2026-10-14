@@ -162,7 +162,7 @@ export abstract class PhysicalAiApi {
   abstract getRosTopicDetail(containerId: string, topicName: string): Promise<TopicDetailInfo>;
   /** Current graph snapshot; node discovery is filled by the graphical monitor backend slice. */
   abstract getTopicTopology(containerId: string): Promise<TopicGraphTopology>;
-  /** Bounded telemetry snapshot for selected topics; unavailable metrics are omitted. */
+  /** Bounded local telemetry snapshots for selected topics, including no-sample/unavailable status. */
   abstract getTopicTelemetry(containerId: string, topicNames?: string[]): Promise<TopicTelemetry[]>;
   /** One live message via `ros2 topic echo --once` (bounded wait). */
   abstract peekRosTopic(containerId: string, topicName: string): Promise<TopicPeekResult>;
