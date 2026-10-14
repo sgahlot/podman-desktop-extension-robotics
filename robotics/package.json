@@ -23,7 +23,7 @@
     "test:frontend": "node --require ./packages/frontend/vite-toolchain-quiet.cjs ./node_modules/vitest/vitest.mjs -c packages/frontend/vite.config.js run packages/frontend --passWithNoTests --coverage",
     "test:shared": "vitest run -r packages/shared --passWithNoTests --coverage",
     "test:cli": "vitest run -r packages/cli --passWithNoTests --coverage",
-    "test:scripts": "bash packages/backend/assets/ros2-jazzy-sim/test/entrypoint-security.test.sh",
+    "test:scripts": "bash packages/backend/assets/ros2-jazzy-sim/test/entrypoint-security.test.sh && bash packages/backend/assets/ros2-jazzy-sim/test/bridge-runtime.test.sh",
     "test": "npm run test:backend && npm run test:shared && npm run test:frontend && npm run test:cli && npm run test:scripts",
     "integration": "bash scripts/integration/image-builder-presets.sh all",
     "integration:smoke": "bash scripts/integration/image-builder-presets.sh smoke",

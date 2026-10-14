@@ -298,7 +298,8 @@ done
 
 # --- 8. Optionally spawn robots (Path A) ---
 SIM_DIR="${ROBOTICS_SIM_DIR:-/opt/ros/jazzy/share/nav2_minimal_tb3_sim}"
-URDF_FILE="${SIM_DIR}/urdf/turtlebot3_waffle.urdf"
+SPAWN_SCRIPT="${SCRIPT_DIR}/entrypoint-spawn-robot.sh"
+[[ -x "${SPAWN_SCRIPT}" ]] || SPAWN_SCRIPT="/entrypoint-spawn-robot.sh"
 
 SPAWN_PIDS=()
 if [ -n "${ROBOTS}" ]; then
@@ -307,21 +308,9 @@ if [ -n "${ROBOTS}" ]; then
     IFS=: read -r rname rx ry ryaw <<< "${spec}"
     ryaw="${ryaw:-0.0}"
 
-    echo "[gazebo] Spawning ${rname} at (${rx}, ${ry}, yaw=${ryaw})..."
-    ros2 launch nav2_minimal_tb3_sim spawn_tb3.launch.py \
-      use_sim_time:=True \
-      namespace:="${rname}" \
-      robot_name:="${rname}" \
-      x_pose:="${rx}" \
-      y_pose:="${ry}" \
-      z_pose:=0.01 &
+    echo "[gazebo] Spawning ${rname} through ${SPAWN_SCRIPT}..."
+    "${SPAWN_SCRIPT}" "${rname}" "${rx}" "${ry}" "${ryaw}" &
     SPAWN_PIDS+=($!)
-
-    ros2 run robot_state_publisher robot_state_publisher \
-      --ros-args \
-      --remap __ns:=/"${rname}" \
-      -p use_sim_time:=true \
-      -p "robot_description:=$(cat "${URDF_FILE}")" &
   done
   echo "[gazebo] ${#SPAWN_PIDS[@]} robot(s) spawned."
 else
