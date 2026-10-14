@@ -48,6 +48,8 @@ selected host and namespace to every build output and push target in that tab.
 
 **Topic Monitor:** Switch between List, Graph, and Cards views. Filter topics or nodes, inspect publisher/subscriber relationships, view message schema, and peek at topic data.
 
+If Peek repeatedly times out in a TurtleBot3 simulation, confirm the robot's Gazebo-to-ROS bridge is forwarding samples. The simulation spawn entrypoint checks for a live sample on that robot's `/robot_<name>/scan` topic and restarts a silent launch-managed bridge. Robot spawning uses detached `podman exec`, so wrapper status messages are not shown in the container's PID 1 logs. Inspect `/tmp/ros-home/spawn-<robot>.log` for ROS launch output and `/tmp/ros-home/bridge-<robot>.log` for standalone bridge output inside the simulation container.
+
 Cards view includes a **Group by namespace** checkbox in its panel header, outside the scrolling topic list. When enabled, the label reads **Topics grouped by namespace** and namespace headings organize the topic cards, with each heading showing its filtered topic count.
 
 List view also includes **Group by namespace** above its scrolling table. When enabled, it reads **Topics grouped by namespace**, adds namespace headers with per-group topic counts, and shows the number of represented namespaces in the summary. Topic-name filtering is applied before grouping, so nonmatching topics and empty groups stay hidden. Expanded topic details, message schema, and peek results remain available when toggling grouping.

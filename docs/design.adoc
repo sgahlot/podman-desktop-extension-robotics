@@ -606,9 +606,13 @@ needed for this configuration. They are edited on the extension's **Registry Set
 | `podman exec -d` via `process.exec()`
 | Podman Desktop `containerEngine` API has no `exec` method. `process.exec('podman', ['exec', ...])` runs `/entrypoint-spawn-robot.sh` detached in the running container.
 
+| Gazebo → ROS topic forwarding
+| `ros_gz_bridge` using the installed TurtleBot3 bridge config
+| `entrypoint-spawn-robot.sh` waits for model creation and probes for a live sample on that robot's `/scan` topic. If the `spawn_tb3.launch.py` bridge remains alive but silent, the entrypoint stops its bridge child and starts `parameter_bridge` directly with the same config, then verifies the per-robot scan again. Direct-bridge diagnostics are written to `/tmp/ros-home/bridge-<robot>.log`. This connects Gazebo Transport topics to ROS 2/DDS; it does not replace the extension's separate `podman exec` + ROS CLI integration.
+
 | Bash entrypoints vs Podman APIs
 | Keep in-image scripts; use PD/Podman for lifecycle + exec only
-| Podman/`@podman-desktop/api` manage images and containers (create/start/stop/list/build). They do not provide ROS 2/DDS, Gazebo spawn, or the Xvfb/noVNC stack. Entrypoints (`entrypoint-gazebo.sh`, `entrypoint-spawn-robot.sh`, …) orchestrate that stack inside the image; Topic Monitor / Peek / nav use `podman exec` + ROS CLI (`#execRosBash`). A native ROS client or in-container bridge would reduce CLI execs but is a separate architecture bet — not “replace scripts with Podman.” See the Bash vs Podman API scope in this table.
+| Podman/`@podman-desktop/api` manage images and containers (create/start/stop/list/build). They do not provide ROS 2/DDS, Gazebo spawn, or the Xvfb/noVNC stack. Entrypoints (`entrypoint-gazebo.sh`, `entrypoint-spawn-robot.sh`, …) orchestrate that stack inside the image; Gazebo topics reach ROS 2 via `ros_gz_bridge`, while Topic Monitor / Peek / nav still use `podman exec` + ROS CLI (`#execRosBash`). A native extension-side ROS client or in-container HTTP/WS bridge could reduce CLI execs but is a separate architecture bet — not “replace scripts with Podman.” See the Bash vs Podman API scope in this table.
 
 | Ogre2 Sensors on arm64
 | Re-enabled in world SDF (2026-08)
@@ -637,7 +641,7 @@ needed for this configuration. They are edited on the extension's **Registry Set
 
 == Open Questions
 
-* **Topic monitor bridge:** Topic Monitor currently uses `podman exec` + `ros2` CLI (acceptable; Podman has no ROS API). Open: keep CLI polling long-term, or add a lightweight in-container HTTP/WS bridge for Hz/streaming (see Phase C/D in peek polish notes)?
+* **Topic monitor transport:** Topic Monitor currently uses `podman exec` + `ros2` CLI (acceptable; Podman has no ROS API). The simulation's `ros_gz_bridge` only connects Gazebo Transport to ROS 2/DDS. Open: keep CLI polling long-term, or add an extension-side ROS client / lightweight in-container HTTP/WS bridge for Hz/streaming (see Phase C/D in peek polish notes)?
 * **Multi-robot resource limits:** How many TurtleBot3 instances can run in a single container before the Podman VM hits memory limits?
 
 == References

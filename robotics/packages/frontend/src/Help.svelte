@@ -496,7 +496,11 @@ let topicMonitorCaption =
           Idle topics show a timeout notice. Message schema is available via
           <strong>Show message schema</strong> (<span class="font-mono">ros2 interface show</span>). Msg stamp is time
           inside the message (e.g. <span class="font-mono">header.stamp</span>), not the
-          <span class="font-mono">/clock</span> topic.
+          <span class="font-mono">/clock</span> topic. The simulation checks the spawned robot's scan topic when
+          starting its Gazebo-to-ROS bridge and restarts it if silent. Robot spawning uses detached
+          <span class="font-mono">podman exec</span>, so wrapper status messages are not shown in container logs. Check
+          <span class="font-mono">/tmp/ros-home/spawn-&lt;robot&gt;.log</span> for ROS launch output and
+          <span class="font-mono">/tmp/ros-home/bridge-&lt;robot&gt;.log</span> for standalone bridge output.
         </div>
 
         <hr class="border-[var(--pd-content-card-border)] my-3 opacity-60" />
