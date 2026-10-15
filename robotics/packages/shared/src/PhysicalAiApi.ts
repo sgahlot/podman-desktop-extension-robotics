@@ -36,6 +36,7 @@ import type {
   OpenShiftWorkload,
 } from './types/OpenShiftDeploy';
 import type { LayerCacheBuildOptions } from './types/buildLayerCache';
+import type { RosbagRecording } from './types/RosbagRecording';
 
 export abstract class PhysicalAiApi {
   abstract getStatus(): Promise<string>;
@@ -176,6 +177,13 @@ export abstract class PhysicalAiApi {
   ): Promise<TopicPublishResult>;
   /** Message structural definition via `ros2 interface show`. */
   abstract getRosMessageSchema(containerId: string, messageType: string): Promise<TopicSchemaResult>;
+  abstract startRosbagRecording(
+    containerId: string,
+    topicNames: string[],
+    outputPath: string,
+  ): Promise<RosbagRecording>;
+  abstract getRosbagRecording(containerId: string): Promise<RosbagRecording | undefined>;
+  abstract stopRosbagRecording(containerId: string): Promise<RosbagRecording | undefined>;
   /** Copy text via the host clipboard (webview Clipboard API is unavailable). */
   abstract copyToClipboard(text: string): Promise<void>;
   abstract sendNavigationGoal(
