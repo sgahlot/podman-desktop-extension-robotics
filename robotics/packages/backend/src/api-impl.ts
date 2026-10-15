@@ -51,7 +51,7 @@ import {
 } from '/@shared/src/openshift/manifests';
 import { readFile, writeFile, mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { join as pathJoin } from 'node:path';
+import { join as pathJoin, isAbsolute as pathIsAbsolute } from 'node:path';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
 import type { BuildHistoryEntry, BundledToolVerificationResult, SbomFormat } from '/@shared/src/types/BuildHistory';
 import {
@@ -98,6 +98,7 @@ import type {
   TopicGraphTopology,
   TopicTelemetry,
 } from '/@shared/src/types/TopicInfo';
+import type { RosbagRecording } from '/@shared/src/types/RosbagRecording';
 import type { NavigationGoalResult, Nav2WarmStatus } from '/@shared/src/types/NavigationGoalResult';
 import {
   assertRobotName,
@@ -353,6 +354,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   private topicGraphInFlight = new Map<string, Promise<NodeDetail[]>>();
   private topicPublishLastAt = new Map<string, number>();
   private topicPublishInFlight = new Set<string>();
+  private rosbagRecordings = new Map<string, { state: RosbagRecording; tempPath: string; pidFile: string }>();
 
   /**
    * Podman Desktop hosts accept an optional AbortController as the 5th pushImage
@@ -2410,6 +2412,91 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       schema: '',
       error: stderr || `Failed to load schema for ${safeType} (exit ${result.exitCode})`,
     };
+  }
+
+  async startRosbagRecording(containerId: string, topicNames: string[], outputPath: string): Promise<RosbagRecording> {
+    const { id, image } = await this.#resolveSimulationContainer(containerId);
+    if (!Array.isArray(topicNames) || topicNames.length === 0 || topicNames.length > 100) {
+      throw new Error('Select between 1 and 100 topics to record.');
+    }
+    if (typeof outputPath !== 'string' || !pathIsAbsolute(outputPath) || outputPath === '/') {
+      throw new Error('Output path must be an absolute host directory, not the filesystem root.');
+    }
+    const safeTopics = topicNames.map(assertRosTopicName);
+    const current = this.rosbagRecordings.get(id);
+    if (current && (current.state.status === 'recording' || current.state.status === 'stopping')) {
+      throw new Error('A rosbag recording is already active for this simulation.');
+    }
+
+    const tempPath = `/tmp/pai-rosbag-${id.slice(0, 12)}-${Date.now()}`;
+    const pidFile = `${tempPath}/record.pid`;
+    const state: RosbagRecording = {
+      containerId: id,
+      topics: safeTopics,
+      outputPath,
+      status: 'recording',
+      startedAt: Date.now(),
+    };
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    const result = await this.#execRosBash(
+      { kind: 'podman', id },
+      distro,
+      'mkdir -p "$1"; (ros2 bag record -o "$1/bag" "${@:2}" >"$1/record.log" 2>&1) & echo $! >"$1/record.pid"',
+      [tempPath, ...safeTopics],
+    );
+    if (result.exitCode !== 0) {
+      throw new Error(result.stderr.trim() || 'Failed to start rosbag recording.');
+    }
+    this.rosbagRecordings.set(id, { state, tempPath, pidFile });
+    return state;
+  }
+
+  async getRosbagRecording(containerId: string): Promise<RosbagRecording | undefined> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    const entry = this.rosbagRecordings.get(id);
+    if (entry?.state.status !== 'recording') return entry?.state;
+    const result = await this.#execAttached({ kind: 'podman', id }, [
+      'bash',
+      '-c',
+      'if [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null; then exit 0; fi; exit 1',
+      '_',
+      entry.pidFile,
+    ]);
+    if (result.exitCode !== 0) {
+      entry.state.status = 'failed';
+      entry.state.finishedAt = Date.now();
+      entry.state.error = 'ros2 bag record exited before the recording was stopped.';
+    }
+    return entry.state;
+  }
+
+  async stopRosbagRecording(containerId: string): Promise<RosbagRecording | undefined> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    const entry = this.rosbagRecordings.get(id);
+    if (entry?.state.status !== 'recording') return entry?.state;
+    entry.state.status = 'stopping';
+    try {
+      const stopResult = await this.#execAttached({ kind: 'podman', id }, [
+        'bash',
+        '-c',
+        'if [ -f "$1" ]; then pid=$(cat "$1"); kill -INT "$pid" 2>/dev/null || true; for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done; if kill -0 "$pid" 2>/dev/null; then exit 1; fi; fi',
+        '_',
+        entry.pidFile,
+      ]);
+      if (stopResult.exitCode !== 0) {
+        throw new Error(stopResult.stderr.trim() || 'The rosbag recorder did not stop cleanly.');
+      }
+      await mkdir(entry.state.outputPath, { recursive: true });
+      await extensionApi.process.exec('podman', ['cp', `${id}:${entry.tempPath}/bag/.`, entry.state.outputPath]);
+      await this.#execAttached({ kind: 'podman', id }, ['rm', '-rf', entry.tempPath]);
+      entry.state.status = 'complete';
+      entry.state.finishedAt = Date.now();
+    } catch (error) {
+      entry.state.status = 'failed';
+      entry.state.finishedAt = Date.now();
+      entry.state.error = error instanceof Error ? error.message : String(error);
+    }
+    return entry.state;
   }
 
   async copyToClipboard(text: string): Promise<void> {

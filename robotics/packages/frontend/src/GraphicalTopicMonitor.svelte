@@ -77,6 +77,7 @@ import type {
   TopicSchemaResult,
   TopicTelemetry,
 } from '/@shared/src/types/TopicInfo';
+import type { RosbagRecording } from '/@shared/src/types/RosbagRecording';
 import { physicalAiClient } from './api/client';
 import {
   getRosTopicPublishWarning,
@@ -140,6 +141,14 @@ let topicTelemetryTimer: ReturnType<typeof setInterval> | null = null;
 let topicTelemetryGeneration = 0;
 let topicTelemetryInFlight = false;
 let queuedTopicTelemetry: { generation: number; containerId: string; topicName: string } | null = null;
+let recorderOpen = false;
+let recordOutputPath = '';
+let recordTopicNames: string[] = [];
+let recording: RosbagRecording | null = null;
+let recordLoading = false;
+let recordError = '';
+let recordPollTimer: ReturnType<typeof setInterval> | null = null;
+let recordNow = Date.now();
 let filterReturn: { kind: FilterKind; value: string } | null = null;
 let graphScrollTop = 0;
 let graphViewportHeight = 0;
@@ -576,6 +585,87 @@ function toggleLiveTelemetry(event: Event): void {
   else stopTopicTelemetry();
 }
 
+function openRecorder(): void {
+  recorderOpen = !recorderOpen;
+  if (recorderOpen) {
+    recordTopicNames = topics.map(topic => topic.name);
+    recordError = '';
+  }
+}
+
+function toggleRecordTopic(topicName: string): void {
+  recordTopicNames = recordTopicNames.includes(topicName)
+    ? recordTopicNames.filter(name => name !== topicName)
+    : [...recordTopicNames, topicName];
+}
+
+function selectAllRecordTopics(): void {
+  recordTopicNames = topics.map(topic => topic.name);
+}
+
+function deselectAllRecordTopics(): void {
+  recordTopicNames = [];
+}
+
+async function startRecording(): Promise<void> {
+  if (!selectedContainerId || !recordOutputPath.trim() || recordTopicNames.length === 0 || recordLoading) return;
+  recordLoading = true;
+  recordError = '';
+  try {
+    recording = await physicalAiClient.startRosbagRecording(
+      selectedContainerId,
+      recordTopicNames,
+      recordOutputPath.trim(),
+    );
+    recordNow = Date.now();
+    recordPollTimer = setInterval(() => {
+      recordNow = Date.now();
+      void pollRecording();
+    }, 2000);
+  } catch (e) {
+    recordError = e instanceof Error ? e.message : String(e);
+  } finally {
+    recordLoading = false;
+  }
+}
+
+async function pollRecording(): Promise<void> {
+  if (!selectedContainerId || !recording || recording.status !== 'recording') return;
+  try {
+    recording = (await physicalAiClient.getRosbagRecording(selectedContainerId)) ?? recording;
+    if (recording.status !== 'recording') {
+      if (recordPollTimer) clearInterval(recordPollTimer);
+      recordPollTimer = null;
+      if (recording.error) recordError = recording.error;
+    }
+  } catch (e) {
+    recordError = e instanceof Error ? e.message : String(e);
+  }
+}
+
+async function stopRecording(): Promise<void> {
+  if (!selectedContainerId || !recording || recordLoading) return;
+  recordLoading = true;
+  recordError = '';
+  try {
+    recording = (await physicalAiClient.stopRosbagRecording(selectedContainerId)) ?? recording;
+    if (recordPollTimer) clearInterval(recordPollTimer);
+    recordPollTimer = null;
+    if (recording.error) recordError = recording.error;
+  } catch (e) {
+    recordError = e instanceof Error ? e.message : String(e);
+  } finally {
+    recordLoading = false;
+  }
+}
+
+function formatRecordingElapsed(startedAt: number): string {
+  const elapsedSeconds = Math.max(0, Math.floor((recordNow - startedAt) / 1000));
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = elapsedSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
 function formatPublishRate(rate: number): string {
   return `${rate < 1 ? rate.toFixed(2) : rate.toFixed(1)} Hz`;
 }
@@ -693,6 +783,7 @@ onMount(() => {
 onDestroy(() => {
   window.removeEventListener('keydown', handleWindowKeydown);
   if (pollTimer) clearInterval(pollTimer);
+  if (recordPollTimer) clearInterval(recordPollTimer);
   stopTopicTelemetry();
   clearPublishPulse();
 });
@@ -730,7 +821,10 @@ onDestroy(() => {
         aria-pressed={viewMode === 'cards'}
         on:click={() => setViewMode('cards')}>Cards</button>
     </div>
-    <div class="flex items-center gap-4">
+    <div class="flex items-center gap-3 flex-wrap">
+      <button class="pai-btn text-xs" on:click={openRecorder} disabled={!selectedContainerId}>
+        {recorderOpen ? 'Hide recorder' : 'Record rosbag'}
+      </button>
       <label
         class="live-telemetry-toggle inline-flex cursor-pointer items-center gap-3 text-xs text-[var(--pd-content-text)]"
         class:enabled={liveTelemetryEnabled}>
@@ -750,6 +844,91 @@ onDestroy(() => {
       <span class="text-xs uppercase tracking-wide pai-text-muted">Live</span>
     </div>
   </div>
+
+  {#if recorderOpen}
+    <section
+      class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 flex flex-col gap-3"
+      aria-label="Rosbag recorder">
+      <div>
+        <h2 class="text-sm font-medium text-[var(--pd-content-header)]">Record selected topics</h2>
+        <p class="text-xs pai-text-muted mt-1">
+          The bag is copied to this host directory when you stop recording. Use an absolute path.
+        </p>
+      </div>
+      <label class="flex flex-col gap-1 text-xs text-[var(--pd-content-text)] max-w-xl">
+        Output directory
+        <input
+          class="px-3 py-1.5 text-sm rounded border bg-[var(--pd-content-bg)]"
+          placeholder="/tmp/rosbags"
+          bind:value={recordOutputPath}
+          disabled={recording?.status === 'recording'} />
+      </label>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1 max-h-40 overflow-auto">
+        {#each topics as topic (topic.name)}
+          <label class="flex items-center gap-2 text-xs text-[var(--pd-content-text)] font-mono break-all">
+            <input
+              type="checkbox"
+              checked={recordTopicNames.includes(topic.name)}
+              on:change={() => toggleRecordTopic(topic.name)}
+              disabled={recording?.status === 'recording'} />
+            {topic.name}
+          </label>
+        {/each}
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          class="pai-btn text-xs"
+          type="button"
+          on:click={selectAllRecordTopics}
+          disabled={recording?.status === 'recording'}>
+          Select all
+        </button>
+        <button
+          class="pai-btn text-xs"
+          type="button"
+          on:click={deselectAllRecordTopics}
+          disabled={recording?.status === 'recording'}>
+          Deselect all
+        </button>
+        <span class="text-xs pai-text-muted">{recordTopicNames.length} of {topics.length} selected</span>
+      </div>
+      <div class="flex items-center gap-2 flex-wrap">
+        {#if recording?.status === 'recording' || recording?.status === 'stopping'}
+          <button class="pai-btn pai-btn-danger text-xs" on:click={() => void stopRecording()} disabled={recordLoading}>
+            {recording.status === 'stopping' || recordLoading ? 'Stopping...' : 'Stop and save'}
+          </button>
+          <span class="text-xs pai-text-muted" role="status" aria-live="polite">
+            {#if recording.status === 'stopping' || recordLoading}
+              Finalizing bag and copying to the host...
+            {:else}
+              Recording {recording.topics.length} topics · {formatRecordingElapsed(recording.startedAt)} elapsed
+            {/if}
+          </span>
+          {#if recording.status === 'stopping' || recordLoading}
+            <div
+              class="w-full max-w-md h-1.5 rounded bg-[var(--pd-content-card-border)] overflow-hidden"
+              role="progressbar"
+              aria-label="Finalizing and copying rosbag">
+              <div class="h-full w-1/3 bg-[var(--pai-accent,#7c3aed)] animate-pulse rounded"></div>
+            </div>
+          {/if}
+        {:else}
+          <button
+            class="pai-btn pai-btn-primary text-xs"
+            on:click={() => void startRecording()}
+            disabled={recordLoading || !recordOutputPath.trim() || recordTopicNames.length === 0}>
+            {recordLoading ? 'Starting...' : 'Start recording'}
+          </button>
+          {#if recording?.status === 'complete'}
+            <span class="text-xs" role="status">Saved to {recording.outputPath}</span>
+          {:else if recording?.status === 'failed'}
+            <span class="text-xs pai-text-error">{recording.error}</span>
+          {/if}
+        {/if}
+      </div>
+      {#if recordError}<p class="text-xs pai-text-error">{recordError}</p>{/if}
+    </section>
+  {/if}
 
   {#if listVisited}
     <div class="flex-col gap-4 min-h-0 min-w-0" style:display={viewMode === 'list' ? 'flex' : 'none'}>

@@ -214,6 +214,10 @@ export abstract class PhysicalAiApi {
 
   // Topic Monitor (APPENG-5773)
   abstract listRosTopics(containerId: string): Promise<TopicInfo[]>;
+  // Local rosbag recording (APPENG-6627)
+  abstract startRosbagRecording(containerId: string, topicNames: string[], outputPath: string): Promise<RosbagRecording>;
+  abstract getRosbagRecording(containerId: string): Promise<RosbagRecording | undefined>;
+  abstract stopRosbagRecording(containerId: string): Promise<RosbagRecording | undefined>;
 
   // Navigation (Navigate button, APPENG-5920 / APPENG-5981) — Jazzy Nav2; Humble cmd_vel fallback
   abstract sendNavigationGoal(containerId: string, robotName: string, x: number, y: number): Promise<NavigationGoalResult>;
