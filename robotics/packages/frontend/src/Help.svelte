@@ -495,6 +495,13 @@ let topicMonitorCaption =
           or slow topics; it does not alone prove the publisher is broken.
         </div>
         <div>
+          <strong>Publish once</strong> — In a Graph topic inspector, choose <strong>Publish</strong> to enter one YAML message.
+          The type comes from the selected topic. Confirm each send; the extension publishes one message, limits payloads
+          to 64 KiB, waits up to five seconds for a subscriber, allows one send per second, and warns on known motion/sensor/control
+          topics. These topics remain publishable with confirmation; use a dedicated test topic when possible. A successful
+          publish briefly pulses the topic card. Peek remains read-only.
+        </div>
+        <div>
           <strong>Peek</strong> — On an expanded row, <strong>Peek</strong> captures one live message (<span
             class="font-mono">ros2 topic echo --once</span
           >). Timeout is configurable under Preferences → Robotics → <strong>Topic peek timeout</strong> (1–30 seconds,

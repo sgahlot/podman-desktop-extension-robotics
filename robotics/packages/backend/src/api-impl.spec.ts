@@ -3182,6 +3182,136 @@ linear_acceleration:
     });
   });
 
+  describe('publishRosTopic', () => {
+    const CONTAINER_ID = 'abc123def456';
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as unknown as extensionApi.ContainerInfo[]);
+    });
+
+    it('resolves the message type server-side and publishes one bounded message', async () => {
+      vi.mocked(extensionApi.process.exec)
+        .mockResolvedValueOnce({
+          stdout: 'Type: std_msgs/msg/String\nPublisher count: 0\nSubscription count: 1\n',
+          stderr: '',
+          command: 'podman',
+        } as extensionApi.RunResult)
+        .mockResolvedValueOnce({
+          stdout: 'publishing #1: std_msgs.msg.String(data="hello")\n',
+          stderr: '',
+          command: 'podman',
+        } as extensionApi.RunResult);
+
+      const result = await api.publishRosTopic(CONTAINER_ID, '/test/messages', 'data: "hello"', true);
+
+      expect(api.publishRosTopic.length).toBe(4);
+      expect(result).toMatchObject({ topicName: '/test/messages', messageType: 'std_msgs/msg/String' });
+      expect(result.publishedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(extensionApi.process.exec).toHaveBeenCalledTimes(2);
+
+      const infoArgs = execArgs(0);
+      expect(infoArgs.join(' ')).toContain('timeout -k 1 "$1" ros2 topic info -v "$2"');
+      expect(infoArgs).toContain('3');
+      expect(infoArgs).toContain('/test/messages');
+
+      const publishArgs = execArgs(1);
+      expect(publishArgs.join(' ')).toContain(
+        'timeout -k 1 "$1" ros2 topic pub --once --wait-matching-subscriptions 1 "$2" "$3" "$4"',
+      );
+      expect(publishArgs).toContain('5');
+      expect(publishArgs).toContain('/test/messages');
+      expect(publishArgs).toContain('std_msgs/msg/String');
+      expect(publishArgs).toContain('data: "hello"');
+    });
+
+    it('passes payload as an argument rather than interpolating it into shell source', async () => {
+      const payload = 'data: "hello"; id';
+      vi.mocked(extensionApi.process.exec)
+        .mockResolvedValueOnce({
+          stdout: 'Type: std_msgs/msg/String\nPublisher count: 0\nSubscription count: 1\n',
+          stderr: '',
+          command: 'podman',
+        } as extensionApi.RunResult)
+        .mockResolvedValueOnce({ stdout: 'published\n', stderr: '', command: 'podman' } as extensionApi.RunResult);
+
+      await api.publishRosTopic(CONTAINER_ID, '/test/messages', payload, true);
+
+      const publishArgs = execArgs(1);
+      const commandSource = publishArgs.find(argument => argument.includes('ros2 topic pub'));
+      expect(commandSource).not.toContain(payload);
+      expect(publishArgs).toContain(payload);
+    });
+
+    it('requires explicit confirmation before invoking ROS', async () => {
+      await expect(api.publishRosTopic(CONTAINER_ID, '/test/messages', 'data: hello', false)).rejects.toThrow(
+        /Confirm that this one-shot message/,
+      );
+      expect(extensionApi.process.exec).not.toHaveBeenCalled();
+    });
+
+    it('rejects injectable topics before invoking ROS', async () => {
+      await expect(api.publishRosTopic(CONTAINER_ID, '/test;id', '{}', true)).rejects.toThrow(/Invalid ROS topic/);
+      expect(extensionApi.process.exec).not.toHaveBeenCalled();
+    });
+
+    it('allows a protected motion topic when the caller explicitly confirms the one-shot publish', async () => {
+      vi.mocked(extensionApi.process.exec)
+        .mockResolvedValueOnce({
+          stdout: 'Type: geometry_msgs/msg/Twist\nPublisher count: 0\nSubscription count: 1\n',
+          stderr: '',
+          command: 'podman',
+        } as extensionApi.RunResult)
+        .mockResolvedValueOnce({ stdout: 'published\n', stderr: '', command: 'podman' } as extensionApi.RunResult);
+
+      await expect(api.publishRosTopic(CONTAINER_ID, '/robot_1/cmd_vel', '{}', true)).resolves.toMatchObject({
+        topicName: '/robot_1/cmd_vel',
+        messageType: 'geometry_msgs/msg/Twist',
+      });
+      expect(extensionApi.process.exec).toHaveBeenCalledTimes(2);
+    });
+
+    it('rejects empty and oversized payloads before invoking ROS', async () => {
+      await expect(api.publishRosTopic(CONTAINER_ID, '/test/messages', '   ', true)).rejects.toThrow(
+        /must not be empty/,
+      );
+      await expect(
+        api.publishRosTopic(CONTAINER_ID, '/test/messages', 'x'.repeat(64 * 1024 + 1), true),
+      ).rejects.toThrow(/byte limit/);
+      expect(extensionApi.process.exec).not.toHaveBeenCalled();
+    });
+
+    it('rate-limits successive publishes per simulation', async () => {
+      vi.mocked(extensionApi.process.exec)
+        .mockResolvedValueOnce({
+          stdout: 'Type: std_msgs/msg/String\nPublisher count: 0\nSubscription count: 1\n',
+          stderr: '',
+          command: 'podman',
+        } as extensionApi.RunResult)
+        .mockResolvedValueOnce({ stdout: 'published\n', stderr: '', command: 'podman' } as extensionApi.RunResult);
+
+      await api.publishRosTopic(CONTAINER_ID, '/test/messages', 'data: hello', true);
+      await expect(api.publishRosTopic(CONTAINER_ID, '/test/messages', 'data: again', true)).rejects.toThrow(
+        /rate-limited/,
+      );
+      expect(extensionApi.process.exec).toHaveBeenCalledTimes(2);
+    });
+
+    it('rejects when backend topic discovery cannot resolve a message type', async () => {
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: 'Publisher count: 0\nSubscription count: 0\n',
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+
+      await expect(api.publishRosTopic(CONTAINER_ID, '/test/messages', 'data: hello', true)).rejects.toThrow(
+        /Invalid ROS message type/,
+      );
+      expect(extensionApi.process.exec).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('getRosMessageSchema', () => {
     const CONTAINER_ID = 'abc123def456';
 

@@ -92,6 +92,7 @@ import type {
   TopicDetailInfo,
   TopicNodeInfo,
   TopicPeekResult,
+  TopicPublishResult,
   TopicSchemaResult,
   NodeDetail,
   TopicGraphTopology,
@@ -156,6 +157,13 @@ import {
   ROS_TOPIC_TELEMETRY_SAMPLE_SECONDS,
   ROS_TOPIC_TELEMETRY_SCRIPT,
 } from '/@shared/src/ros/topicTelemetry';
+import {
+  assertRosTopicPublishConfirmed,
+  assertRosTopicPublishPayload,
+  ROS_TOPIC_PUBLISH_INFO_TIMEOUT_SECONDS,
+  ROS_TOPIC_PUBLISH_MIN_INTERVAL_MS,
+  ROS_TOPIC_PUBLISH_TIMEOUT_SECONDS,
+} from '/@shared/src/ros/topicPublish';
 import { appendProgressLog } from './progressLogs';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
@@ -343,6 +351,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   private nav2ClearPending = new Set<string>();
   private topicGraphCache = new Map<string, { expiresAt: number; nodes: NodeDetail[] }>();
   private topicGraphInFlight = new Map<string, Promise<NodeDetail[]>>();
+  private topicPublishLastAt = new Map<string, number>();
+  private topicPublishInFlight = new Set<string>();
 
   /**
    * Podman Desktop hosts accept an optional AbortController as the 5th pushImage
@@ -2319,6 +2329,66 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       capturedAt,
       error: stderr || `Failed to peek ${safeTopic} (exit ${result.exitCode})`,
     };
+  }
+
+  async publishRosTopic(
+    containerId: string,
+    topicName: string,
+    payload: string,
+    confirmed: boolean,
+  ): Promise<TopicPublishResult> {
+    const { id, image } = await this.#resolveSimulationContainer(containerId);
+    const safeTopic = assertRosTopicName(topicName);
+    const safePayload = assertRosTopicPublishPayload(payload);
+    assertRosTopicPublishConfirmed(confirmed);
+
+    if (this.topicPublishInFlight.has(id)) {
+      throw new Error('A topic publish is already running for this simulation. Wait for it to finish.');
+    }
+    const lastPublishedAt = this.topicPublishLastAt.get(id) ?? 0;
+    const remainingMs = ROS_TOPIC_PUBLISH_MIN_INTERVAL_MS - (Date.now() - lastPublishedAt);
+    if (this.topicPublishLastAt.has(id) && remainingMs > 0) {
+      throw new Error(`Topic publishing is rate-limited. Try again in ${(remainingMs / 1000).toFixed(1)}s.`);
+    }
+
+    this.topicPublishInFlight.add(id);
+    this.topicPublishLastAt.set(id, Date.now());
+    try {
+      const distro = PhysicalAiApiImpl.#distroFromImage(image);
+      const target = { kind: 'podman', id } as const;
+      const typeResult = await this.#execRosBash(target, distro, 'timeout -k 1 "$1" ros2 topic info -v "$2"', [
+        String(ROS_TOPIC_PUBLISH_INFO_TIMEOUT_SECONDS),
+        safeTopic,
+      ]);
+      if (typeResult.exitCode !== 0) {
+        const reason = typeResult.exitCode === 124 || typeResult.exitCode === 137 ? 'timed out' : 'failed';
+        const output = [typeResult.stderr.trim(), typeResult.stdout.trim()].find(Boolean);
+        const detail = output ? `: ${output.slice(0, 300)}` : '.';
+        throw new Error(`Resolving the message type for ${safeTopic} ${reason}${detail}`);
+      }
+      const typeMatch = typeResult.stdout.match(/^Type:\s*(\S+)/m);
+      const messageType = assertRosMessageType(typeMatch?.[1] ?? '');
+      if (messageType.split('/')[1] !== 'msg') {
+        throw new Error(`Publishing requires a ROS message type; ${messageType} is not a message type.`);
+      }
+
+      const result = await this.#execRosBash(
+        target,
+        distro,
+        'timeout -k 1 "$1" ros2 topic pub --once --wait-matching-subscriptions 1 "$2" "$3" "$4"',
+        [String(ROS_TOPIC_PUBLISH_TIMEOUT_SECONDS), safeTopic, messageType, safePayload],
+      );
+      if (result.exitCode !== 0) {
+        const output = [result.stderr.trim(), result.stdout.trim()].find(Boolean);
+        const reason = result.exitCode === 124 || result.exitCode === 137 ? 'timed out' : 'failed';
+        const detail = output ? `: ${output.slice(0, 500)}` : '.';
+        throw new Error(`Publishing to ${safeTopic} ${reason}${detail}`);
+      }
+
+      return { topicName: safeTopic, messageType, publishedAt: new Date().toISOString() };
+    } finally {
+      this.topicPublishInFlight.delete(id);
+    }
   }
 
   async getRosMessageSchema(containerId: string, messageType: string): Promise<TopicSchemaResult> {

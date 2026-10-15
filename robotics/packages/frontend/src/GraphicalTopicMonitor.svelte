@@ -35,6 +35,32 @@
   height: 1rem;
   accent-color: var(--pai-accent, #7c3aed);
 }
+
+.topic-publish-pulse rect {
+  animation: pai-topic-publish-success 900ms ease-out 1;
+}
+
+@keyframes pai-topic-publish-success {
+  0% {
+    filter: drop-shadow(0 0 0 rgb(124 58 237 / 0%));
+    stroke-width: 2;
+  }
+  35% {
+    filter: drop-shadow(0 0 10px rgb(124 58 237 / 75%));
+    stroke-width: 5;
+  }
+  100% {
+    filter: drop-shadow(0 0 0 rgb(124 58 237 / 0%));
+    stroke-width: 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topic-publish-pulse rect {
+    animation: none;
+    stroke-width: 4;
+  }
+}
 </style>
 
 <script lang="ts">
@@ -47,10 +73,16 @@ import type {
   TopicGraphTopology,
   TopicInfo,
   TopicPeekResult,
+  TopicPublishResult,
   TopicSchemaResult,
   TopicTelemetry,
 } from '/@shared/src/types/TopicInfo';
 import { physicalAiClient } from './api/client';
+import {
+  getRosTopicPublishWarning,
+  ROS_TOPIC_PUBLISH_MAX_BYTES,
+  topicPublishPayloadBytes,
+} from '/@shared/src/ros/topicPublish';
 import QuickLinks from './lib/QuickLinks.svelte';
 import TopicMonitor from './TopicMonitor.svelte';
 import TopicEndpoints from './lib/TopicEndpoints.svelte';
@@ -91,6 +123,15 @@ let inspectorLoading = false;
 let inspectorError = '';
 let schemaLoading = false;
 let peekLoading = false;
+let publishEditorOpen = false;
+let publishPayload = '';
+let publishConfirmed = false;
+let publishLoading = false;
+let publishError = '';
+let publishResult: TopicPublishResult | null = null;
+let publishGeneration = 0;
+let publishPulseTopic = '';
+let publishPulseTimer: ReturnType<typeof setTimeout> | null = null;
 let topicTelemetry: TopicTelemetry | null = null;
 let topicTelemetryLoading = false;
 let topicTelemetryError = '';
@@ -136,6 +177,8 @@ $: matchingCardSubscriberCount = directSubscriberMatches.filter(node =>
 $: filteredTopicNames = new Set(topics.map(topic => topic.name));
 $: focusActive = Boolean(selectedTopic || selectedNode);
 $: resourceFilterActive = Boolean(publisherFilter || subscriberFilter);
+$: publishWarning = selectedTopic ? getRosTopicPublishWarning(selectedTopic) : undefined;
+$: publishPayloadSize = topicPublishPayloadBytes(publishPayload);
 $: activeFilter = publisherFilter
   ? 'publisher'
   : subscriberFilter
@@ -371,6 +414,8 @@ async function pollContainers() {
 
 function clearSelection() {
   stopTopicTelemetry();
+  resetPublishState();
+  clearPublishPulse();
   selectedTopic = '';
   selectedNode = null;
   filterReturn = null;
@@ -380,6 +425,80 @@ function clearSelection() {
   inspectorError = '';
   expandedPublisherNodes = false;
   expandedSubscriberNodes = false;
+}
+
+function resetPublishState(): void {
+  publishGeneration += 1;
+  publishEditorOpen = false;
+  publishPayload = '';
+  publishConfirmed = false;
+  publishLoading = false;
+  publishError = '';
+  publishResult = null;
+}
+
+function clearPublishPulse(): void {
+  if (publishPulseTimer) clearTimeout(publishPulseTimer);
+  publishPulseTimer = null;
+  publishPulseTopic = '';
+}
+
+function pulsePublishedTopic(topicName: string): void {
+  clearPublishPulse();
+  publishPulseTopic = topicName;
+  publishPulseTimer = setTimeout(() => {
+    publishPulseTopic = '';
+    publishPulseTimer = null;
+  }, 900);
+}
+
+function togglePublishEditor(): void {
+  if (publishEditorOpen) {
+    resetPublishState();
+    return;
+  }
+  publishEditorOpen = true;
+  publishConfirmed = false;
+  publishError = '';
+  publishResult = null;
+}
+
+async function publishSelectedTopic(): Promise<void> {
+  if (!selectedContainerId || !selectedTopic || !topicDetail || publishLoading) return;
+  if (!publishConfirmed) {
+    publishError = 'Confirm that this one-shot message is safe for the topic subscribers.';
+    return;
+  }
+  if (!publishPayload.trim()) {
+    publishError = 'Enter a YAML message payload before publishing.';
+    return;
+  }
+  if (publishPayloadSize > ROS_TOPIC_PUBLISH_MAX_BYTES) {
+    publishError = `Message payload exceeds the ${ROS_TOPIC_PUBLISH_MAX_BYTES}-byte limit.`;
+    return;
+  }
+
+  const requestId = ++publishGeneration;
+  const containerId = selectedContainerId;
+  const topicName = selectedTopic;
+  const confirmed = publishConfirmed;
+  publishConfirmed = false;
+  publishLoading = true;
+  publishError = '';
+  publishResult = null;
+  try {
+    const result = await physicalAiClient.publishRosTopic(containerId, topicName, publishPayload, confirmed);
+    if (requestId === publishGeneration && selectedContainerId === containerId && selectedTopic === topicName) {
+      publishResult = result;
+      pulsePublishedTopic(topicName);
+    }
+  } catch (e) {
+    if (requestId === publishGeneration && selectedContainerId === containerId && selectedTopic === topicName) {
+      publishError = e instanceof Error ? e.message : String(e);
+    }
+  } finally {
+    if (requestId === publishGeneration) publishLoading = false;
+  }
 }
 
 function stopTopicTelemetry(): void {
@@ -474,6 +593,8 @@ async function selectTopic(topicName: string) {
     return;
   }
   stopTopicTelemetry();
+  resetPublishState();
+  clearPublishPulse();
   beginFilteredFocus();
   selectedTopic = topicName;
   selectedNode = null;
@@ -507,6 +628,7 @@ function selectNode(node: NodeDetail, role: 'publisher' | 'subscriber') {
   }
   beginFilteredFocus();
   stopTopicTelemetry();
+  resetPublishState();
   selectedNode = node;
   selectedNodeRole = role;
   selectedTopic = '';
@@ -572,6 +694,7 @@ onDestroy(() => {
   window.removeEventListener('keydown', handleWindowKeydown);
   if (pollTimer) clearInterval(pollTimer);
   stopTopicTelemetry();
+  clearPublishPulse();
 });
 </script>
 
@@ -1023,6 +1146,7 @@ onDestroy(() => {
               {#each graphTopics as topic (topic.name)}
                 <g
                   class="graph-selectable"
+                  class:topic-publish-pulse={publishPulseTopic === topic.name}
                   role="button"
                   tabindex="0"
                   aria-label={`Select topic ${topic.name}`}
@@ -1132,7 +1256,56 @@ onDestroy(() => {
                 <button class="pai-btn text-xs" on:click={() => void peekTopic()} disabled={peekLoading}>
                   {peekLoading ? 'Peeking...' : 'Peek'}
                 </button>
+                <button class="pai-btn text-xs" on:click={togglePublishEditor}>
+                  {publishEditorOpen ? 'Cancel publish' : 'Publish'}
+                </button>
               </div>
+              {#if publishEditorOpen}
+                <div class="rounded border border-[var(--pd-content-card-border)] p-3 flex flex-col gap-2">
+                  <div>
+                    <p class="font-medium">Publish one message</p>
+                    <p class="pai-text-muted">Type: <span class="font-mono">{topicDetail.type}</span></p>
+                  </div>
+                  <label for="topicPublishPayload" class="text-xs">Message payload (YAML)</label>
+                  <textarea
+                    id="topicPublishPayload"
+                    class="w-full min-h-24 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-2 font-mono text-xs"
+                    rows="4"
+                    maxlength={ROS_TOPIC_PUBLISH_MAX_BYTES}
+                    placeholder={'data: "hello"'}
+                    bind:value={publishPayload}
+                    on:input={() => {
+                      publishError = '';
+                      publishResult = null;
+                    }}></textarea>
+                  <div class="flex flex-wrap items-center justify-between gap-1 text-[11px] pai-text-muted">
+                    <span>One-shot · max {ROS_TOPIC_PUBLISH_MAX_BYTES} bytes · 1 send/sec</span>
+                    <span>Confirm each send</span>
+                    <span>{publishPayloadSize}/{ROS_TOPIC_PUBLISH_MAX_BYTES} bytes</span>
+                  </div>
+                  {#if publishWarning}<p class="text-xs pai-text-error">{publishWarning}</p>{/if}
+                  <label class="flex items-start gap-2 text-xs">
+                    <input type="checkbox" bind:checked={publishConfirmed} />
+                    <span>I confirm this one-shot message is safe for this topic's subscribers.</span>
+                  </label>
+                  <button
+                    class="pai-btn self-start text-xs"
+                    on:click={() => void publishSelectedTopic()}
+                    disabled={publishLoading ||
+                      !publishConfirmed ||
+                      !publishPayload.trim() ||
+                      publishPayloadSize > ROS_TOPIC_PUBLISH_MAX_BYTES}>
+                    {publishLoading ? 'Publishing...' : 'Publish once'}
+                  </button>
+                  {#if publishError}<p class="text-xs pai-text-error">{publishError}</p>{/if}
+                  {#if publishResult}
+                    <p class="text-xs" role="status" aria-live="polite">
+                      Published one {publishResult.messageType} message to
+                      <span class="font-mono">{publishResult.topicName}</span>.
+                    </p>
+                  {/if}
+                </div>
+              {/if}
               {#if schema?.schema}<pre
                   class="max-h-32 overflow-auto whitespace-pre-wrap break-all rounded border border-[var(--pd-content-card-border)] p-2 font-mono">{schema.schema}</pre>{/if}
               {#if peekResult?.message}<pre
