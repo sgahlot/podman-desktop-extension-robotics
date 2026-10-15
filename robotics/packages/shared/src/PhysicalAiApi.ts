@@ -20,6 +20,7 @@ import type {
   TopicSchemaResult,
   TopicGraphTopology,
   TopicTelemetry,
+  TopicPublishResult,
 } from './types/TopicInfo';
 import type { NavigationGoalResult, Nav2WarmStatus } from './types/NavigationGoalResult';
 import type {
@@ -166,6 +167,13 @@ export abstract class PhysicalAiApi {
   abstract getTopicTelemetry(containerId: string, topicNames?: string[]): Promise<TopicTelemetry[]>;
   /** One live message via `ros2 topic echo --once` (bounded wait). */
   abstract peekRosTopic(containerId: string, topicName: string): Promise<TopicPeekResult>;
+  /** Publish one confirmed, size-limited YAML message to a safe local simulation topic. */
+  abstract publishRosTopic(
+    containerId: string,
+    topicName: string,
+    payload: string,
+    confirmed: boolean,
+  ): Promise<TopicPublishResult>;
   /** Message structural definition via `ros2 interface show`. */
   abstract getRosMessageSchema(containerId: string, messageType: string): Promise<TopicSchemaResult>;
   /** Copy text via the host clipboard (webview Clipboard API is unavailable). */

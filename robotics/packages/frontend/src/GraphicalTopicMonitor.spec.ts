@@ -8,6 +8,7 @@ const mockGetTopicTopology = vi.fn();
 const mockGetRosTopicDetail = vi.fn();
 const mockGetRosMessageSchema = vi.fn();
 const mockPeekRosTopic = vi.fn();
+const mockPublishRosTopic = vi.fn();
 const mockListRosTopics = vi.fn();
 const mockListRosTopicSummaries = vi.fn();
 const mockGetTopicTelemetry = vi.fn();
@@ -19,6 +20,7 @@ vi.mock('./api/client', () => ({
     getRosTopicDetail: (...args: unknown[]) => mockGetRosTopicDetail(...args),
     getRosMessageSchema: (...args: unknown[]) => mockGetRosMessageSchema(...args),
     peekRosTopic: (...args: unknown[]) => mockPeekRosTopic(...args),
+    publishRosTopic: (...args: unknown[]) => mockPublishRosTopic(...args),
     listRosTopics: (...args: unknown[]) => mockListRosTopics(...args),
     listRosTopicSummaries: (...args: unknown[]) => mockListRosTopicSummaries(...args),
     getTopicTelemetry: (...args: unknown[]) => mockGetTopicTelemetry(...args),
@@ -47,6 +49,11 @@ describe('GraphicalTopicMonitor', () => {
       message: '',
       timedOut: false,
       capturedAt: new Date().toISOString(),
+    });
+    mockPublishRosTopic.mockResolvedValue({
+      topicName: '/test/messages',
+      messageType: 'std_msgs/msg/String',
+      publishedAt: new Date().toISOString(),
     });
   });
 
@@ -319,6 +326,74 @@ describe('GraphicalTopicMonitor', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Peek' }));
     expect(await screen.findByText(/No message on \/robot_1\/tf within 5s/)).toBeTruthy();
     expect(screen.queryByText('Peeking...')).toBeNull();
+  });
+
+  it('publishes a confirmed one-shot YAML message separately from Peek', async () => {
+    mockListSimulationContainers.mockResolvedValue([
+      { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
+    ]);
+    mockGetTopicTopology.mockResolvedValue({
+      topics: [{ name: '/test/messages', type: 'std_msgs/msg/String', publishers: 0, subscribers: 1 }],
+      nodes: [],
+    });
+    mockGetRosTopicDetail.mockResolvedValue({
+      topicName: '/test/messages',
+      type: 'std_msgs/msg/String',
+      publishers: [],
+      subscribers: [{ nodeName: 'test_listener', nodeNamespace: '/' }],
+    });
+
+    render(GraphicalTopicMonitor);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Select topic /test/messages' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    await fireEvent.input(screen.getByLabelText('Message payload (YAML)'), {
+      target: { value: 'data: "hello"' },
+    });
+
+    expect(mockPublishRosTopic).not.toHaveBeenCalled();
+    expect((screen.getByRole('button', { name: 'Publish once' }) as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(screen.getByLabelText(/I confirm this one-shot message/));
+    await fireEvent.click(screen.getByRole('button', { name: 'Publish once' }));
+
+    expect(await screen.findByText(/Published one std_msgs\/msg\/String message/)).toBeTruthy();
+    expect(mockPublishRosTopic).toHaveBeenCalledWith('c1', '/test/messages', 'data: "hello"', true);
+    expect(mockPeekRosTopic).not.toHaveBeenCalled();
+    const publishedTopic = screen.getByRole('button', { name: 'Select topic /test/messages' });
+    expect(publishedTopic.classList.contains('topic-publish-pulse')).toBe(true);
+    await vi.advanceTimersByTimeAsync(900);
+    expect(publishedTopic.classList.contains('topic-publish-pulse')).toBe(false);
+  });
+
+  it('warns for a protected simulation topic but permits an explicitly confirmed test', async () => {
+    mockListSimulationContainers.mockResolvedValue([
+      { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
+    ]);
+    mockGetTopicTopology.mockResolvedValue({
+      topics: [{ name: '/robot_1/cmd_vel', type: 'geometry_msgs/msg/Twist', publishers: 0, subscribers: 1 }],
+      nodes: [],
+    });
+    mockGetRosTopicDetail.mockResolvedValue({
+      topicName: '/robot_1/cmd_vel',
+      type: 'geometry_msgs/msg/Twist',
+      publishers: [],
+      subscribers: [{ nodeName: 'base_controller', nodeNamespace: '/robot_1' }],
+    });
+    mockPublishRosTopic.mockResolvedValueOnce({
+      topicName: '/robot_1/cmd_vel',
+      messageType: 'geometry_msgs/msg/Twist',
+      publishedAt: new Date().toISOString(),
+    });
+
+    render(GraphicalTopicMonitor);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Select topic /robot_1/cmd_vel' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    await fireEvent.input(screen.getByLabelText('Message payload (YAML)'), { target: { value: '{}' } });
+
+    expect(await screen.findByText(/may affect motion, sensors/)).toBeTruthy();
+    await fireEvent.click(screen.getByLabelText(/I confirm this one-shot message/));
+    await fireEvent.click(screen.getByRole('button', { name: 'Publish once' }));
+    expect(await screen.findByText(/Published one geometry_msgs\/msg\/Twist message/)).toBeTruthy();
+    expect(mockPublishRosTopic).toHaveBeenCalledWith('c1', '/robot_1/cmd_vel', '{}', true);
   });
 
   it('opens Cards topic and node inspection in Graph', async () => {

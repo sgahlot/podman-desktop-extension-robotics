@@ -130,7 +130,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 | `src/RegistrySettings.svelte` | Shared registry configuration page used by Image Catalog and Image Builder
 | `src/SimulationSetup.svelte` | Image Builder — configure + build/push base and simulation images; one Registry selector applies to each active tab
 | `src/SimulationPage.svelte` | Simulation — launch containers, view status, open noVNC, add TurtleBot3
-| `src/GraphicalTopicMonitor.svelte` | Unified Topic Monitor route — List, Graph, and Cards views over the active simulation topology; shares filters across views and owns graph selection/inspector state, including selected-topic telemetry polling
+| `src/GraphicalTopicMonitor.svelte` | Unified Topic Monitor route — List, Graph, and Cards views over the active simulation topology; shares filters across views and owns graph selection/inspector state, including telemetry and guarded one-shot publish
 | `src/TopicMonitor.svelte` | Embedded List view — topic rows, namespace grouping, role-aware filtering, schema, and Peek; retains its state while another view is active
 | `src/lib/TopicEndpoints.svelte` | Shared publisher/subscriber endpoint renderer with highlighted filter matches
 | `src/Help.svelte` | In-extension documentation
@@ -613,6 +613,10 @@ needed for this configuration. They are edited on the extension's **Registry Set
 | Topic publish telemetry
 | Opt-in bounded telemetry for the selected topic via `ros2 topic bw`
 | Live telemetry is off by default and enabled by the Topic Monitor toolbar checkbox. The Graph inspector requests metrics only for its selected local topic. One sensor-QoS ROS CLI observer reports bandwidth and mean message size, from which the backend derives publish Hz. It has a 3-second timeout, limits each request to 4 topics and at most 2 concurrent topic workers, and returns a finite snapshot. The UI refreshes every 8 seconds while enabled and selected, clearing polling on selection/container change, toggle-off, view switch, or unmount; it does not spawn work for every topic on each graph refresh.
+
+| Topic message publishing
+| Confirmed, one-shot local publish using backend-resolved ROS message type
+| Graph Publish is separate from read-only Peek. Payload is a single YAML argv item (max 64 KiB), topic type is fetched inside the simulation with a 3-second timeout, confirmation is required, per-container publishes are serialized/rate-limited, and `ros2 topic pub --once --wait-matching-subscriptions 0` is bounded by a 5-second timeout. Known motion/control, sensor, TF, clock, map, and parameter-event topic basenames display an additional caution but remain publishable after confirmation; a successful publish briefly pulses the graph topic card. OpenShift publish is out of scope.
 
 | Bash entrypoints vs Podman APIs
 | Keep in-image scripts; use PD/Podman for lifecycle + exec only

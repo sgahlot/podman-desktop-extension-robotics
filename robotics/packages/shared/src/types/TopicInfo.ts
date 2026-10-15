@@ -47,6 +47,13 @@ export interface TopicTelemetry {
   error?: string;
 }
 
+/** Result metadata for one completed local `ros2 topic pub --once` request. */
+export interface TopicPublishResult {
+  topicName: string;
+  messageType: string;
+  publishedAt: string;
+}
+
 /** One-shot snapshot from `ros2 topic echo --once`. */
 export interface TopicPeekResult {
   topicName: string;
