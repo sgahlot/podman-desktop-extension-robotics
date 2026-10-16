@@ -436,9 +436,16 @@ let topicMonitorCaption =
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Topic Monitor</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
         <div>
-          <strong>Overview</strong> — Shows active ROS2 topics inside a running simulation container, including message types
-          and publisher/subscriber counts. Use List, Graph, or Cards view to inspect topology and relationships. Auto-refreshes
-          every 5 seconds.
+          <strong>Overview</strong> — Shows active ROS2 topics inside a running local container or OpenShift workload, including
+          message types and publisher/subscriber counts. Use List, Graph, or Cards view to inspect topology and relationships.
+          Auto-refreshes every 5 seconds.
+        </div>
+        <div>
+          <strong>Targets and recording</strong> — Switch between <strong>Local</strong> and <strong>OpenShift</strong>
+          targets using the target selector, then choose the container or workload. Select topics and use
+          <strong>Record rosbag</strong>
+          to start or stop a recording; the completed bag is copied to the host directory you choose. OpenShift recordings
+          are copied from the selected pod when stopped.
         </div>
         <div>
           <strong>Cards grouping</strong> — Use <strong>Group by namespace</strong> in the Cards panel header to

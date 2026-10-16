@@ -115,7 +115,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 * Image Builder with Presets, Customize, and Layers layouts. Quick Starts are shared across all layouts; Customize and Layers independently compose base and simulation sources _(APPENG-6313)_
 * Simulation page — launch, status, open in browser, stop & remove, add TurtleBot3, per-robot X/Y + **Navigate** (Jazzy: Nav2 `navigate_to_pose`; Humble: `cmd_vel`). Lidar/IMU sensors active on Mac (2026-08).
 * In-extension Help page _(done)_
-* ROS2 topic monitor — active topics, message types, pub/sub counts _(APPENG-5773, done)_
+* ROS2 topic monitor — local and OpenShift topology browser with List, Graph, and Cards views, filters, schema, Peek, telemetry, guarded publish, and rosbag recording _(APPENG-5773 / APPENG-6620, shipped)_
 * Fleet status dashboard _(APPENG-5776, planned — Story 3)_
 
 ==== Key Files
@@ -132,6 +132,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 | `src/SimulationPage.svelte` | Simulation — launch containers, view status, open noVNC, add TurtleBot3
 | `src/GraphicalTopicMonitor.svelte` | Unified Topic Monitor route — List, Graph, and Cards views over the active simulation topology; shares filters across views and owns graph selection/inspector state, including telemetry and guarded one-shot publish
 | `src/TopicMonitor.svelte` | Embedded List view — topic rows, namespace grouping, role-aware filtering, schema, and Peek; retains its state while another view is active
+| `src/lib/topicMonitorTarget.ts` | Adapts local Podman and OpenShift workload APIs to the shared Topic Monitor views
 | `src/lib/TopicEndpoints.svelte` | Shared publisher/subscriber endpoint renderer with highlighted filter matches
 | `src/Help.svelte` | In-extension documentation
 | `src/lib/BuildPushPanel.svelte` | Shared component for build/push/cancel lifecycle with polling
@@ -171,6 +172,11 @@ Frontend (RpcBrowser)                    Backend (RpcExtension)
 ==== API Interface
 
 The `PhysicalAiApi` abstract class defines the contract. Both the frontend proxy and backend implementation conform to it.
+
+The Topic Monitor contract has local and OpenShift variants for topic summaries, topology, detail, Peek, schema, telemetry,
+guarded one-shot publish, and rosbag recording. Local calls use the selected Podman container; OpenShift calls resolve the
+selected workload's running pod and execute the same bounded ROS operations through `oc`. Publish remains local-only; bags
+are copied from the selected container or pod to the host when recording stops.
 
 .Current API
 [source,typescript]
@@ -603,8 +609,8 @@ needed for this configuration. They are edited on the extension's **Registry Set
 | Pod-based approach (Story 2/5) caused OOM at 4 GiB on arm64. Single container with Gazebo + noVNC baked in fits default 5.7 GB Podman VM. Nav2 packages are in the image but the navigation stack is not launched locally.
 
 | Nav2 (local vs OpenShift)
-| Jazzy local Nav2 on Navigate; OpenShift Story 4
-| `ros-jazzy-navigation2` and `entrypoint-nav2.sh` ship in `ros2-jazzy-sim`. Local **Navigate** on Jazzy launches Nav2 and sends `navigate_to_pose` with obstacle-aware planning (APPENG-5981). Humble images keep `cmd_vel` fallback. OpenShift wiring remains Story 4 (APPENG-5767).
+| Jazzy local and OpenShift Nav2 on Navigate
+| `ros-jazzy-navigation2` and `entrypoint-nav2.sh` ship in `ros2-jazzy-sim`. Local and OpenShift **Navigate** on Jazzy launch Nav2 and send `navigate_to_pose` with obstacle-aware planning (APPENG-5981). Humble images keep the `cmd_vel` fallback.
 
 | Robot spawn mechanism
 | `podman exec -d` via `process.exec()`
@@ -621,6 +627,10 @@ needed for this configuration. They are edited on the extension's **Registry Set
 | Topic message publishing
 | Confirmed, one-shot local publish using backend-resolved ROS message type
 | Graph Publish is separate from read-only Peek. Payload is a single YAML argv item (max 64 KiB), topic type is fetched inside the simulation with a 3-second timeout, confirmation is required, per-container publishes are serialized/rate-limited, and `ros2 topic pub --once --wait-matching-subscriptions 0` is bounded by a 5-second timeout. Known motion/control, sensor, TF, clock, map, and parameter-event topic basenames display an additional caution but remain publishable after confirmation; a successful publish briefly pulses the graph topic card. OpenShift publish is out of scope.
+
+| Topic rosbag recording
+| Selected-topic recording for local and OpenShift targets
+| The frontend starts and stops `ros2 bag record` through the target adapter. Local recordings are copied from the simulation container; OpenShift recordings are copied from the selected pod when recording stops. Recording is explicit and bounded to the user's start/stop action.
 
 | Bash entrypoints vs Podman APIs
 | Keep in-image scripts; use PD/Podman for lifecycle + exec only
