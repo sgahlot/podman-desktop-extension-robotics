@@ -620,7 +620,7 @@ needed for this configuration. They are edited on the extension's **Registry Set
 
 | Topic message publishing
 | Confirmed, one-shot local publish using backend-resolved ROS message type
-| Graph Publish is separate from read-only Peek. Payload is a single YAML argv item (max 64 KiB), topic type is fetched inside the simulation with a 3-second timeout, confirmation is required, per-container publishes are serialized/rate-limited, and `ros2 topic pub --once --wait-matching-subscriptions 0` is bounded by a 5-second timeout. Known motion/control, sensor, TF, clock, map, and parameter-event topic basenames display an additional caution but remain publishable after confirmation; a successful publish briefly pulses the graph topic card. OpenShift publish is out of scope.
+| Graph Publish is separate from read-only Peek. Payload is a single YAML argv item (max 64 KiB), topic type is fetched inside the simulation with a 3-second timeout, confirmation is required, per-container publishes are serialized/rate-limited, and `ros2 topic pub --once --wait-matching-subscriptions 0` is bounded by a 5-second timeout. Known motion/control, sensor, TF, clock, map, and parameter-event topic basenames display an additional caution but remain publishable after confirmation; a successful publish briefly pulses the graph topic card and traces a bounded flow to visible subscribers. Failed publishes never animate. OpenShift publish is out of scope.
 
 | Bash entrypoints vs Podman APIs
 | Keep in-image scripts; use PD/Podman for lifecycle + exec only

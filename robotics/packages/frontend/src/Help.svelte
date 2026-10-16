@@ -459,9 +459,11 @@ let topicMonitorCaption =
           and subscriber filters are mutually exclusive.
         </div>
         <div>
-          <strong>View switching</strong> — List, Cards, and Graph share the active filter type and text. Changing or clearing
-          a filter in one view updates all three. The views retain their grouping and inspection state during the page session.
-          Returning to List keeps its fetched topics rather than restarting initial loading.
+          <strong>View switching</strong> — List, Cards, and Graph share the active filter type and text. Changing or
+          clearing a filter in one view updates all three. Expanded List details and Cards both provide
+          <strong>Inspect in Graph</strong>
+          for the shared inspector, where Publish and live telemetry are available. The views retain their grouping and inspection
+          state during the page session. Returning to List keeps its fetched topics rather than restarting initial loading.
         </div>
         <div>
           <strong>Access</strong> — Dashboard card, or <strong>View Topics</strong> button on a running simulation container
@@ -499,7 +501,8 @@ let topicMonitorCaption =
           The type comes from the selected topic. Confirm each send; the extension publishes one message, limits payloads
           to 64 KiB, waits up to five seconds for a subscriber, allows one send per second, and warns on known motion/sensor/control
           topics. These topics remain publishable with confirmation; use a dedicated test topic when possible. A successful
-          publish briefly pulses the topic card. Peek remains read-only.
+          publish briefly pulses the topic card and traces a bounded flow to visible subscriber cards. Failed publishes do
+          not animate. Peek remains read-only.
         </div>
         <div>
           <strong>Peek</strong> — On an expanded row, <strong>Peek</strong> captures one live message (<span
