@@ -2117,6 +2117,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return parseRosTopicListDump(listResult.stdout);
   }
 
+  async listRosTopicsInOpenShift(namespace: string, name: string, context?: string): Promise<TopicInfo[]> {
+    const targetInfo = await this.#openShiftTopicTarget(namespace, name, context);
+    const listResult = await this.#execRosBash(targetInfo.target, targetInfo.distro, ROS_TOPIC_LIST_INFO_SCRIPT);
+    if (listResult.exitCode !== 0 || !listResult.stdout.trim()) return [];
+    return parseRosTopicListDump(listResult.stdout);
+  }
+
   async listRosTopicSummaries(containerId: string): Promise<TopicInfo[]> {
     const { id, image } = await this.#resolveSimulationContainer(containerId);
     const distro = PhysicalAiApiImpl.#distroFromImage(image);
@@ -2128,6 +2135,13 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       return [];
     }
 
+    return parseRosTopicListTypes(listResult.stdout);
+  }
+
+  async listRosTopicSummariesInOpenShift(namespace: string, name: string, context?: string): Promise<TopicInfo[]> {
+    const targetInfo = await this.#openShiftTopicTarget(namespace, name, context);
+    const listResult = await this.#execRosBash(targetInfo.target, targetInfo.distro, 'ros2 topic list -t');
+    if (listResult.exitCode !== 0 || !listResult.stdout.trim()) return [];
     return parseRosTopicListTypes(listResult.stdout);
   }
 
@@ -2170,6 +2184,17 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return { topicName: safeTopic, type, publishers, subscribers };
   }
 
+  async getRosTopicDetailInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    context?: string,
+  ): Promise<TopicDetailInfo> {
+    const safeTopic = assertRosTopicName(topicName);
+    const targetInfo = await this.#openShiftTopicTarget(namespace, name, context);
+    return this.#topicDetailFor(targetInfo.target, targetInfo.distro, safeTopic);
+  }
+
   async getTopicTopology(containerId: string): Promise<TopicGraphTopology> {
     const { id, image } = await this.#resolveSimulationContainer(containerId);
     const distro = PhysicalAiApiImpl.#distroFromImage(image);
@@ -2180,6 +2205,64 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       topics,
       nodes,
       capturedAt: new Date().toISOString(),
+    };
+  }
+
+  async getTopicTopologyInOpenShift(namespace: string, name: string, context?: string): Promise<TopicGraphTopology> {
+    const targetInfo = await this.#openShiftTopicTarget(namespace, name, context);
+    const topics = await this.listRosTopicSummariesInOpenShift(namespace, name, context);
+    const nodes = await this.#getTopicGraphNodes(
+      targetInfo.target,
+      targetInfo.distro,
+      `openshift:${targetInfo.target.namespace}/${targetInfo.target.pod}`,
+    );
+    return { topics, nodes, capturedAt: new Date().toISOString() };
+  }
+
+  async #topicDetailFor(target: ExecTarget, distro: SupportedRosDistro, safeTopic: string): Promise<TopicDetailInfo> {
+    const result = await this.#execRosBash(target, distro, 'ros2 topic info -v "$1"', [safeTopic]);
+    let type = 'unknown';
+    const publishers: TopicNodeInfo[] = [];
+    const subscribers: TopicNodeInfo[] = [];
+
+    if (result.exitCode === 0 && result.stdout) {
+      const typeMatch = result.stdout.match(/Type:\s*(.+)/);
+      if (typeMatch) type = typeMatch[1].trim();
+
+      const nodePattern = /Node name:\s*(.+)\s*\n\s*Node namespace:\s*(.+)/g;
+      const pubSection = result.stdout.match(/Publisher count:[\s\S]*?(?=Subscription count:|$)/);
+      if (pubSection) {
+        let match;
+        while ((match = nodePattern.exec(pubSection[0]))) {
+          publishers.push({ nodeName: match[1].trim(), nodeNamespace: match[2].trim() });
+        }
+      }
+
+      const subSection = result.stdout.match(/Subscription count:[\s\S]*/);
+      if (subSection) {
+        const subPattern = /Node name:\s*(.+)\s*\n\s*Node namespace:\s*(.+)/g;
+        let match;
+        while ((match = subPattern.exec(subSection[0]))) {
+          subscribers.push({ nodeName: match[1].trim(), nodeNamespace: match[2].trim() });
+        }
+      }
+    }
+
+    return { topicName: safeTopic, type, publishers, subscribers };
+  }
+
+  async #openShiftTopicTarget(
+    namespace: string,
+    name: string,
+    context?: string,
+  ): Promise<{ target: Extract<ExecTarget, { kind: 'oc' }>; distro: SupportedRosDistro }> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const image = await this.#openShiftDeploymentImage(ns, safeName, context);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    return {
+      target: { kind: 'oc', pod, namespace: ns, context },
+      distro: PhysicalAiApiImpl.#distroFromImage(image),
     };
   }
 
@@ -2266,6 +2349,58 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return metrics;
   }
 
+  async getTopicTelemetryInOpenShift(
+    namespace: string,
+    name: string,
+    topicNames?: string[],
+    context?: string,
+  ): Promise<TopicTelemetry[]> {
+    const targetInfo = await this.#openShiftTopicTarget(namespace, name, context);
+    const safeTopics = (topicNames ?? []).map(topicName => assertRosTopicName(topicName));
+    if (safeTopics.length > ROS_TOPIC_TELEMETRY_MAX_TOPICS) {
+      throw new Error(`Topic telemetry supports at most ${ROS_TOPIC_TELEMETRY_MAX_TOPICS} topics per request.`);
+    }
+    if (safeTopics.length === 0) return [];
+
+    const metrics = new Array<TopicTelemetry>(safeTopics.length);
+    let nextIndex = 0;
+    const worker = async (): Promise<void> => {
+      while (nextIndex < safeTopics.length) {
+        const index = nextIndex++;
+        const topicName = safeTopics[index];
+        try {
+          const result = await this.#execRosBash(targetInfo.target, targetInfo.distro, ROS_TOPIC_TELEMETRY_SCRIPT, [
+            String(ROS_TOPIC_TELEMETRY_SAMPLE_SECONDS),
+            topicName,
+          ]);
+          const parsed = parseTopicTelemetryOutput(result.stdout, result.stderr);
+          const capturedAt = new Date().toISOString();
+          if (result.exitCode !== 0 && parsed.status !== 'active' && parsed.status !== 'unavailable') {
+            metrics[index] = {
+              topicName,
+              status: 'unavailable',
+              capturedAt,
+              error: result.stderr.trim().slice(0, 240) || `Telemetry command exited with code ${result.exitCode}.`,
+            };
+          } else {
+            metrics[index] = { topicName, capturedAt, ...parsed };
+          }
+        } catch (error) {
+          metrics[index] = {
+            topicName,
+            status: 'unavailable',
+            capturedAt: new Date().toISOString(),
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(ROS_TOPIC_TELEMETRY_CONCURRENCY, safeTopics.length) }, () => worker()),
+    );
+    return metrics;
+  }
+
   async peekRosTopic(containerId: string, topicName: string): Promise<TopicPeekResult> {
     const { id } = await this.#resolveSimulationContainer(containerId);
     const safeTopic = assertRosTopicName(topicName);
@@ -2324,6 +2459,65 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       };
     }
 
+    return {
+      topicName: safeTopic,
+      message: '',
+      timedOut: false,
+      capturedAt,
+      error: stderr || `Failed to peek ${safeTopic} (exit ${result.exitCode})`,
+    };
+  }
+
+  async peekRosTopicInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    context?: string,
+  ): Promise<TopicPeekResult> {
+    const safeTopic = assertRosTopicName(topicName);
+    const targetInfo = await this.#openShiftTopicTarget(namespace, name, context);
+    const capturedAt = new Date().toISOString();
+    let peekTimeoutSec: number;
+    try {
+      peekTimeoutSec = await this.getTopicPeekTimeoutSeconds();
+    } catch (e) {
+      return {
+        topicName: safeTopic,
+        message: '',
+        timedOut: false,
+        capturedAt,
+        error: e instanceof Error ? e.message : String(e),
+      };
+    }
+    const result = await this.#execRosBash(
+      targetInfo.target,
+      targetInfo.distro,
+      'timeout "$1" ros2 topic echo --once --qos-reliability best_effort --qos-durability volatile "$2"',
+      [String(peekTimeoutSec), safeTopic],
+    );
+    const stdout = (result.stdout ?? '').trim();
+    const stderr = (result.stderr ?? '').trim();
+    const timedOut = result.exitCode === 124 || /timeout/i.test(stderr) || (result.exitCode !== 0 && !stdout);
+    if (stdout) {
+      const cleaned = cleanEchoOutput(stdout);
+      return {
+        topicName: safeTopic,
+        message: cleaned.message,
+        timedOut: false,
+        capturedAt,
+        messageStamp: cleaned.messageStamp,
+        truncated: cleaned.truncated || undefined,
+      };
+    }
+    if (timedOut) {
+      return {
+        topicName: safeTopic,
+        message: '',
+        timedOut: true,
+        capturedAt,
+        error: `No message on ${safeTopic} within ${peekTimeoutSec}s. The topic may be idle or publishing infrequently — try one with active publishers.`,
+      };
+    }
     return {
       topicName: safeTopic,
       message: '',
@@ -2393,6 +2587,65 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     }
   }
 
+  async publishRosTopicInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    payload: string,
+    confirmed: boolean,
+    context?: string,
+  ): Promise<TopicPublishResult> {
+    const safeTopic = assertRosTopicName(topicName);
+    const safePayload = assertRosTopicPublishPayload(payload);
+    assertRosTopicPublishConfirmed(confirmed);
+    const targetInfo = await this.#openShiftTopicTarget(namespace, name, context);
+    const key = `openshift:${targetInfo.target.namespace}/${name}`;
+    if (this.topicPublishInFlight.has(key)) {
+      throw new Error('A topic publish is already running for this simulation. Wait for it to finish.');
+    }
+    const lastPublishedAt = this.topicPublishLastAt.get(key) ?? 0;
+    const remainingMs = ROS_TOPIC_PUBLISH_MIN_INTERVAL_MS - (Date.now() - lastPublishedAt);
+    if (this.topicPublishLastAt.has(key) && remainingMs > 0) {
+      throw new Error(`Topic publishing is rate-limited. Try again in ${(remainingMs / 1000).toFixed(1)}s.`);
+    }
+
+    this.topicPublishInFlight.add(key);
+    this.topicPublishLastAt.set(key, Date.now());
+    try {
+      const typeResult = await this.#execRosBash(
+        targetInfo.target,
+        targetInfo.distro,
+        'timeout -k 1 "$1" ros2 topic info -v "$2"',
+        [String(ROS_TOPIC_PUBLISH_INFO_TIMEOUT_SECONDS), safeTopic],
+      );
+      if (typeResult.exitCode !== 0) {
+        const reason = typeResult.exitCode === 124 || typeResult.exitCode === 137 ? 'timed out' : 'failed';
+        const output = [typeResult.stderr.trim(), typeResult.stdout.trim()].find(Boolean);
+        const detail = output ? `: ${output.slice(0, 300)}` : '.';
+        throw new Error(`Resolving the message type for ${safeTopic} ${reason}${detail}`);
+      }
+      const messageType = assertRosMessageType(typeResult.stdout.match(/^Type:\s*(\S+)/m)?.[1] ?? '');
+      if (messageType.split('/')[1] !== 'msg') {
+        throw new Error(`Publishing requires a ROS message type; ${messageType} is not a message type.`);
+      }
+      const result = await this.#execRosBash(
+        targetInfo.target,
+        targetInfo.distro,
+        'timeout -k 1 "$1" ros2 topic pub --once --wait-matching-subscriptions 1 "$2" "$3" "$4"',
+        [String(ROS_TOPIC_PUBLISH_TIMEOUT_SECONDS), safeTopic, messageType, safePayload],
+      );
+      if (result.exitCode !== 0) {
+        const output = [result.stderr.trim(), result.stdout.trim()].find(Boolean);
+        const reason = result.exitCode === 124 || result.exitCode === 137 ? 'timed out' : 'failed';
+        const detail = output ? `: ${output.slice(0, 500)}` : '.';
+        throw new Error(`Publishing to ${safeTopic} ${reason}${detail}`);
+      }
+      return { topicName: safeTopic, messageType, publishedAt: new Date().toISOString() };
+    } finally {
+      this.topicPublishInFlight.delete(key);
+    }
+  }
+
   async getRosMessageSchema(containerId: string, messageType: string): Promise<TopicSchemaResult> {
     const { id } = await this.#resolveSimulationContainer(containerId);
     const safeType = assertRosMessageType(messageType);
@@ -2407,6 +2660,27 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       return { type: safeType, schema: stdout };
     }
 
+    return {
+      type: safeType,
+      schema: '',
+      error: stderr || `Failed to load schema for ${safeType} (exit ${result.exitCode})`,
+    };
+  }
+
+  async getRosMessageSchemaInOpenShift(
+    namespace: string,
+    name: string,
+    messageType: string,
+    context?: string,
+  ): Promise<TopicSchemaResult> {
+    const safeType = assertRosMessageType(messageType);
+    const targetInfo = await this.#openShiftTopicTarget(namespace, name, context);
+    const result = await this.#execRosBash(targetInfo.target, targetInfo.distro, 'ros2 interface show "$1"', [
+      safeType,
+    ]);
+    const stdout = (result.stdout ?? '').trim();
+    const stderr = (result.stderr ?? '').trim();
+    if (result.exitCode === 0 && stdout) return { type: safeType, schema: stdout };
     return {
       type: safeType,
       schema: '',
@@ -2489,6 +2763,114 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       await mkdir(entry.state.outputPath, { recursive: true });
       await extensionApi.process.exec('podman', ['cp', `${id}:${entry.tempPath}/bag/.`, entry.state.outputPath]);
       await this.#execAttached({ kind: 'podman', id }, ['rm', '-rf', entry.tempPath]);
+      entry.state.status = 'complete';
+      entry.state.finishedAt = Date.now();
+    } catch (error) {
+      entry.state.status = 'failed';
+      entry.state.finishedAt = Date.now();
+      entry.state.error = error instanceof Error ? error.message : String(error);
+    }
+    return entry.state;
+  }
+
+  async startRosbagRecordingInOpenShift(
+    namespace: string,
+    name: string,
+    topicNames: string[],
+    outputPath: string,
+    context?: string,
+  ): Promise<RosbagRecording> {
+    if (!Array.isArray(topicNames) || topicNames.length === 0 || topicNames.length > 100) {
+      throw new Error('Select between 1 and 100 topics to record.');
+    }
+    if (typeof outputPath !== 'string' || !pathIsAbsolute(outputPath) || outputPath === '/') {
+      throw new Error('Output path must be an absolute host directory, not the filesystem root.');
+    }
+    const safeTopics = topicNames.map(assertRosTopicName);
+    const targetInfo = await this.#openShiftTopicTarget(namespace, name, context);
+    const key = `openshift:${targetInfo.target.namespace}/${name}`;
+    const current = this.rosbagRecordings.get(key);
+    if (current && (current.state.status === 'recording' || current.state.status === 'stopping')) {
+      throw new Error('A rosbag recording is already active for this simulation.');
+    }
+
+    const tempPath = `/tmp/pai-rosbag-${targetInfo.target.namespace}-${name}-${Date.now()}`;
+    const pidFile = `${tempPath}/record.pid`;
+    const state: RosbagRecording = {
+      containerId: key,
+      topics: safeTopics,
+      outputPath,
+      status: 'recording',
+      startedAt: Date.now(),
+    };
+    const result = await this.#execRosBash(
+      targetInfo.target,
+      targetInfo.distro,
+      'mkdir -p "$1"; (ros2 bag record -o "$1/bag" "${@:2}" >"$1/record.log" 2>&1) & echo $! >"$1/record.pid"',
+      [tempPath, ...safeTopics],
+    );
+    if (result.exitCode !== 0) throw new Error(result.stderr.trim() || 'Failed to start rosbag recording.');
+    this.rosbagRecordings.set(key, { state, tempPath, pidFile });
+    return state;
+  }
+
+  async getRosbagRecordingInOpenShift(
+    namespace: string,
+    name: string,
+    context?: string,
+  ): Promise<RosbagRecording | undefined> {
+    const key = `openshift:${assertNamespace(namespace)}/${assertK8sName(name, 'name')}`;
+    const entry = this.rosbagRecordings.get(key);
+    if (entry?.state.status !== 'recording') return entry?.state;
+    const targetInfo = await this.#openShiftTopicTarget(namespace, name, context);
+    const result = await this.#execAttached(targetInfo.target, [
+      'bash',
+      '-c',
+      'if [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null; then exit 0; fi; exit 1',
+      '_',
+      entry.pidFile,
+    ]);
+    if (result.exitCode !== 0) {
+      entry.state.status = 'failed';
+      entry.state.finishedAt = Date.now();
+      entry.state.error = 'The rosbag recorder exited before the recording was stopped.';
+    }
+    return entry.state;
+  }
+
+  async stopRosbagRecordingInOpenShift(
+    namespace: string,
+    name: string,
+    context?: string,
+  ): Promise<RosbagRecording | undefined> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const key = `openshift:${ns}/${safeName}`;
+    const entry = this.rosbagRecordings.get(key);
+    if (entry?.state.status !== 'recording') return entry?.state;
+    entry.state.status = 'stopping';
+    try {
+      const targetInfo = await this.#openShiftTopicTarget(ns, safeName, context);
+      const stopResult = await this.#execAttached(targetInfo.target, [
+        'bash',
+        '-c',
+        'if [ -f "$1" ]; then pid=$(cat "$1"); kill -INT "$pid" 2>/dev/null || true; for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done; if kill -0 "$pid" 2>/dev/null; then exit 1; fi; fi',
+        '_',
+        entry.pidFile,
+      ]);
+      if (stopResult.exitCode !== 0)
+        throw new Error(stopResult.stderr.trim() || 'The rosbag recorder did not stop cleanly.');
+      await mkdir(entry.state.outputPath, { recursive: true });
+      const contextArgs = context ? ['--context', context] : [];
+      await extensionApi.process.exec('oc', [
+        ...contextArgs,
+        'cp',
+        '-n',
+        ns,
+        `${targetInfo.target.pod}:${entry.tempPath}/bag/.`,
+        entry.state.outputPath,
+      ]);
+      await this.#execAttached(targetInfo.target, ['rm', '-rf', entry.tempPath]);
       entry.state.status = 'complete';
       entry.state.finishedAt = Date.now();
     } catch (error) {

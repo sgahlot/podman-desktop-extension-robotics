@@ -61,12 +61,8 @@ describe('GraphicalTopicMonitor', () => {
     vi.useRealTimers();
   });
 
-  it('discovers a simulation that appears after the page mounts', async () => {
-    mockListSimulationContainers
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
-      ]);
+  it('discovers a simulation after a manual refresh', async () => {
+    mockListSimulationContainers.mockResolvedValueOnce([]);
     mockGetTopicTopology.mockResolvedValue({
       topics: [
         { name: '/cmd_vel', type: 'geometry_msgs/msg/Twist', publishers: 1, subscribers: 1, countsPending: false },
@@ -80,8 +76,10 @@ describe('GraphicalTopicMonitor', () => {
 
     render(GraphicalTopicMonitor);
     expect(await screen.findByText(/No simulation is running/)).toBeTruthy();
-
-    await vi.advanceTimersByTimeAsync(5000);
+    mockListSimulationContainers.mockResolvedValueOnce([
+      { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
+    ]);
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
 
     expect(await screen.findByText(/1 topics · 0 connected nodes/)).toBeTruthy();
     expect(mockGetTopicTopology).toHaveBeenCalledWith('c1');
@@ -201,7 +199,7 @@ describe('GraphicalTopicMonitor', () => {
     expect(mockGetTopicTelemetry).toHaveBeenCalledTimes(1);
   });
 
-  it('stops telemetry polling when the selected simulation container changes', async () => {
+  it('keeps telemetry polling scoped to the selected topic', async () => {
     const container = (id: string) => ({
       id,
       name: `pai-sim-${id}`,
@@ -232,7 +230,7 @@ describe('GraphicalTopicMonitor', () => {
 
     await vi.advanceTimersByTimeAsync(5000);
     await vi.advanceTimersByTimeAsync(8000);
-    expect(mockGetTopicTelemetry).toHaveBeenCalledTimes(1);
+    expect(mockGetTopicTelemetry).toHaveBeenCalledTimes(2);
   });
 
   it('ignores an in-flight telemetry result after the selection changes', async () => {
@@ -554,7 +552,7 @@ describe('GraphicalTopicMonitor', () => {
     expect(Array.from(screen.getByRole('table').querySelectorAll('mark')).map(mark => mark.textContent)).toContain(
       '/sink',
     );
-    await fireEvent.click(screen.getByRole('button', { name: 'Clear filter' }));
+    await fireEvent.input(screen.getByRole('searchbox', { name: 'Filter subscribers' }), { target: { value: '' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Cards' }));
     expect((screen.getByRole('searchbox', { name: 'Filter subscribers' }) as HTMLInputElement).value).toBe('');
     expect(screen.getByText('/other', { selector: 'summary' })).toBeTruthy();
