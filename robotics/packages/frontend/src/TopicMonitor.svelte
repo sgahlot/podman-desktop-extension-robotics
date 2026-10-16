@@ -33,7 +33,7 @@ export let filterQuery = '';
 export let publisherFilterQuery = '';
 export let subscriberFilterQuery = '';
 
-const dispatch = createEventDispatcher<{ filterchange: void }>();
+const dispatch = createEventDispatcher<{ filterchange: void; inspecttopic: { topicName: string } }>();
 
 let containers: TopicMonitorTargetOption[] = sharedContainers ?? [];
 let selectedContainerId = sharedContainerId;
@@ -645,6 +645,12 @@ onDestroy(() => {
                             <div
                               class="flex flex-col gap-2 pt-2 border-t border-[var(--pd-content-card-border)] min-w-0">
                               <div class="flex flex-row items-center gap-2 flex-wrap">
+                                <button
+                                  type="button"
+                                  class="pai-btn text-xs"
+                                  on:click|stopPropagation={() => dispatch('inspecttopic', { topicName: topic.name })}>
+                                  Inspect in Graph
+                                </button>
                                 <button
                                   type="button"
                                   class="pai-btn pai-btn-primary text-xs"

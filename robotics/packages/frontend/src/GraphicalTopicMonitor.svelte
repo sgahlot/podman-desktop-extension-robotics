@@ -99,6 +99,7 @@ const GRAPH_MIN_HEIGHT = 160;
 const MAX_CONNECTED_NODES = 5;
 const TOPIC_TELEMETRY_REFRESH_MS = 8000;
 const TOPIC_TELEMETRY_SAMPLE_SECONDS = 3;
+const PUBLISH_FLOW_DURATION_MS = 1400;
 
 type ViewMode = 'list' | 'graph' | 'cards';
 type FilterKind = 'topic' | 'publisher' | 'subscriber';
@@ -170,6 +171,9 @@ let publishResult: TopicPublishResult | null = null;
 let publishGeneration = 0;
 let publishPulseTopic = '';
 let publishPulseTimer: ReturnType<typeof setTimeout> | null = null;
+let publishFlowTopic = '';
+let publishFlowTimer: ReturnType<typeof setTimeout> | null = null;
+let prefersReducedMotion = false;
 let topicTelemetry: TopicTelemetry | null = null;
 let topicTelemetryLoading = false;
 let topicTelemetryError = '';
@@ -194,6 +198,22 @@ $: runningContainers = containers.filter(container => container.ready);
 $: if (viewMode === 'list') listVisited = true;
 $: topics = topology?.topics ?? [];
 $: allNodes = topology?.nodes ?? [];
+$: selectedTopicNodes =
+  selectedTopic && topicDetail?.topicName === selectedTopic
+    ? [
+        ...topicDetail.publishers.map(node => ({ ...node, publishingTopics: [selectedTopic], subscribingTopics: [] })),
+        ...topicDetail.subscribers.map(node => ({ ...node, publishingTopics: [], subscribingTopics: [selectedTopic] })),
+      ].reduce<NodeDetail[]>(
+        (nodes, node) => {
+          const existing = nodes.find(candidate => nodePath(candidate) === nodePath(node));
+          if (!existing) return [...nodes, node];
+          existing.publishingTopics = [...new Set([...existing.publishingTopics, ...node.publishingTopics])];
+          existing.subscribingTopics = [...new Set([...existing.subscribingTopics, ...node.subscribingTopics])];
+          return nodes;
+        },
+        [...allNodes],
+      )
+    : allNodes;
 $: directTopicMatches = topicFilterQuery.trim() ? filterTopicsByName(topics, topicFilterQuery) : [];
 $: publisherFilter = publisherFilterQuery.trim().toLowerCase();
 $: subscriberFilter = subscriberFilterQuery.trim().toLowerCase();
@@ -241,13 +261,25 @@ $: graphTopicNames = new Set(graphTopics.map(topic => topic.name));
 $: publisherNodes = focusActive
   ? selectedNode && !selectedTopic && selectedNodeRole === 'publisher'
     ? [selectedNode]
-    : allNodes.filter(node => node.publishingTopics.some(topic => graphTopicNames.has(topic)))
+    : selectedTopicNodes.filter(node => node.publishingTopics.some(topic => graphTopicNames.has(topic)))
   : directPublisherMatches;
 $: subscriberNodes = focusActive
   ? selectedNode && !selectedTopic && selectedNodeRole === 'subscriber'
     ? [selectedNode]
-    : allNodes.filter(node => node.subscribingTopics.some(topic => graphTopicNames.has(topic)))
+    : selectedTopicNodes.filter(node => node.subscribingTopics.some(topic => graphTopicNames.has(topic)))
   : directSubscriberMatches;
+$: publishedFlowSubscribers = publishFlowTopic
+  ? topicDetail?.topicName === publishFlowTopic
+    ? topicDetail.subscribers.map(
+        detail =>
+          allNodes.find(node => nodePath(node) === nodePath(detail)) ?? {
+            ...detail,
+            publishingTopics: [],
+            subscribingTopics: [publishFlowTopic],
+          },
+      )
+    : displayedSubscriberNodes.filter(node => node.subscribingTopics.includes(publishFlowTopic))
+  : [];
 $: displayedPublisherNodes =
   focusActive && !expandedPublisherNodes ? publisherNodes.slice(0, MAX_CONNECTED_NODES) : publisherNodes;
 $: displayedSubscriberNodes =
@@ -293,7 +325,7 @@ $: if (selectedTopic && !filteredTopicNames.has(selectedTopic)) {
   clearSelection();
 }
 
-function nodePath(node: NodeDetail): string {
+function nodePath(node: Pick<NodeDetail, 'nodeName' | 'nodeNamespace'>): string {
   return node.nodeNamespace === '/' ? `/${node.nodeName}` : `${node.nodeNamespace}/${node.nodeName}`;
 }
 
@@ -580,6 +612,12 @@ function clearPublishPulse(): void {
   publishPulseTopic = '';
 }
 
+function clearPublishFlow(): void {
+  if (publishFlowTimer) clearTimeout(publishFlowTimer);
+  publishFlowTimer = null;
+  publishFlowTopic = '';
+}
+
 function pulsePublishedTopic(topicName: string): void {
   clearPublishPulse();
   publishPulseTopic = topicName;
@@ -587,6 +625,15 @@ function pulsePublishedTopic(topicName: string): void {
     publishPulseTopic = '';
     publishPulseTimer = null;
   }, 900);
+}
+
+function animatePublishedFlow(topicName: string): void {
+  clearPublishFlow();
+  publishFlowTopic = topicName;
+  publishFlowTimer = setTimeout(() => {
+    publishFlowTopic = '';
+    publishFlowTimer = null;
+  }, PUBLISH_FLOW_DURATION_MS);
 }
 
 function togglePublishEditor(): void {
@@ -628,6 +675,7 @@ async function publishSelectedTopic(): Promise<void> {
     if (requestId === publishGeneration && selectedContainerId === containerId && selectedTopic === topicName) {
       publishResult = result;
       pulsePublishedTopic(topicName);
+      animatePublishedFlow(topicName);
     }
   } catch (e) {
     if (requestId === publishGeneration && selectedContainerId === containerId && selectedTopic === topicName) {
@@ -898,8 +946,15 @@ async function inspectCardNode(topicName: string, path: string, role: 'publisher
   if (liveTelemetryEnabled && selectedTopic) startTopicTelemetry(selectedTopic);
 }
 
+async function inspectListTopic(topicName: string): Promise<void> {
+  if (selectedTopic !== topicName) await selectTopic(topicName);
+  viewMode = 'graph';
+  if (liveTelemetryEnabled) startTopicTelemetry(topicName);
+}
+
 onMount(() => {
   window.addEventListener('keydown', handleWindowKeydown);
+  prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
   void refresh();
 });
 
@@ -908,6 +963,7 @@ onDestroy(() => {
   if (recordPollTimer) clearInterval(recordPollTimer);
   stopTopicTelemetry();
   clearPublishPulse();
+  clearPublishFlow();
 });
 </script>
 
@@ -963,22 +1019,24 @@ onDestroy(() => {
       <button class="pai-btn text-xs" on:click={openRecorder} disabled={!selectedContainerId}>
         {recorderOpen ? 'Hide recorder' : 'Record rosbag'}
       </button>
-      <label
-        class="live-telemetry-toggle inline-flex cursor-pointer items-center gap-3 text-xs text-[var(--pd-content-text)]"
-        class:enabled={liveTelemetryEnabled}>
-        <input
-          type="checkbox"
-          aria-label="Live telemetry"
-          aria-describedby="liveTelemetryHint"
-          checked={liveTelemetryEnabled}
-          on:change={toggleLiveTelemetry} />
-        <span class="flex flex-col gap-0.5">
-          <span class="font-semibold text-[var(--pai-accent,#7c3aed)]">Live telemetry</span>
-          <span id="liveTelemetryHint" class="text-[10px] pai-text-muted">
-            {liveTelemetryEnabled ? 'Sampling selected topic' : 'Off by default · sample selected topic'}
+      {#if viewMode === 'graph'}
+        <label
+          class="live-telemetry-toggle inline-flex cursor-pointer items-center gap-3 text-xs text-[var(--pd-content-text)]"
+          class:enabled={liveTelemetryEnabled}>
+          <input
+            type="checkbox"
+            aria-label="Live telemetry"
+            aria-describedby="liveTelemetryHint"
+            checked={liveTelemetryEnabled}
+            on:change={toggleLiveTelemetry} />
+          <span class="flex flex-col gap-0.5">
+            <span class="font-semibold text-[var(--pai-accent,#7c3aed)]">Live telemetry</span>
+            <span id="liveTelemetryHint" class="text-[10px] pai-text-muted">
+              {liveTelemetryEnabled ? 'Sampling selected topic' : 'Off by default · sample selected topic'}
+            </span>
           </span>
-        </span>
-      </label>
+        </label>
+      {/if}
       <span class="text-xs uppercase tracking-wide pai-text-muted">Live</span>
     </div>
   </div>
@@ -1140,7 +1198,8 @@ onDestroy(() => {
         bind:filterQuery={topicFilterQuery}
         bind:publisherFilterQuery={publisherFilterQuery}
         bind:subscriberFilterQuery={subscriberFilterQuery}
-        on:filterchange={clearSelection} />
+        on:filterchange={clearSelection}
+        on:inspecttopic={event => void inspectListTopic(event.detail.topicName)} />
     </div>
   {/if}
   {#if viewMode === 'list'}
@@ -1358,6 +1417,26 @@ onDestroy(() => {
                         marker-end="url(#topicGraphArrow)"></path>
                     {/if}
                   {/each}
+                {/each}
+              {/if}
+
+              {#if publishFlowTopic && publishedFlowSubscribers.length > 0}
+                {#each publishedFlowSubscribers as node, nodeIndex (nodePath(node))}
+                  {@const flowPath = `M590 ${topicY(publishFlowTopic, graphTopics, graphLayout)} H620 V${nodeY(node, nodeIndex, publishedFlowSubscribers.length, graphLayout)} H730`}
+                  {#if prefersReducedMotion}
+                    <circle
+                      cx="730"
+                      cy={nodeY(node, nodeIndex, publishedFlowSubscribers.length, graphLayout)}
+                      r="5"
+                      fill="var(--pai-accent, #7c3aed)"
+                      data-testid="topic-publish-flow"
+                      aria-hidden="true"></circle>
+                  {:else}
+                    <circle r="5" fill="var(--pai-accent, #7c3aed)" data-testid="topic-publish-flow" aria-hidden="true">
+                      <animateMotion dur={`${PUBLISH_FLOW_DURATION_MS}ms`} path={flowPath} fill="freeze"
+                      ></animateMotion>
+                    </circle>
+                  {/if}
                 {/each}
               {/if}
 
