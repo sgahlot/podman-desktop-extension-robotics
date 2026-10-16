@@ -159,15 +159,42 @@ export abstract class PhysicalAiApi {
   /** Open an external http(s) URL (e.g. an OpenShift Route) in the host browser. */
   abstract openUrlInBrowser(url: string): Promise<void>;
   abstract listRosTopics(containerId: string): Promise<TopicInfo[]>;
+  /** OpenShift counterpart of listRosTopics; targets a managed deployment's running pod. */
+  abstract listRosTopicsInOpenShift(namespace: string, name: string, context?: string): Promise<TopicInfo[]>;
   /** Fast names+types via `ros2 topic list -t` (pub/sub counts pending). */
   abstract listRosTopicSummaries(containerId: string): Promise<TopicInfo[]>;
+  /** OpenShift counterpart of listRosTopicSummaries. */
+  abstract listRosTopicSummariesInOpenShift(namespace: string, name: string, context?: string): Promise<TopicInfo[]>;
   abstract getRosTopicDetail(containerId: string, topicName: string): Promise<TopicDetailInfo>;
+  /** OpenShift counterpart of getRosTopicDetail. */
+  abstract getRosTopicDetailInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    context?: string,
+  ): Promise<TopicDetailInfo>;
   /** Current graph snapshot; node discovery is filled by the graphical monitor backend slice. */
   abstract getTopicTopology(containerId: string): Promise<TopicGraphTopology>;
+  /** OpenShift counterpart of getTopicTopology. */
+  abstract getTopicTopologyInOpenShift(namespace: string, name: string, context?: string): Promise<TopicGraphTopology>;
   /** Bounded local telemetry snapshots for selected topics, including no-sample/unavailable status. */
   abstract getTopicTelemetry(containerId: string, topicNames?: string[]): Promise<TopicTelemetry[]>;
+  /** OpenShift counterpart of getTopicTelemetry. */
+  abstract getTopicTelemetryInOpenShift(
+    namespace: string,
+    name: string,
+    topicNames?: string[],
+    context?: string,
+  ): Promise<TopicTelemetry[]>;
   /** One live message via `ros2 topic echo --once` (bounded wait). */
   abstract peekRosTopic(containerId: string, topicName: string): Promise<TopicPeekResult>;
+  /** OpenShift counterpart of peekRosTopic. */
+  abstract peekRosTopicInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    context?: string,
+  ): Promise<TopicPeekResult>;
   /** Publish one confirmed, size-limited YAML message to a safe local simulation topic. */
   abstract publishRosTopic(
     containerId: string,
@@ -175,8 +202,24 @@ export abstract class PhysicalAiApi {
     payload: string,
     confirmed: boolean,
   ): Promise<TopicPublishResult>;
+  /** OpenShift counterpart of publishRosTopic. */
+  abstract publishRosTopicInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    payload: string,
+    confirmed: boolean,
+    context?: string,
+  ): Promise<TopicPublishResult>;
   /** Message structural definition via `ros2 interface show`. */
   abstract getRosMessageSchema(containerId: string, messageType: string): Promise<TopicSchemaResult>;
+  /** OpenShift counterpart of getRosMessageSchema. */
+  abstract getRosMessageSchemaInOpenShift(
+    namespace: string,
+    name: string,
+    messageType: string,
+    context?: string,
+  ): Promise<TopicSchemaResult>;
   abstract startRosbagRecording(
     containerId: string,
     topicNames: string[],
@@ -184,6 +227,24 @@ export abstract class PhysicalAiApi {
   ): Promise<RosbagRecording>;
   abstract getRosbagRecording(containerId: string): Promise<RosbagRecording | undefined>;
   abstract stopRosbagRecording(containerId: string): Promise<RosbagRecording | undefined>;
+  /** OpenShift counterparts of rosbag recording, copied from the pod to a host directory on stop. */
+  abstract startRosbagRecordingInOpenShift(
+    namespace: string,
+    name: string,
+    topicNames: string[],
+    outputPath: string,
+    context?: string,
+  ): Promise<RosbagRecording>;
+  abstract getRosbagRecordingInOpenShift(
+    namespace: string,
+    name: string,
+    context?: string,
+  ): Promise<RosbagRecording | undefined>;
+  abstract stopRosbagRecordingInOpenShift(
+    namespace: string,
+    name: string,
+    context?: string,
+  ): Promise<RosbagRecording | undefined>;
   /** Copy text via the host clipboard (webview Clipboard API is unavailable). */
   abstract copyToClipboard(text: string): Promise<void>;
   abstract sendNavigationGoal(

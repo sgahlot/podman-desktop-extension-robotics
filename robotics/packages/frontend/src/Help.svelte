@@ -17,7 +17,7 @@ let openshiftDeployCaption =
 let diagnosticsCaption =
   '<strong>Diagnostics:</strong> Local or OpenShift tab → Refresh or List simulations → Refresh Diagnostics → see various diagnostics information.';
 let topicMonitorCaption =
-  '<strong>Topic Monitor:</strong> active ROS2 topics inside a running simulation container → publishers/subscribers, message schema, peek, and selected-topic rosbag recording.';
+  '<strong>Topic Monitor:</strong> choose a Local or OpenShift simulation, then use the shared List/Graph/Cards views, filters, live telemetry, schema/peek, guarded publish, and rosbag recording.';
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">

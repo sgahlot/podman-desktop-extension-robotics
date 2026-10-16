@@ -66,7 +66,6 @@
 <script lang="ts">
 import { onDestroy, onMount } from 'svelte';
 import { router } from 'tinro';
-import type { SimContainerInfo } from '/@shared/src/types/SimulationContainer';
 import type {
   NodeDetail,
   TopicDetailInfo,
@@ -78,7 +77,6 @@ import type {
   TopicTelemetry,
 } from '/@shared/src/types/TopicInfo';
 import type { RosbagRecording } from '/@shared/src/types/RosbagRecording';
-import { physicalAiClient } from './api/client';
 import {
   getRosTopicPublishWarning,
   ROS_TOPIC_PUBLISH_MAX_BYTES,
@@ -89,6 +87,12 @@ import TopicMonitor from './TopicMonitor.svelte';
 import TopicEndpoints from './lib/TopicEndpoints.svelte';
 import { navigationLayout } from './lib/navigationLayout';
 import { filterTopicsByName, groupTopicsByNamespace } from './lib/topicFilter';
+import {
+  createTopicMonitorTarget,
+  type TopicMonitorTargetApi,
+  type TopicMonitorTargetKind,
+  type TopicMonitorTargetOption,
+} from './lib/topicMonitorTarget';
 
 const GRAPH_WIDTH = 1000;
 const GRAPH_MIN_HEIGHT = 160;
@@ -99,8 +103,42 @@ const TOPIC_TELEMETRY_SAMPLE_SECONDS = 3;
 type ViewMode = 'list' | 'graph' | 'cards';
 type FilterKind = 'topic' | 'publisher' | 'subscriber';
 
-let containers: SimContainerInfo[] = [];
+interface TargetViewSnapshot {
+  containers: TopicMonitorTargetOption[];
+  topology: TopicGraphTopology | null;
+  selectedContainerId: string;
+  topicFilterQuery: string;
+  publisherFilterQuery: string;
+  subscriberFilterQuery: string;
+  viewMode: ViewMode;
+  listVisited: boolean;
+  groupByNamespace: boolean;
+  selectedTopic: string;
+  selectedNode: NodeDetail | null;
+  selectedNodeRole: 'publisher' | 'subscriber';
+  expandedPublisherNodes: boolean;
+  expandedSubscriberNodes: boolean;
+  topicDetail: TopicDetailInfo | null;
+  schema: TopicSchemaResult | null;
+  peekResult: TopicPeekResult | null;
+  liveTelemetryEnabled: boolean;
+  recorderOpen: boolean;
+  recordOutputPath: string;
+  recordTopicNames: string[];
+  recording: RosbagRecording | null;
+  lastRetrievedAt: number | null;
+}
+
+let targetKind: TopicMonitorTargetKind = 'local';
+const targetApis = new Map<TopicMonitorTargetKind, TopicMonitorTargetApi>([
+  ['local', createTopicMonitorTarget('local')],
+  ['openshift', createTopicMonitorTarget('openshift')],
+]);
+const targetSnapshots = new Map<TopicMonitorTargetKind, TargetViewSnapshot>();
+let targetApi: TopicMonitorTargetApi = targetApis.get(targetKind)!;
+let containers: TopicMonitorTargetOption[] = [];
 let topology: TopicGraphTopology | null = null;
+let lastRetrievedAt: number | null = null;
 let selectedContainerId = '';
 let topicFilterQuery = '';
 let publisherFilterQuery = '';
@@ -110,7 +148,6 @@ let listVisited = false;
 let groupByNamespace = false;
 let loading = false;
 let error = '';
-let pollTimer: ReturnType<typeof setInterval> | null = null;
 let pollInFlight = false;
 let selectedTopic = '';
 let selectedNode: NodeDetail | null = null;
@@ -153,7 +190,7 @@ let filterReturn: { kind: FilterKind; value: string } | null = null;
 let graphScrollTop = 0;
 let graphViewportHeight = 0;
 
-$: runningContainers = containers.filter(container => container.state === 'running');
+$: runningContainers = containers.filter(container => container.ready);
 $: if (viewMode === 'list') listVisited = true;
 $: topics = topology?.topics ?? [];
 $: allNodes = topology?.nodes ?? [];
@@ -222,8 +259,10 @@ $: graphNodes = [
 ];
 $: graphRowCount = Math.max(
   graphTopics.length,
-  displayedPublisherNodes.length + (collapsedPublisherCount > 0 ? 1 : 0),
-  displayedSubscriberNodes.length + (collapsedSubscriberCount > 0 ? 1 : 0),
+  displayedPublisherNodes.length +
+    (collapsedPublisherCount > 0 || (expandedPublisherNodes && publisherNodes.length > MAX_CONNECTED_NODES) ? 1 : 0),
+  displayedSubscriberNodes.length +
+    (collapsedSubscriberCount > 0 || (expandedSubscriberNodes && subscriberNodes.length > MAX_CONNECTED_NODES) ? 1 : 0),
 );
 $: cardHeight = Math.max(
   44,
@@ -387,7 +426,8 @@ async function refreshTopology() {
   if (!selectedContainerId || pollInFlight) return;
   pollInFlight = true;
   try {
-    topology = await physicalAiClient.getTopicTopology(selectedContainerId);
+    topology = await targetApi.getTopicTopology(selectedContainerId);
+    lastRetrievedAt = Date.now();
     error = '';
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
@@ -398,24 +438,112 @@ async function refreshTopology() {
 
 async function refresh() {
   loading = true;
-  await pollContainers();
+  await pollContainers(true);
   loading = false;
 }
 
-async function pollContainers() {
+function saveTargetSnapshot(): void {
+  targetSnapshots.set(targetKind, {
+    containers,
+    topology,
+    selectedContainerId,
+    topicFilterQuery,
+    publisherFilterQuery,
+    subscriberFilterQuery,
+    viewMode,
+    listVisited,
+    groupByNamespace,
+    selectedTopic,
+    selectedNode,
+    selectedNodeRole,
+    expandedPublisherNodes,
+    expandedSubscriberNodes,
+    topicDetail,
+    schema,
+    peekResult,
+    liveTelemetryEnabled,
+    recorderOpen,
+    recordOutputPath,
+    recordTopicNames,
+    recording,
+    lastRetrievedAt,
+  });
+}
+
+function restoreTargetSnapshot(snapshot: TargetViewSnapshot): void {
+  containers = snapshot.containers;
+  topology = snapshot.topology;
+  selectedContainerId = snapshot.selectedContainerId;
+  topicFilterQuery = snapshot.topicFilterQuery;
+  publisherFilterQuery = snapshot.publisherFilterQuery;
+  subscriberFilterQuery = snapshot.subscriberFilterQuery;
+  viewMode = snapshot.viewMode;
+  listVisited = snapshot.listVisited;
+  groupByNamespace = snapshot.groupByNamespace;
+  selectedTopic = snapshot.selectedTopic;
+  selectedNode = snapshot.selectedNode;
+  selectedNodeRole = snapshot.selectedNodeRole;
+  expandedPublisherNodes = snapshot.expandedPublisherNodes;
+  expandedSubscriberNodes = snapshot.expandedSubscriberNodes;
+  topicDetail = snapshot.topicDetail;
+  schema = snapshot.schema;
+  peekResult = snapshot.peekResult;
+  liveTelemetryEnabled = snapshot.liveTelemetryEnabled;
+  recorderOpen = snapshot.recorderOpen;
+  recordOutputPath = snapshot.recordOutputPath;
+  recordTopicNames = snapshot.recordTopicNames;
+  recording = snapshot.recording;
+  lastRetrievedAt = snapshot.lastRetrievedAt;
+  error = '';
+  loading = false;
+}
+
+function switchTarget(kind: TopicMonitorTargetKind): void {
+  if (kind === targetKind) return;
+  saveTargetSnapshot();
+  stopTopicTelemetry();
+  if (recordPollTimer) clearInterval(recordPollTimer);
+  recordPollTimer = null;
+  targetKind = kind;
+  targetApi = targetApis.get(kind)!;
+  const snapshot = targetSnapshots.get(kind);
+  if (snapshot) {
+    restoreTargetSnapshot(snapshot);
+    if (liveTelemetryEnabled && selectedTopic && viewMode === 'graph') startTopicTelemetry(selectedTopic);
+    if (recording?.status === 'recording') {
+      recordPollTimer = setInterval(() => {
+        recordNow = Date.now();
+        void pollRecording();
+      }, 2000);
+    }
+    return;
+  }
+  containers = [];
+  selectedContainerId = '';
+  topology = null;
+  clearSelection();
+  void refresh();
+}
+
+function formatRetrievedAt(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+async function pollContainers(forceTopology = false) {
   try {
-    containers = await physicalAiClient.listSimulationContainers();
-    const nextRunningContainers = containers.filter(container => container.state === 'running');
+    containers = await targetApi.listTargets();
+    const nextRunningContainers = containers.filter(container => container.ready);
     const nextContainerId =
       nextRunningContainers.find(container => container.id === selectedContainerId)?.id ??
       nextRunningContainers[0]?.id ??
       '';
-    if (nextContainerId !== selectedContainerId) {
+    const selectionChanged = nextContainerId !== selectedContainerId;
+    if (selectionChanged) {
       selectedContainerId = nextContainerId;
       topology = null;
       clearSelection();
     }
-    await refreshTopology();
+    if (forceTopology || selectionChanged || !topology) await refreshTopology();
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
@@ -496,7 +624,7 @@ async function publishSelectedTopic(): Promise<void> {
   publishError = '';
   publishResult = null;
   try {
-    const result = await physicalAiClient.publishRosTopic(containerId, topicName, publishPayload, confirmed);
+    const result = await targetApi.publishRosTopic(containerId, topicName, publishPayload, confirmed);
     if (requestId === publishGeneration && selectedContainerId === containerId && selectedTopic === topicName) {
       publishResult = result;
       pulsePublishedTopic(topicName);
@@ -530,7 +658,7 @@ async function requestTopicTelemetry(generation: number, containerId: string, to
   topicTelemetryLoading = true;
   topicTelemetryError = '';
   try {
-    const [result] = await physicalAiClient.getTopicTelemetry(containerId, [topicName]);
+    const [result] = await targetApi.getTopicTelemetry(containerId, [topicName]);
     if (generation !== topicTelemetryGeneration || selectedContainerId !== containerId || selectedTopic !== topicName) {
       return;
     }
@@ -612,11 +740,7 @@ async function startRecording(): Promise<void> {
   recordLoading = true;
   recordError = '';
   try {
-    recording = await physicalAiClient.startRosbagRecording(
-      selectedContainerId,
-      recordTopicNames,
-      recordOutputPath.trim(),
-    );
+    recording = await targetApi.startRosbagRecording(selectedContainerId, recordTopicNames, recordOutputPath.trim());
     recordNow = Date.now();
     recordPollTimer = setInterval(() => {
       recordNow = Date.now();
@@ -632,7 +756,7 @@ async function startRecording(): Promise<void> {
 async function pollRecording(): Promise<void> {
   if (!selectedContainerId || !recording || recording.status !== 'recording') return;
   try {
-    recording = (await physicalAiClient.getRosbagRecording(selectedContainerId)) ?? recording;
+    recording = (await targetApi.getRosbagRecording(selectedContainerId)) ?? recording;
     if (recording.status !== 'recording') {
       if (recordPollTimer) clearInterval(recordPollTimer);
       recordPollTimer = null;
@@ -648,7 +772,7 @@ async function stopRecording(): Promise<void> {
   recordLoading = true;
   recordError = '';
   try {
-    recording = (await physicalAiClient.stopRosbagRecording(selectedContainerId)) ?? recording;
+    recording = (await targetApi.stopRosbagRecording(selectedContainerId)) ?? recording;
     if (recordPollTimer) clearInterval(recordPollTimer);
     recordPollTimer = null;
     if (recording.error) recordError = recording.error;
@@ -697,7 +821,7 @@ async function selectTopic(topicName: string) {
   startTopicTelemetry(topicName);
   inspectorLoading = true;
   try {
-    topicDetail = await physicalAiClient.getRosTopicDetail(selectedContainerId, topicName);
+    topicDetail = await targetApi.getRosTopicDetail(selectedContainerId, topicName);
   } catch (e) {
     inspectorError = e instanceof Error ? e.message : String(e);
   } finally {
@@ -734,7 +858,7 @@ async function loadSchema() {
   if (!selectedTopic || !topicDetail || schemaLoading) return;
   schemaLoading = true;
   try {
-    schema = await physicalAiClient.getRosMessageSchema(selectedContainerId, topicDetail.type);
+    schema = await targetApi.getRosMessageSchema(selectedContainerId, topicDetail.type);
   } catch (e) {
     inspectorError = e instanceof Error ? e.message : String(e);
   } finally {
@@ -748,7 +872,7 @@ async function peekTopic() {
   inspectorError = '';
   peekResult = null;
   try {
-    const result = await physicalAiClient.peekRosTopic(selectedContainerId, selectedTopic);
+    const result = await targetApi.peekRosTopic(selectedContainerId, selectedTopic);
     if (result.message) peekResult = result;
     else
       inspectorError =
@@ -777,12 +901,10 @@ async function inspectCardNode(topicName: string, path: string, role: 'publisher
 onMount(() => {
   window.addEventListener('keydown', handleWindowKeydown);
   void refresh();
-  pollTimer = setInterval(() => void pollContainers(), 5000);
 });
 
 onDestroy(() => {
   window.removeEventListener('keydown', handleWindowKeydown);
-  if (pollTimer) clearInterval(pollTimer);
   if (recordPollTimer) clearInterval(recordPollTimer);
   stopTopicTelemetry();
   clearPublishPulse();
@@ -795,6 +917,22 @@ onDestroy(() => {
   {/if}
   <div class="flex flex-row items-center justify-between gap-3 flex-wrap">
     <h1 class="text-3xl text-[var(--pd-content-header)]">Topic Monitor</h1>
+  </div>
+  <div class="flex flex-row gap-1 border-b border-[var(--pd-content-card-border)]" role="tablist">
+    <button
+      role="tab"
+      aria-selected={targetKind === 'local'}
+      on:click={() => switchTarget('local')}
+      class="px-5 py-2 text-sm pai-tab {targetKind === 'local' ? 'pai-tab-active' : ''}">
+      Local
+    </button>
+    <button
+      role="tab"
+      aria-selected={targetKind === 'openshift'}
+      on:click={() => switchTarget('openshift')}
+      class="px-5 py-2 text-sm pai-tab {targetKind === 'openshift' ? 'pai-tab-active' : ''}">
+      OpenShift
+    </button>
   </div>
   {#if $navigationLayout === 'cards'}
     <QuickLinks links={[{ label: 'Simulation', to: '/simulation' }]} />
@@ -930,11 +1068,72 @@ onDestroy(() => {
     </section>
   {/if}
 
+  <div class="flex flex-row items-end gap-3 flex-wrap">
+    <div class="flex flex-col gap-1 min-w-64">
+      <label for="graphContainerSelect" class="text-xs text-[var(--pd-content-text)]">
+        {targetKind === 'openshift' ? 'OpenShift simulation' : 'Simulation container'}
+      </label>
+      <select
+        id="graphContainerSelect"
+        bind:value={selectedContainerId}
+        on:change={() => void refreshTopology()}
+        disabled={!runningContainers.length}
+        class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]">
+        {#each runningContainers as container}
+          <option value={container.id}>{container.label}</option>
+        {/each}
+      </select>
+    </div>
+    <div class="flex flex-col gap-1 min-w-48">
+      <label for="graphPublisherFilter" class="text-xs text-[var(--pd-content-text)]">Filter publishers</label>
+      <input
+        id="graphPublisherFilter"
+        type="search"
+        value={publisherFilterQuery}
+        on:input={event => setFilter('publisher', event)}
+        placeholder="Filter by name"
+        class="pai-topic-filter px-3 py-1.5 text-sm rounded border" />
+    </div>
+    <div class="flex flex-col gap-1 min-w-48">
+      <label for="graphTopicFilter" class="text-xs text-[var(--pd-content-text)]">Filter topics</label>
+      <input
+        id="graphTopicFilter"
+        type="search"
+        value={topicFilterQuery}
+        on:input={event => setFilter('topic', event)}
+        placeholder="Filter by name"
+        class="pai-topic-filter px-3 py-1.5 text-sm rounded border" />
+    </div>
+    <div class="flex flex-col gap-1 min-w-48">
+      <label for="graphSubscriberFilter" class="text-xs text-[var(--pd-content-text)]">Filter subscribers</label>
+      <input
+        id="graphSubscriberFilter"
+        type="search"
+        value={subscriberFilterQuery}
+        on:input={event => setFilter('subscriber', event)}
+        placeholder="Filter by name"
+        class="pai-topic-filter px-3 py-1.5 text-sm rounded border" />
+    </div>
+    <button on:click={() => void refresh()} disabled={loading} class="pai-btn pai-btn-primary">
+      {loading ? 'Refreshing...' : 'Refresh'}
+    </button>
+    <span class="text-xs pai-text-muted" role="status" aria-live="polite">
+      {#if lastRetrievedAt}
+        Retrieved {topics.length}
+        {topics.length === 1 ? 'topic' : 'topics'} at {formatRetrievedAt(lastRetrievedAt)} · Refresh to update
+      {:else}
+        Refresh to retrieve topics
+      {/if}
+    </span>
+  </div>
+  {#if error}<div class="p-3 rounded text-sm pai-banner-error max-w-lg">{error}</div>{/if}
+
   {#if listVisited}
     <div class="flex-col gap-4 min-h-0 min-w-0" style:display={viewMode === 'list' ? 'flex' : 'none'}>
       <TopicMonitor
         embedded={true}
         active={viewMode === 'list'}
+        targetApi={targetApi}
         sharedTopology={topology}
         sharedContainerId={selectedContainerId}
         sharedContainers={containers}
@@ -961,56 +1160,6 @@ onDestroy(() => {
       </p>
     </div>
   {:else}
-    <div class="flex flex-row items-end gap-3 flex-wrap">
-      <div class="flex flex-col gap-1 min-w-64">
-        <label for="graphContainerSelect" class="text-xs text-[var(--pd-content-text)]">Simulation container</label>
-        <select
-          id="graphContainerSelect"
-          bind:value={selectedContainerId}
-          on:change={() => void refreshTopology()}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]">
-          {#each runningContainers as container}
-            <option value={container.id}>{container.name} — {container.imageTag}</option>
-          {/each}
-        </select>
-      </div>
-      <div class="flex flex-col gap-1 min-w-48">
-        <label for="graphPublisherFilter" class="text-xs text-[var(--pd-content-text)]">Filter publishers</label>
-        <input
-          id="graphPublisherFilter"
-          type="search"
-          value={publisherFilterQuery}
-          on:input={event => setFilter('publisher', event)}
-          placeholder="Filter by name"
-          class="pai-topic-filter px-3 py-1.5 text-sm rounded border" />
-      </div>
-      <div class="flex flex-col gap-1 min-w-48">
-        <label for="graphTopicFilter" class="text-xs text-[var(--pd-content-text)]">Filter topics</label>
-        <input
-          id="graphTopicFilter"
-          type="search"
-          value={topicFilterQuery}
-          on:input={event => setFilter('topic', event)}
-          placeholder="Filter by name"
-          class="pai-topic-filter px-3 py-1.5 text-sm rounded border" />
-      </div>
-      <div class="flex flex-col gap-1 min-w-48">
-        <label for="graphSubscriberFilter" class="text-xs text-[var(--pd-content-text)]">Filter subscribers</label>
-        <input
-          id="graphSubscriberFilter"
-          type="search"
-          value={subscriberFilterQuery}
-          on:input={event => setFilter('subscriber', event)}
-          placeholder="Filter by name"
-          class="pai-topic-filter px-3 py-1.5 text-sm rounded border" />
-      </div>
-      <button on:click={() => void refresh()} disabled={loading} class="pai-btn pai-btn-primary">
-        {loading ? 'Refreshing...' : 'Refresh'}
-      </button>
-    </div>
-
-    {#if error}<div class="p-3 rounded text-sm pai-banner-error max-w-lg">{error}</div>{/if}
-
     <div class="flex flex-col xl:flex-row items-start gap-4 min-w-0">
       <section
         class="w-full flex-1 min-w-0 rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] overflow-hidden">
@@ -1322,6 +1471,50 @@ onDestroy(() => {
                   </text>
                 </g>
               {/if}
+              {#if expandedPublisherNodes && publisherNodes.length > MAX_CONNECTED_NODES}
+                <g
+                  class="graph-selectable"
+                  role="button"
+                  tabindex="0"
+                  aria-label="Show fewer publishers"
+                  on:click={() => (expandedPublisherNodes = false)}
+                  on:keydown={event => handleKey(event, () => (expandedPublisherNodes = false))}>
+                  <rect
+                    x="55"
+                    y={yFor(displayedPublisherNodes.length, graphRowCount, graphLayout) - 20}
+                    width="215"
+                    height="40"
+                    rx="8"
+                    style="fill: var(--pd-button-secondary-bg); stroke: var(--pai-accent, #7c3aed)"></rect>
+                  <text
+                    x="162"
+                    y={yFor(displayedPublisherNodes.length, graphRowCount, graphLayout) + 4}
+                    text-anchor="middle"
+                    class="text-[11px] pai-text-accent">Show fewer publishers</text>
+                </g>
+              {/if}
+              {#if expandedSubscriberNodes && subscriberNodes.length > MAX_CONNECTED_NODES}
+                <g
+                  class="graph-selectable"
+                  role="button"
+                  tabindex="0"
+                  aria-label="Show fewer subscribers"
+                  on:click={() => (expandedSubscriberNodes = false)}
+                  on:keydown={event => handleKey(event, () => (expandedSubscriberNodes = false))}>
+                  <rect
+                    x="730"
+                    y={yFor(displayedSubscriberNodes.length, graphRowCount, graphLayout) - 20}
+                    width="215"
+                    height="40"
+                    rx="8"
+                    style="fill: var(--pd-button-secondary-bg); stroke: var(--pai-accent, #7c3aed)"></rect>
+                  <text
+                    x="837"
+                    y={yFor(displayedSubscriberNodes.length, graphRowCount, graphLayout) + 4}
+                    text-anchor="middle"
+                    class="text-[11px] pai-text-accent">Show fewer subscribers</text>
+                </g>
+              {/if}
               {#each graphTopics as topic (topic.name)}
                 <g
                   class="graph-selectable"
@@ -1353,18 +1546,6 @@ onDestroy(() => {
               {/each}
             </svg>
           </div>
-          {#if focusActive && (expandedPublisherNodes || expandedSubscriberNodes)}
-            <div class="flex flex-wrap gap-3 p-3 border-t border-[var(--pd-content-card-border)]">
-              {#if expandedPublisherNodes && publisherNodes.length > MAX_CONNECTED_NODES}<button
-                  class="pai-btn text-xs"
-                  on:click={() => (expandedPublisherNodes = false)}>Show fewer publishers</button
-                >{/if}
-              {#if expandedSubscriberNodes && subscriberNodes.length > MAX_CONNECTED_NODES}<button
-                  class="pai-btn text-xs"
-                  on:click={() => (expandedSubscriberNodes = false)}>Show fewer subscribers</button
-                >{/if}
-            </div>
-          {/if}
         {/if}
       </section>
 

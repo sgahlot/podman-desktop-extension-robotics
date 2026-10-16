@@ -2,6 +2,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import TopicMonitor from './TopicMonitor.svelte';
 import { navigationLayout } from './lib/navigationLayout';
+import type { TopicMonitorTargetApi } from './lib/topicMonitorTarget';
 
 const mockListSimulationContainers = vi.fn();
 const mockListRosTopics = vi.fn();
@@ -13,6 +14,42 @@ const mockGetTopicPeekTimeoutSeconds = vi.fn();
 const mockCopyToClipboard = vi.fn();
 const mockGoto = vi.fn();
 const mockGetTopicTopology = vi.fn();
+
+const localTargetApi: TopicMonitorTargetApi = {
+  kind: 'local',
+  async listTargets() {
+    return (await mockListSimulationContainers()).map(
+      (container: { id: string; name: string; imageTag?: string; state: string }) => ({
+        id: container.id,
+        label: container.imageTag ? `${container.name} — ${container.imageTag}` : container.name,
+        ready: container.state === 'running',
+      }),
+    );
+  },
+  getTopicTopology: (...args) => mockGetTopicTopology(...args),
+  listRosTopicSummaries: (...args) => mockListRosTopicSummaries(...args),
+  listRosTopics: (...args) => mockListRosTopics(...args),
+  getRosTopicDetail: (...args) => mockGetRosTopicDetail(...args),
+  getRosMessageSchema: (...args) => mockGetRosMessageSchema(...args),
+  peekRosTopic: (...args) => mockPeekRosTopic(...args),
+  getTopicTelemetry: async () => [],
+  publishRosTopic: async () => ({ topicName: '', messageType: '', publishedAt: '' }),
+  startRosbagRecording: async id => ({
+    containerId: id,
+    topics: [],
+    outputPath: '',
+    status: 'complete',
+    startedAt: 0,
+  }),
+  getRosbagRecording: async () => undefined,
+  stopRosbagRecording: async () => undefined,
+  getTopicPeekTimeoutSeconds: (...args) => mockGetTopicPeekTimeoutSeconds(...args),
+  copyToClipboard: (...args) => mockCopyToClipboard(...args),
+};
+
+function renderTopicMonitor(props: Record<string, unknown> = {}) {
+  return render(TopicMonitor, { targetApi: localTargetApi, ...props });
+}
 
 vi.mock('./api/client', () => ({
   physicalAiClient: {
@@ -71,27 +108,27 @@ describe('TopicMonitor', () => {
   });
 
   it('renders heading', () => {
-    render(TopicMonitor);
+    renderTopicMonitor();
     expect(screen.getByText('Topic Monitor')).toBeTruthy();
   });
 
   it('shows the back-to-dashboard link and Quick Links when navigation layout is cards', () => {
     navigationLayout.set('cards');
-    render(TopicMonitor);
+    renderTopicMonitor();
     expect(screen.getByText(/Back to Dashboard/)).toBeTruthy();
     expect(screen.getByText('Quick Links:')).toBeTruthy();
   });
 
   it('hides the back-to-dashboard link and Quick Links when navigation layout is sidebar', () => {
     navigationLayout.set('sidebar');
-    render(TopicMonitor);
+    renderTopicMonitor();
     expect(screen.queryByText(/Back to Dashboard/)).toBeNull();
     expect(screen.queryByText('Quick Links:')).toBeNull();
   });
 
   it('shows no-simulation message when no containers running', async () => {
-    render(TopicMonitor);
-    const msg = await screen.findByText(/No simulation is running/);
+    renderTopicMonitor();
+    const msg = await screen.findByText(/No local simulation is available/);
     expect(msg).toBeTruthy();
   });
 
@@ -104,13 +141,13 @@ describe('TopicMonitor', () => {
       { name: '/robot_1/cmd_vel', type: 'geometry_msgs/msg/Twist', publishers: 0, subscribers: 1 },
     ]);
 
-    render(TopicMonitor);
+    renderTopicMonitor();
     const topicCell = await screen.findByText('/rosout');
     expect(topicCell).toBeTruthy();
     expect(screen.getByText('/robot_1/cmd_vel')).toBeTruthy();
     expect(screen.getByText('geometry_msgs/msg/Twist')).toBeTruthy();
     expect(screen.getByText('Twist')).toBeTruthy();
-    expect(screen.getByText(/2 active topics/)).toBeTruthy();
+    expect(screen.getByText(/^2 topics$/)).toBeTruthy();
   });
 
   it('filters topics by name without changing the refreshed source list', async () => {
@@ -122,26 +159,35 @@ describe('TopicMonitor', () => {
       { name: '/robot_1/cmd_vel', type: 'geometry_msgs/msg/Twist', publishers: 0, subscribers: 1 },
     ]);
 
-    render(TopicMonitor);
+    renderTopicMonitor();
     await screen.findByText('/rosout');
     await fireEvent.input(screen.getByRole('searchbox', { name: 'Filter topics' }), { target: { value: 'cmd_vel' } });
 
     expect(screen.queryByText('/rosout')).toBeNull();
     expect(screen.getByText('/robot_1/cmd_vel')).toBeTruthy();
-    expect(screen.getByText(/1 of 2 active topics/)).toBeTruthy();
+    expect(screen.getByText(/1 of 2 topics/)).toBeTruthy();
   });
 
   it.each([false, true])('groups List topics after filtering (embedded=%s)', async embedded => {
     mockListSimulationContainers.mockResolvedValue([{ id: 'c1', name: 'sim', state: 'running', ports: [] }]);
-    mockListRosTopics.mockResolvedValue(
-      ['/clock', '/robot_1/cmd_vel', '/robot_2/cmd_vel', '/robot_1/status', '/robot_1/sensors/scan'].map(name => ({
-        name,
-        type: 'std_msgs/msg/String',
-        publishers: 1,
-        subscribers: 1,
-      })),
-    );
-    render(TopicMonitor, { embedded });
+    const topicList = [
+      '/clock',
+      '/robot_1/cmd_vel',
+      '/robot_2/cmd_vel',
+      '/robot_1/status',
+      '/robot_1/sensors/scan',
+    ].map(name => ({ name, type: 'std_msgs/msg/String', publishers: 1, subscribers: 1 }));
+    mockListRosTopics.mockResolvedValue(topicList);
+    renderTopicMonitor({
+      embedded,
+      ...(embedded
+        ? {
+            sharedContainers: [{ id: 'c1', label: 'sim', ready: true }],
+            sharedContainerId: 'c1',
+            sharedTopology: { topics: topicList, nodes: [] },
+          }
+        : {}),
+    });
     await screen.findByText('/clock');
     const grouping = screen.getByRole('checkbox', { name: 'Group by namespace' });
     await fireEvent.click(grouping);
@@ -152,6 +198,7 @@ describe('TopicMonitor', () => {
     expect(screen.getByRole('rowheader', { name: '/robot_1/sensors (1 topics)' })).toBeTruthy();
     expect(screen.getByText(/4 namespaces/)).toBeTruthy();
     expect(screen.getByRole('table').contains(grouping)).toBe(false);
+    if (embedded) return;
 
     const filter = screen.getByRole('searchbox', { name: 'Filter topics' });
     await fireEvent.input(filter, { target: { value: 'cmd_vel' } });
@@ -159,7 +206,7 @@ describe('TopicMonitor', () => {
     expect(screen.queryByText('/clock')).toBeNull();
     expect(screen.queryByText('/robot_1/status')).toBeNull();
     expect(screen.queryByRole('rowheader', { name: /sensors/ })).toBeNull();
-    expect(screen.getByText(/2 of 5 active topics/)).toBeTruthy();
+    expect(screen.getByText(/2 of 5 topics/)).toBeTruthy();
     await fireEvent.input(filter, { target: { value: 'no_match' } });
     expect(screen.getByText('No topics match the current filter.')).toBeTruthy();
     expect(screen.queryByRole('rowheader')).toBeNull();
@@ -188,7 +235,7 @@ describe('TopicMonitor', () => {
       timedOut: false,
       capturedAt: new Date().toISOString(),
     });
-    render(TopicMonitor);
+    renderTopicMonitor();
     await fireEvent.click((await screen.findByText('/robot_1/status')).closest('tr')!);
     await screen.findByText('/robot_1/source');
     await fireEvent.click(screen.getByRole('button', { name: 'Show message schema' }));
@@ -214,7 +261,7 @@ describe('TopicMonitor', () => {
       { name: '/rosout', type: 'rcl_interfaces/msg/Log', publishers: 1, subscribers: 0 },
     ]);
 
-    render(TopicMonitor);
+    renderTopicMonitor();
     await screen.findByText('/rosout');
     expect(screen.getByText('Topic')).toBeTruthy();
     expect(screen.getByText('Message Type')).toBeTruthy();
@@ -265,7 +312,7 @@ describe('TopicMonitor', () => {
         { nodeName: 'other_node', nodeNamespace: '/' },
       ],
     });
-    render(TopicMonitor);
+    renderTopicMonitor();
     await screen.findByText('/robot_1/status');
     if (grouped) await fireEvent.click(screen.getByRole('checkbox', { name: 'Group by namespace' }));
     const topicInput = screen.getByRole('searchbox', { name: 'Filter topics' }) as HTMLInputElement;
@@ -276,7 +323,7 @@ describe('TopicMonitor', () => {
     expect(topicInput.value).toBe('');
     expect(screen.queryByText('/robot_2/unrelated')).toBeNull();
     expect(screen.queryByText(`/robot_1/${suffix === 'status' ? 'other' : 'status'}`)).toBeNull();
-    expect(screen.getByText(/1 of 3 active topics/)).toBeTruthy();
+    expect(screen.getByText(/1 of 3 topics/)).toBeTruthy();
     if (grouped) expect(screen.getByRole('rowheader', { name: '/robot_1 (1 topics)' })).toBeTruthy();
     await fireEvent.click(match.closest('tr')!);
     const heading = await screen.findByText(`${kind === 'publishers' ? 'Publishers' : 'Subscribers'} (1 matching)`);
@@ -296,7 +343,7 @@ describe('TopicMonitor', () => {
     mockListSimulationContainers.mockResolvedValue([{ id: 'c1', name: 'sim', state: 'running', ports: [] }]);
     const topics = [{ name: '/status', type: 'std_msgs/msg/String', publishers: 1, subscribers: 0 }];
     mockListRosTopics.mockResolvedValue(topics);
-    render(TopicMonitor, {
+    renderTopicMonitor({
       sharedContainerId: 'c1',
       sharedTopology: {
         topics,
@@ -320,7 +367,7 @@ describe('TopicMonitor', () => {
         resolveTopics = resolve;
       }),
     );
-    render(TopicMonitor);
+    renderTopicMonitor();
     await screen.findByRole('searchbox', { name: 'Filter topics' });
     expect(screen.getAllByText('Loading topics...')).toHaveLength(1);
     resolveTopics([{ name: '/status', type: 'std_msgs/msg/String', publishers: 1, subscribers: 0 }]);
@@ -334,7 +381,7 @@ describe('TopicMonitor', () => {
       { name: '/status', type: 'std_msgs/msg/String', publishers: 1, subscribers: 0 },
     ]);
     mockGetTopicTopology.mockRejectedValue(new Error('Topology unavailable'));
-    render(TopicMonitor);
+    renderTopicMonitor();
     await screen.findByText('/status');
     await fireEvent.input(screen.getByRole('searchbox', { name: 'Filter publishers' }), {
       target: { value: 'server' },
@@ -351,7 +398,7 @@ describe('TopicMonitor', () => {
       { name: '/rosout', type: 'rcl_interfaces/msg/Log', publishers: 1, subscribers: 0 },
     ]);
 
-    render(TopicMonitor);
+    renderTopicMonitor();
     await screen.findByText('/rosout');
     expect(screen.getByText('▶')).toBeTruthy();
   });
@@ -374,7 +421,7 @@ describe('TopicMonitor', () => {
       schema: 'Vector3 linear\nVector3 angular\n',
     });
 
-    render(TopicMonitor);
+    renderTopicMonitor();
     const topicCell = await screen.findByText('/cmd_vel');
     const row = topicCell.closest('tr')!;
     await fireEvent.click(row);
@@ -406,7 +453,7 @@ describe('TopicMonitor', () => {
       schema: 'Vector3 linear\nVector3 angular\n',
     });
 
-    render(TopicMonitor);
+    renderTopicMonitor();
     await fireEvent.click((await screen.findByText('/cmd_vel')).closest('tr')!);
     await screen.findByText(/teleop_keyboard/);
     await fireEvent.click(screen.getByRole('button', { name: /Show message schema/ }));
@@ -427,7 +474,7 @@ describe('TopicMonitor', () => {
       subscribers: [],
     });
 
-    render(TopicMonitor);
+    renderTopicMonitor();
     const topicCell = await screen.findByText('/cmd_vel');
     const row = topicCell.closest('tr')!;
     await fireEvent.click(row);
@@ -446,7 +493,7 @@ describe('TopicMonitor', () => {
     ]);
     mockGetRosTopicDetail.mockRejectedValue(new Error('exec failed'));
 
-    render(TopicMonitor);
+    renderTopicMonitor();
     const topicCell = await screen.findByText('/cmd_vel');
     const row = topicCell.closest('tr')!;
     await fireEvent.click(row);
@@ -474,7 +521,7 @@ describe('TopicMonitor', () => {
       capturedAt: '2026-08-06T14:30:00.000Z',
     });
 
-    render(TopicMonitor);
+    renderTopicMonitor();
     const topicCell = await screen.findByText('/cmd_vel');
     await fireEvent.click(topicCell.closest('tr')!);
     await screen.findByText(/teleop_keyboard/);
@@ -513,7 +560,7 @@ describe('TopicMonitor', () => {
         'No message on /idle within 5s. The topic may be idle or publishing infrequently — try one with active publishers.',
     });
 
-    render(TopicMonitor);
+    renderTopicMonitor();
     await fireEvent.click((await screen.findByText('/idle')).closest('tr')!);
     await screen.findByRole('button', { name: 'Peek' });
     await fireEvent.click(screen.getByRole('button', { name: 'Peek' }));
@@ -537,7 +584,7 @@ describe('TopicMonitor', () => {
       subscribers: [],
     });
 
-    render(TopicMonitor);
+    renderTopicMonitor();
     await vi.advanceTimersByTimeAsync(100);
     const topicCell = screen.getByText('/cmd_vel');
     await fireEvent.click(topicCell.closest('tr')!);
@@ -574,7 +621,7 @@ describe('TopicMonitor', () => {
         }),
     );
 
-    render(TopicMonitor);
+    renderTopicMonitor();
     expect(await screen.findByText('/rosout')).toBeTruthy();
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
 

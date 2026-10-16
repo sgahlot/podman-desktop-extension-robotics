@@ -1,8 +1,6 @@
 <script lang="ts">
-import { physicalAiClient } from './api/client';
 import { onMount, onDestroy, createEventDispatcher } from 'svelte';
 import { router } from 'tinro';
-import type { SimContainerInfo } from '/@shared/src/types/SimulationContainer';
 import type {
   TopicInfo,
   TopicDetailInfo,
@@ -19,19 +17,25 @@ import QuickLinks from './lib/QuickLinks.svelte';
 import TopicEndpoints from './lib/TopicEndpoints.svelte';
 import { navigationLayout } from './lib/navigationLayout';
 import { filterTopicsByName, groupTopicsByNamespace } from './lib/topicFilter';
+import {
+  createTopicMonitorTarget,
+  type TopicMonitorTargetApi,
+  type TopicMonitorTargetOption,
+} from './lib/topicMonitorTarget';
 
 export let embedded = false;
 export let active = true;
+export let targetApi: TopicMonitorTargetApi = createTopicMonitorTarget('local');
 export let sharedTopology: TopicGraphTopology | null = null;
 export let sharedContainerId = '';
-export let sharedContainers: SimContainerInfo[] = [];
+export let sharedContainers: TopicMonitorTargetOption[] | null = null;
 export let filterQuery = '';
 export let publisherFilterQuery = '';
 export let subscriberFilterQuery = '';
 
 const dispatch = createEventDispatcher<{ filterchange: void }>();
 
-let containers: SimContainerInfo[] = sharedContainers;
+let containers: TopicMonitorTargetOption[] = sharedContainers ?? [];
 let selectedContainerId = sharedContainerId;
 let topics: TopicInfo[] = sharedTopology?.topics ?? [];
 let loading = false;
@@ -64,7 +68,7 @@ let peekView: 'tree' | 'raw' = 'tree';
 let copyFeedback = '';
 let peekTimeoutSec = PEEK_TIMEOUT_DEFAULT_SEC;
 
-$: runningContainers = containers.filter(c => c.state === 'running');
+$: runningContainers = containers.filter(c => c.ready);
 $: hasRunning = runningContainers.length > 0;
 $: peekTree = peekResult?.message ? parseEchoYamlTree(peekResult.message) : [];
 $: peekTreeUsable = peekTree.length > 0;
@@ -98,6 +102,18 @@ $: filteredSubscribers = (topicDetail?.subscribers ?? []).filter(
 );
 $: namespaceGroups = groupTopicsByNamespace(filteredTopics);
 $: topicGroups = groupByNamespace ? namespaceGroups : ([['', filteredTopics]] as [string, TopicInfo[]][]);
+
+$: if (sharedContainers && sharedContainers !== containers) containers = sharedContainers;
+$: if (
+  sharedTopology &&
+  sharedContainerId &&
+  (topics !== sharedTopology.topics || selectedContainerId !== sharedContainerId)
+) {
+  selectedContainerId = sharedContainerId;
+  topics = sharedTopology.topics;
+  localTopology = sharedTopology;
+  localTopologyContainerId = sharedContainerId;
+}
 
 $: if (hasRunning && !selectedContainerId) {
   selectedContainerId = runningContainers[0].id;
@@ -151,7 +167,7 @@ async function refreshFilterTopology() {
   loadingFilterTopology = true;
   filterTopologyError = '';
   try {
-    const result = await physicalAiClient.getTopicTopology(targetId);
+    const result = await targetApi.getTopicTopology(targetId);
     if (selectedContainerId !== targetId) return;
     localTopology = result;
     localTopologyContainerId = targetId;
@@ -192,7 +208,7 @@ function clearInspector() {
 
 async function pollContainers() {
   try {
-    containers = await physicalAiClient.listSimulationContainers();
+    containers = await targetApi.listTargets();
   } catch {
     // keep previous state
   }
@@ -203,7 +219,7 @@ async function pollTopics(opts?: { forceCounts?: boolean }) {
   const targetId = selectedContainerId;
   pollInFlight = true;
   try {
-    const summaries = await physicalAiClient.listRosTopicSummaries(targetId);
+    const summaries = await targetApi.listRosTopicSummaries(targetId);
     if (selectedContainerId !== targetId) return;
     const next = mergeTopicSummaries(topics, summaries);
     if (!topicSnapshotsEqual(topics, next)) {
@@ -226,7 +242,7 @@ async function fillTopicCounts(targetId: string) {
   if (countsInFlight) return;
   countsInFlight = true;
   try {
-    const detailed = await physicalAiClient.listRosTopics(targetId);
+    const detailed = await targetApi.listRosTopics(targetId);
     if (selectedContainerId !== targetId) return;
     const next = applyTopicCounts(topics, detailed);
     if (!topicSnapshotsEqual(topics, next)) {
@@ -245,7 +261,7 @@ async function refresh() {
   if (
     sharedContainerId &&
     sharedTopology &&
-    containers.some(container => container.id === sharedContainerId && container.state === 'running')
+    containers.some(container => container.id === sharedContainerId && container.ready)
   ) {
     if (!initializedFromShared) {
       selectedContainerId = sharedContainerId;
@@ -254,12 +270,12 @@ async function refresh() {
   }
   initializedFromShared = true;
   try {
-    peekTimeoutSec = await physicalAiClient.getTopicPeekTimeoutSeconds();
+    peekTimeoutSec = await targetApi.getTopicPeekTimeoutSeconds();
   } catch {
     peekTimeoutSec = PEEK_TIMEOUT_DEFAULT_SEC;
   }
   if (!selectedContainerId) {
-    const running = containers.filter(c => c.state === 'running');
+    const running = containers.filter(c => c.ready);
     if (running.length > 0) {
       selectedContainerId = running[0].id;
     }
@@ -280,7 +296,7 @@ async function loadSchema(containerId: string, messageType: string) {
   schemaError = '';
   schema = null;
   try {
-    const result = await physicalAiClient.getRosMessageSchema(containerId, messageType);
+    const result = await targetApi.getRosMessageSchema(containerId, messageType);
     if (selectedContainerId !== containerId || expandedTopic === null) return;
     schema = result;
     if (result.error) schemaError = result.error;
@@ -310,7 +326,7 @@ async function toggleTopicDetail(topicName: string) {
   clearInspector();
 
   try {
-    const detail = await physicalAiClient.getRosTopicDetail(targetId, topicName);
+    const detail = await targetApi.getRosTopicDetail(targetId, topicName);
     if (selectedContainerId !== targetId || expandedTopic !== topicName) return;
     topicDetail = detail;
     void loadSchema(targetId, detail.type || topic?.type || '');
@@ -334,7 +350,7 @@ async function peekTopic(topicName: string, event: MouseEvent) {
   copyFeedback = '';
 
   try {
-    const result = await physicalAiClient.peekRosTopic(targetId, topicName);
+    const result = await targetApi.peekRosTopic(targetId, topicName);
     if (selectedContainerId !== targetId || expandedTopic !== topicName) return;
     peekTimedOut = result.timedOut;
     if (result.message) {
@@ -355,7 +371,7 @@ async function copyPeek(event: MouseEvent) {
   event.stopPropagation();
   if (!peekResult?.message) return;
   try {
-    await physicalAiClient.copyToClipboard(peekResult.message);
+    await targetApi.copyToClipboard(peekResult.message);
     copyFeedback = 'Copied';
     setTimeout(() => {
       copyFeedback = '';
@@ -366,12 +382,14 @@ async function copyPeek(event: MouseEvent) {
 }
 
 onMount(() => {
-  refresh();
-  pollTimer = setInterval(() => {
-    if (!active) return;
-    pollContainers();
-    pollTopics();
-  }, 5000);
+  if (!embedded) {
+    refresh();
+    pollTimer = setInterval(() => {
+      if (!active) return;
+      pollContainers();
+      pollTopics();
+    }, 5000);
+  }
 });
 
 onDestroy(() => {
@@ -398,64 +416,68 @@ onDestroy(() => {
   {:else if !hasRunning}
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-lg">
       <p class="text-sm text-[var(--pd-content-text)]">
-        No simulation is running.
+        No {targetApi.kind === 'openshift' ? 'ready OpenShift simulation' : 'local simulation'} is available.
         <button on:click={() => router.goto('/simulation')} class="pai-link">Launch one</button>
         to inspect topics.
       </p>
     </div>
   {:else}
-    <div class="flex flex-row items-end gap-3 flex-wrap">
-      <div class="flex flex-col gap-1">
-        <label for="containerSelect" class="text-xs text-[var(--pd-content-text)]">Simulation container</label>
-        <select
-          id="containerSelect"
-          bind:value={selectedContainerId}
-          class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]">
-          {#each runningContainers as c}
-            <option value={c.id}>{c.name} — {c.imageTag}</option>
-          {/each}
-        </select>
+    {#if !embedded}
+      <div class="flex flex-row items-end gap-3 flex-wrap">
+        <div class="flex flex-col gap-1">
+          <label for="containerSelect" class="text-xs text-[var(--pd-content-text)]">
+            {targetApi.kind === 'openshift' ? 'OpenShift simulation' : 'Simulation container'}
+          </label>
+          <select
+            id="containerSelect"
+            bind:value={selectedContainerId}
+            class="px-3 py-1.5 text-sm rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)]">
+            {#each runningContainers as c}
+              <option value={c.id}>{c.label}</option>
+            {/each}
+          </select>
+        </div>
+        <button on:click={refresh} disabled={loading} class="pai-btn pai-btn-primary">
+          {loading ? 'Refreshing...' : 'Refresh'}
+        </button>
+        <div class="flex flex-col gap-1 min-w-56">
+          <label for="listPublisherFilter" class="text-xs text-[var(--pd-content-text)]">Filter publishers</label>
+          <input
+            id="listPublisherFilter"
+            type="search"
+            value={publisherFilterQuery}
+            on:input={event => setFilter('publisher', event)}
+            placeholder="Filter by name"
+            class="pai-topic-filter px-3 py-1.5 text-sm rounded border" />
+        </div>
+        <div class="flex flex-col gap-1 min-w-56">
+          <label for="topicFilter" class="text-xs text-[var(--pd-content-text)]">Filter topics</label>
+          <input
+            id="topicFilter"
+            type="search"
+            value={filterQuery}
+            on:input={event => setFilter('topic', event)}
+            placeholder="Filter by name"
+            class="pai-topic-filter px-3 py-1.5 text-sm rounded border" />
+        </div>
+        <div class="flex flex-col gap-1 min-w-56">
+          <label for="listSubscriberFilter" class="text-xs text-[var(--pd-content-text)]">Filter subscribers</label>
+          <input
+            id="listSubscriberFilter"
+            type="search"
+            value={subscriberFilterQuery}
+            on:input={event => setFilter('subscriber', event)}
+            placeholder="Filter by name"
+            class="pai-topic-filter px-3 py-1.5 text-sm rounded border" />
+        </div>
+        {#if filterQuery || publisherFilterQuery || subscriberFilterQuery}
+          <button class="pai-btn" on:click={clearFilters}>Clear filter</button>
+        {/if}
       </div>
-      <button on:click={refresh} disabled={loading} class="pai-btn pai-btn-primary">
-        {loading ? 'Refreshing...' : 'Refresh'}
-      </button>
-      <div class="flex flex-col gap-1 min-w-56">
-        <label for="listPublisherFilter" class="text-xs text-[var(--pd-content-text)]">Filter publishers</label>
-        <input
-          id="listPublisherFilter"
-          type="search"
-          value={publisherFilterQuery}
-          on:input={event => setFilter('publisher', event)}
-          placeholder="Filter by name"
-          class="pai-topic-filter px-3 py-1.5 text-sm rounded border" />
-      </div>
-      <div class="flex flex-col gap-1 min-w-56">
-        <label for="topicFilter" class="text-xs text-[var(--pd-content-text)]">Filter topics</label>
-        <input
-          id="topicFilter"
-          type="search"
-          value={filterQuery}
-          on:input={event => setFilter('topic', event)}
-          placeholder="Filter by name"
-          class="pai-topic-filter px-3 py-1.5 text-sm rounded border" />
-      </div>
-      <div class="flex flex-col gap-1 min-w-56">
-        <label for="listSubscriberFilter" class="text-xs text-[var(--pd-content-text)]">Filter subscribers</label>
-        <input
-          id="listSubscriberFilter"
-          type="search"
-          value={subscriberFilterQuery}
-          on:input={event => setFilter('subscriber', event)}
-          placeholder="Filter by name"
-          class="pai-topic-filter px-3 py-1.5 text-sm rounded border" />
-      </div>
-      {#if filterQuery || publisherFilterQuery || subscriberFilterQuery}
-        <button class="pai-btn" on:click={clearFilters}>Clear filter</button>
-      {/if}
-    </div>
 
-    {#if error}
-      <div class="p-3 rounded text-sm pai-banner-error max-w-lg">{error}</div>
+      {#if error}
+        <div class="p-3 rounded text-sm pai-banner-error max-w-lg">{error}</div>
+      {/if}
     {/if}
 
     {#if topics.length === 0 && loading}
@@ -468,10 +490,10 @@ onDestroy(() => {
       <div
         class="flex items-center justify-between flex-wrap gap-3 p-3 rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)]">
         <div class="text-xs pai-text-muted">
-          {filteredTopics.length} of {topics.length} active topics
+          {#if filteredTopics.length === topics.length}{topics.length} topics{:else}{filteredTopics.length} of {topics.length}
+            topics{/if}
           {#if groupByNamespace}
             · {namespaceGroups.length} namespaces{/if}
-          — more can appear as ROS2 nodes finish starting (e.g. Nav2 bring-up can take up to ~90s)
         </div>
         <label class="flex items-center gap-2 text-xs text-[var(--pd-content-text)]">
           <input type="checkbox" bind:checked={groupByNamespace} aria-label="Group by namespace" />
