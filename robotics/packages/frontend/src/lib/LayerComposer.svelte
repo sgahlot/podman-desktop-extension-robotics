@@ -32,6 +32,7 @@ import { QUICK_STARTS } from '/@shared/src/types/QuickStarts';
 import type { SimulationConfig, TargetArch } from '/@shared/src/types/SimulationConfig';
 import { imageRefForRegistry, type CatalogRegistry } from '/@shared/src/types/ImageCatalog';
 import { physicalAiClient } from '../api/client';
+import { middlewareLabel } from '/@shared/src/types/middlewareLabels';
 import { onMount, onDestroy } from 'svelte';
 import BuildPushPanel from './BuildPushPanel.svelte';
 import RegistrySelector from './RegistrySelector.svelte';
@@ -216,6 +217,10 @@ $: layerCachePlanHardened = safeLayerCachePlan(selection, 'hardened');
 $: layerCachePlanSim = safeLayerCachePlan(selection, 'sim');
 
 $: presetDistro = rosLayerOptionToDistroId(selection.ros) ?? 'jazzy';
+$: middlewareDisplayLabel = middlewareLabel('dds', {
+  distro: presetDistro,
+  parentProvided: selection.sim === 'custom-template',
+});
 $: presetConfig = {
   robot: 'turtlebot3',
   distro: presetDistro,
@@ -493,6 +498,9 @@ onDestroy(() => {
             {/each}
           </select>
           <span class="text-xs pai-text-muted">{simNote}</span>
+          {#if selection.sim !== 'none'}
+            <span class="text-xs pai-text-muted">Uses: {middlewareDisplayLabel}</span>
+          {/if}
           {#if selection.sim === 'custom-template' && selection.baseOs === 'custom'}
             <div class="flex flex-col gap-3 mt-1 pl-3 border-l border-[var(--pd-content-card-border)]">
               <div class="flex flex-col gap-1">
@@ -641,7 +649,7 @@ onDestroy(() => {
       {#if compactPresetsQuickStart}
         <p class="text-xs text-[var(--pd-content-text)] opacity-80">
           One image with ROS 2 Lyrical, Gazebo, Nav2, and TurtleBot3 on Fedora bootc 43. Base layers are resolved at
-          build time.
+          build time. DDS runtime: <span class="font-medium">{middlewareDisplayLabel}</span>.
         </p>
       {/if}
     </div>
@@ -651,7 +659,8 @@ onDestroy(() => {
       <div class="text-sm p-3 rounded pai-banner-info">
         This maps to the tested <span class="font-medium"
           >Ubuntu + ROS 2 {presetDistro} {wantsSim ? '+ Gazebo simulation' : ''}</span>
-        preset — the full runnable recipe (entrypoints, worlds{wantsSim ? ', noVNC' : ''}, VirtualGL).{#if needsHardened}
+        preset — the full runnable recipe (entrypoints, worlds{wantsSim ? ', noVNC' : ''}, VirtualGL). DDS runtime:
+        {#if needsHardened}
           Bake-in Hummingbird tools build a separate <span class="font-medium">hardened image</span> (step 2) on top of the
           base, so the base image stays stable.{/if}
         The generated Containerfile preview above is informational for this stack.

@@ -139,6 +139,10 @@ Curated view uses the shared ROS patterns by default. For a registry with differ
 - **Default guaranteed CPUs** — seeds the **Guaranteed CPUs (sim container)** field on the OpenShift tab (1–64, default 8 for software-render deploys).
 - Image Builder wizard defaults (robot, distro, middleware, engine, base preset)
 
+Simulation and OpenShift deployment select middleware at runtime. Ubuntu Jazzy/Humble images use `DDS (Fast DDS /
+rmw_fastrtps_cpp)`; Fedora + ROS 2 Lyrical images show `DDS (parent image default)` because the supplied parent owns
+that choice. `zenoh` explicitly selects `rmw_zenoh_cpp`.
+
 ### Adding a layer recipe
 
 Shared catalogs live under `packages/shared/src/config/`:
