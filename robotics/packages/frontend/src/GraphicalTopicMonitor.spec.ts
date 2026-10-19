@@ -359,12 +359,15 @@ describe('GraphicalTopicMonitor', () => {
     expect(mockPeekRosTopic).not.toHaveBeenCalled();
     const publishedTopic = screen.getByRole('button', { name: 'Select topic /test/messages' });
     expect(publishedTopic.classList.contains('topic-publish-pulse')).toBe(true);
-    expect(screen.getAllByTestId('topic-publish-flow')).toHaveLength(1);
+    const publishedSubscriber = screen.getByRole('button', { name: 'Select node /test_listener' });
+    expect(publishedSubscriber.classList.contains('topic-publish-receipt')).toBe(true);
+    expect(screen.getAllByTestId('topic-publish-receipt')).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(900);
     expect(publishedTopic.classList.contains('topic-publish-pulse')).toBe(false);
-    expect(screen.getByTestId('topic-publish-flow')).toBeTruthy();
-    await vi.advanceTimersByTimeAsync(500);
-    expect(screen.queryByTestId('topic-publish-flow')).toBeNull();
+    expect(publishedSubscriber.classList.contains('topic-publish-receipt')).toBe(true);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(publishedSubscriber.classList.contains('topic-publish-receipt')).toBe(false);
+    expect(screen.queryByTestId('topic-publish-receipt')).toBeNull();
   });
 
   it('warns for a protected simulation topic but permits an explicitly confirmed test', async () => {

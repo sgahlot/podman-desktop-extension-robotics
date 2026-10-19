@@ -40,7 +40,26 @@
   animation: pai-topic-publish-success 900ms ease-out 1;
 }
 
+.topic-publish-receipt rect {
+  animation: pai-topic-publish-receipt 1000ms ease-out 1;
+}
+
 @keyframes pai-topic-publish-success {
+  0% {
+    filter: drop-shadow(0 0 0 rgb(124 58 237 / 0%));
+    stroke-width: 2;
+  }
+  35% {
+    filter: drop-shadow(0 0 10px rgb(124 58 237 / 75%));
+    stroke-width: 5;
+  }
+  100% {
+    filter: drop-shadow(0 0 0 rgb(124 58 237 / 0%));
+    stroke-width: 2;
+  }
+}
+
+@keyframes pai-topic-publish-receipt {
   0% {
     filter: drop-shadow(0 0 0 rgb(124 58 237 / 0%));
     stroke-width: 2;
@@ -57,6 +76,11 @@
 
 @media (prefers-reduced-motion: reduce) {
   .topic-publish-pulse rect {
+    animation: none;
+    stroke-width: 4;
+  }
+
+  .topic-publish-receipt rect {
     animation: none;
     stroke-width: 4;
   }
@@ -99,7 +123,7 @@ const GRAPH_MIN_HEIGHT = 160;
 const MAX_CONNECTED_NODES = 5;
 const TOPIC_TELEMETRY_REFRESH_MS = 8000;
 const TOPIC_TELEMETRY_SAMPLE_SECONDS = 3;
-const PUBLISH_FLOW_DURATION_MS = 1400;
+const PUBLISH_FLOW_DURATION_MS = 1000;
 
 type ViewMode = 'list' | 'graph' | 'cards';
 type FilterKind = 'topic' | 'publisher' | 'subscriber';
@@ -173,7 +197,6 @@ let publishPulseTopic = '';
 let publishPulseTimer: ReturnType<typeof setTimeout> | null = null;
 let publishFlowTopic = '';
 let publishFlowTimer: ReturnType<typeof setTimeout> | null = null;
-let prefersReducedMotion = false;
 let topicTelemetry: TopicTelemetry | null = null;
 let topicTelemetryLoading = false;
 let topicTelemetryError = '';
@@ -954,7 +977,6 @@ async function inspectListTopic(topicName: string): Promise<void> {
 
 onMount(() => {
   window.addEventListener('keydown', handleWindowKeydown);
-  prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
   void refresh();
 });
 
@@ -1420,26 +1442,6 @@ onDestroy(() => {
                 {/each}
               {/if}
 
-              {#if publishFlowTopic && publishedFlowSubscribers.length > 0}
-                {#each publishedFlowSubscribers as node, nodeIndex (nodePath(node))}
-                  {@const flowPath = `M590 ${topicY(publishFlowTopic, graphTopics, graphLayout)} H620 V${nodeY(node, nodeIndex, publishedFlowSubscribers.length, graphLayout)} H730`}
-                  {#if prefersReducedMotion}
-                    <circle
-                      cx="730"
-                      cy={nodeY(node, nodeIndex, publishedFlowSubscribers.length, graphLayout)}
-                      r="5"
-                      fill="var(--pai-accent, #7c3aed)"
-                      data-testid="topic-publish-flow"
-                      aria-hidden="true"></circle>
-                  {:else}
-                    <circle r="5" fill="var(--pai-accent, #7c3aed)" data-testid="topic-publish-flow" aria-hidden="true">
-                      <animateMotion dur={`${PUBLISH_FLOW_DURATION_MS}ms`} path={flowPath} fill="freeze"
-                      ></animateMotion>
-                    </circle>
-                  {/if}
-                {/each}
-              {/if}
-
               {#each displayedPublisherNodes as node, nodeIndex (nodePath(node))}
                 <g
                   class="graph-selectable"
@@ -1472,8 +1474,11 @@ onDestroy(() => {
                 </g>
               {/each}
               {#each displayedSubscriberNodes as node, nodeIndex (nodePath(node))}
+                {@const publishedReceipt =
+                  publishFlowTopic && publishedFlowSubscribers.some(flowNode => nodePath(flowNode) === nodePath(node))}
                 <g
                   class="graph-selectable"
+                  class:topic-publish-receipt={publishedReceipt}
                   role="button"
                   tabindex="0"
                   aria-label={`Select node ${nodePath(node)}`}
@@ -1488,8 +1493,8 @@ onDestroy(() => {
                     height={cardHeight}
                     rx="8"
                     fill="var(--pd-content-card-bg)"
-                    style={`stroke: ${selectedNode && nodePath(selectedNode) === nodePath(node) ? 'var(--pai-accent, #7c3aed)' : 'var(--pd-content-card-border, #e5e7eb)'}`}
-                  ></rect>
+                    style={`fill: ${publishedReceipt ? 'var(--pd-button-secondary-bg, #ede9fe)' : 'var(--pd-content-card-bg)'}; stroke: ${publishedReceipt || (selectedNode && nodePath(selectedNode) === nodePath(node)) ? 'var(--pai-accent, #7c3aed)' : 'var(--pd-content-card-border, #e5e7eb)'}`}
+                    data-testid={publishedReceipt ? 'topic-publish-receipt' : undefined}></rect>
                   <text
                     x="837"
                     y={nodeY(node, nodeIndex, displayedSubscriberNodes.length, graphLayout) -
