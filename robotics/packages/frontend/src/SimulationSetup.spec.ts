@@ -105,6 +105,7 @@ describe('SimulationSetup (Image Builder)', () => {
     expect(presetsLayerBuild?.querySelector('#layer-target-arch')).toBeNull();
     expect(presetsLayerBuild?.querySelector('#layer-base-os')).toBeNull();
     expect(presetsLayerBuild?.textContent).not.toContain('Generated Containerfile');
+    expect(presetsLayerBuild?.textContent).toContain('DDS (parent image default)');
     expect(presetsLayerBuild?.querySelector('button')).toBeTruthy();
   });
 
@@ -136,6 +137,7 @@ describe('SimulationSetup (Image Builder)', () => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
     expect(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · arm64)' })).toBeTruthy();
+    expect(screen.getByText(/turtlebot3 · humble · DDS \(Fast DDS \/ rmw_fastrtps_cpp\)/)).toBeTruthy();
 
     // Switch to Customize to verify detailed controls are available
     // (including Target architecture dropdown in LayerComposer)

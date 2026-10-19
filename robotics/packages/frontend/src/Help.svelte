@@ -260,9 +260,12 @@ let topicMonitorCaption =
         <div>
           <strong>Middleware (DDS / Zenoh)</strong> — Before <strong>Launch</strong>, choose
           <span class="font-mono">dds</span>
-          or <span class="font-mono">zenoh</span> on the Simulation page (and on the OpenShift tab when deploying). Jazzy
-          sim images include both RMW implementations; this selects which one runs at launch. Default is DDS; change under
-          Settings &rarr; Preferences &rarr; Robotics if you want a new default.
+          or <span class="font-mono">zenoh</span> on the Simulation page (and on the OpenShift tab when deploying).
+          Ubuntu Jazzy/Humble images use Fast DDS (<span class="font-mono">rmw_fastrtps_cpp</span>) for
+          <span class="font-mono">dds</span>; Fedora + ROS 2 Lyrical images use the parent image's DDS default. The
+          <span class="font-mono">zenoh</span> choice explicitly uses <span class="font-mono">rmw_zenoh_cpp</span>. This
+          is a launch/deploy-time choice, not an Image Builder layer. Change the default under Settings &rarr;
+          Preferences &rarr; Robotics.
         </div>
         <div>
           <strong>Image trust</strong> — Launch runs entrypoints from the selected <em>local</em> image. Tag matching is

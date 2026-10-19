@@ -12,6 +12,7 @@ import { localDiagnosticsHref } from './lib/diagnosticsLink';
 import { localTargetKey } from './lib/diagnosticsTargetKey';
 import { setSpawnedRobotsForTarget } from './lib/spawnedRobotsStore';
 import { clearCachedDiagnostics } from './lib/robotDiagnosticsCache';
+import { middlewareLabelForImage } from '/@shared/src/types/middlewareLabels';
 
 let localSimImages: string[] = [];
 let selectedImage = '';
@@ -372,6 +373,7 @@ function diagnoseRobot(index: number): void {
           <option value="dds">DDS (default)</option>
           <option value="zenoh">Zenoh</option>
         </select>
+        <span class="text-xs pai-text-muted">Uses: {middlewareLabelForImage(selectedMiddleware, selectedImage)}</span>
 
         <button
           on:click={launchSim}

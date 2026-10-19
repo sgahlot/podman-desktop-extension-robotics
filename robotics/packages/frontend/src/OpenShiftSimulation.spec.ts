@@ -333,7 +333,9 @@ describe('OpenShiftSimulation', () => {
     });
     render(DeployOpenShift);
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
+    const deployButton = await screen.findByRole('button', { name: 'Deploy' });
+    expect(screen.getByText('Uses: DDS (Fast DDS / rmw_fastrtps_cpp)')).toBeTruthy();
+    await fireEvent.click(deployButton);
 
     await waitFor(() => {
       expect(mockDeployToOpenShift).toHaveBeenCalledWith(expect.objectContaining({ useGpu: false }));

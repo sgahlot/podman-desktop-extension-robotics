@@ -22,6 +22,7 @@ import { setSpawnedRobotsForTarget } from './lib/spawnedRobotsStore';
 import { clearCachedDiagnostics } from './lib/robotDiagnosticsCache';
 import { formatRpcError } from './lib/formatRpcError';
 import { imageSupportsNav2Prewarm } from '/@shared/src/security/simInput';
+import { middlewareLabelForImage } from '/@shared/src/types/middlewareLabels';
 
 let loading = true;
 let context: OpenShiftContext | undefined = undefined;
@@ -985,6 +986,7 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
           <option value="dds">DDS (default)</option>
           <option value="zenoh">Zenoh</option>
         </select>
+        <span class="text-xs pai-text-muted">Uses: {middlewareLabelForImage(middleware, image)}</span>
       </div>
 
       <div class="flex flex-col gap-1">

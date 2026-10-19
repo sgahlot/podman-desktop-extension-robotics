@@ -94,6 +94,7 @@ describe('LocalSimulation', () => {
     render(SimulationPage);
     const launchBtn = await screen.findByRole('button', { name: 'Launch' });
     expect(screen.getByDisplayValue(SIM_IMAGE)).toBeTruthy();
+    expect(screen.getByText('Uses: DDS (Fast DDS / rmw_fastrtps_cpp)')).toBeTruthy();
 
     await fireEvent.click(launchBtn);
     await waitFor(() => {

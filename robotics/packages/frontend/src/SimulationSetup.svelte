@@ -38,6 +38,7 @@ import {
 } from '/@shared/src/types/QuickStarts';
 import type { ImageBuilderRecipe } from '/@shared/src/types/ImageBuilderRecipe';
 import { customSimulationImageTag } from '/@shared/src/types/imageBuilderPlan';
+import { middlewareLabel } from '/@shared/src/types/middlewareLabels';
 
 export let active = true;
 
@@ -124,6 +125,7 @@ $: otherArchLabel = otherArch === 'amd64' ? 'amd64 (for OpenShift)' : `${otherAr
 $: selectedQuickStart = resolveQuickStart(selectedQuickStartId);
 $: appliedQuickStart = appliedQuickStartId ? resolveQuickStart(appliedQuickStartId) : undefined;
 $: quickStartDescription = selectedQuickStart?.description ?? 'Select a supported Image Builder configuration.';
+$: middlewareDisplayLabel = middlewareLabel(middleware, { distro });
 $: presetsLayerBuild = appliedQuickStart?.buildMode === 'fedora-layers';
 $: profile = resolveSimulationProfile(currentConfig);
 $: simSupported = profile ? hasSimulationSupport(profile) : false;
@@ -470,7 +472,7 @@ function onQuickStartClick(id: QuickStartId) {
         <div class="flex flex-row items-center justify-between flex-wrap gap-2 mb-2">
           <h2 class="text-xl text-[var(--pd-content-header)]">Preset Image Builder</h2>
           <span class="text-xs text-[var(--pd-content-text)] opacity-80 font-mono">
-            {robot} &middot; {distro} &middot; {middleware} &middot; {engine} &middot; {basePreset.label}
+            {robot} &middot; {distro} &middot; {middlewareDisplayLabel} &middot; {engine} &middot; {basePreset.label}
           </span>
         </div>
         <RegistrySelector bind:selectedRegistry={selectedPushRegistry} disabled={buildBusy} />
