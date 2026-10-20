@@ -250,6 +250,31 @@ let topicMonitorCaption =
     </div>
 
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
+      <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Image-provided robot launches</h2>
+      <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
+        <p>
+          Add a robot by entering the ROS package and launch file already installed in the selected simulation image.
+          TurtleBot3 is prefilled as a known-good example.
+        </p>
+        <p>
+          Add one <span class="font-mono">name:=value</span> launch argument per line. The placeholders
+          <span class="font-mono">{`{name}`}</span>, <span class="font-mono">{`{x}`}</span>,
+          <span class="font-mono">{`{y}`}</span>, and <span class="font-mono">{`{yaw}`}</span> are replaced from the Add Robot
+          form. Only one local simulation container runs at a time.
+        </p>
+        <p>
+          Before starting a launch, the extension checks that its package and launch file exist in the image and reports
+          a clear error if either is missing. Values are passed as arguments, not shell commands. Only the prefilled
+          TurtleBot3 configuration offers the extension's Navigate control.
+        </p>
+        <p>
+          This does not build a custom image, upload URDF/SDF files, mount host paths, or validate every ROS/Gazebo
+          compatibility detail. Use an image you trust that already contains the robot package and its dependencies.
+        </p>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Simulation</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
         <div>
@@ -290,8 +315,12 @@ let topicMonitorCaption =
           automatically if the container stops.
         </div>
         <div>
-          <strong>Add TurtleBot3</strong> — Spawns a robot into the running world via
-          <span class="font-mono">podman exec</span> (name + X/Y/yaw).
+          <strong>Add Robot</strong> — Enter the package and relative launch-file path for a robot already installed in
+          the selected image, plus optional <span class="font-mono">name:=value</span> launch arguments. The extension
+          checks that package/file before starting the launch. TurtleBot3 is prefilled; its arguments demonstrate the
+          <span class="font-mono">{`{name}`}</span>, <span class="font-mono">{`{x}`}</span>,
+          <span class="font-mono">{`{y}`}</span>, and <span class="font-mono">{`{yaw}`}</span> placeholders. Custom image
+          builds, uploads, mounts, and deep compatibility validation are not part of this workflow.
         </div>
         <div>
           <strong>Navigate</strong> — Each spawned robot has a <strong>Navigate</strong> button with target X/Y

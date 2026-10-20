@@ -139,6 +139,12 @@ let deployedName = '';
 let curlCopyFeedback: Record<string, string> = {};
 
 let workloads: OpenShiftWorkload[] = [];
+// Direct launch configuration for robots already installed in the selected image.
+// TurtleBot3 remains the default because it has a supported bridge/Nav2 workflow.
+let robotPackage = 'nav2_minimal_tb3_sim';
+let robotLaunchFile = 'launch/spawn_tb3.launch.py';
+let robotLaunchArguments =
+  'use_sim_time:=True\nnamespace:={name}\nrobot_name:={name}\nx_pose:={x}\ny_pose:={y}\nyaw:={yaw}\nz_pose:=0.01';
 /** Workload names with the embedded viewer expanded (APPENG-6283). */
 let expandedViewerNames: string[] = [];
 let listBusy = false;
@@ -737,15 +743,41 @@ async function spawnRobot(w: OpenShiftWorkload, form: { name: string; x: string;
   // A respawned robot under the same name is a new instance — its old cached diagnostics
   // snapshot (if any) is stale and must not be shown as if it were current.
   clearCachedDiagnostics(ocTargetKey(w.namespace, w.name, selectedContext || undefined), form.name);
-  await physicalAiClient.spawnRobotInOpenShift(
-    w.namespace,
-    w.name,
-    form.name,
-    form.x,
-    form.y,
-    form.yaw,
-    selectedContext || undefined,
-  );
+  const isDefaultTurtleBot3 =
+    robotPackage.trim() === 'nav2_minimal_tb3_sim' && robotLaunchFile.trim() === 'launch/spawn_tb3.launch.py';
+  const arguments_ = robotLaunchArguments
+    .split(/\r?\n/)
+    .map(argument => argument.trim())
+    .filter(Boolean)
+    .map(argument =>
+      argument
+        .replaceAll('{name}', form.name)
+        .replaceAll('{x}', form.x)
+        .replaceAll('{y}', form.y)
+        .replaceAll('{yaw}', form.yaw),
+    );
+  try {
+    if (isDefaultTurtleBot3) {
+      await physicalAiClient.spawnRobotInOpenShift(
+        w.namespace,
+        w.name,
+        form.name,
+        form.x,
+        form.y,
+        form.yaw,
+        selectedContext || undefined,
+      );
+    } else {
+      await physicalAiClient.launchRobotInOpenShift(
+        w.namespace,
+        w.name,
+        { packageName: robotPackage.trim(), launchFile: robotLaunchFile.trim(), arguments: arguments_ },
+        selectedContext || undefined,
+      );
+    }
+  } catch (error) {
+    throw error;
+  }
   robotsByWorkload[w.name] = [
     ...(robotsByWorkload[w.name] ?? []),
     {
@@ -755,8 +787,9 @@ async function spawnRobot(w: OpenShiftWorkload, form: { name: string; x: string;
       navStatus: 'idle',
       navTarget: { x: '2.0', y: '0.5' },
       navReached: null,
+      supportsNavigation: isDefaultTurtleBot3,
       // Backend pre-warms Nav2 for Nav2 sim images; show "warming…" optimistically there.
-      warmStatus: w.image && imageSupportsNav2Prewarm(w.image) ? 'warming' : undefined,
+      warmStatus: isDefaultTurtleBot3 && w.image && imageSupportsNav2Prewarm(w.image) ? 'warming' : undefined,
     },
   ];
   robotsByWorkload = robotsByWorkload;
@@ -1277,6 +1310,31 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
               {#if w.ready}
                 <div class="mt-2 pt-2 border-t border-[var(--pd-content-card-border)] flex flex-col gap-2">
                   <div class="text-xs font-medium text-[var(--pd-content-header)]">Robots</div>
+                  <div class="flex flex-col gap-1.5 max-w-lg">
+                    <label for={`oc-robot-package-${w.name}`} class="text-xs pai-text-muted">ROS package</label>
+                    <input
+                      id={`oc-robot-package-${w.name}`}
+                      bind:value={robotPackage}
+                      class="px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] font-mono" />
+                    <label for={`oc-robot-launch-${w.name}`} class="text-xs pai-text-muted">Launch file</label>
+                    <input
+                      id={`oc-robot-launch-${w.name}`}
+                      bind:value={robotLaunchFile}
+                      class="px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] font-mono" />
+                    <label for={`oc-robot-arguments-${w.name}`} class="text-xs pai-text-muted"
+                      >Launch arguments (one <span class="font-mono">name:=value</span> per line)</label>
+                    <textarea
+                      id={`oc-robot-arguments-${w.name}`}
+                      bind:value={robotLaunchArguments}
+                      rows="5"
+                      class="px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] font-mono"
+                    ></textarea>
+                    <span class="text-xs pai-text-muted"
+                      >The package and launch file must already be installed in this deployment image. <span
+                        class="font-mono">{'{name}'}</span
+                      >, <span class="font-mono">{'{x}'}</span>, <span class="font-mono">{'{y}'}</span>, and
+                      <span class="font-mono">{'{yaw}'}</span> are replaced when you add the robot.</span>
+                  </div>
                   <RobotControls
                     robots={robotsByWorkload[w.name] ?? []}
                     onSpawn={form => spawnRobot(w, form)}

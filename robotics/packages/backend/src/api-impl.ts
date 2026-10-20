@@ -13,6 +13,7 @@ import type {
   LocalImageInfo,
 } from '/@shared/src/types/ImageCatalog';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
+import type { RobotLaunch } from '/@shared/src/types/RobotLaunch';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from '/@shared/src/types/SimulationContainer';
 import {
   SIM_CONTAINER_LABEL,
@@ -107,6 +108,8 @@ import {
   NAV2_ENTRYPOINT,
   SPAWN_ENTRYPOINT,
   assertSpawnExecCommand,
+  assertRobotLaunch,
+  ROBOT_LAUNCH_ENTRYPOINT,
   assertLaunchCmd,
   assertLaunchEnv,
   assertLaunchLabels,
@@ -2036,14 +2039,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async execInSimulation(containerId: string, command: string[]): Promise<ExecResult> {
     const { id, image } = await this.#resolveSimulationContainer(containerId);
-    const [, safeRobot, safeX, safeY, safeYaw] = assertSpawnExecCommand(command);
-    const safeCommand = [SPAWN_ENTRYPOINT, safeRobot, safeX, safeY, safeYaw];
+    const safeCommand = assertSpawnExecCommand(command);
+    const [, safeRobot, safeX, safeY, safeYaw] = safeCommand;
     try {
       // Detached: entrypoint backgrounds work; exitCode reflects only whether
       // podman accepted the exec, not whether spawn succeeded inside the container.
       const result = await extensionApi.process.exec('podman', ['exec', '-d', id, ...safeCommand]);
-      // Warm Nav2 in the background so the first Navigate click is instant (Nav2 sim images).
-      if (imageSupportsNav2Prewarm(image)) {
+      // Warm Nav2 only for the default TurtleBot3 path. A curated non-navigation
+      // profile is still spawnable and removable, but must not consume a Nav2 stack.
+      if (safeCommand.length === 5 && imageSupportsNav2Prewarm(image)) {
         const pose = { x: Number(safeX), y: Number(safeY), yaw: Number(safeYaw) };
         const warmKey = PhysicalAiApiImpl.#warmKey(id, safeRobot);
         const distro = PhysicalAiApiImpl.#distroFromImage(image);
@@ -2061,6 +2065,46 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         stdout: runErr.stdout ?? '',
         stderr: runErr.stderr ?? runErr.message ?? String(err),
       };
+    }
+  }
+
+  async launchRobotInSimulation(containerId: string, launch: RobotLaunch): Promise<void> {
+    const { id, image } = await this.#resolveSimulationContainer(containerId);
+    const safeLaunch = assertRobotLaunch(launch);
+    const command = [ROBOT_LAUNCH_ENTRYPOINT, safeLaunch.packageName, safeLaunch.launchFile, ...safeLaunch.arguments];
+    const isKnownTurtleBot3 =
+      safeLaunch.packageName === 'nav2_minimal_tb3_sim' && safeLaunch.launchFile === 'launch/spawn_tb3.launch.py';
+    const argumentValue = (name: string): string | undefined =>
+      safeLaunch.arguments.find(argument => argument.startsWith(`${name}:=`))?.slice(name.length + 2);
+    const robotName = argumentValue('robot_name');
+    const x = argumentValue('x_pose');
+    const y = argumentValue('y_pose');
+    const yaw = argumentValue('yaw') ?? '0';
+    try {
+      // Run the lightweight preflight synchronously so a missing package or launch
+      // file is reported to the form rather than failing silently in a detached exec.
+      await extensionApi.process.exec('podman', ['exec', id, ...command.slice(0, 3), '--validate']);
+      if (isKnownTurtleBot3 && robotName && x && y) {
+        // Preserve the known-good TurtleBot3 orchestration: it waits for the
+        // Gazebo bridge and falls back to a direct bridge when needed. Other
+        // package launches retain the generic image-provided wrapper path.
+        await extensionApi.process.exec('podman', ['exec', '-d', id, SPAWN_ENTRYPOINT, robotName, x, y, yaw]);
+        if (imageSupportsNav2Prewarm(image)) {
+          const safeRobot = assertRobotName(robotName);
+          void this.#prewarmNav2(
+            PhysicalAiApiImpl.#warmKey(id, safeRobot),
+            { kind: 'podman', id },
+            safeRobot,
+            { x: Number(x), y: Number(y), yaw: 0 },
+            PhysicalAiApiImpl.#distroFromImage(image),
+          );
+        }
+      } else {
+        await extensionApi.process.exec('podman', ['exec', '-d', id, ...command]);
+      }
+    } catch (err: unknown) {
+      const runErr = err as { stderr?: string; message?: string };
+      throw new Error(firstNonEmpty(runErr.stderr?.trim(), runErr.message, 'Robot launch could not be started.'));
     }
   }
 
@@ -4106,6 +4150,26 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     } catch (err) {
       console.error('[physical-ai] Nav2 pre-warm setup failed (non-fatal):', err);
     }
+  }
+
+  async launchRobotInOpenShift(namespace: string, name: string, launch: RobotLaunch, context?: string): Promise<void> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeLaunch = assertRobotLaunch(launch);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    const target = { kind: 'oc', pod, namespace: ns, context } as const;
+    const command = [ROBOT_LAUNCH_ENTRYPOINT, safeLaunch.packageName, safeLaunch.launchFile];
+    const preflight = await this.#execAttached(target, [...command, '--validate']);
+    if (preflight.exitCode !== 0) {
+      throw new Error(
+        firstNonEmpty(preflight.stderr.trim(), preflight.stdout.trim(), 'Robot launch configuration is unavailable.'),
+      );
+    }
+    await this.#execDetached(target, ROBOT_LAUNCH_ENTRYPOINT, [
+      safeLaunch.packageName,
+      safeLaunch.launchFile,
+      ...safeLaunch.arguments,
+    ]);
   }
 
   async sendOpenShiftNavigationGoal(

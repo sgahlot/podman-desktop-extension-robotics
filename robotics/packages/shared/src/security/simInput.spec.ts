@@ -5,6 +5,7 @@ import {
   assertRosDistro,
   assertNumericArg,
   assertSpawnExecCommand,
+  assertRobotLaunch,
   assertLaunchCmd,
   assertLaunchEnv,
   assertRobotsEnv,
@@ -67,6 +68,32 @@ describe('simInput security validators', () => {
     expect(() => assertSpawnExecCommand(['bash', '-c', 'id'])).toThrow(/Only/);
     expect(() => assertSpawnExecCommand([SPAWN_ENTRYPOINT, 'robot;x', '0', '0', '0'])).toThrow(/Invalid robot name/);
     expect(() => assertNumericArg('1;id', 'x')).toThrow(/must be a number/);
+    expect(() => assertSpawnExecCommand([SPAWN_ENTRYPOINT, 'custom_1', '0', '0', '0', 'unexpected'])).toThrow(
+      /exactly/,
+    );
+  });
+
+  it('validates image-provided package launch configurations', () => {
+    expect(
+      assertRobotLaunch({
+        packageName: 'my_robot_sim',
+        launchFile: 'launch/spawn.launch.py',
+        arguments: ['robot_name:=robot_1'],
+      }),
+    ).toEqual({
+      packageName: 'my_robot_sim',
+      launchFile: 'launch/spawn.launch.py',
+      arguments: ['robot_name:=robot_1'],
+    });
+    expect(() => assertRobotLaunch({ packageName: 'robot;id', launchFile: 'spawn.launch.py', arguments: [] })).toThrow(
+      /package/,
+    );
+    expect(() =>
+      assertRobotLaunch({ packageName: 'robot_sim', launchFile: '../spawn.launch.py', arguments: [] }),
+    ).toThrow(/launch file/);
+    expect(() =>
+      assertRobotLaunch({ packageName: 'robot_sim', launchFile: 'spawn.launch.py', arguments: ['x;id:=0'] }),
+    ).toThrow(/argument/);
   });
 
   it('forces gazebo Cmd and rejects custom entrypoints', () => {

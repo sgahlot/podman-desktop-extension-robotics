@@ -18,6 +18,7 @@ const mockDeleteSimulation = vi.fn();
 const mockStopSimulation = vi.fn();
 const mockOpenSimulationInBrowser = vi.fn();
 const mockExecInSimulation = vi.fn();
+const mockLaunchRobotInSimulation = vi.fn();
 const mockSendNavigationGoal = vi.fn();
 const mockGetRobotWarmStatus = vi.fn();
 const mockGetSimulationConfig = vi.fn();
@@ -35,6 +36,7 @@ vi.mock('./api/client', () => ({
     stopSimulation: (...args: unknown[]) => mockStopSimulation(...args),
     openSimulationInBrowser: (...args: unknown[]) => mockOpenSimulationInBrowser(...args),
     execInSimulation: (...args: unknown[]) => mockExecInSimulation(...args),
+    launchRobotInSimulation: (...args: unknown[]) => mockLaunchRobotInSimulation(...args),
     sendNavigationGoal: (...args: unknown[]) => mockSendNavigationGoal(...args),
     getRobotWarmStatus: (...args: unknown[]) => mockGetRobotWarmStatus(...args),
     getSimulationConfig: (...args: unknown[]) => mockGetSimulationConfig(...args),
@@ -60,6 +62,7 @@ describe('LocalSimulation', () => {
     mockDeleteSimulation.mockResolvedValue(undefined);
     mockStopSimulation.mockResolvedValue(undefined);
     mockOpenSimulationInBrowser.mockResolvedValue(undefined);
+    mockExecInSimulation.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
     mockGetRobotWarmStatus.mockResolvedValue('idle');
     mockListSpawnedRobotsInSimulation.mockResolvedValue([]);
     mockDespawnRobot.mockResolvedValue(undefined);
@@ -225,13 +228,13 @@ describe('LocalSimulation', () => {
     expect(screen.queryByText('pai-sim-run')).toBeNull();
   });
 
-  it('hides Add TurtleBot3 until a simulation is running', async () => {
+  it('hides Add robot until a simulation is running', async () => {
     mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
     mockListSimulationContainers.mockResolvedValue([]);
 
     render(SimulationPage);
     await screen.findByRole('button', { name: 'Launch' });
-    expect(screen.queryByRole('button', { name: 'Add TurtleBot3' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add robot' })).toBeNull();
     expect(screen.queryByText('Launch a simulation first to add robots.')).toBeNull();
   });
 
@@ -248,22 +251,47 @@ describe('LocalSimulation', () => {
         labels: {},
       },
     ]);
-    mockExecInSimulation.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
-    // Pre-warm reports ready so the nav controls are revealed after a poll tick.
     mockGetRobotWarmStatus.mockResolvedValue('ready');
 
     render(SimulationPage);
     await vi.advanceTimersByTimeAsync(100); // onMount + container list
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Add TurtleBot3' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Add robot' }));
     await vi.advanceTimersByTimeAsync(0); // let the spawn promise settle
 
-    // Jazzy spawn is optimistically 'warming' → Navigate hidden until warm.
-    expect(screen.queryByRole('button', { name: 'Navigate' })).toBeNull();
+    expect(mockExecInSimulation).toHaveBeenCalledWith('abc123def456', [
+      '/entrypoint-spawn-robot.sh',
+      'robot_1',
+      '-2.0',
+      '-0.5',
+      '0.0',
+    ]);
 
-    // Warm-status poll flips it to 'ready' → controls appear.
+    expect(screen.queryByRole('button', { name: 'Navigate' })).toBeNull();
     await vi.advanceTimersByTimeAsync(3000);
     expect(screen.getByRole('button', { name: 'Navigate' })).toBeTruthy();
+  });
+
+  it('passes an installed package, launch file, and expanded arguments to the launch API', async () => {
+    mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
+    mockListSimulationContainers.mockResolvedValue([RUNNING_CONTAINER]);
+    mockLaunchRobotInSimulation.mockResolvedValue(undefined);
+
+    render(SimulationPage);
+    await screen.findByText('Add Robot');
+    await fireEvent.input(screen.getByLabelText('ROS package'), { target: { value: 'my_robot_sim' } });
+    await fireEvent.input(screen.getByLabelText('Launch file'), { target: { value: 'launch/spawn.launch.py' } });
+    await fireEvent.input(screen.getByLabelText(/Launch arguments/), {
+      target: { value: 'robot_name:={name}\nx:={x}' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add robot' }));
+    await waitFor(() =>
+      expect(mockLaunchRobotInSimulation).toHaveBeenCalledWith('abc123def456', {
+        packageName: 'my_robot_sim',
+        launchFile: 'launch/spawn.launch.py',
+        arguments: ['robot_name:=robot_1', 'x:=-2.0'],
+      }),
+    );
   });
 
   const RUNNING_CONTAINER = {
@@ -365,13 +393,13 @@ describe('LocalSimulation', () => {
         engine: 'gazebo',
         baseImage: 'humble-jammy',
       });
-      mockExecInSimulation.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
+      mockLaunchRobotInSimulation.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
       mockListSpawnedRobotsInSimulation.mockResolvedValue([]); // absent from ros2 node list the whole time
 
       render(SimulationPage);
       await vi.advanceTimersByTimeAsync(100); // onMount + reconcile finds nothing yet
 
-      await fireEvent.click(screen.getByRole('button', { name: 'Add TurtleBot3' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Add robot' }));
       await vi.advanceTimersByTimeAsync(0); // spawn promise settles
       expect(screen.getByText('robot_1')).toBeTruthy();
 
@@ -386,10 +414,10 @@ describe('LocalSimulation', () => {
   it('keeps spawnedRobotsByTarget in sync with the running container (APPENG-5810)', async () => {
     mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
     mockListSimulationContainers.mockResolvedValue([RUNNING_CONTAINER]);
-    mockExecInSimulation.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
+    mockLaunchRobotInSimulation.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
 
     render(SimulationPage);
-    await fireEvent.click(await screen.findByRole('button', { name: 'Add TurtleBot3' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Add robot' }));
 
     await waitFor(() => {
       let stored: Record<string, string[]> = {};
@@ -401,10 +429,10 @@ describe('LocalSimulation', () => {
   it('clears the cached diagnostics entry for a robot on spawn (APPENG-5810 stale-cache fix)', async () => {
     mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
     mockListSimulationContainers.mockResolvedValue([RUNNING_CONTAINER]);
-    mockExecInSimulation.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
+    mockLaunchRobotInSimulation.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
 
     render(SimulationPage);
-    await fireEvent.click(await screen.findByRole('button', { name: 'Add TurtleBot3' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Add robot' }));
 
     await waitFor(() => {
       expect(mockClearCachedDiagnostics).toHaveBeenCalledWith(localTargetKey('abc123def456'), 'robot_1');

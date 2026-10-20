@@ -6,7 +6,7 @@ Podman Desktop extension for Robotics robotics development. Provides a GUI-drive
 
 - **Image Catalog** — Browse and pull ROS2 images from Quay.io, Docker Hub, or configured OCI registries (All or Curated view; allowlist configurable in Preferences)
 - **Image Builder** — Configure, build, and push ROS2 images (Jazzy sim + noVNC; Fedora 43 + ROS 2 Lyrical amd64 sim is also available from Presets; Humble exists but is not currently verified working — see Coming Soon). The builder provides **Presets** and **Customize** layouts. Quick Starts are available only in Presets layout; Customize can independently select the base image and simulation-layer source, with a live compatibility verdict.
-- **Simulation** — Launch Gazebo via Podman, open noVNC, add TurtleBot3 into a running world. Launch only allows images matching the simulation allowlist (default `ros2-*-sim*` / `ros2-*-turtlebot3`; optional exact tag/digest pins in Preferences). Local image content is trusted once selected — see Help → Image trust. A **Show Viewer** toggle next to **Open in Browser** embeds the noVNC canvas inline in the panel, no browser tab needed (APPENG-6283).
+- **Simulation** — Launch Gazebo via Podman, open noVNC, then add a robot by entering a ROS package, launch file, and `name:=value` arguments already installed in the selected image. TurtleBot3 is the prefilled example. The extension preflights package/file presence and reports errors before starting the launch; it does not build images, upload URDF/SDF files, mount host paths, or perform deep ROS/Gazebo compatibility validation. The local UI supports one simulation container, not fleet management. Launch only allows images matching the simulation allowlist (default `ros2-*-sim*` / `ros2-*-turtlebot3`; optional exact tag/digest pins in Preferences). Local image content is trusted once selected — see Help → Image trust. A **Show Viewer** toggle next to **Open in Browser** embeds the noVNC canvas inline in the panel, no browser tab needed (APPENG-6283).
 - **OpenShift Deployment** — Deploy a pushed `amd64` image to an OpenShift cluster from the Simulation page's **OpenShift** tab: pick a namespace/context, preview generated manifests, Deploy, Open URL. Lists deployed sims with per-robot spawn/navigate/remove, delete/refresh, a **Cluster has a GPU** toggle, an optional [Hummingbird](#hummingbird-support) nginx sidecar demo, and the same inline **Show Viewer** toggle as local Simulation, over the route.
 - **Diagnostics** — Live diagnostics for spawned robots (local or OpenShift): TF tree, costmap, and a dynamic list of `sensor_msgs` topics (LaserScan and Imu peeked on refresh; other types listed). Deep-linkable via URL query params (`target=`, `containerId=`/context, `robot=`).
 - **Help** — In-extension documentation
@@ -199,6 +199,19 @@ Build via Image Builder (or CLI against `assets/`), then push:
 ### Simulation images (Phase 2 outputs, built on top of a base)
 
 - `quay.io/{NAMESPACE}/ros2-jazzy-sim:noble` — The Jazzy sim: Gazebo + noVNC + Nav2 (launched on **Navigate** via `entrypoint-nav2.sh`).
+
+### Image-provided robot launches
+
+The Simulation page starts robot launch files that are already installed in the selected image. Enter
+the ROS package, relative launch-file path (for example `launch/spawn_tb3.launch.py`), and one `name:=value` launch argument per line; `{name}`,
+`{x}`, `{y}`, and `{yaw}` expand from the Add Robot form. TurtleBot3's known-good launch is prefilled.
+Before a detached launch starts, the extension verifies the package and file in the image and returns
+clear errors for either missing prerequisite. It passes values as argv, not a shell command.
+
+The extension supports one local simulation container at a time. Whether a configured robot offers
+navigation, teleoperation, sensors, or a bridge is determined by that image-provided launch setup;
+only the prefilled TurtleBot3 configuration exposes the extension's Nav2 controls. Building a custom
+image, arbitrary URDF/SDF upload, and host-path injection are out of scope.
 
 ## Coming Soon
 

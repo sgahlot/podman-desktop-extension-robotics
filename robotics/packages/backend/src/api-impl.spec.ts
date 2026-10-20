@@ -3817,6 +3817,91 @@ linear_acceleration:
     });
   });
 
+  describe('launchRobotInSimulation', () => {
+    const CONTAINER_ID = 'abc123def456';
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as unknown as extensionApi.ContainerInfo[]);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '',
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+    });
+
+    it('preflights and starts an installed package launch file as argv', async () => {
+      await api.launchRobotInSimulation(CONTAINER_ID, {
+        packageName: 'my_robot_sim',
+        launchFile: 'launch/spawn.launch.py',
+        arguments: ['robot_name:=robot_1'],
+      });
+
+      expect(extensionApi.process.exec).toHaveBeenNthCalledWith(1, 'podman', [
+        'exec',
+        CONTAINER_ID,
+        '/entrypoint-launch-robot.sh',
+        'my_robot_sim',
+        'launch/spawn.launch.py',
+        '--validate',
+      ]);
+      expect(extensionApi.process.exec).toHaveBeenNthCalledWith(2, 'podman', [
+        'exec',
+        '-d',
+        CONTAINER_ID,
+        '/entrypoint-launch-robot.sh',
+        'my_robot_sim',
+        'launch/spawn.launch.py',
+        'robot_name:=robot_1',
+      ]);
+    });
+
+    it('uses the established TurtleBot3 spawn path for the prefilled configuration', async () => {
+      await api.launchRobotInSimulation(CONTAINER_ID, {
+        packageName: 'nav2_minimal_tb3_sim',
+        launchFile: 'launch/spawn_tb3.launch.py',
+        arguments: ['robot_name:=robot_1', 'x_pose:=-2.0', 'y_pose:=-0.5', 'yaw:=0.25'],
+      });
+
+      expect(extensionApi.process.exec).toHaveBeenNthCalledWith(1, 'podman', [
+        'exec',
+        CONTAINER_ID,
+        '/entrypoint-launch-robot.sh',
+        'nav2_minimal_tb3_sim',
+        'launch/spawn_tb3.launch.py',
+        '--validate',
+      ]);
+      expect(extensionApi.process.exec).toHaveBeenNthCalledWith(2, 'podman', [
+        'exec',
+        '-d',
+        CONTAINER_ID,
+        SPAWN_ENTRYPOINT,
+        'robot_1',
+        '-2.0',
+        '-0.5',
+        '0.25',
+      ]);
+    });
+
+    it('rejects an injectable package or launch argument', async () => {
+      await expect(
+        api.launchRobotInSimulation(CONTAINER_ID, {
+          packageName: 'robot;id',
+          launchFile: 'spawn.launch.py',
+          arguments: [],
+        }),
+      ).rejects.toThrow(/package/i);
+      await expect(
+        api.launchRobotInSimulation(CONTAINER_ID, {
+          packageName: 'robot_sim',
+          launchFile: 'spawn.launch.py',
+          arguments: ['name;id:=robot'],
+        }),
+      ).rejects.toThrow(/argument/i);
+    });
+  });
+
   describe('launchSimulation security', () => {
     beforeEach(() => {
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({

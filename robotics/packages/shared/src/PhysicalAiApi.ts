@@ -12,6 +12,7 @@ import type {
 import type { BuildHistoryEntry, BundledToolVerificationResult, SbomFormat } from './types/BuildHistory';
 import type { HardenedApp } from './types/layerCompatibility';
 import type { SimulationConfig } from './types/SimulationConfig';
+import type { RobotLaunch } from './types/RobotLaunch';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from './types/SimulationContainer';
 import type {
   TopicInfo,
@@ -155,6 +156,8 @@ export abstract class PhysicalAiApi {
   abstract deleteSimulation(containerId: string): Promise<void>;
   abstract listSimulationContainers(): Promise<SimContainerInfo[]>;
   abstract execInSimulation(containerId: string, command: string[]): Promise<ExecResult>;
+  /** Validate and start a robot launch file already installed in the simulation image. */
+  abstract launchRobotInSimulation(containerId: string, launch: RobotLaunch): Promise<void>;
   abstract openSimulationInBrowser(hostPort: number, containerPort?: number): Promise<void>;
   /** Open an external http(s) URL (e.g. an OpenShift Route) in the host browser. */
   abstract openUrlInBrowser(url: string): Promise<void>;
@@ -305,6 +308,13 @@ export abstract class PhysicalAiApi {
     x: string,
     y: string,
     yaw: string,
+    context?: string,
+  ): Promise<void>;
+  /** Validate and start a robot launch configuration already installed in an OpenShift simulation pod. */
+  abstract launchRobotInOpenShift(
+    namespace: string,
+    name: string,
+    launch: RobotLaunch,
     context?: string,
   ): Promise<void>;
   /** Drive a spawned robot to (x, y) in a deployed pod (Nav2 on Jazzy, cmd_vel on Humble). */

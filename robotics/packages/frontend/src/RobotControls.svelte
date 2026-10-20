@@ -186,7 +186,7 @@ async function remove(index: number) {
               <span class="inline-block w-2 h-2 rounded-full bg-current animate-pulse"></span>
               Nav2 warming…
             </span>
-          {:else}
+          {:else if robot.supportsNavigation}
             {#if robot.warmStatus === 'failed'}
               <!-- Pre-warm gave up; controls stay available (the goal can still cold-start Nav2). -->
               <span class="pai-text-warning" title="Nav2 pre-warm didn't complete; Navigate may cold-start it.">
@@ -228,6 +228,8 @@ async function remove(index: number) {
                     ? 'Failed'
                     : 'Idle'}
             </span>
+          {:else}
+            <span class="pai-text-muted">Navigation unavailable for this profile</span>
           {/if}
           <!-- Remove is always shown (even while Nav2 is warming) so a robot stuck in
                warm-up can be reaped. Disabled only mid-navigation or mid-removal. -->

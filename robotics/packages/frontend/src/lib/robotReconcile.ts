@@ -33,6 +33,7 @@ export function reconcileAdd(existing: RobotEntry[], liveNames: string[]): Robot
       navTarget: { x: '0', y: '0' },
       // eslint-disable-next-line no-null/no-null -- matches RobotEntry's declared `| null` contract
       navReached: null,
+      supportsNavigation: true,
     })),
   ];
 }

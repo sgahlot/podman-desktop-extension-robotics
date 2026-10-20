@@ -40,6 +40,28 @@ pai_validate_identifier() {
   fi
 }
 
+# ROS package names passed to ros2 pkg/launch (never a shell fragment).
+pai_validate_package_name() {
+  local name="${1:-}"
+  if [[ ! "${name}" =~ ^[a-z][a-z0-9_]{0,127}$ ]]; then
+    echo "error: invalid ROS package '${name}'" >&2
+    return 1
+  fi
+}
+
+# Relative URDF or SDF model path. The entrypoint maps an accepted curated
+# package/path pair to a known in-image asset; this only rejects shell/path traversal.
+pai_validate_model_path() {
+  local path="${1:-}"
+  if [[ ! "${path}" =~ ^[a-zA-Z0-9_./-]+\.(urdf|sdf)$ || "${path}" == *..* ]]; then
+    echo "error: invalid robot model path '${path}'" >&2
+    return 1
+  fi
+}
+
+# Compatibility name for existing callers/tests. New callers should use the model-neutral name.
+pai_validate_urdf_path() { pai_validate_model_path "$@"; }
+
 # TCP port 1–65535.
 pai_validate_port() {
   local value="${1:-}"

@@ -23,6 +23,9 @@ podman run -d --name pai-sim -p 6080:6080 -p 8080:8080 \
   /entrypoint-gazebo.sh
 # Browser: http://localhost:6080 — empty world
 podman exec -d pai-sim /entrypoint-spawn-robot.sh robot_1 -2.0 -0.5 0.0
+# Or start an installed package launch after checking its package/file:
+podman exec pai-sim /entrypoint-launch-robot.sh nav2_minimal_tb3_sim launch/spawn_tb3.launch.py --validate
+podman exec -d pai-sim /entrypoint-launch-robot.sh nav2_minimal_tb3_sim launch/spawn_tb3.launch.py robot_name:=robot_2
 ```
 
 ## Podman Machine requirements
@@ -31,7 +34,7 @@ The simulation container uses ~2.5–3 GB RAM. Ensure your Podman Machine has at
 
 ## Notes
 
-- Entrypoints (`entrypoint-gazebo.sh`, `entrypoint-spawn-robot.sh`, …) are required in-image process orchestration. Podman Desktop APIs manage container lifecycle and `podman exec`; they do not replace Gazebo/ROS/noVNC startup or provide a ROS/DDS API. Topic Monitor and similar features still `exec` ROS CLI inside this image.
+- Entrypoints (`entrypoint-gazebo.sh`, `entrypoint-spawn-robot.sh`, `entrypoint-launch-robot.sh`, …) are required in-image process orchestration. Podman Desktop APIs manage container lifecycle and `podman exec`; they do not replace Gazebo/ROS/noVNC startup or provide a ROS/DDS API. Topic Monitor and similar features still `exec` ROS CLI inside this image.
 - Robot spawn verifies the launch-managed Gazebo-to-ROS bridge by waiting for a sample on the spawned robot's `/robot_<name>/scan` topic. This per-robot probe avoids treating another robot's global `/clock` publisher as proof that this robot's bridge is healthy. If the bridge process starts but remains silent, the entrypoint stops that bridge and starts `parameter_bridge` directly from the installed TurtleBot3 bridge configuration. Check `/tmp/ros-home/bridge-<robot>.log` if the direct bridge cannot become ready.
 - Entrypoints validate robot names / poses / `ROBOTS` env (and gazebo ports/world) **before** sourcing ROS — hostile args fail closed even if invoked via raw `podman exec`.
 - Sensors system plugin enabled in the sandbox world (re-verified 2026-08 — no segfault on **arm64/virtio-gpu**). Lidar/IMU topics available after spawn. **In-cluster (amd64, no GPU):** the same plugin *does* segfault (on-screen GLX under llvmpipe) unless the server renders off-screen via EGL — `entrypoint-gazebo.sh`'s software path sets `EGL_PLATFORM=surfaceless` + `gz sim -s --headless-rendering`, and the Containerfile ships `libgl1-mesa-dri libegl-mesa0 libgbm1`. Do not remove these without re-testing on amd64. See the backend README "GPU and rendering".

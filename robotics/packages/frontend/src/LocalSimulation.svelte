@@ -5,7 +5,7 @@ import { router } from 'tinro';
 import type { SimContainerInfo } from '/@shared/src/types/SimulationContainer';
 import { SIM_STOPPED_BROWSER_HINT } from '/@shared/src/types/SimulationContainer';
 import { isSimLaunchImageRef } from '/@shared/src/security/simImageTrust';
-import { imageSupportsNav2Prewarm, simulationBrowserUrl } from '/@shared/src/security/simInput';
+import { imageSupportsNav2Prewarm, simulationBrowserUrl, SPAWN_ENTRYPOINT } from '/@shared/src/security/simInput';
 import RobotControls, { type RobotEntry } from './RobotControls.svelte';
 import { reconcileAdd, pruneStale } from './lib/robotReconcile';
 import { localDiagnosticsHref } from './lib/diagnosticsLink';
@@ -28,6 +28,11 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 export let active = true;
 let wasActive = false;
 let simImageAllowlist = '';
+let robotPackage = 'nav2_minimal_tb3_sim';
+let robotLaunchFile = 'launch/spawn_tb3.launch.py';
+let robotLaunchArguments =
+  'use_sim_time:=True\nnamespace:={name}\nrobot_name:={name}\nx_pose:={x}\ny_pose:={y}\nyaw:={yaw}\nz_pose:=0.01';
+let robotLaunchError = '';
 
 let spawnedRobots: RobotEntry[] = [];
 /** Whether the running container's robots have been reconciled against `ros2 node list`
@@ -185,18 +190,47 @@ function toggleViewer(id: string) {
 
 async function spawnRobot(form: { name: string; x: string; y: string; yaw: string }) {
   if (!runningContainer) throw new Error('No running simulation');
+  robotLaunchError = '';
   missingStreaks.delete(form.name);
   trackedSince.set(form.name, Date.now());
   // A respawned robot under the same name is a new instance — its old cached diagnostics
   // snapshot (if any) is stale and must not be shown as if it were current.
   clearCachedDiagnostics(localTargetKey(runningContainer.id), form.name);
-  await physicalAiClient.execInSimulation(runningContainer.id, [
-    '/entrypoint-spawn-robot.sh',
-    form.name,
-    form.x,
-    form.y,
-    form.yaw,
-  ]);
+  const isDefaultTurtleBot3 =
+    robotPackage.trim() === 'nav2_minimal_tb3_sim' && robotLaunchFile.trim() === 'launch/spawn_tb3.launch.py';
+  const arguments_ = robotLaunchArguments
+    .split(/\r?\n/)
+    .map(argument => argument.trim())
+    .filter(Boolean)
+    .map(argument =>
+      argument
+        .replaceAll('{name}', form.name)
+        .replaceAll('{x}', form.x)
+        .replaceAll('{y}', form.y)
+        .replaceAll('{yaw}', form.yaw),
+    );
+  try {
+    if (isDefaultTurtleBot3) {
+      // Keep TurtleBot3 on the proven path: its entrypoint owns spawn, bridge
+      // readiness/fallback, and the backend's established Nav2 pre-warm flow.
+      await physicalAiClient.execInSimulation(runningContainer.id, [
+        SPAWN_ENTRYPOINT,
+        form.name,
+        form.x,
+        form.y,
+        form.yaw,
+      ]);
+    } else {
+      await physicalAiClient.launchRobotInSimulation(runningContainer.id, {
+        packageName: robotPackage.trim(),
+        launchFile: robotLaunchFile.trim(),
+        arguments: arguments_,
+      });
+    }
+  } catch (error) {
+    robotLaunchError = error instanceof Error ? error.message : String(error);
+    throw error;
+  }
   spawnedRobots = [
     ...spawnedRobots,
     {
@@ -206,9 +240,8 @@ async function spawnRobot(form: { name: string; x: string; y: string; yaw: strin
       navStatus: 'idle',
       navTarget: { x: '2.0', y: '2.0' },
       navReached: null,
-      // Backend pre-warms Nav2 for Nav2 sim images; show "warming…" optimistically there.
-      warmStatus:
-        runningContainer?.imageTag && imageSupportsNav2Prewarm(runningContainer.imageTag) ? 'warming' : undefined,
+      supportsNavigation: isDefaultTurtleBot3,
+      warmStatus: isDefaultTurtleBot3 && imageSupportsNav2Prewarm(runningContainer.imageTag) ? 'warming' : undefined,
     },
   ];
 }
@@ -321,9 +354,9 @@ function diagnoseRobot(index: number): void {
 
 <div class="flex flex-col gap-4">
   <p class="text-sm text-[var(--pd-content-text)]">
-    Launch a Gazebo world (empty by default), view it in the browser via noVNC, then add TurtleBot3 robots
-    interactively. Only local images matching the simulation allowlist can be launched (default <span class="font-mono"
-      >ros2-*-sim*</span>
+    Launch a Gazebo world (empty by default), view it in the browser via noVNC, then add robots using launch
+    configurations already installed in the selected image. Only local images matching the simulation allowlist can be
+    launched (default <span class="font-mono">ros2-*-sim*</span>
     / <span class="font-mono">ros2-*-turtlebot3</span>).
   </p>
 
@@ -398,7 +431,7 @@ function diagnoseRobot(index: number): void {
 
   <!-- Section 2: Running containers -->
   {#if containers.length > 0}
-    <div class="flex flex-col gap-2 max-w-3xl">
+    <div class="flex flex-col gap-2 w-full">
       <h2 class="text-sm font-medium text-[var(--pd-content-header)]">Simulation Containers</h2>
 
       {#each containers as container (container.id)}
@@ -443,14 +476,42 @@ function diagnoseRobot(index: number): void {
   <!-- Section 3: Add Robot (only when a simulation is running) -->
   {#if hasRunning}
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-lg">
-      <h2 class="text-sm font-medium text-[var(--pd-content-header)] mb-2">Add TurtleBot3</h2>
+      <h2 class="text-sm font-medium text-[var(--pd-content-header)] mb-2">Add Robot</h2>
+      <div class="flex flex-col gap-2 mb-3">
+        <label for="robot-package" class="text-xs pai-text-muted">ROS package</label>
+        <input
+          id="robot-package"
+          bind:value={robotPackage}
+          placeholder="my_robot_gazebo"
+          class="px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] font-mono" />
+        <label for="robot-launch-file" class="text-xs pai-text-muted">Launch file</label>
+        <input
+          id="robot-launch-file"
+          bind:value={robotLaunchFile}
+          placeholder="launch/spawn.launch.py"
+          class="px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] font-mono" />
+        <label for="robot-launch-arguments" class="text-xs pai-text-muted"
+          >Launch arguments (one <span class="font-mono">name:=value</span> per line)</label>
+        <textarea
+          id="robot-launch-arguments"
+          bind:value={robotLaunchArguments}
+          rows="5"
+          class="px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] font-mono"
+        ></textarea>
+        <span class="text-xs pai-text-muted"
+          >The package and launch file must already be installed in this simulation image. <span class="font-mono"
+            >{'{name}'}</span
+          >, <span class="font-mono">{'{x}'}</span>, <span class="font-mono">{'{y}'}</span>, and
+          <span class="font-mono">{'{yaw}'}</span> are replaced when you add the robot.</span>
+        {#if robotLaunchError}<span class="text-xs pai-text-error">{robotLaunchError}</span>{/if}
+      </div>
       <RobotControls
         robots={spawnedRobots}
         onSpawn={spawnRobot}
         onNavigate={navigateRobot}
         onRemove={removeRobot}
         onDiagnose={diagnoseRobot}
-        spawnLabel="Add TurtleBot3"
+        spawnLabel="Add robot"
         idPrefix="local" />
     </div>
   {/if}

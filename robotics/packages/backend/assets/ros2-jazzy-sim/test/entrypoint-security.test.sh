@@ -6,6 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VALIDATE="${ROOT}/lib/validate-input.sh"
 SPAWN="${ROOT}/entrypoint-spawn-robot.sh"
+LAUNCH="${ROOT}/entrypoint-launch-robot.sh"
 NAV2="${ROOT}/entrypoint-nav2.sh"
 GAZEBO="${ROOT}/entrypoint-gazebo.sh"
 
@@ -65,6 +66,15 @@ assert_fail "spawn rejects non-numeric x" \
   env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${SPAWN}" "robot_1" "0;rm" 0 0
 assert_fail "spawn rejects missing args" \
   env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${SPAWN}"
+
+echo
+echo "=== entrypoint-launch-robot.sh (rejects before ROS) ==="
+assert_fail "launch rejects injectable package" \
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${LAUNCH}" 'robot;id' spawn.launch.py --validate
+assert_fail "launch rejects traversal" \
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${LAUNCH}" robot_sim ../spawn.launch.py --validate
+assert_fail "launch rejects injectable argument" \
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${LAUNCH}" robot_sim spawn.launch.py 'name;id:=robot'
 
 echo
 echo "=== entrypoint-nav2.sh (rejects before ROS) ==="
