@@ -1,0 +1,11 @@
+ARG BASE_IMAGE=quay.io/sgahlot/ros2-jazzy-sim:noble
+FROM ${BASE_IMAGE}
+
+# Smoke-test only: image-local robot assets must be supplied by a trusted image,
+# never mounted from an arbitrary host directory at runtime.
+COPY robots/ /opt/physical-ai/robots/
+RUN chmod -R a+rX /opt/physical-ai/robots
+
+LABEL org.opencontainers.image.title="Physical AI embedded boxbot smoke image" \
+      org.opencontainers.image.description="Tests image-local SDF spawning into the shared Gazebo world" \
+      io.physical-ai.test-model="boxbot"

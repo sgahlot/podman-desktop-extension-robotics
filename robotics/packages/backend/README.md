@@ -211,7 +211,17 @@ clear errors for either missing prerequisite. It passes values as argv, not a sh
 The extension supports one local simulation container at a time. Whether a configured robot offers
 navigation, teleoperation, sensors, or a bridge is determined by that image-provided launch setup;
 only the prefilled TurtleBot3 configuration exposes the extension's Nav2 controls. Building a custom
-image, arbitrary URDF/SDF upload, and host-path injection are out of scope.
+image and host-path injection are out of scope.
+
+### Embed an SDF asset directory
+
+Image Builder can build a derived local simulation image from a selected directory containing
+`robot-profile.json` and image-local SDF assets. The directory is copied into the build context and
+then embedded under `/opt/physical-ai/robots/<id>/`; it is never mounted into a running simulation.
+The profile must contain an `id`, `displayName`, relative `modelFile` ending in `.sdf`, and optional
+`world` (default `tb3_sandbox`). After the derived build, the Simulation page pre-fills the standard
+`ros_gz_sim` spawn launch. Initial embedded SDF profiles only prove world insertion; they do not
+provide navigation, controllers, sensors, ROS bridges, or compatibility guarantees.
 
 ## Coming Soon
 

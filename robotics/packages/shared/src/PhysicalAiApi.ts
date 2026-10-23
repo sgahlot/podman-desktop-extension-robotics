@@ -38,6 +38,7 @@ import type {
 } from './types/OpenShiftDeploy';
 import type { LayerCacheBuildOptions } from './types/buildLayerCache';
 import type { RosbagRecording } from './types/RosbagRecording';
+import type { EmbeddedRobotProfile } from './types/EmbeddedRobotProfile';
 
 export abstract class PhysicalAiApi {
   abstract getStatus(): Promise<string>;
@@ -65,6 +66,12 @@ export abstract class PhysicalAiApi {
     },
   ): Promise<void>;
   abstract buildSimulationImage(tag: string, config: SimulationConfig, options?: LayerCacheBuildOptions): Promise<void>;
+  /** Select and validate a local SDF profile directory through the native host dialog. */
+  abstract selectEmbeddedRobotDirectory(): Promise<EmbeddedRobotProfile | undefined>;
+  /** Build a derived simulation image containing only the validated selected assets. */
+  abstract buildEmbeddedRobotImage(tag: string, baseImage: string, sourceId: string): Promise<void>;
+  /** Last successfully selected embedded profile, without its host path. */
+  abstract getEmbeddedRobotProfile(): Promise<EmbeddedRobotProfile | undefined>;
   abstract buildCustomSimulationImage(
     tag: string,
     baseImage: string,

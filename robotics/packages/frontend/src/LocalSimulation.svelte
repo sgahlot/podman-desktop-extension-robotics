@@ -13,6 +13,7 @@ import { localTargetKey } from './lib/diagnosticsTargetKey';
 import { setSpawnedRobotsForTarget } from './lib/spawnedRobotsStore';
 import { clearCachedDiagnostics } from './lib/robotDiagnosticsCache';
 import { middlewareLabelForImage } from '/@shared/src/types/middlewareLabels';
+import type { EmbeddedRobotProfile } from '/@shared/src/types/EmbeddedRobotProfile';
 
 let localSimImages: string[] = [];
 let selectedImage = '';
@@ -95,6 +96,23 @@ async function loadImages() {
   }
 }
 
+async function loadEmbeddedRobotProfile() {
+  try {
+    const profile: EmbeddedRobotProfile | undefined = await physicalAiClient.getEmbeddedRobotProfile();
+    if (!profile) return;
+    robotPackage = 'ros_gz_sim';
+    robotLaunchFile = 'launch/gz_spawn_model.launch.py';
+    robotLaunchArguments = [
+      `world:=${profile.world}`,
+      `file:=/opt/physical-ai/robots/${profile.id}/${profile.modelFile}`,
+      'entity_name:={name}',
+      'allow_renaming:=False',
+    ].join('\n');
+  } catch {
+    // Generic launch defaults remain available.
+  }
+}
+
 async function pollContainers() {
   try {
     const listed = await physicalAiClient.listSimulationContainers();
@@ -110,6 +128,7 @@ async function pollContainers() {
 
 onMount(() => {
   loadImages();
+  void loadEmbeddedRobotProfile();
   pollContainers().then(reconcileRobots);
   pollTimer = setInterval(() => {
     pollContainers().then(reconcileRobots);
@@ -240,6 +259,10 @@ async function spawnRobot(form: { name: string; x: string; y: string; yaw: strin
       navStatus: 'idle',
       navTarget: { x: '2.0', y: '2.0' },
       navReached: null,
+      positionManagedByProfile:
+        !isDefaultTurtleBot3 && !robotLaunchArguments.includes('{x}') && !robotLaunchArguments.includes('{y}'),
+      livenessManagedByProfile:
+        !isDefaultTurtleBot3 && !robotLaunchArguments.includes('{x}') && !robotLaunchArguments.includes('{y}'),
       supportsNavigation: isDefaultTurtleBot3,
       warmStatus: isDefaultTurtleBot3 && imageSupportsNav2Prewarm(runningContainer.imageTag) ? 'warming' : undefined,
     },
@@ -277,14 +300,20 @@ async function pruneStaleRobots() {
   // A 'warming' robot's liveness is already being resolved by pollWarmStatus (and the
   // backend's own bounded pre-warm timeout) — skip the exec call entirely if there's
   // nothing else here that actually needs checking this tick.
-  if (spawnedRobots.every(r => r.warmStatus === 'warming')) return;
+  const nodeBackedRobots = spawnedRobots.filter(r => !r.livenessManagedByProfile);
+  if (nodeBackedRobots.length === 0 || nodeBackedRobots.every(r => r.warmStatus === 'warming')) return;
   let live: string[];
   try {
     live = await physicalAiClient.listSpawnedRobotsInSimulation(runningContainer.id);
   } catch {
     return;
   }
-  spawnedRobots = pruneStale({ tracked: spawnedRobots, liveNames: live, missingStreaks, trackedSince, keyOf: n => n });
+  const retainedNames = new Set(
+    pruneStale({ tracked: nodeBackedRobots, liveNames: live, missingStreaks, trackedSince, keyOf: n => n }).map(
+      r => r.name,
+    ),
+  );
+  spawnedRobots = spawnedRobots.filter(r => r.livenessManagedByProfile || retainedNames.has(r.name));
 }
 
 /** Poll Nav2 pre-warm state for robots still warming, so the badge tracks reality. */

@@ -268,8 +268,10 @@ let topicMonitorCaption =
           TurtleBot3 configuration offers the extension's Navigate control.
         </p>
         <p>
-          This does not build a custom image, upload URDF/SDF files, mount host paths, or validate every ROS/Gazebo
-          compatibility detail. Use an image you trust that already contains the robot package and its dependencies.
+          Image Builder can embed a selected directory containing a declarative <span class="font-mono"
+            >robot-profile.json</span>
+          and SDF assets into a derived local image; the directory is copied at build time and never mounted at runtime. Initial
+          SDF profiles only add a model to the world—they do not provide navigation, controllers, sensors, or ROS bridges.
         </p>
       </div>
     </div>
@@ -319,8 +321,8 @@ let topicMonitorCaption =
           the selected image, plus optional <span class="font-mono">name:=value</span> launch arguments. The extension
           checks that package/file before starting the launch. TurtleBot3 is prefilled; its arguments demonstrate the
           <span class="font-mono">{`{name}`}</span>, <span class="font-mono">{`{x}`}</span>,
-          <span class="font-mono">{`{y}`}</span>, and <span class="font-mono">{`{yaw}`}</span> placeholders. Custom image
-          builds, uploads, mounts, and deep compatibility validation are not part of this workflow.
+          <span class="font-mono">{`{y}`}</span>, and <span class="font-mono">{`{yaw}`}</span> placeholders. An embedded SDF
+          profile may define its own pose, in which case the row reports that its position is profile-defined.
         </div>
         <div>
           <strong>Navigate</strong> — Each spawned robot has a <strong>Navigate</strong> button with target X/Y

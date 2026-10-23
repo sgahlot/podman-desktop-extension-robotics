@@ -173,7 +173,10 @@ async function remove(index: number) {
           class="flex flex-row flex-wrap items-center gap-2 text-xs rounded border border-[var(--pd-content-card-border)] p-2">
           <span class="font-mono font-medium text-[var(--pd-content-header)]">{robot.name}</span>
           {#if robot.x !== undefined && robot.y !== undefined}
-            <span class="pai-text-muted">spawned at ({robot.x}, {robot.y})</span>
+            <span class="pai-text-muted"
+              >{robot.positionManagedByProfile
+                ? 'position defined by profile'
+                : `spawned at (${robot.x}, ${robot.y})`}</span>
           {/if}
           {#if robot.warmStatus === 'warming'}
             <!-- Still warming: show the warm indicator and (after this block) Remove;

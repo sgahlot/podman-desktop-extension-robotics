@@ -138,6 +138,16 @@
           "default": "",
           "description": "ENFORCED — a non-empty value here is required for Simulation launch to succeed, not just a suggestion. Comma-separated image refs or repo patterns (e.g. quay.io/ns/ros2-jazzy-sim:noble or quay.io/ns/ros2-jazzy-sim@sha256:…). Empty = default ros2-*-sim* and ros2-*-turtlebot3. Setting a value REPLACES the defaults entirely — list them too (e.g. myimage-sim*,ros2-*-sim*,ros2-*-turtlebot3) if you still want them to launch. Local image content is still trusted once selected, so this is not cryptographic verification — it exists to stop an accidental/mistyped launch, not a determined user."
         },
+        "robotics.simulation.embeddedRobotProfile": {
+          "type": "string",
+          "default": "",
+          "description": "Internal saved embedded-SDF profile metadata."
+        },
+        "robotics.simulation.embeddedRobotDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Internal saved embedded-SDF source directory."
+        },
         "robotics.catalog.sectionTitle": {
           "type": "markdown",
           "markdownDescription": "### Image Catalog"

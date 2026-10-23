@@ -14,6 +14,7 @@ import type {
 } from '/@shared/src/types/ImageCatalog';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import type { RobotLaunch } from '/@shared/src/types/RobotLaunch';
+import type { EmbeddedRobotProfile } from '/@shared/src/types/EmbeddedRobotProfile';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from '/@shared/src/types/SimulationContainer';
 import {
   SIM_CONTAINER_LABEL,
@@ -44,15 +45,17 @@ import {
   assertNamespace,
   assertK8sName,
   assertCpuCount,
+  assertImageRef,
   DEFAULT_SW_RENDER_CPU,
   PART_OF_LABEL,
   PART_OF_VALUE,
   HUMMINGBIRD_NGINX_CONTAINER_NAME,
   KUBE_NODE_HOSTNAME_LABEL,
 } from '/@shared/src/openshift/manifests';
-import { readFile, writeFile, mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, mkdir, rename, rm, cp } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { join as pathJoin, isAbsolute as pathIsAbsolute } from 'node:path';
+import { join as pathJoin, isAbsolute as pathIsAbsolute, relative as pathRelative } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
 import type { BuildHistoryEntry, BundledToolVerificationResult, SbomFormat } from '/@shared/src/types/BuildHistory';
 import {
@@ -358,6 +361,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   private topicPublishLastAt = new Map<string, number>();
   private topicPublishInFlight = new Set<string>();
   private rosbagRecordings = new Map<string, { state: RosbagRecording; tempPath: string; pidFile: string }>();
+  private embeddedRobotSources = new Map<string, string>();
 
   /**
    * Podman Desktop hosts accept an optional AbortController as the 5th pushImage
@@ -377,6 +381,85 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async getStatus(): Promise<string> {
     return 'Physical AI extension is running';
+  }
+
+  async selectEmbeddedRobotDirectory(): Promise<EmbeddedRobotProfile | undefined> {
+    const selected = await extensionApi.window.showOpenDialog({
+      title: 'Select embedded SDF robot directory',
+      openLabel: 'Use robot directory',
+      selectors: ['openDirectory'],
+    });
+    if (!selected?.[0]) return undefined;
+    const root = selected[0].fsPath;
+    const raw = JSON.parse(await readFile(pathJoin(root, 'robot-profile.json'), 'utf8')) as Record<string, unknown>;
+    const id = typeof raw.id === 'string' ? raw.id : '';
+    const displayName = typeof raw.displayName === 'string' ? raw.displayName : '';
+    const modelFile = typeof raw.modelFile === 'string' ? raw.modelFile : '';
+    const world = typeof raw.world === 'string' ? raw.world : 'tb3_sandbox';
+    if (!/^[a-z][a-z0-9_-]{0,63}$/.test(id) || !displayName.trim()) {
+      throw new Error('robot-profile.json requires an id (lowercase letters, digits, _ or -) and displayName.');
+    }
+    if (!/^(?!.*\.\.)(?:[a-zA-Z0-9_.-]+\/)*[a-zA-Z0-9_.-]+\.sdf$/.test(modelFile)) {
+      throw new Error('robot-profile.json modelFile must be a relative .sdf path without traversal.');
+    }
+    if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(world)) throw new Error('robot-profile.json has an invalid world.');
+    const modelPath = pathJoin(root, modelFile);
+    if (pathRelative(root, modelPath).startsWith('..'))
+      throw new Error('robot-profile.json modelFile escapes its directory.');
+    await readFile(modelPath);
+    const sourceId = randomUUID();
+    this.embeddedRobotSources.set(sourceId, root);
+    const profile = { id, displayName: displayName.trim(), modelFile, world, sourceId };
+    const config = extensionApi.configuration.getConfiguration('robotics');
+    await config.update('simulation.embeddedRobotProfile', JSON.stringify(profile));
+    await config.update('simulation.embeddedRobotDirectory', root);
+    return profile;
+  }
+
+  async getEmbeddedRobotProfile(): Promise<EmbeddedRobotProfile | undefined> {
+    const raw = extensionApi.configuration.getConfiguration('robotics').get<string>('simulation.embeddedRobotProfile');
+    if (!raw) return undefined;
+    try {
+      const value = JSON.parse(raw) as EmbeddedRobotProfile;
+      return value?.id && value?.displayName && value?.modelFile && value?.world ? value : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async buildEmbeddedRobotImage(tag: string, baseImage: string, sourceId: string): Promise<void> {
+    const safeTag = assertImageRef(tag.trim());
+    const safeBaseImage = assertImageRef(baseImage.trim());
+    const source =
+      this.embeddedRobotSources.get(sourceId) ??
+      extensionApi.configuration.getConfiguration('robotics').get<string>('simulation.embeddedRobotDirectory');
+    if (!source) throw new Error('Select the robot directory again before building.');
+    const profile = await this.getEmbeddedRobotProfile();
+    if (!profile || profile.sourceId !== sourceId) throw new Error('Selected robot profile is unavailable.');
+    await readFile(pathJoin(source, profile.modelFile));
+    this.#assertCanStartOp(this.activeBuilds, safeTag, 'build');
+    this.#getRunningPodmanConnection();
+    const contextDir = await mkdtemp(pathJoin(tmpdir(), 'physical-ai-embedded-robot-'));
+    const containerfile = `ARG BASE_IMAGE\nFROM ${'${BASE_IMAGE}'}\nCOPY robot/ /opt/physical-ai/robots/${profile.id}/\nRUN chmod -R a+rX /opt/physical-ai/robots/${profile.id}\n`;
+    try {
+      await cp(source, pathJoin(contextDir, 'robot'), { recursive: true });
+      await writeFile(pathJoin(contextDir, 'Containerfile'), containerfile, 'utf8');
+      this.#runContainerBuild(
+        safeTag,
+        contextDir,
+        'Containerfile',
+        { BASE_IMAGE: safeBaseImage },
+        undefined,
+        containerfile,
+        new BuildCacheStreamParser(containerfile, { kind: 'preset-sim', plan: [] }),
+        () => {
+          void rm(contextDir, { recursive: true, force: true }).catch(() => {});
+        },
+      );
+    } catch (err) {
+      await rm(contextDir, { recursive: true, force: true }).catch(() => {});
+      throw err;
+    }
   }
 
   async getCatalogRegistries(): Promise<CatalogRegistry[]> {
@@ -732,19 +815,20 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async #cleanupSupersededAndDanglingImages(tag: string, supersededImageId?: string): Promise<void> {
-    if (!supersededImageId) {
-      return;
-    }
-    const currentId = await this.#getLocalImageIdForTag(tag);
-    if (!currentId || currentId === supersededImageId) {
-      return;
-    }
-    try {
-      await extensionApi.process.exec('podman', ['rmi', supersededImageId]);
-    } catch {
-      // best-effort
+    if (supersededImageId) {
+      const currentId = await this.#getLocalImageIdForTag(tag);
+      if (currentId && currentId !== supersededImageId) {
+        try {
+          await extensionApi.process.exec('podman', ['rmi', supersededImageId]);
+        } catch {
+          // best-effort
+        }
+      }
     }
     try {
+      // Only dangling images (<none> tags) are removed; tagged images, including
+      // other user builds, are preserved. Run even for a first build, where no
+      // previous tag exists to replace.
       await extensionApi.process.exec('podman', ['image', 'prune', '-f']);
     } catch {
       // best-effort

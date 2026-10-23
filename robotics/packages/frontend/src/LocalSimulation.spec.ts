@@ -22,6 +22,7 @@ const mockLaunchRobotInSimulation = vi.fn();
 const mockSendNavigationGoal = vi.fn();
 const mockGetRobotWarmStatus = vi.fn();
 const mockGetSimulationConfig = vi.fn();
+const mockGetEmbeddedRobotProfile = vi.fn();
 const mockListSpawnedRobotsInSimulation = vi.fn();
 const mockDespawnRobot = vi.fn();
 const mockGoto = vi.fn();
@@ -40,6 +41,7 @@ vi.mock('./api/client', () => ({
     sendNavigationGoal: (...args: unknown[]) => mockSendNavigationGoal(...args),
     getRobotWarmStatus: (...args: unknown[]) => mockGetRobotWarmStatus(...args),
     getSimulationConfig: (...args: unknown[]) => mockGetSimulationConfig(...args),
+    getEmbeddedRobotProfile: (...args: unknown[]) => mockGetEmbeddedRobotProfile(...args),
     listSpawnedRobotsInSimulation: (...args: unknown[]) => mockListSpawnedRobotsInSimulation(...args),
     despawnRobot: (...args: unknown[]) => mockDespawnRobot(...args),
   },
@@ -73,6 +75,7 @@ describe('LocalSimulation', () => {
       engine: 'gazebo',
       baseImage: 'jazzy-noble',
     });
+    mockGetEmbeddedRobotProfile.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -351,6 +354,47 @@ describe('LocalSimulation', () => {
       await vi.advanceTimersByTimeAsync(3000);
 
       expect(screen.getByText('robot_1')).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a static embedded SDF robot row after ROS-node reconciliation and prune polls', async () => {
+    vi.useFakeTimers();
+    try {
+      mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
+      mockListSimulationContainers.mockResolvedValue([RUNNING_CONTAINER]);
+      mockGetEmbeddedRobotProfile.mockResolvedValue({
+        id: 'boxbot',
+        displayName: 'Box Bot',
+        modelFile: 'robots/boxbot/model.sdf',
+        world: 'tb3_sandbox',
+        sourceId: 'profile-source',
+      });
+      mockLaunchRobotInSimulation.mockResolvedValue(undefined);
+      mockListSpawnedRobotsInSimulation.mockResolvedValue([]);
+
+      render(SimulationPage);
+      await vi.advanceTimersByTimeAsync(100); // load profile and reconcile existing ROS nodes
+      await fireEvent.click(screen.getByRole('button', { name: 'Add robot' }));
+      await vi.advanceTimersByTimeAsync(0); // static entity launch completes
+
+      expect(mockLaunchRobotInSimulation).toHaveBeenCalledWith('abc123def456', {
+        packageName: 'ros_gz_sim',
+        launchFile: 'launch/gz_spawn_model.launch.py',
+        arguments: [
+          'world:=tb3_sandbox',
+          'file:=/opt/physical-ai/robots/boxbot/robots/boxbot/model.sdf',
+          'entity_name:=robot_1',
+          'allow_renaming:=False',
+        ],
+      });
+      expect(screen.getByText('robot_1')).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(6000); // later polls skip pruning for profile-managed entities
+      expect(screen.getByText('robot_1')).toBeTruthy();
+      // One initial reconciliation only; a static SDF has no ROS node to probe for liveness.
+      expect(mockListSpawnedRobotsInSimulation).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
