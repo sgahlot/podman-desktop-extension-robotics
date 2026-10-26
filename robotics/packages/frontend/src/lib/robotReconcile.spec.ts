@@ -9,6 +9,7 @@ function robot(name: string, overrides: Partial<RobotEntry> = {}): RobotEntry {
     navTarget: { x: '0', y: '0' },
     // eslint-disable-next-line no-null/no-null -- matches RobotEntry's declared `| null` contract
     navReached: null,
+    supportsNavigation: true,
     ...overrides,
   };
 }

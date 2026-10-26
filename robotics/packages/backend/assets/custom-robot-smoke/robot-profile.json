@@ -1,0 +1,7 @@
+{
+  "id": "boxbot",
+  "displayName": "Boxbot smoke model",
+  "modelFile": "robots/boxbot/model.sdf",
+  "world": "tb3_sandbox",
+  "z": 0.15
+}

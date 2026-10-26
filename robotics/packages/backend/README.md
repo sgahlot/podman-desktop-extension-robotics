@@ -6,8 +6,8 @@ Podman Desktop extension for Robotics robotics development. Provides a GUI-drive
 
 - **Image Catalog** — Browse and pull ROS2 images from Quay.io, Docker Hub, or configured OCI registries (All or Curated view; allowlist configurable in Preferences)
 - **Image Builder** — Configure, build, and push ROS2 images (Jazzy sim + noVNC; Fedora 43 + ROS 2 Lyrical amd64 sim is also available from Presets; Humble exists but is not currently verified working — see Coming Soon). The builder provides **Presets** and **Customize** layouts. Quick Starts are available only in Presets layout; Customize can independently select the base image and simulation-layer source, with a live compatibility verdict.
-- **Simulation** — Launch Gazebo via Podman, open noVNC, add TurtleBot3 into a running world. Launch only allows images matching the simulation allowlist (default `ros2-*-sim*` / `ros2-*-turtlebot3`; optional exact tag/digest pins in Preferences). Local image content is trusted once selected — see Help → Image trust. A **Show Viewer** toggle next to **Open in Browser** embeds the noVNC canvas inline in the panel, no browser tab needed (APPENG-6283).
-- **OpenShift Deployment** — Deploy a pushed `amd64` image to an OpenShift cluster from the Simulation page's **OpenShift** tab: pick a namespace/context, preview generated manifests, Deploy, Open URL. Lists deployed sims with per-robot spawn/navigate/remove, delete/refresh, a **Cluster has a GPU** toggle, an optional [Hummingbird](#hummingbird-support) nginx sidecar demo, and the same inline **Show Viewer** toggle as local Simulation, over the route.
+- **Simulation** — Launch Gazebo via Podman, open noVNC, then choose a robot profile detected in the running image or enter a custom launch. Profile defaults can be edited. Image Builder can optionally embed a custom SDF asset directory in a derived image. The extension validates launch inputs and reports missing prerequisites; it never mounts host paths into a running simulation or performs deep ROS/Gazebo compatibility validation. The local UI supports one simulation container, not fleet management. Launch only allows images matching the simulation allowlist (default `ros2-*-sim*` / `ros2-*-turtlebot3`; optional exact tag/digest pins in Preferences). Local image content is trusted once selected — see Help → Image trust. A **Show Viewer** toggle next to **Open in Browser** embeds the noVNC canvas inline in the panel, no browser tab needed (APPENG-6283).
+- **OpenShift Deployment** — Deploy a pushed `amd64` image to an OpenShift cluster from the Simulation page's **OpenShift** tab: pick a namespace/context, preview generated manifests, Deploy, Open URL. The robot controls discover profiles in each deployed image and support custom image-provided launches. Lists deployed sims with per-robot spawn/navigate/remove, delete/refresh, a **Cluster has a GPU** toggle, an optional [Hummingbird](#hummingbird-support) nginx sidecar demo, and the same inline **Show Viewer** toggle as local Simulation, over the route.
 - **Diagnostics** — Live diagnostics for spawned robots (local or OpenShift): TF tree, costmap, and a dynamic list of `sensor_msgs` topics (LaserScan and Imu peeked on refresh; other types listed). Deep-linkable via URL query params (`target=`, `containerId=`/context, `robot=`).
 - **Help** — In-extension documentation
 
@@ -199,6 +199,40 @@ Build via Image Builder (or CLI against `assets/`), then push:
 ### Simulation images (Phase 2 outputs, built on top of a base)
 
 - `quay.io/{NAMESPACE}/ros2-jazzy-sim:noble` — The Jazzy sim: Gazebo + noVNC + Nav2 (launched on **Navigate** via `entrypoint-nav2.sh`).
+
+### Image-provided robot launches
+
+The Local and OpenShift simulation tabs discover the known robot profiles present in the running image. The profile menu
+includes TurtleBot3 when its package and launch file are installed, and embedded SDF profiles found in the image. Selecting
+a launch profile fills in its ROS package, relative launch-file path, and default arguments. You can edit those values;
+the UI marks the profile customized and lets you reset its defaults. Choose **Custom launch configuration** to enter a
+package, launch file, and one `name:=value` argument per line directly. `{name}`, `{x}`, `{y}`, and `{yaw}` expand from
+the Add Robot form. The selected image must contain the package and launch file.
+Before a detached launch starts, the extension verifies the package and file in the image and returns
+clear errors for either missing prerequisite. It passes values as argv, not a shell command.
+
+The extension supports one local simulation container at a time. Whether a configured robot offers
+navigation, teleoperation, sensors, or a bridge is determined by that image-provided launch setup;
+the TurtleBot3 launch profile exposes the extension's Nav2 controls while its package and launch file remain selected. For custom images,
+the package and launch file must be present in the deployed image.
+
+### Embed an SDF asset directory
+
+Image Builder's collapsed, optional Step 3 can build a derived simulation image from a selected directory containing
+`robot-profile.json` and image-local SDF assets. The directory is copied into the build context and
+then embedded under `/opt/physical-ai/robots/<id>/`; it is never mounted into a running simulation.
+The profile must contain an `id`, `displayName`, relative `modelFile` ending in `.sdf`, and optional
+`world` (default `tb3_sandbox`) and `z` (default `0`). Build and push the derived image before deploying
+it to OpenShift. The Local and OpenShift tabs list embedded profiles found in the active image; choose one from the robot
+profile menu to use it. Its ROS package, launch file, and arguments are shown with defaults and can be customized. With
+the defaults, the extension uses its validated SDF spawn path and Add Robot X/Y/yaw set the initial pose; editing the
+launch settings switches to the selected ROS launch. Profile `z` sets the model's height. Embedded SDF profiles provide model
+insertion only; they do not provide navigation, controllers, sensors, ROS bridges, or compatibility
+guarantees.
+
+The derived image tag keeps the Step 2 image's registry and repository, then uses the robot profile ID as its tag. The
+selected target architecture is reflected in the default tag: for example, `boxbot` on `arm64` and `boxbot-amd64` on
+`amd64`. Editing the tag makes it manual, so changing the target architecture will not replace your custom tag.
 
 ## Coming Soon
 

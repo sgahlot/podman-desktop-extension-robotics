@@ -22,7 +22,6 @@ ROBOT_NAME="${1:?Usage: $0 <robot_name> <x> <y> <yaw>}"
 X_POSE="${2:?Usage: $0 <robot_name> <x> <y> <yaw>}"
 Y_POSE="${3:?Usage: $0 <robot_name> <x> <y> <yaw>}"
 YAW="${4:-0.0}"
-
 pai_validate_robot_name "${ROBOT_NAME}"
 pai_validate_numeric "${X_POSE}" "x"
 pai_validate_numeric "${Y_POSE}" "y"
@@ -44,7 +43,10 @@ SIM_DIR="${ROBOTICS_SIM_DIR:-/opt/ros/jazzy/share/nav2_minimal_tb3_sim}"
 URDF_FILE="${SIM_DIR}/urdf/turtlebot3_waffle.urdf"
 BRIDGE_CONFIG="${SIM_DIR}/configs/turtlebot3_waffle_bridge.yaml"
 BRIDGE_PROBE_TOPIC="/${ROBOT_NAME}/scan"
-BRIDGE_READY_TIMEOUT="${ROBOTICS_BRIDGE_READY_TIMEOUT:-8}"
+# A cold Podman machine can take longer than the historical 8 seconds for DDS
+# discovery and the first Gazebo scan. Keep the launch-managed bridge intact
+# during normal startup; recover only a bridge that remains silent.
+BRIDGE_READY_TIMEOUT="${ROBOTICS_BRIDGE_READY_TIMEOUT:-30}"
 if [[ ! "${BRIDGE_READY_TIMEOUT}" =~ ^[0-9]+$ ]] || [[ "${BRIDGE_READY_TIMEOUT}" -lt 1 ]] || [[ "${BRIDGE_READY_TIMEOUT}" -gt 60 ]]; then
   echo "error: ROBOTICS_BRIDGE_READY_TIMEOUT must be a whole number from 1 to 60" >&2
   exit 1
@@ -53,6 +55,20 @@ if [[ ! -f "${BRIDGE_CONFIG}" ]]; then
   echo "error: Gazebo bridge config not found: ${BRIDGE_CONFIG}" >&2
   exit 1
 fi
+
+# `ros2 topic echo --once` exits immediately when discovery has not yet found a
+# publisher, so wrapping one invocation in `timeout` does not create a grace
+# period. Retry short probes for the complete startup window instead.
+wait_for_bridge_sample() {
+  local deadline=$((SECONDS + BRIDGE_READY_TIMEOUT))
+  while (( SECONDS < deadline )); do
+    if ROS2CLI_USE_DAEMON=0 timeout 2 ros2 topic echo --once "${BRIDGE_PROBE_TOPIC}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
 
 echo "[spawn] Spawning ${ROBOT_NAME} at (${X_POSE}, ${Y_POSE}, yaw=${YAW})..."
 
@@ -115,20 +131,13 @@ for ((i = 1; i <= 60; i++)); do
   sleep 1
 done
 
-if ROS2CLI_USE_DAEMON=0 timeout "${BRIDGE_READY_TIMEOUT}" ros2 topic echo --once "${BRIDGE_PROBE_TOPIC}" >/dev/null 2>&1; then
+if wait_for_bridge_sample; then
   echo "[spawn] Gazebo-to-ROS bridge is publishing ${BRIDGE_PROBE_TOPIC}."
 else
-  echo "[spawn] WARN: launch-managed bridge did not deliver ${BRIDGE_PROBE_TOPIC}; restarting it directly from ${BRIDGE_CONFIG}..."
-  # Stop the silent bridge child first; then stop its ros2-launch supervisor. The Gazebo
-  # model creation request has already completed, so the entity remains in the world.
-  launch_bridge_pid="$(pgrep -P "${SPAWN_PID}" -f '/ros_gz_bridge/parameter_bridge' || true)"
-  if [[ -n "${launch_bridge_pid}" ]]; then
-    kill -TERM "${launch_bridge_pid}" 2>/dev/null || true
-  fi
-  kill -TERM "${SPAWN_PID}" 2>/dev/null || true
-  wait "${SPAWN_PID}" 2>/dev/null || true
-  SPAWN_PID=""
-
+  echo "[spawn] WARN: launch-managed bridge did not deliver ${BRIDGE_PROBE_TOPIC}; testing a direct bridge from ${BRIDGE_CONFIG}..."
+  # Do not tear down the launch-managed bridge until the replacement has proven it
+  # can forward a sample. Killing it first can leave Nav2 with no odom/TF at all
+  # when the direct bridge is also unable to connect.
   BRIDGE_BIN="${ROBOTICS_BRIDGE_BIN:-$(ros2 pkg prefix ros_gz_bridge)/lib/ros_gz_bridge/parameter_bridge}"
   if [[ ! -x "${BRIDGE_BIN}" ]]; then
     echo "error: ros_gz_bridge executable not found: ${BRIDGE_BIN}" >&2
@@ -142,18 +151,22 @@ else
     >>"${HOME}/bridge-${ROBOT_NAME}.log" 2>&1 &
   BRIDGE_PID=$!
 
-  if ! ROS2CLI_USE_DAEMON=0 timeout "${BRIDGE_READY_TIMEOUT}" ros2 topic echo --once "${BRIDGE_PROBE_TOPIC}" >/dev/null 2>&1; then
-    echo "error: standalone ros_gz_bridge did not deliver ${BRIDGE_PROBE_TOPIC} within ${BRIDGE_READY_TIMEOUT}s" >&2
+  if wait_for_bridge_sample; then
+    # The sample can come from either bridge while both are alive. Retain the
+    # launch-managed bridge: stopping it here can remove the only bridge that
+    # Nav2's TF and odometry depend on.
+    echo "[spawn] Direct ros_gz_bridge is publishing ${BRIDGE_PROBE_TOPIC}; retaining launch-managed bridge."
+  else
+    echo "[spawn] WARN: direct ros_gz_bridge did not deliver ${BRIDGE_PROBE_TOPIC}; retaining launch-managed bridge." >&2
     cat "${HOME}/bridge-${ROBOT_NAME}.log" >&2
-    exit 1
+    kill -TERM "${BRIDGE_PID}" 2>/dev/null || true
+    wait "${BRIDGE_PID}" 2>/dev/null || true
+    BRIDGE_PID=""
   fi
-  echo "[spawn] Standalone ros_gz_bridge is publishing ${BRIDGE_PROBE_TOPIC}."
 fi
 
 echo "[spawn] ${ROBOT_NAME} spawn initiated. Waiting for processes..."
 
-if [[ -n "${BRIDGE_PID}" ]]; then
-  wait "${BRIDGE_PID}" "${RSP_PID}"
-else
-  wait "${SPAWN_PID}" "${RSP_PID}"
-fi
+wait_pids=("${SPAWN_PID}" "${RSP_PID}")
+[[ -n "${BRIDGE_PID}" ]] && wait_pids+=("${BRIDGE_PID}")
+wait "${wait_pids[@]}"

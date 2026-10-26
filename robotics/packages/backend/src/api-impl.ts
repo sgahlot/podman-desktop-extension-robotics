@@ -13,6 +13,9 @@ import type {
   LocalImageInfo,
 } from '/@shared/src/types/ImageCatalog';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
+import type { RobotLaunch } from '/@shared/src/types/RobotLaunch';
+import type { EmbeddedRobotProfile } from '/@shared/src/types/EmbeddedRobotProfile';
+import { TURTLEBOT3_IMAGE_PROFILE, type ImageRobotProfile } from '/@shared/src/types/ImageRobotProfile';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from '/@shared/src/types/SimulationContainer';
 import {
   SIM_CONTAINER_LABEL,
@@ -43,15 +46,17 @@ import {
   assertNamespace,
   assertK8sName,
   assertCpuCount,
+  assertImageRef,
   DEFAULT_SW_RENDER_CPU,
   PART_OF_LABEL,
   PART_OF_VALUE,
   HUMMINGBIRD_NGINX_CONTAINER_NAME,
   KUBE_NODE_HOSTNAME_LABEL,
 } from '/@shared/src/openshift/manifests';
-import { readFile, writeFile, mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, mkdir, rename, rm, cp } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { join as pathJoin, isAbsolute as pathIsAbsolute } from 'node:path';
+import { join as pathJoin, isAbsolute as pathIsAbsolute, relative as pathRelative } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
 import type { BuildHistoryEntry, BundledToolVerificationResult, SbomFormat } from '/@shared/src/types/BuildHistory';
 import {
@@ -102,11 +107,15 @@ import type { RosbagRecording } from '/@shared/src/types/RosbagRecording';
 import type { NavigationGoalResult, Nav2WarmStatus } from '/@shared/src/types/NavigationGoalResult';
 import {
   assertRobotName,
+  assertNumericArg,
   assertRosTopicName,
   assertRosDistro,
   NAV2_ENTRYPOINT,
   SPAWN_ENTRYPOINT,
   assertSpawnExecCommand,
+  assertRobotLaunch,
+  assertEmbeddedRobotProfile,
+  ROBOT_LAUNCH_ENTRYPOINT,
   assertLaunchCmd,
   assertLaunchEnv,
   assertLaunchLabels,
@@ -225,6 +234,159 @@ function firstNonEmpty(...values: (string | undefined)[]): string {
 }
 /** Cap concurrent in-flight pull/build/push ops. */
 const MAX_IN_FLIGHT_OPS = 5;
+
+const IMAGE_ROBOT_PROFILE_DISCOVERY_PYTHON = String.raw`
+import json
+import pathlib
+import re
+import subprocess
+
+profiles = []
+try:
+    prefix = subprocess.run(
+        ['ros2', 'pkg', 'prefix', 'nav2_minimal_tb3_sim'],
+        check=True, capture_output=True, text=True, timeout=5
+    ).stdout.strip()
+    launch = pathlib.Path(prefix) / 'share/nav2_minimal_tb3_sim/launch/spawn_tb3.launch.py'
+    if launch.is_file():
+        profiles.append({
+            'id': 'turtlebot3', 'displayName': 'TurtleBot3', 'kind': 'builtin-turtlebot3',
+        })
+except Exception:
+    pass
+
+root = pathlib.Path('/opt/physical-ai/robots')
+if root.is_dir():
+    for metadata in sorted(root.glob('*/robot-profile.json')):
+        try:
+            raw = json.loads(metadata.read_text(encoding='utf-8'))
+            profile_id = raw.get('id')
+            display_name = raw.get('displayName')
+            model_file = raw.get('modelFile')
+            world = raw.get('world', 'tb3_sandbox')
+            z = raw.get('z', 0)
+            if not isinstance(profile_id, str) or not re.fullmatch(r'[a-z][a-z0-9_-]{0,63}', profile_id):
+                continue
+            if metadata.parent.name != profile_id or not isinstance(display_name, str) or not display_name.strip():
+                continue
+            if any(profile['id'] == profile_id for profile in profiles):
+                continue
+            if not isinstance(model_file, str) or not model_file.endswith('.sdf'):
+                continue
+            relative = pathlib.PurePosixPath(model_file)
+            if relative.is_absolute() or '..' in relative.parts:
+                continue
+            model = (metadata.parent / pathlib.Path(*relative.parts)).resolve(strict=True)
+            if metadata.parent.resolve() not in model.parents or not model.is_file():
+                continue
+            if not isinstance(world, str) or not re.fullmatch(r'[a-zA-Z][a-zA-Z0-9_-]{0,63}', world):
+                continue
+            if isinstance(z, bool) or not isinstance(z, (int, float)):
+                continue
+            profiles.append({
+                'id': profile_id, 'displayName': display_name.strip(), 'kind': 'embedded-sdf',
+                'profile': {'id': profile_id, 'displayName': display_name.strip(),
+                            'modelFile': model_file, 'world': world, 'z': z},
+            })
+        except Exception:
+            continue
+
+print('__PHYSICAL_AI_ROBOT_PROFILES__' + json.dumps(profiles, separators=(',', ':')))
+`;
+
+function parseImageRobotProfiles(stdout: string): ImageRobotProfile[] {
+  const profileLine = stdout.split(/\r?\n/).find(line => line.startsWith('__PHYSICAL_AI_ROBOT_PROFILES__'));
+  if (!profileLine) throw new Error('The simulation image returned an invalid robot profile list.');
+  let entries: unknown;
+  try {
+    entries = JSON.parse(profileLine.slice('__PHYSICAL_AI_ROBOT_PROFILES__'.length));
+  } catch {
+    throw new Error('The simulation image returned an invalid robot profile list.');
+  }
+  if (!Array.isArray(entries)) throw new Error('The simulation image returned an invalid robot profile list.');
+
+  const profiles: ImageRobotProfile[] = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue;
+    const candidate = entry as Record<string, unknown>;
+    if (
+      typeof candidate.id !== 'string' ||
+      !/^[a-z][a-z0-9_-]{0,63}$/.test(candidate.id) ||
+      typeof candidate.displayName !== 'string' ||
+      !candidate.displayName.trim()
+    ) {
+      continue;
+    }
+    if (
+      candidate.kind === 'builtin-turtlebot3' &&
+      candidate.id === TURTLEBOT3_IMAGE_PROFILE.id &&
+      candidate.displayName === TURTLEBOT3_IMAGE_PROFILE.displayName
+    ) {
+      profiles.push(TURTLEBOT3_IMAGE_PROFILE);
+      continue;
+    }
+    if (
+      candidate.kind === 'launch' &&
+      typeof candidate.packageName === 'string' &&
+      typeof candidate.launchFile === 'string' &&
+      typeof candidate.launchArguments === 'string'
+    ) {
+      profiles.push({
+        id: candidate.id,
+        displayName: candidate.displayName,
+        kind: 'launch',
+        packageName: candidate.packageName,
+        launchFile: candidate.launchFile,
+        launchArguments: candidate.launchArguments.replaceAll('\\n', '\n'),
+        supportsNavigation: candidate.supportsNavigation === true,
+      });
+      continue;
+    }
+    if (candidate.kind === 'embedded-sdf' && candidate.profile && typeof candidate.profile === 'object') {
+      const raw = candidate.profile as Record<string, unknown>;
+      if (
+        raw.id === candidate.id &&
+        raw.displayName === candidate.displayName &&
+        typeof raw.modelFile === 'string' &&
+        typeof raw.world === 'string' &&
+        typeof raw.z === 'number'
+      ) {
+        try {
+          const profile = assertEmbeddedRobotProfile({ ...raw, sourceId: '' } as EmbeddedRobotProfile);
+          profiles.push({
+            id: candidate.id,
+            displayName: candidate.displayName,
+            kind: 'embedded-sdf',
+            profile: {
+              id: profile.id,
+              displayName: profile.displayName,
+              modelFile: profile.modelFile,
+              world: profile.world,
+              z: profile.z,
+            },
+            launchDefaults: {
+              packageName: 'ros_gz_sim',
+              launchFile: 'launch/gz_spawn_model.launch.py',
+              launchArguments: [
+                `world:=${profile.world}`,
+                `file:=/opt/physical-ai/robots/${profile.id}/${profile.modelFile}`,
+                'entity_name:={name}',
+                'allow_renaming:=False',
+                'x:={x}',
+                'y:={y}',
+                `z:=${profile.z}`,
+                'Y:={yaw}',
+              ].join('\n'),
+            },
+          });
+        } catch {
+          // Ignore invalid profile metadata from the image.
+        }
+      }
+    }
+  }
+  return profiles;
+}
 
 /**
  * Where an in-container command runs. The same spawn/Nav2/topic logic works
@@ -355,6 +517,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   private topicPublishLastAt = new Map<string, number>();
   private topicPublishInFlight = new Set<string>();
   private rosbagRecordings = new Map<string, { state: RosbagRecording; tempPath: string; pidFile: string }>();
+  private embeddedRobotSources = new Map<string, string>();
 
   /**
    * Podman Desktop hosts accept an optional AbortController as the 5th pushImage
@@ -374,6 +537,117 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async getStatus(): Promise<string> {
     return 'Physical AI extension is running';
+  }
+
+  async selectEmbeddedRobotDirectory(): Promise<EmbeddedRobotProfile | undefined> {
+    const selected = await extensionApi.window.showOpenDialog({
+      title: 'Select embedded SDF robot directory',
+      openLabel: 'Use robot directory',
+      selectors: ['openDirectory'],
+    });
+    if (!selected?.[0]) return undefined;
+    const root = selected[0].fsPath;
+    const raw = JSON.parse(await readFile(pathJoin(root, 'robot-profile.json'), 'utf8')) as Record<string, unknown>;
+    const id = typeof raw.id === 'string' ? raw.id : '';
+    const displayName = typeof raw.displayName === 'string' ? raw.displayName : '';
+    const modelFile = typeof raw.modelFile === 'string' ? raw.modelFile : '';
+    const world = typeof raw.world === 'string' ? raw.world : 'tb3_sandbox';
+    if (!/^[a-z][a-z0-9_-]{0,63}$/.test(id) || !displayName.trim()) {
+      throw new Error('robot-profile.json requires an id (lowercase letters, digits, _ or -) and displayName.');
+    }
+    if (!/^(?!.*\.\.)(?:[a-zA-Z0-9_.-]+\/)*[a-zA-Z0-9_.-]+\.sdf$/.test(modelFile)) {
+      throw new Error('robot-profile.json modelFile must be a relative .sdf path without traversal.');
+    }
+    if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(world)) throw new Error('robot-profile.json has an invalid world.');
+    const modelPath = pathJoin(root, modelFile);
+    if (pathRelative(root, modelPath).startsWith('..'))
+      throw new Error('robot-profile.json modelFile escapes its directory.');
+    await readFile(modelPath);
+    const sourceId = randomUUID();
+    this.embeddedRobotSources.set(sourceId, root);
+    const z = typeof raw.z === 'number' && Number.isFinite(raw.z) ? raw.z : 0;
+    const profile = { id, displayName: displayName.trim(), modelFile, world, z, sourceId };
+    const config = extensionApi.configuration.getConfiguration('robotics');
+    await config.update('simulation.embeddedRobotProfile', JSON.stringify(profile));
+    await config.update('simulation.embeddedRobotDirectory', root);
+    return profile;
+  }
+
+  async getEmbeddedRobotProfile(): Promise<EmbeddedRobotProfile | undefined> {
+    const raw = extensionApi.configuration.getConfiguration('robotics').get<string>('simulation.embeddedRobotProfile');
+    if (!raw) return undefined;
+    try {
+      const value = JSON.parse(raw) as EmbeddedRobotProfile;
+      if (!value?.id || !value?.displayName || !value?.modelFile || !value?.world) return undefined;
+      return assertEmbeddedRobotProfile({ ...value, z: value.z ?? 0 });
+    } catch {
+      return undefined;
+    }
+  }
+
+  async listRobotProfilesInSimulation(containerId: string): Promise<ImageRobotProfile[]> {
+    const { id, image } = await this.#resolveSimulationContainer(containerId);
+    return this.#discoverImageRobotProfiles({ kind: 'podman', id }, PhysicalAiApiImpl.#distroFromImage(image));
+  }
+
+  async listRobotProfilesInOpenShift(namespace: string, name: string, context?: string): Promise<ImageRobotProfile[]> {
+    const target = await this.#openShiftTopicTarget(namespace, name, context);
+    return this.#discoverImageRobotProfiles(target.target, target.distro);
+  }
+
+  async #discoverImageRobotProfiles(target: ExecTarget, distro: SupportedRosDistro): Promise<ImageRobotProfile[]> {
+    const result = await this.#execRosBash(target, distro, 'python3 -c "$1"', [IMAGE_ROBOT_PROFILE_DISCOVERY_PYTHON]);
+    if (result.exitCode !== 0) {
+      throw new Error(
+        firstNonEmpty(
+          result.stderr.trim(),
+          result.stdout.trim(),
+          'Could not inspect robot profiles in the simulation image.',
+        ),
+      );
+    }
+    return parseImageRobotProfiles(result.stdout.trim());
+  }
+
+  async buildEmbeddedRobotImage(
+    tag: string,
+    baseImage: string,
+    sourceId: string,
+    targetArch: 'amd64' | 'arm64',
+  ): Promise<void> {
+    const safeTag = assertImageRef(tag.trim());
+    const safeBaseImage = assertImageRef(baseImage.trim());
+    const source =
+      this.embeddedRobotSources.get(sourceId) ??
+      extensionApi.configuration.getConfiguration('robotics').get<string>('simulation.embeddedRobotDirectory');
+    if (!source) throw new Error('Select the robot directory again before building.');
+    const profile = await this.getEmbeddedRobotProfile();
+    if (profile?.sourceId !== sourceId) throw new Error('Selected robot profile is unavailable.');
+    await readFile(pathJoin(source, profile.modelFile));
+    this.#assertCanStartOp(this.activeBuilds, safeTag, 'build');
+    this.#getRunningPodmanConnection();
+    const contextDir = await mkdtemp(pathJoin(tmpdir(), 'physical-ai-embedded-robot-'));
+    const containerfile = `ARG BASE_IMAGE\nFROM ${'${BASE_IMAGE}'}\nCOPY entrypoint-spawn-embedded-robot.sh /entrypoint-spawn-embedded-robot.sh\nCOPY lib/ /usr/local/lib/robotics/\nRUN chmod 0755 /entrypoint-spawn-embedded-robot.sh\nCOPY robot/ /opt/physical-ai/robots/${profile.id}/\nRUN chmod -R a+rX /opt/physical-ai/robots/${profile.id}\n`;
+    try {
+      await stageSimRuntimeAssetFiles(this.extensionContext.extensionUri, SIM_RUNTIME_BUNDLE_ASSET_DIR, contextDir);
+      await cp(source, pathJoin(contextDir, 'robot'), { recursive: true });
+      await writeFile(pathJoin(contextDir, 'Containerfile'), containerfile, 'utf8');
+      this.#runContainerBuild(
+        safeTag,
+        contextDir,
+        'Containerfile',
+        { BASE_IMAGE: safeBaseImage },
+        platformForArch(targetArch),
+        containerfile,
+        new BuildCacheStreamParser(containerfile, { kind: 'preset-sim', plan: [] }),
+        () => {
+          void rm(contextDir, { recursive: true, force: true }).catch(() => {});
+        },
+      );
+    } catch (err) {
+      await rm(contextDir, { recursive: true, force: true }).catch(() => {});
+      throw err;
+    }
   }
 
   async getCatalogRegistries(): Promise<CatalogRegistry[]> {
@@ -729,19 +1003,20 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   }
 
   async #cleanupSupersededAndDanglingImages(tag: string, supersededImageId?: string): Promise<void> {
-    if (!supersededImageId) {
-      return;
-    }
-    const currentId = await this.#getLocalImageIdForTag(tag);
-    if (!currentId || currentId === supersededImageId) {
-      return;
-    }
-    try {
-      await extensionApi.process.exec('podman', ['rmi', supersededImageId]);
-    } catch {
-      // best-effort
+    if (supersededImageId) {
+      const currentId = await this.#getLocalImageIdForTag(tag);
+      if (currentId && currentId !== supersededImageId) {
+        try {
+          await extensionApi.process.exec('podman', ['rmi', supersededImageId]);
+        } catch {
+          // best-effort
+        }
+      }
     }
     try {
+      // Only dangling images (<none> tags) are removed; tagged images, including
+      // other user builds, are preserved. Run even for a first build, where no
+      // previous tag exists to replace.
       await extensionApi.process.exec('podman', ['image', 'prune', '-f']);
     } catch {
       // best-effort
@@ -2036,14 +2311,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   async execInSimulation(containerId: string, command: string[]): Promise<ExecResult> {
     const { id, image } = await this.#resolveSimulationContainer(containerId);
-    const [, safeRobot, safeX, safeY, safeYaw] = assertSpawnExecCommand(command);
-    const safeCommand = [SPAWN_ENTRYPOINT, safeRobot, safeX, safeY, safeYaw];
+    const safeCommand = assertSpawnExecCommand(command);
+    const [, safeRobot, safeX, safeY, safeYaw] = safeCommand;
     try {
       // Detached: entrypoint backgrounds work; exitCode reflects only whether
       // podman accepted the exec, not whether spawn succeeded inside the container.
       const result = await extensionApi.process.exec('podman', ['exec', '-d', id, ...safeCommand]);
-      // Warm Nav2 in the background so the first Navigate click is instant (Nav2 sim images).
-      if (imageSupportsNav2Prewarm(image)) {
+      // Warm Nav2 only for the default TurtleBot3 path. A curated non-navigation
+      // profile is still spawnable and removable, but must not consume a Nav2 stack.
+      if (safeCommand.length === 5 && imageSupportsNav2Prewarm(image)) {
         const pose = { x: Number(safeX), y: Number(safeY), yaw: Number(safeYaw) };
         const warmKey = PhysicalAiApiImpl.#warmKey(id, safeRobot);
         const distro = PhysicalAiApiImpl.#distroFromImage(image);
@@ -2061,6 +2337,107 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         stdout: runErr.stdout ?? '',
         stderr: runErr.stderr ?? runErr.message ?? String(err),
       };
+    }
+  }
+
+  async launchRobotInSimulation(containerId: string, launch: RobotLaunch): Promise<void> {
+    const { id, image } = await this.#resolveSimulationContainer(containerId);
+    const safeLaunch = assertRobotLaunch(launch);
+    const command = [ROBOT_LAUNCH_ENTRYPOINT, safeLaunch.packageName, safeLaunch.launchFile, ...safeLaunch.arguments];
+    const argumentValue = (name: string): string | undefined =>
+      safeLaunch.arguments.find(argument => argument.startsWith(`${name}:=`))?.slice(name.length + 2);
+    const robotName = argumentValue('robot_name');
+    const x = argumentValue('x_pose');
+    const y = argumentValue('y_pose');
+    const yaw = argumentValue('yaw') ?? '0';
+    const isKnownTurtleBot3 =
+      safeLaunch.packageName === 'nav2_minimal_tb3_sim' && safeLaunch.launchFile === 'launch/spawn_tb3.launch.py';
+    const usesLegacyTurtleBot3Arguments =
+      !!robotName &&
+      !!x &&
+      !!y &&
+      safeLaunch.arguments.length === 4 &&
+      safeLaunch.arguments[0] === `robot_name:=${robotName}` &&
+      safeLaunch.arguments[1] === `x_pose:=${x}` &&
+      safeLaunch.arguments[2] === `y_pose:=${y}` &&
+      safeLaunch.arguments[3] === `yaw:=${yaw}`;
+    const usesDefaultTurtleBot3Arguments =
+      !!robotName &&
+      !!x &&
+      !!y &&
+      safeLaunch.arguments.length === 7 &&
+      safeLaunch.arguments[0] === 'use_sim_time:=True' &&
+      safeLaunch.arguments[1] === `namespace:=${robotName}` &&
+      safeLaunch.arguments[2] === `robot_name:=${robotName}` &&
+      safeLaunch.arguments[3] === `x_pose:=${x}` &&
+      safeLaunch.arguments[4] === `y_pose:=${y}` &&
+      safeLaunch.arguments[5] === `yaw:=${yaw}` &&
+      safeLaunch.arguments[6] === 'z_pose:=0.01';
+    try {
+      // Run the lightweight preflight synchronously so a missing package or launch
+      // file is reported to the form rather than failing silently in a detached exec.
+      await extensionApi.process.exec('podman', ['exec', id, ...command.slice(0, 3), '--validate']);
+      if (isKnownTurtleBot3 && (usesLegacyTurtleBot3Arguments || usesDefaultTurtleBot3Arguments)) {
+        // Preserve the known-good TurtleBot3 orchestration: it waits for the
+        // Gazebo bridge and falls back to a direct bridge when needed. Other
+        // package launches retain the generic image-provided wrapper path.
+        await extensionApi.process.exec('podman', ['exec', '-d', id, SPAWN_ENTRYPOINT, robotName, x, y, yaw]);
+        if (imageSupportsNav2Prewarm(image)) {
+          const safeRobot = assertRobotName(robotName);
+          void this.#prewarmNav2(
+            PhysicalAiApiImpl.#warmKey(id, safeRobot),
+            { kind: 'podman', id },
+            safeRobot,
+            { x: Number(x), y: Number(y), yaw: 0 },
+            PhysicalAiApiImpl.#distroFromImage(image),
+          );
+        }
+      } else {
+        await extensionApi.process.exec('podman', ['exec', '-d', id, ...command]);
+      }
+    } catch (err: unknown) {
+      const runErr = err as { stderr?: string; message?: string };
+      throw new Error(firstNonEmpty(runErr.stderr?.trim(), runErr.message, 'Robot launch could not be started.'));
+    }
+  }
+
+  async spawnEmbeddedRobotInSimulation(
+    containerId: string,
+    profile: EmbeddedRobotProfile,
+    robotName: string,
+    x: string,
+    y: string,
+    yaw: string,
+  ): Promise<void> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    const safeProfile = assertEmbeddedRobotProfile(profile);
+    const safeRobot = assertRobotName(robotName);
+    const safeX = assertNumericArg(x, 'x');
+    const safeY = assertNumericArg(y, 'y');
+    const safeYaw = assertNumericArg(yaw, 'yaw');
+    const modelPath = `/opt/physical-ai/robots/${safeProfile.id}/${safeProfile.modelFile}`;
+    const command = [
+      '/entrypoint-spawn-embedded-robot.sh',
+      safeRobot,
+      safeProfile.world,
+      modelPath,
+      safeX,
+      safeY,
+      String(safeProfile.z),
+      safeYaw,
+    ];
+    try {
+      await extensionApi.process.exec('podman', ['exec', id, 'test', '-r', modelPath]);
+      await extensionApi.process.exec('podman', ['exec', id, ...command]);
+    } catch (err: unknown) {
+      const runErr = err as { stderr?: string; message?: string };
+      throw new Error(
+        firstNonEmpty(
+          runErr.stderr?.trim(),
+          runErr.message,
+          `Could not spawn embedded profile '${safeProfile.displayName}'. Build and use its derived image first.`,
+        ),
+      );
     }
   }
 
@@ -4105,6 +4482,67 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       }
     } catch (err) {
       console.error('[physical-ai] Nav2 pre-warm setup failed (non-fatal):', err);
+    }
+  }
+
+  async launchRobotInOpenShift(namespace: string, name: string, launch: RobotLaunch, context?: string): Promise<void> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeLaunch = assertRobotLaunch(launch);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    const target = { kind: 'oc', pod, namespace: ns, context } as const;
+    const command = [ROBOT_LAUNCH_ENTRYPOINT, safeLaunch.packageName, safeLaunch.launchFile];
+    const preflight = await this.#execAttached(target, [...command, '--validate']);
+    if (preflight.exitCode !== 0) {
+      throw new Error(
+        firstNonEmpty(preflight.stderr.trim(), preflight.stdout.trim(), 'Robot launch configuration is unavailable.'),
+      );
+    }
+    await this.#execDetached(target, ROBOT_LAUNCH_ENTRYPOINT, [
+      safeLaunch.packageName,
+      safeLaunch.launchFile,
+      ...safeLaunch.arguments,
+    ]);
+  }
+
+  async spawnEmbeddedRobotInOpenShift(
+    namespace: string,
+    name: string,
+    profile: EmbeddedRobotProfile,
+    robotName: string,
+    x: string,
+    y: string,
+    yaw: string,
+    context?: string,
+  ): Promise<void> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeProfile = assertEmbeddedRobotProfile(profile);
+    const safeRobot = assertRobotName(robotName);
+    const safeX = assertNumericArg(x, 'x');
+    const safeY = assertNumericArg(y, 'y');
+    const safeYaw = assertNumericArg(yaw, 'yaw');
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    const target = { kind: 'oc', pod, namespace: ns, context } as const;
+    const modelPath = `/opt/physical-ai/robots/${safeProfile.id}/${safeProfile.modelFile}`;
+    const fileCheck = await this.#execAttached(target, ['test', '-r', modelPath]);
+    if (fileCheck.exitCode !== 0) {
+      throw new Error(
+        `Embedded profile '${safeProfile.displayName}' is not present in this deployment image. Build and push its derived image, then deploy that image.`,
+      );
+    }
+    const result = await this.#execAttached(target, [
+      '/entrypoint-spawn-embedded-robot.sh',
+      safeRobot,
+      safeProfile.world,
+      modelPath,
+      safeX,
+      safeY,
+      String(safeProfile.z),
+      safeYaw,
+    ]);
+    if (result.exitCode !== 0) {
+      throw new Error(firstNonEmpty(result.stderr.trim(), result.stdout.trim(), 'Could not spawn embedded robot.'));
     }
   }
 

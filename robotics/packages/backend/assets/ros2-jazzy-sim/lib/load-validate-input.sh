@@ -15,3 +15,14 @@ fi
 # shellcheck source=validate-input.sh
 source "${_pai_validate}"
 unset _pai_here _pai_validate
+
+# ROS setup files may expand variables that are unset in a clean container
+# environment (for example AMENT_TRACE_SETUP_FILES). Preserve the caller's
+# nounset policy, but disable it while the upstream setup script is sourced.
+pai_source_ros_setup() {
+  local setup="${ROBOTICS_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
+  set +u
+  # shellcheck disable=SC1090
+  source "${setup}"
+  set -u
+}

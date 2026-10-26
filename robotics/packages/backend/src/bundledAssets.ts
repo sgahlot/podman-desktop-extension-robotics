@@ -2,7 +2,13 @@ import * as extensionApi from '@podman-desktop/api';
 import { access, cp } from 'node:fs/promises';
 import { join as pathJoin } from 'node:path';
 
-const SIM_RUNTIME_FILES = ['entrypoint-gazebo.sh', 'entrypoint-spawn-robot.sh', 'entrypoint-nav2.sh'] as const;
+const SIM_RUNTIME_FILES = [
+  'entrypoint-gazebo.sh',
+  'entrypoint-spawn-robot.sh',
+  'entrypoint-spawn-embedded-robot.sh',
+  'entrypoint-launch-robot.sh',
+  'entrypoint-nav2.sh',
+] as const;
 const SIM_RUNTIME_DIRS = ['lib', 'worlds', 'www', 'config'] as const;
 
 async function pathExists(filePath: string): Promise<boolean> {

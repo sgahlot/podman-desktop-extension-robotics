@@ -13,6 +13,8 @@ import {
   distroSupportsNav2FromCatalog,
   distroSupportsNav2PrewarmFromCatalog,
 } from '../config/rosDistroCatalog';
+import type { RobotLaunch } from '../types/RobotLaunch';
+import type { EmbeddedRobotProfile } from '../types/EmbeddedRobotProfile';
 
 /** Robot names used in spawn / nav (ROS namespace / Gazebo model). */
 export const ROBOT_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
@@ -72,9 +74,46 @@ export function assertNumericArg(value: string, label: string): string {
 export const SPAWN_ENTRYPOINT = '/entrypoint-spawn-robot.sh';
 export const GAZEBO_ENTRYPOINT = '/entrypoint-gazebo.sh';
 export const NAV2_ENTRYPOINT = '/entrypoint-nav2.sh';
+export const ROBOT_LAUNCH_ENTRYPOINT = '/entrypoint-launch-robot.sh';
+
+const ROS_PACKAGE_RE = /^[a-z][a-z0-9_]{0,127}$/;
+const ROS_LAUNCH_FILE_RE = /^(?!.*\.\.)(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.launch\.(?:py|xml|yaml)$/;
+const ROS_LAUNCH_ARGUMENT_RE = /^[a-zA-Z][a-zA-Z0-9_]{0,63}:=[^\r\n]{0,512}$/;
+
+/** Validate package/file/configuration values used by the image-provided robot launch workflow. */
+export function assertRobotLaunch(launch: RobotLaunch): RobotLaunch {
+  if (!launch || typeof launch !== 'object') throw new Error('Robot launch configuration is required.');
+  if (!ROS_PACKAGE_RE.test(launch.packageName)) throw new Error('Invalid ROS package name.');
+  if (!ROS_LAUNCH_FILE_RE.test(launch.launchFile)) {
+    throw new Error('Invalid launch file. Use a relative *.launch.py, *.launch.xml, or *.launch.yaml path.');
+  }
+  if (!Array.isArray(launch.arguments) || launch.arguments.length > 32) {
+    throw new Error('Provide at most 32 launch arguments.');
+  }
+  for (const argument of launch.arguments) {
+    if (!ROS_LAUNCH_ARGUMENT_RE.test(argument)) {
+      throw new Error('Invalid launch argument. Use name:=value, one argument per line.');
+    }
+  }
+  return { packageName: launch.packageName, launchFile: launch.launchFile, arguments: [...launch.arguments] };
+}
+
+/** Validate only the image-relative values used by the embedded-SDF spawn path. */
+export function assertEmbeddedRobotProfile(profile: EmbeddedRobotProfile): EmbeddedRobotProfile {
+  if (!profile || typeof profile !== 'object') throw new Error('Embedded robot profile is required.');
+  if (!/^[a-z][a-z0-9_-]{0,63}$/.test(profile.id)) throw new Error('Invalid embedded robot profile id.');
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(profile.world)) throw new Error('Invalid embedded robot world.');
+  if (!/^(?!.*\.\.)(?:[a-zA-Z0-9_.-]+\/)*[a-zA-Z0-9_.-]+\.sdf$/.test(profile.modelFile)) {
+    throw new Error('Invalid embedded robot SDF path.');
+  }
+  const z = assertNumericArg(String(profile.z), 'z');
+  return { ...profile, z: Number(z) };
+}
 
 /**
- * Validates execInSimulation argv: only spawn entrypoint + name + x + y + yaw.
+ * Validates execInSimulation argv. Profile fields are optional for the legacy
+ * TurtleBot3 path only. Image-provided package + launch-file configurations
+ * use `launchRobotInSimulation` and their dedicated wrapper.
  */
 export function assertSpawnExecCommand(command: string[]): string[] {
   if (command[0] !== SPAWN_ENTRYPOINT) {

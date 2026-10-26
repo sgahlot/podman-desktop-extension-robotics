@@ -17,6 +17,7 @@ vi.mock('@podman-desktop/api', () => ({
   window: {
     createWebviewPanel: vi.fn(),
     showInformationMessage: vi.fn(),
+    showOpenDialog: vi.fn(),
   },
   commands: {
     registerCommand: vi.fn(),
@@ -136,6 +137,7 @@ function mockStatefulBuildHistoryFile(): void {
       pendingByTmpPath.set(p, content as string);
     }
   });
+
   vi.mocked(rename).mockImplementation(async (oldPath, newPath) => {
     const op = String(oldPath);
     if (String(newPath).endsWith('build-history.json') && pendingByTmpPath.has(op)) {
@@ -3817,6 +3819,144 @@ linear_acceleration:
     });
   });
 
+  describe('launchRobotInSimulation', () => {
+    const CONTAINER_ID = 'abc123def456';
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as unknown as extensionApi.ContainerInfo[]);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '',
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+    });
+
+    it('preflights and starts an installed package launch file as argv', async () => {
+      await api.launchRobotInSimulation(CONTAINER_ID, {
+        packageName: 'my_robot_sim',
+        launchFile: 'launch/spawn.launch.py',
+        arguments: ['robot_name:=robot_1'],
+      });
+
+      expect(extensionApi.process.exec).toHaveBeenNthCalledWith(1, 'podman', [
+        'exec',
+        CONTAINER_ID,
+        '/entrypoint-launch-robot.sh',
+        'my_robot_sim',
+        'launch/spawn.launch.py',
+        '--validate',
+      ]);
+      expect(extensionApi.process.exec).toHaveBeenNthCalledWith(2, 'podman', [
+        'exec',
+        '-d',
+        CONTAINER_ID,
+        '/entrypoint-launch-robot.sh',
+        'my_robot_sim',
+        'launch/spawn.launch.py',
+        'robot_name:=robot_1',
+      ]);
+    });
+
+    it('uses the established TurtleBot3 spawn path for the prefilled configuration', async () => {
+      await api.launchRobotInSimulation(CONTAINER_ID, {
+        packageName: 'nav2_minimal_tb3_sim',
+        launchFile: 'launch/spawn_tb3.launch.py',
+        arguments: ['robot_name:=robot_1', 'x_pose:=-2.0', 'y_pose:=-0.5', 'yaw:=0.25'],
+      });
+
+      expect(extensionApi.process.exec).toHaveBeenNthCalledWith(1, 'podman', [
+        'exec',
+        CONTAINER_ID,
+        '/entrypoint-launch-robot.sh',
+        'nav2_minimal_tb3_sim',
+        'launch/spawn_tb3.launch.py',
+        '--validate',
+      ]);
+      expect(extensionApi.process.exec).toHaveBeenNthCalledWith(2, 'podman', [
+        'exec',
+        '-d',
+        CONTAINER_ID,
+        SPAWN_ENTRYPOINT,
+        'robot_1',
+        '-2.0',
+        '-0.5',
+        '0.25',
+      ]);
+    });
+
+    it('rejects an injectable package or launch argument', async () => {
+      await expect(
+        api.launchRobotInSimulation(CONTAINER_ID, {
+          packageName: 'robot;id',
+          launchFile: 'spawn.launch.py',
+          arguments: [],
+        }),
+      ).rejects.toThrow(/package/i);
+      await expect(
+        api.launchRobotInSimulation(CONTAINER_ID, {
+          packageName: 'robot_sim',
+          launchFile: 'spawn.launch.py',
+          arguments: ['name;id:=robot'],
+        }),
+      ).rejects.toThrow(/argument/i);
+    });
+  });
+
+  describe('spawnEmbeddedRobotInSimulation', () => {
+    const CONTAINER_ID = 'abc123def456';
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:boxbot'),
+      ] as unknown as extensionApi.ContainerInfo[]);
+      vi.mocked(extensionApi.process.exec).mockResolvedValue({
+        stdout: '',
+        stderr: '',
+        command: 'podman',
+      } as extensionApi.RunResult);
+    });
+
+    it('preflights the embedded file and passes the Add Robot pose as argv', async () => {
+      await api.spawnEmbeddedRobotInSimulation(
+        CONTAINER_ID,
+        {
+          id: 'boxbot',
+          displayName: 'Box Bot',
+          modelFile: 'robots/boxbot/model.sdf',
+          world: 'tb3_sandbox',
+          z: 0.15,
+          sourceId: 'profile-source',
+        },
+        'robot_1',
+        '-2.0',
+        '-0.5',
+        '0.75',
+      );
+
+      expect(extensionApi.process.exec).toHaveBeenNthCalledWith(1, 'podman', [
+        'exec',
+        CONTAINER_ID,
+        'test',
+        '-r',
+        '/opt/physical-ai/robots/boxbot/robots/boxbot/model.sdf',
+      ]);
+      expect(extensionApi.process.exec).toHaveBeenNthCalledWith(2, 'podman', [
+        'exec',
+        CONTAINER_ID,
+        '/entrypoint-spawn-embedded-robot.sh',
+        'robot_1',
+        'tb3_sandbox',
+        '/opt/physical-ai/robots/boxbot/robots/boxbot/model.sdf',
+        '-2.0',
+        '-0.5',
+        '0.15',
+        '0.75',
+      ]);
+    });
+  });
+
   describe('launchSimulation security', () => {
     beforeEach(() => {
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
@@ -4566,6 +4706,31 @@ linear_acceleration:
         });
       }
 
+      it('backgrounds a generic image-provided launch with its values preserved as argv', async () => {
+        mockPodLookup();
+
+        await api.launchRobotInOpenShift(NS, NAME, {
+          packageName: 'my_robot_sim',
+          launchFile: 'launch/spawn.launch.py',
+          arguments: ['robot_name:=robot_2', 'x:=-2.0', 'y:=-0.5', 'yaw:=0.0'],
+        });
+
+        const execCall = vi
+          .mocked(extensionApi.process.exec)
+          .mock.calls.find(c => (c[1] as string[]).some(arg => arg.includes('nohup')));
+        expect(execCall).toBeDefined();
+        const execA = execCall![1] as string[];
+        expect(execA.slice(0, 5)).toEqual(['exec', '-n', NS, POD, '--']);
+        const remote = execA[execA.length - 1];
+        expect(remote).toContain('nohup');
+        expect(remote).toContain('/entrypoint-launch-robot.sh');
+        expect(remote).toContain("'my_robot_sim'");
+        expect(remote).toContain("'launch/spawn.launch.py'");
+        expect(remote).toContain("'robot_name:=robot_2'");
+        expect(remote).toContain("'x:=-2.0'");
+        expect(remote).toMatch(/>"\/tmp\/pai-.*\.log" 2>&1 &$/);
+      });
+
       it('resolves a running pod then backgrounds the spawn entrypoint with nohup', async () => {
         mockPodLookup();
 
@@ -4644,6 +4809,75 @@ linear_acceleration:
           .mocked(extensionApi.process.exec)
           .mock.calls.some(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes(NAV2_ENTRYPOINT)));
         expect(launched).toBe(false);
+      });
+    });
+
+    describe('spawnEmbeddedRobotInOpenShift', () => {
+      const NS = 'sgahlot-pd-extn';
+      const NAME = 'ros2-jazzy-sim';
+      const POD = 'ros2-jazzy-sim-abc-123';
+
+      it('checks the profile asset and passes the Add Robot pose to the cluster pod', async () => {
+        vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+          const argv = args as string[];
+          const getIndex = argv.indexOf('get');
+          if (getIndex >= 0 && argv[getIndex + 1] === 'pods') {
+            return { stdout: POD, stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
+          return { stdout: '', stderr: '', command: 'oc' } as extensionApi.RunResult;
+        });
+
+        await api.spawnEmbeddedRobotInOpenShift(
+          NS,
+          NAME,
+          {
+            id: 'boxbot',
+            displayName: 'Box Bot',
+            modelFile: 'robots/boxbot/model.sdf',
+            world: 'tb3_sandbox',
+            z: 0.15,
+            sourceId: 'profile-source',
+          },
+          'robot_1',
+          '-2.0',
+          '-0.5',
+          '0.75',
+          'ctx',
+        );
+
+        const execCalls = vi
+          .mocked(extensionApi.process.exec)
+          .mock.calls.filter(c => (c[1] as string[]).includes('exec'));
+        expect(execCalls).toHaveLength(2);
+        expect(execCalls[0][1]).toEqual([
+          '--context',
+          'ctx',
+          'exec',
+          '-n',
+          NS,
+          POD,
+          '--',
+          'test',
+          '-r',
+          '/opt/physical-ai/robots/boxbot/robots/boxbot/model.sdf',
+        ]);
+        expect(execCalls[1][1]).toEqual([
+          '--context',
+          'ctx',
+          'exec',
+          '-n',
+          NS,
+          POD,
+          '--',
+          '/entrypoint-spawn-embedded-robot.sh',
+          'robot_1',
+          'tb3_sandbox',
+          '/opt/physical-ai/robots/boxbot/robots/boxbot/model.sdf',
+          '-2.0',
+          '-0.5',
+          '0.15',
+          '0.75',
+        ]);
       });
     });
 
@@ -5188,6 +5422,97 @@ ranges: [0.3, 0.5, .inf, .nan]
           /Unsupported ROS distro/,
         );
       });
+    });
+  });
+
+  describe('embedded robot profiles', () => {
+    it('validates the profile and model path before saving a selected directory', async () => {
+      vi.mocked(extensionApi.window.showOpenDialog).mockResolvedValue([
+        { fsPath: '/robots/boxbot' } as extensionApi.Uri,
+      ]);
+      vi.mocked(readFile).mockResolvedValue(
+        JSON.stringify({ id: 'boxbot', displayName: 'Box Bot', modelFile: 'robots/boxbot/model.sdf' }) as never,
+      );
+      const update = vi.fn();
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({ update } as never);
+
+      const profile = await api.selectEmbeddedRobotDirectory();
+
+      expect(profile).toMatchObject({
+        id: 'boxbot',
+        displayName: 'Box Bot',
+        modelFile: 'robots/boxbot/model.sdf',
+        world: 'tb3_sandbox',
+        z: 0,
+      });
+      expect(readFile).toHaveBeenCalledWith('/robots/boxbot/robots/boxbot/model.sdf');
+      expect(update).toHaveBeenCalledWith('simulation.embeddedRobotProfile', JSON.stringify(profile));
+      expect(update).toHaveBeenCalledWith('simulation.embeddedRobotDirectory', '/robots/boxbot');
+    });
+
+    it('rejects a model path with traversal', async () => {
+      vi.mocked(extensionApi.window.showOpenDialog).mockResolvedValue([
+        { fsPath: '/robots/boxbot' } as extensionApi.Uri,
+      ]);
+      vi.mocked(readFile).mockResolvedValue(
+        JSON.stringify({ id: 'boxbot', displayName: 'Box Bot', modelFile: '../outside.sdf' }) as never,
+      );
+
+      await expect(api.selectEmbeddedRobotDirectory()).rejects.toThrow(/relative \.sdf path without traversal/);
+      expect(extensionApi.configuration.getConfiguration).not.toHaveBeenCalled();
+    });
+
+    it('builds a derived image with the selected robot directory copied into its image path', async () => {
+      mockBundledAssetStaging();
+      vi.mocked(extensionApi.provider.getContainerConnections).mockReturnValue([
+        createMockConnection(),
+      ] as unknown as extensionApi.ProviderContainerConnection[]);
+      vi.mocked(mkdtemp).mockResolvedValue('/tmp/physical-ai-embedded-robot-test');
+      vi.mocked(cp).mockResolvedValue(undefined);
+      vi.mocked(rm).mockResolvedValue(undefined);
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(readFile).mockResolvedValue('model' as never);
+      vi.mocked(extensionApi.containerEngine.buildImage).mockReturnValue(new Promise(() => {}));
+      vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+        get: vi.fn((key: string) =>
+          key === 'simulation.embeddedRobotProfile'
+            ? JSON.stringify({
+                id: 'boxbot',
+                displayName: 'Box Bot',
+                modelFile: 'robots/boxbot/model.sdf',
+                world: 'tb3_sandbox',
+                sourceId: 'source-1',
+              })
+            : key === 'simulation.embeddedRobotDirectory'
+              ? '/robots/boxbot'
+              : undefined,
+        ),
+      } as never);
+
+      await api.buildEmbeddedRobotImage('localhost/boxbot:test', 'quay.io/ns/sim:noble', 'source-1', 'amd64');
+
+      expect(cp).toHaveBeenCalledWith('/robots/boxbot', '/tmp/physical-ai-embedded-robot-test/robot', {
+        recursive: true,
+      });
+      expect(writeFile).toHaveBeenCalledWith(
+        '/tmp/physical-ai-embedded-robot-test/Containerfile',
+        expect.stringContaining('COPY entrypoint-spawn-embedded-robot.sh /entrypoint-spawn-embedded-robot.sh'),
+        'utf8',
+      );
+      expect(writeFile).toHaveBeenCalledWith(
+        '/tmp/physical-ai-embedded-robot-test/Containerfile',
+        expect.stringContaining('COPY robot/ /opt/physical-ai/robots/boxbot/'),
+        'utf8',
+      );
+      expect(extensionApi.containerEngine.buildImage).toHaveBeenCalledWith(
+        '/tmp/physical-ai-embedded-robot-test',
+        expect.any(Function),
+        expect.objectContaining({
+          tag: 'localhost/boxbot:test',
+          containerFile: 'Containerfile',
+          platform: 'linux/amd64',
+        }),
+      );
     });
   });
 });

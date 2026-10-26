@@ -10,6 +10,9 @@ const mockSaveSimulationConfig = vi.fn();
 const mockListLocalImages = vi.fn();
 const mockBuildBaseImage = vi.fn();
 const mockBuildSimulationImage = vi.fn();
+const mockBuildEmbeddedRobotImage = vi.fn();
+const mockSelectEmbeddedRobotDirectory = vi.fn();
+const mockGetEmbeddedRobotProfile = vi.fn();
 const mockGetBuildProgress = vi.fn();
 const mockCancelBuild = vi.fn();
 const mockPushImage = vi.fn();
@@ -34,6 +37,9 @@ vi.mock('./api/client', () => ({
     listLocalImages: (...args: unknown[]) => mockListLocalImages(...args),
     buildBaseImage: (...args: unknown[]) => mockBuildBaseImage(...args),
     buildSimulationImage: (...args: unknown[]) => mockBuildSimulationImage(...args),
+    buildEmbeddedRobotImage: (...args: unknown[]) => mockBuildEmbeddedRobotImage(...args),
+    selectEmbeddedRobotDirectory: (...args: unknown[]) => mockSelectEmbeddedRobotDirectory(...args),
+    getEmbeddedRobotProfile: (...args: unknown[]) => mockGetEmbeddedRobotProfile(...args),
     getBuildProgress: (...args: unknown[]) => mockGetBuildProgress(...args),
     cancelBuild: (...args: unknown[]) => mockCancelBuild(...args),
     pushImage: (...args: unknown[]) => mockPushImage(...args),
@@ -67,6 +73,7 @@ describe('SimulationSetup (Image Builder)', () => {
       engine: 'gazebo',
       baseImage: 'sloretz',
     });
+    mockGetEmbeddedRobotProfile.mockResolvedValue(undefined);
     mockSaveSimulationConfig.mockResolvedValue(undefined);
     mockListLocalImages.mockResolvedValue([]);
     mockGetImageTags.mockResolvedValue([]);
@@ -79,6 +86,58 @@ describe('SimulationSetup (Image Builder)', () => {
     mockBuildHardenedImage.mockResolvedValue(undefined);
     mockPullImageByRef.mockResolvedValue(undefined);
     mockGetPullProgress.mockResolvedValue(undefined);
+  });
+
+  it('keeps optional embedded SDF Step 3 collapsed by default', async () => {
+    mockGetSimulationConfig.mockResolvedValue({
+      robot: 'turtlebot3',
+      distro: 'jazzy',
+      middleware: 'dds',
+      engine: 'gazebo',
+      baseImage: 'jazzy-noble',
+      targetArch: 'amd64',
+    });
+    render(SimulationSetup);
+    await waitFor(() => expect(screen.queryByText('Loading configuration...')).toBeNull());
+
+    const summary = screen.getByText(/Optional Step 3.*Embed Custom SDF Robot/);
+    expect(summary.closest('details')?.open).toBe(false);
+  });
+
+  it('adds the selected architecture to the automatic embedded image tag and preserves manual edits', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    mockGetSimulationConfig.mockResolvedValue({
+      robot: 'turtlebot3',
+      distro: 'jazzy',
+      middleware: 'dds',
+      engine: 'gazebo',
+      baseImage: 'jazzy-noble',
+      targetArch: 'arm64',
+      quickStartId: 'ubuntu-jazzy-arm64',
+    });
+    mockGetEmbeddedRobotProfile.mockResolvedValue({
+      id: 'boxbot',
+      displayName: 'Box Bot',
+      modelFile: 'robots/boxbot/model.sdf',
+      world: 'tb3_sandbox',
+      z: 0.15,
+      sourceId: 'profile-source',
+    });
+
+    const { container } = render(SimulationSetup);
+    await waitFor(() => expect(screen.queryByText('Loading configuration...')).toBeNull());
+    await fireEvent.click(screen.getByText(/Optional Step 3.*Embed Custom SDF Robot/));
+
+    const tag = container.querySelector<HTMLInputElement>('#embeddedRobotTag')!;
+    await waitFor(() => expect(tag.value).toBe('quay.io/ecosystem-appeng/ros2-jazzy-sim:boxbot'));
+
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · amd64)' }));
+    await waitFor(() => expect(tag.value).toBe('quay.io/ecosystem-appeng/ros2-jazzy-sim:boxbot-amd64'));
+
+    await fireEvent.input(tag, { target: { value: 'quay.io/example/boxbot:custom' } });
+    await fireEvent.change(tag);
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · arm64)' }));
+    await waitFor(() => expect(tag.value).toBe('quay.io/example/boxbot:custom'));
   });
 
   it('APPENG-6566: Lyrical quick start stays on Presets and shows layered builder', async () => {

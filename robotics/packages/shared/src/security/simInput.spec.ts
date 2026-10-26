@@ -5,6 +5,8 @@ import {
   assertRosDistro,
   assertNumericArg,
   assertSpawnExecCommand,
+  assertRobotLaunch,
+  assertEmbeddedRobotProfile,
   assertLaunchCmd,
   assertLaunchEnv,
   assertRobotsEnv,
@@ -67,6 +69,75 @@ describe('simInput security validators', () => {
     expect(() => assertSpawnExecCommand(['bash', '-c', 'id'])).toThrow(/Only/);
     expect(() => assertSpawnExecCommand([SPAWN_ENTRYPOINT, 'robot;x', '0', '0', '0'])).toThrow(/Invalid robot name/);
     expect(() => assertNumericArg('1;id', 'x')).toThrow(/must be a number/);
+    expect(() => assertSpawnExecCommand([SPAWN_ENTRYPOINT, 'custom_1', '0', '0', '0', 'unexpected'])).toThrow(
+      /exactly/,
+    );
+  });
+
+  it('validates image-provided package launch configurations', () => {
+    expect(
+      assertRobotLaunch({
+        packageName: 'my_robot_sim',
+        launchFile: 'launch/spawn.launch.py',
+        arguments: ['robot_name:=robot_1'],
+      }),
+    ).toEqual({
+      packageName: 'my_robot_sim',
+      launchFile: 'launch/spawn.launch.py',
+      arguments: ['robot_name:=robot_1'],
+    });
+    expect(() => assertRobotLaunch({ packageName: 'robot;id', launchFile: 'spawn.launch.py', arguments: [] })).toThrow(
+      /package/,
+    );
+    expect(() =>
+      assertRobotLaunch({ packageName: 'robot_sim', launchFile: '../spawn.launch.py', arguments: [] }),
+    ).toThrow(/launch file/);
+    expect(() =>
+      assertRobotLaunch({ packageName: 'robot_sim', launchFile: 'spawn.launch.py', arguments: ['x;id:=0'] }),
+    ).toThrow(/argument/);
+  });
+
+  it('validates embedded SDF profile paths and spawn height', () => {
+    expect(
+      assertEmbeddedRobotProfile({
+        id: 'boxbot',
+        displayName: 'Box Bot',
+        modelFile: 'robots/boxbot/model.sdf',
+        world: 'tb3_sandbox',
+        z: 0.15,
+        sourceId: 'local-profile',
+      }).z,
+    ).toBe(0.15);
+    expect(() =>
+      assertEmbeddedRobotProfile({
+        id: '../escape',
+        displayName: 'Bad',
+        modelFile: 'model.sdf',
+        world: 'tb3_sandbox',
+        z: 0,
+        sourceId: 'local-profile',
+      }),
+    ).toThrow(/profile id/i);
+    expect(() =>
+      assertEmbeddedRobotProfile({
+        id: 'boxbot',
+        displayName: 'Bad',
+        modelFile: '../outside.sdf',
+        world: 'tb3_sandbox',
+        z: 0,
+        sourceId: 'local-profile',
+      }),
+    ).toThrow(/SDF path/i);
+    expect(() =>
+      assertEmbeddedRobotProfile({
+        id: 'boxbot',
+        displayName: 'Bad',
+        modelFile: 'model.sdf',
+        world: 'tb3_sandbox',
+        z: Number.NaN,
+        sourceId: 'local-profile',
+      }),
+    ).toThrow(/z/i);
   });
 
   it('forces gazebo Cmd and rejects custom entrypoints', () => {

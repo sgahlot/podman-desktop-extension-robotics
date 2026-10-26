@@ -12,6 +12,7 @@ import type {
 import type { BuildHistoryEntry, BundledToolVerificationResult, SbomFormat } from './types/BuildHistory';
 import type { HardenedApp } from './types/layerCompatibility';
 import type { SimulationConfig } from './types/SimulationConfig';
+import type { RobotLaunch } from './types/RobotLaunch';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from './types/SimulationContainer';
 import type {
   TopicInfo,
@@ -37,6 +38,8 @@ import type {
 } from './types/OpenShiftDeploy';
 import type { LayerCacheBuildOptions } from './types/buildLayerCache';
 import type { RosbagRecording } from './types/RosbagRecording';
+import type { EmbeddedRobotProfile } from './types/EmbeddedRobotProfile';
+import type { ImageRobotProfile } from './types/ImageRobotProfile';
 
 export abstract class PhysicalAiApi {
   abstract getStatus(): Promise<string>;
@@ -64,6 +67,19 @@ export abstract class PhysicalAiApi {
     },
   ): Promise<void>;
   abstract buildSimulationImage(tag: string, config: SimulationConfig, options?: LayerCacheBuildOptions): Promise<void>;
+  /** Select and validate a local SDF profile directory through the native host dialog. */
+  abstract selectEmbeddedRobotDirectory(): Promise<EmbeddedRobotProfile | undefined>;
+  /** Build a derived simulation image containing only the validated selected assets. */
+  abstract buildEmbeddedRobotImage(
+    tag: string,
+    baseImage: string,
+    sourceId: string,
+    targetArch: 'amd64' | 'arm64',
+  ): Promise<void>;
+  /** Last successfully selected embedded profile, without its host path. */
+  abstract getEmbeddedRobotProfile(): Promise<EmbeddedRobotProfile | undefined>;
+  /** Discover robot profiles present in a running simulation image. */
+  abstract listRobotProfilesInSimulation(containerId: string): Promise<ImageRobotProfile[]>;
   abstract buildCustomSimulationImage(
     tag: string,
     baseImage: string,
@@ -155,6 +171,17 @@ export abstract class PhysicalAiApi {
   abstract deleteSimulation(containerId: string): Promise<void>;
   abstract listSimulationContainers(): Promise<SimContainerInfo[]>;
   abstract execInSimulation(containerId: string, command: string[]): Promise<ExecResult>;
+  /** Validate and start a robot launch file already installed in the simulation image. */
+  abstract launchRobotInSimulation(containerId: string, launch: RobotLaunch): Promise<void>;
+  /** Spawn an image-embedded SDF profile using the Add Robot X/Y/yaw pose. */
+  abstract spawnEmbeddedRobotInSimulation(
+    containerId: string,
+    profile: EmbeddedRobotProfile,
+    robotName: string,
+    x: string,
+    y: string,
+    yaw: string,
+  ): Promise<void>;
   abstract openSimulationInBrowser(hostPort: number, containerPort?: number): Promise<void>;
   /** Open an external http(s) URL (e.g. an OpenShift Route) in the host browser. */
   abstract openUrlInBrowser(url: string): Promise<void>;
@@ -307,6 +334,30 @@ export abstract class PhysicalAiApi {
     yaw: string,
     context?: string,
   ): Promise<void>;
+  /** Validate and start a robot launch configuration already installed in an OpenShift simulation pod. */
+  abstract launchRobotInOpenShift(
+    namespace: string,
+    name: string,
+    launch: RobotLaunch,
+    context?: string,
+  ): Promise<void>;
+  /** OpenShift counterpart of spawnEmbeddedRobotInSimulation. */
+  abstract spawnEmbeddedRobotInOpenShift(
+    namespace: string,
+    name: string,
+    profile: EmbeddedRobotProfile,
+    robotName: string,
+    x: string,
+    y: string,
+    yaw: string,
+    context?: string,
+  ): Promise<void>;
+  /** Discover robot profiles present in a ready OpenShift simulation image. */
+  abstract listRobotProfilesInOpenShift(
+    namespace: string,
+    name: string,
+    context?: string,
+  ): Promise<ImageRobotProfile[]>;
   /** Drive a spawned robot to (x, y) in a deployed pod (Nav2 on Jazzy, cmd_vel on Humble). */
   abstract sendOpenShiftNavigationGoal(
     namespace: string,

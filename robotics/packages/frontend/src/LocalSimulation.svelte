@@ -5,7 +5,7 @@ import { router } from 'tinro';
 import type { SimContainerInfo } from '/@shared/src/types/SimulationContainer';
 import { SIM_STOPPED_BROWSER_HINT } from '/@shared/src/types/SimulationContainer';
 import { isSimLaunchImageRef } from '/@shared/src/security/simImageTrust';
-import { imageSupportsNav2Prewarm, simulationBrowserUrl } from '/@shared/src/security/simInput';
+import { imageSupportsNav2Prewarm, simulationBrowserUrl, SPAWN_ENTRYPOINT } from '/@shared/src/security/simInput';
 import RobotControls, { type RobotEntry } from './RobotControls.svelte';
 import { reconcileAdd, pruneStale } from './lib/robotReconcile';
 import { localDiagnosticsHref } from './lib/diagnosticsLink';
@@ -13,6 +13,13 @@ import { localTargetKey } from './lib/diagnosticsTargetKey';
 import { setSpawnedRobotsForTarget } from './lib/spawnedRobotsStore';
 import { clearCachedDiagnostics } from './lib/robotDiagnosticsCache';
 import { middlewareLabelForImage } from '/@shared/src/types/middlewareLabels';
+import RobotProfileEditor from './lib/RobotProfileEditor.svelte';
+import {
+  initialRobotProfileSelection,
+  customLaunchSelection,
+  type ImageRobotProfile,
+  type RobotProfileSelection,
+} from '/@shared/src/types/ImageRobotProfile';
 
 let localSimImages: string[] = [];
 let selectedImage = '';
@@ -28,6 +35,12 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 export let active = true;
 let wasActive = false;
 let simImageAllowlist = '';
+let robotLaunchError = '';
+let robotProfiles: ImageRobotProfile[] = [];
+let robotProfileSelection: RobotProfileSelection | undefined;
+let profileContainerId = '';
+let profileLoading = false;
+let profileLoadError = '';
 
 let spawnedRobots: RobotEntry[] = [];
 /** Whether the running container's robots have been reconciled against `ros2 node list`
@@ -90,11 +103,47 @@ async function loadImages() {
   }
 }
 
+function loadRobotProfiles(containerId: string) {
+  if (profileContainerId === containerId) return;
+  profileContainerId = containerId;
+  robotProfiles = [];
+  robotProfileSelection = undefined;
+  profileLoadError = '';
+  profileLoading = true;
+  void physicalAiClient
+    .listRobotProfilesInSimulation(containerId)
+    .then(profiles => {
+      if (profileContainerId === containerId) {
+        robotProfiles = profiles;
+        robotProfileSelection = initialRobotProfileSelection(profiles);
+      }
+    })
+    .catch(error => {
+      if (profileContainerId === containerId) {
+        profileLoadError = error instanceof Error ? error.message : String(error);
+        robotProfileSelection = customLaunchSelection();
+      }
+    })
+    .finally(() => {
+      if (profileContainerId === containerId) profileLoading = false;
+    });
+}
+
 async function pollContainers() {
   try {
     const listed = await physicalAiClient.listSimulationContainers();
     removedContainerIds = removedContainerIds.filter(id => listed.some(c => c.id === id));
     containers = listed.filter(c => !removedContainerIds.includes(c.id));
+    const activeContainer = containers.find(c => c.state === 'running');
+    if (activeContainer) {
+      loadRobotProfiles(activeContainer.id);
+    } else if (profileContainerId) {
+      profileContainerId = '';
+      robotProfiles = [];
+      robotProfileSelection = undefined;
+      profileLoading = false;
+      profileLoadError = '';
+    }
     if (containers.some(c => c.state === 'running')) {
       launchError = '';
     }
@@ -185,30 +234,88 @@ function toggleViewer(id: string) {
 
 async function spawnRobot(form: { name: string; x: string; y: string; yaw: string }) {
   if (!runningContainer) throw new Error('No running simulation');
+  const selection = robotProfileSelection;
+  const selectedProfile = robotProfiles.find(profile => profile.id === selection?.profileId);
+  robotLaunchError = '';
   missingStreaks.delete(form.name);
   trackedSince.set(form.name, Date.now());
   // A respawned robot under the same name is a new instance — its old cached diagnostics
   // snapshot (if any) is stale and must not be shown as if it were current.
   clearCachedDiagnostics(localTargetKey(runningContainer.id), form.name);
-  await physicalAiClient.execInSimulation(runningContainer.id, [
-    '/entrypoint-spawn-robot.sh',
-    form.name,
-    form.x,
-    form.y,
-    form.yaw,
-  ]);
+  const isDefaultTurtleBot3 =
+    selectedProfile?.kind === 'launch' &&
+    selectedProfile.id === 'turtlebot3' &&
+    selection?.customized === false &&
+    selection?.packageName === selectedProfile.packageName &&
+    selection?.launchFile === selectedProfile.launchFile;
+  const usesEmbeddedProfile = selectedProfile?.kind === 'embedded-sdf' && selection?.customized === false;
+  const launchArguments = selection?.launchArguments ?? '';
+  const arguments_ = launchArguments
+    .split(/\r?\n/)
+    .map(argument => argument.trim())
+    .filter(Boolean)
+    .map(argument =>
+      argument
+        .replaceAll('{name}', form.name)
+        .replaceAll('{x}', form.x)
+        .replaceAll('{y}', form.y)
+        .replaceAll('{yaw}', form.yaw),
+    );
+  try {
+    if (isDefaultTurtleBot3) {
+      // Keep TurtleBot3 on the proven path: its entrypoint owns spawn, bridge
+      // readiness/fallback, and the backend's established Nav2 pre-warm flow.
+      await physicalAiClient.execInSimulation(runningContainer.id, [
+        SPAWN_ENTRYPOINT,
+        form.name,
+        form.x,
+        form.y,
+        form.yaw,
+      ]);
+    } else if (usesEmbeddedProfile && selectedProfile?.kind === 'embedded-sdf') {
+      await physicalAiClient.spawnEmbeddedRobotInSimulation(
+        runningContainer.id,
+        { ...selectedProfile.profile, sourceId: '' },
+        form.name,
+        form.x,
+        form.y,
+        form.yaw,
+      );
+    } else {
+      await physicalAiClient.launchRobotInSimulation(runningContainer.id, {
+        packageName: selection?.packageName.trim() ?? '',
+        launchFile: selection?.launchFile.trim() ?? '',
+        arguments: arguments_,
+      });
+    }
+  } catch (error) {
+    robotLaunchError = error instanceof Error ? error.message : String(error);
+    throw error;
+  }
   spawnedRobots = [
     ...spawnedRobots,
     {
       name: form.name,
       x: form.x,
       y: form.y,
+      yaw: form.yaw,
       navStatus: 'idle',
       navTarget: { x: '2.0', y: '2.0' },
       navReached: null,
-      // Backend pre-warms Nav2 for Nav2 sim images; show "warming…" optimistically there.
-      warmStatus:
-        runningContainer?.imageTag && imageSupportsNav2Prewarm(runningContainer.imageTag) ? 'warming' : undefined,
+      positionManagedByProfile:
+        !isDefaultTurtleBot3 &&
+        !usesEmbeddedProfile &&
+        !launchArguments.includes('{x}') &&
+        !launchArguments.includes('{y}'),
+      livenessManagedByProfile:
+        usesEmbeddedProfile ||
+        (!isDefaultTurtleBot3 && !launchArguments.includes('{x}') && !launchArguments.includes('{y}')),
+      supportsNavigation:
+        selectedProfile?.kind === 'launch' &&
+        selectedProfile.supportsNavigation === true &&
+        selection?.packageName === selectedProfile.packageName &&
+        selection?.launchFile === selectedProfile.launchFile,
+      warmStatus: isDefaultTurtleBot3 && imageSupportsNav2Prewarm(runningContainer.imageTag) ? 'warming' : undefined,
     },
   ];
 }
@@ -244,14 +351,20 @@ async function pruneStaleRobots() {
   // A 'warming' robot's liveness is already being resolved by pollWarmStatus (and the
   // backend's own bounded pre-warm timeout) — skip the exec call entirely if there's
   // nothing else here that actually needs checking this tick.
-  if (spawnedRobots.every(r => r.warmStatus === 'warming')) return;
+  const nodeBackedRobots = spawnedRobots.filter(r => !r.livenessManagedByProfile);
+  if (nodeBackedRobots.length === 0 || nodeBackedRobots.every(r => r.warmStatus === 'warming')) return;
   let live: string[];
   try {
     live = await physicalAiClient.listSpawnedRobotsInSimulation(runningContainer.id);
   } catch {
     return;
   }
-  spawnedRobots = pruneStale({ tracked: spawnedRobots, liveNames: live, missingStreaks, trackedSince, keyOf: n => n });
+  const retainedNames = new Set(
+    pruneStale({ tracked: nodeBackedRobots, liveNames: live, missingStreaks, trackedSince, keyOf: n => n }).map(
+      r => r.name,
+    ),
+  );
+  spawnedRobots = spawnedRobots.filter(r => r.livenessManagedByProfile || retainedNames.has(r.name));
 }
 
 /** Poll Nav2 pre-warm state for robots still warming, so the badge tracks reality. */
@@ -321,9 +434,9 @@ function diagnoseRobot(index: number): void {
 
 <div class="flex flex-col gap-4">
   <p class="text-sm text-[var(--pd-content-text)]">
-    Launch a Gazebo world (empty by default), view it in the browser via noVNC, then add TurtleBot3 robots
-    interactively. Only local images matching the simulation allowlist can be launched (default <span class="font-mono"
-      >ros2-*-sim*</span>
+    Launch a Gazebo world (empty by default), view it in the browser via noVNC, then add robots using launch
+    configurations already installed in the selected image. Only local images matching the simulation allowlist can be
+    launched (default <span class="font-mono">ros2-*-sim*</span>
     / <span class="font-mono">ros2-*-turtlebot3</span>).
   </p>
 
@@ -398,7 +511,7 @@ function diagnoseRobot(index: number): void {
 
   <!-- Section 2: Running containers -->
   {#if containers.length > 0}
-    <div class="flex flex-col gap-2 max-w-3xl">
+    <div class="flex flex-col gap-2 w-full">
       <h2 class="text-sm font-medium text-[var(--pd-content-header)]">Simulation Containers</h2>
 
       {#each containers as container (container.id)}
@@ -443,14 +556,27 @@ function diagnoseRobot(index: number): void {
   <!-- Section 3: Add Robot (only when a simulation is running) -->
   {#if hasRunning}
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-lg">
-      <h2 class="text-sm font-medium text-[var(--pd-content-header)] mb-2">Add TurtleBot3</h2>
+      <h2 class="text-sm font-medium text-[var(--pd-content-header)] mb-2">Add Robot</h2>
+      <div class="flex flex-col gap-2 mb-3">
+        {#if profileLoading}
+          <p class="text-xs pai-text-muted">Reading robot profiles from the running image…</p>
+        {:else}
+          <RobotProfileEditor
+            profiles={robotProfiles}
+            bind:selection={robotProfileSelection}
+            idPrefix="local-robot-profile" />
+        {/if}
+        {#if profileLoadError}<span class="text-xs pai-text-error">{profileLoadError}</span>{/if}
+        {#if robotLaunchError}<span class="text-xs pai-text-error">{robotLaunchError}</span>{/if}
+      </div>
       <RobotControls
         robots={spawnedRobots}
         onSpawn={spawnRobot}
         onNavigate={navigateRobot}
         onRemove={removeRobot}
         onDiagnose={diagnoseRobot}
-        spawnLabel="Add TurtleBot3"
+        disabled={profileLoading || !robotProfileSelection}
+        spawnLabel="Add robot"
         idPrefix="local" />
     </div>
   {/if}

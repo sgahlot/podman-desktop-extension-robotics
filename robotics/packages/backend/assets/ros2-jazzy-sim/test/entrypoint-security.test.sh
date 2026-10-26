@@ -6,6 +6,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VALIDATE="${ROOT}/lib/validate-input.sh"
 SPAWN="${ROOT}/entrypoint-spawn-robot.sh"
+LAUNCH="${ROOT}/entrypoint-launch-robot.sh"
+EMBEDDED_SPAWN="${ROOT}/entrypoint-spawn-embedded-robot.sh"
 NAV2="${ROOT}/entrypoint-nav2.sh"
 GAZEBO="${ROOT}/entrypoint-gazebo.sh"
 
@@ -65,6 +67,44 @@ assert_fail "spawn rejects non-numeric x" \
   env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${SPAWN}" "robot_1" "0;rm" 0 0
 assert_fail "spawn rejects missing args" \
   env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${SPAWN}"
+
+echo
+echo "=== entrypoint-launch-robot.sh (rejects before ROS) ==="
+assert_fail "launch rejects injectable package" \
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${LAUNCH}" 'robot;id' spawn.launch.py --validate
+assert_fail "launch rejects traversal" \
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${LAUNCH}" robot_sim ../spawn.launch.py --validate
+assert_fail "launch rejects injectable argument" \
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${LAUNCH}" robot_sim spawn.launch.py 'name;id:=robot'
+
+echo
+echo "=== entrypoint-spawn-embedded-robot.sh (rejects before ROS) ==="
+assert_fail "embedded spawn rejects an invalid robot name" \
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${EMBEDDED_SPAWN}" 'robot;id' tb3_sandbox /opt/physical-ai/robots/boxbot/model.sdf 0 0 0 0
+assert_fail "embedded spawn rejects an invalid world" \
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${EMBEDDED_SPAWN}" robot_1 'tb3;sandbox' /opt/physical-ai/robots/boxbot/model.sdf 0 0 0 0
+assert_fail "embedded spawn rejects path traversal" \
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${EMBEDDED_SPAWN}" robot_1 tb3_sandbox /opt/physical-ai/robots/boxbot/../outside.sdf 0 0 0 0
+assert_fail "embedded spawn rejects a non-numeric pose" \
+  env ROBOTICS_VALIDATE_LIB="${VALIDATE}" "${EMBEDDED_SPAWN}" robot_1 tb3_sandbox /opt/physical-ai/robots/boxbot/model.sdf '0;id' 0 0 0
+
+echo
+echo "=== ROS setup compatibility with nounset ==="
+setup_dir="$(mktemp -d)"
+trap 'rm -rf "${setup_dir}"' EXIT
+mock_setup="${setup_dir}/setup.bash"
+printf '%s\n' ': "${AMENT_TRACE_SETUP_FILES}"' 'export PAI_TEST_ROS_SETUP_SOURCED=true' > "${mock_setup}"
+if env -u AMENT_TRACE_SETUP_FILES ROBOTICS_ROS_SETUP="${mock_setup}" bash -c \
+  'set -euo pipefail; source "$1"; pai_source_ros_setup; [[ "${PAI_TEST_ROS_SETUP_SOURCED}" == "true" ]]' \
+  _ "${ROOT}/lib/load-validate-input.sh"; then
+  echo "PASS: ROS setup sources with unset AMENT_TRACE_SETUP_FILES under nounset"
+  pass=$((pass + 1))
+else
+  echo "FAIL: ROS setup sources with unset AMENT_TRACE_SETUP_FILES under nounset"
+  fail=$((fail + 1))
+fi
+rm -rf "${setup_dir}"
+trap - EXIT
 
 echo
 echo "=== entrypoint-nav2.sh (rejects before ROS) ==="

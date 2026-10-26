@@ -4,6 +4,7 @@ import DeployOpenShift from './OpenShiftSimulation.svelte';
 import { lastOpenShiftSelection } from './lib/simSelection';
 import { spawnedRobotsByTarget } from './lib/spawnedRobotsStore';
 import { ocTargetKey } from './lib/diagnosticsTargetKey';
+import { TURTLEBOT3_IMAGE_PROFILE, type ImageRobotProfile } from '../../shared/src/types/ImageRobotProfile';
 
 const mockClearCachedDiagnostics = vi.fn();
 
@@ -25,6 +26,8 @@ const mockListOpenShiftDeployments = vi.fn();
 const mockDeployToOpenShift = vi.fn();
 const mockDeleteOpenShiftDeployment = vi.fn();
 const mockSpawnRobotInOpenShift = vi.fn();
+const mockSpawnEmbeddedRobotInOpenShift = vi.fn();
+const mockListRobotProfilesInOpenShift = vi.fn();
 const mockSendOpenShiftNavigationGoal = vi.fn();
 const mockGetRobotWarmStatusInOpenShift = vi.fn();
 const mockListSpawnedRobotsInOpenShift = vi.fn();
@@ -51,6 +54,8 @@ vi.mock('./api/client', () => ({
     deleteOpenShiftDeployment: (...args: unknown[]) => mockDeleteOpenShiftDeployment(...args),
     copyToClipboard: (...args: unknown[]) => mockCopyToClipboard(...args),
     spawnRobotInOpenShift: (...args: unknown[]) => mockSpawnRobotInOpenShift(...args),
+    spawnEmbeddedRobotInOpenShift: (...args: unknown[]) => mockSpawnEmbeddedRobotInOpenShift(...args),
+    listRobotProfilesInOpenShift: (...args: unknown[]) => mockListRobotProfilesInOpenShift(...args),
     sendOpenShiftNavigationGoal: (...args: unknown[]) => mockSendOpenShiftNavigationGoal(...args),
     getRobotWarmStatusInOpenShift: (...args: unknown[]) => mockGetRobotWarmStatusInOpenShift(...args),
     listSpawnedRobotsInOpenShift: (...args: unknown[]) => mockListSpawnedRobotsInOpenShift(...args),
@@ -102,6 +107,8 @@ describe('OpenShiftSimulation', () => {
     mockGetSimulationConfig.mockRejectedValue(new Error('no config'));
     mockListOpenShiftDeployments.mockResolvedValue([]);
     mockSpawnRobotInOpenShift.mockResolvedValue(undefined);
+    mockSpawnEmbeddedRobotInOpenShift.mockResolvedValue(undefined);
+    mockListRobotProfilesInOpenShift.mockResolvedValue([TURTLEBOT3_IMAGE_PROFILE]);
     mockDeleteOpenShiftDeployment.mockResolvedValue(undefined);
     mockGetRobotWarmStatusInOpenShift.mockResolvedValue('idle');
     mockListSpawnedRobotsInOpenShift.mockResolvedValue([]);
@@ -568,6 +575,53 @@ describe('OpenShiftSimulation', () => {
         'ctx',
       );
       expect(screen.getByText(/Reached/)).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('uses the saved embedded SDF profile and Add Robot pose in OpenShift', async () => {
+    vi.useFakeTimers();
+    try {
+      mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
+      const profile: ImageRobotProfile = {
+        id: 'boxbot',
+        displayName: 'Box Bot',
+        kind: 'embedded-sdf',
+        profile: {
+          id: 'boxbot',
+          displayName: 'Box Bot',
+          modelFile: 'robots/boxbot/model.sdf',
+          world: 'tb3_sandbox',
+          z: 0.15,
+        },
+        launchDefaults: {
+          packageName: 'ros_gz_sim',
+          launchFile: 'launch/gz_spawn_model.launch.py',
+          launchArguments: 'world:=tb3_sandbox\nfile:=/opt/physical-ai/robots/boxbot/model.sdf\nentity_name:={name}',
+        },
+      };
+      mockListRobotProfilesInOpenShift.mockResolvedValue([profile]);
+
+      render(DeployOpenShift);
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(screen.getByDisplayValue('ros_gz_sim')).toBeTruthy();
+      expect(screen.getByDisplayValue(/file:=\/opt\/physical-ai\/robots\/boxbot/)).toBeTruthy();
+      expect(screen.getByText(/Box Bot is embedded in this image/)).toBeTruthy();
+      await fireEvent.click(screen.getByRole('button', { name: 'Spawn' }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mockSpawnEmbeddedRobotInOpenShift).toHaveBeenCalledWith(
+        'sgahlot-pd-extn',
+        'ros2-jazzy-sim',
+        { ...profile.profile, sourceId: '' },
+        'robot_1',
+        '-2.0',
+        '-0.5',
+        '0.0',
+        'ctx',
+      );
     } finally {
       vi.useRealTimers();
     }

@@ -12,6 +12,7 @@ function robot(name: string, over: Partial<RobotEntry> = {}): RobotEntry {
     navTarget: { x: '2.0', y: '0.5' },
     // eslint-disable-next-line no-null/no-null -- matches RobotEntry's declared `| null` contract
     navReached: null,
+    supportsNavigation: true,
     ...over,
   };
 }

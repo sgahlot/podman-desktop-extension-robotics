@@ -43,6 +43,7 @@ describe('verifyBuildContext', () => {
     'Containerfile',
     'entrypoint-gazebo.sh',
     'entrypoint-spawn-robot.sh',
+    'entrypoint-launch-robot.sh',
     'entrypoint-nav2.sh',
     'lib/load-validate-input.sh',
     'lib/validate-input.sh',
