@@ -1038,12 +1038,12 @@ onDestroy(() => {
         on:click={() => setViewMode('cards')}>Cards</button>
     </div>
     <div class="flex items-center gap-3 flex-wrap">
-      <button class="pai-btn text-xs" on:click={openRecorder} disabled={!selectedContainerId}>
+      <button class="pai-btn pai-btn-primary text-xs" on:click={openRecorder} disabled={!selectedContainerId}>
         {recorderOpen ? 'Hide recorder' : 'Record rosbag'}
       </button>
       {#if viewMode === 'graph'}
         <label
-          class="live-telemetry-toggle inline-flex cursor-pointer items-center gap-3 text-xs text-[var(--pd-content-text)]"
+          class="pai-toggle-card inline-flex cursor-pointer items-center gap-3 text-xs"
           class:enabled={liveTelemetryEnabled}>
           <input
             type="checkbox"
@@ -1052,7 +1052,7 @@ onDestroy(() => {
             checked={liveTelemetryEnabled}
             on:change={toggleLiveTelemetry} />
           <span class="flex flex-col gap-0.5">
-            <span class="font-semibold text-[var(--pai-accent,#7c3aed)]">Live telemetry</span>
+            <span class="pai-toggle-title font-semibold">Live telemetry</span>
             <span id="liveTelemetryHint" class="text-[10px] pai-text-muted">
               {liveTelemetryEnabled ? 'Sampling selected topic' : 'Off by default · sample selected topic'}
             </span>
@@ -1409,10 +1409,11 @@ onDestroy(() => {
                   <path d="M0,0 L8,4 L0,8 z" style="fill: var(--pai-accent, #7c3aed)"></path>
                 </marker>
               </defs>
-              <text x="170" y="30" text-anchor="middle" class="fill-[var(--pd-content-text)] text-[12px]"
+              <text x="170" y="30" text-anchor="middle" class="fill-[var(--pd-content-header)] text-[12px]"
                 >Publishers</text>
-              <text x="500" y="30" text-anchor="middle" class="fill-[var(--pd-content-text)] text-[12px]">Topics</text>
-              <text x="830" y="30" text-anchor="middle" class="fill-[var(--pd-content-text)] text-[12px]"
+              <text x="500" y="30" text-anchor="middle" class="fill-[var(--pd-content-header)] text-[12px]"
+                >Topics</text>
+              <text x="830" y="30" text-anchor="middle" class="fill-[var(--pd-content-header)] text-[12px]"
                 >Subscribers</text>
 
               {#if focusActive}
@@ -1458,8 +1459,8 @@ onDestroy(() => {
                     width="215"
                     height={cardHeight}
                     rx="8"
-                    fill="var(--pd-content-card-bg)"
-                    style={`stroke: ${selectedNode && nodePath(selectedNode) === nodePath(node) ? 'var(--pai-accent, #7c3aed)' : 'var(--pd-content-card-border, #e5e7eb)'}`}
+                    fill="var(--pai-raised-surface)"
+                    style={`stroke: ${selectedNode && nodePath(selectedNode) === nodePath(node) ? 'var(--pai-accent, #7c3aed)' : 'var(--pai-graph-node-border)'}`}
                   ></rect>
                   <text
                     x="162"
@@ -1492,8 +1493,8 @@ onDestroy(() => {
                     width="215"
                     height={cardHeight}
                     rx="8"
-                    fill="var(--pd-content-card-bg)"
-                    style={`fill: ${publishedReceipt ? 'var(--pd-button-secondary-bg, #ede9fe)' : 'var(--pd-content-card-bg)'}; stroke: ${publishedReceipt || (selectedNode && nodePath(selectedNode) === nodePath(node)) ? 'var(--pai-accent, #7c3aed)' : 'var(--pd-content-card-border, #e5e7eb)'}`}
+                    fill="var(--pai-raised-surface)"
+                    style={`fill: ${publishedReceipt ? 'var(--pai-selection-bg)' : 'var(--pai-raised-surface)'}; stroke: ${publishedReceipt || (selectedNode && nodePath(selectedNode) === nodePath(node)) ? 'var(--pai-accent, #7c3aed)' : 'var(--pai-graph-node-border)'}`}
                     data-testid={publishedReceipt ? 'topic-publish-receipt' : undefined}></rect>
                   <text
                     x="837"
@@ -1521,12 +1522,13 @@ onDestroy(() => {
                     width="215"
                     height="40"
                     rx="8"
-                    style="fill: var(--pd-button-secondary-bg); stroke: var(--pai-accent, #7c3aed)"></rect>
+                    style="fill: var(--pai-raised-surface); stroke: var(--pai-accent, #7c3aed)"></rect>
                   <text
                     x="162"
                     y={yFor(displayedPublisherNodes.length, graphRowCount, graphLayout) + 4}
                     text-anchor="middle"
-                    class="text-[11px] pai-text-accent">
+                    class="text-[11px]"
+                    style="fill: var(--pai-accent, #7c3aed)">
                     Show {collapsedPublisherCount} more publishers
                   </text>
                 </g>
@@ -1545,12 +1547,13 @@ onDestroy(() => {
                     width="215"
                     height="40"
                     rx="8"
-                    style="fill: var(--pd-button-secondary-bg); stroke: var(--pai-accent, #7c3aed)"></rect>
+                    style="fill: var(--pai-raised-surface); stroke: var(--pai-accent, #7c3aed)"></rect>
                   <text
                     x="837"
                     y={yFor(displayedSubscriberNodes.length, graphRowCount, graphLayout) + 4}
                     text-anchor="middle"
-                    class="text-[11px] pai-text-accent">
+                    class="text-[11px]"
+                    style="fill: var(--pai-accent, #7c3aed)">
                     Show {collapsedSubscriberCount} more subscribers
                   </text>
                 </g>
@@ -1569,12 +1572,13 @@ onDestroy(() => {
                     width="215"
                     height="40"
                     rx="8"
-                    style="fill: var(--pd-button-secondary-bg); stroke: var(--pai-accent, #7c3aed)"></rect>
+                    style="fill: var(--pai-raised-surface); stroke: var(--pai-accent, #7c3aed)"></rect>
                   <text
                     x="162"
                     y={yFor(displayedPublisherNodes.length, graphRowCount, graphLayout) + 4}
                     text-anchor="middle"
-                    class="text-[11px] pai-text-accent">Show fewer publishers</text>
+                    class="text-[11px]"
+                    style="fill: var(--pai-accent, #7c3aed)">Show fewer publishers</text>
                 </g>
               {/if}
               {#if expandedSubscriberNodes && subscriberNodes.length > MAX_CONNECTED_NODES}
@@ -1591,12 +1595,13 @@ onDestroy(() => {
                     width="215"
                     height="40"
                     rx="8"
-                    style="fill: var(--pd-button-secondary-bg); stroke: var(--pai-accent, #7c3aed)"></rect>
+                    style="fill: var(--pai-raised-surface); stroke: var(--pai-accent, #7c3aed)"></rect>
                   <text
                     x="837"
                     y={yFor(displayedSubscriberNodes.length, graphRowCount, graphLayout) + 4}
                     text-anchor="middle"
-                    class="text-[11px] pai-text-accent">Show fewer subscribers</text>
+                    class="text-[11px]"
+                    style="fill: var(--pai-accent, #7c3aed)">Show fewer subscribers</text>
                 </g>
               {/if}
               {#each graphTopics as topic (topic.name)}
@@ -1616,13 +1621,13 @@ onDestroy(() => {
                     width="180"
                     height={cardHeight}
                     rx="8"
-                    style={`fill: ${selectedTopic === topic.name ? 'var(--pd-button-secondary-bg, #ede9fe)' : 'var(--pd-content-card-bg, #fff)'}; stroke: ${selectedTopic === topic.name ? 'var(--pai-accent, #7c3aed)' : 'var(--pd-content-card-border, #e5e7eb)'};`}
+                    style={`fill: ${selectedTopic === topic.name ? 'var(--pai-selection-bg)' : 'var(--pai-raised-surface)'}; stroke: ${selectedTopic === topic.name ? 'var(--pai-accent, #7c3aed)' : 'var(--pai-graph-node-border)'};`}
                     stroke-width="2"></rect>
                   <text
                     x="500"
                     y={topicY(topic.name, graphTopics, graphLayout) - (labelLines(topic.name).length - 1) * 7 + 4}
                     text-anchor="middle"
-                    style={`fill: ${selectedTopic === topic.name ? 'var(--pd-button-secondary-text, var(--pai-accent, #7c3aed))' : 'var(--pd-content-header, #111827)'}`}
+                    style={`fill: ${selectedTopic === topic.name ? 'var(--pd-content-header, #111827)' : 'var(--pd-content-header, #111827)'}`}
                     class="text-[11px]"
                     >{#each labelLines(topic.name) as line, index}<tspan x="500" dy={index === 0 ? 0 : 14}>{line}</tspan
                       >{/each}</text>
@@ -1694,13 +1699,19 @@ onDestroy(() => {
                 {/if}
               </div>
               <div class="flex flex-wrap gap-2">
-                <button class="pai-btn text-xs" on:click={() => void loadSchema()} disabled={schemaLoading}>
+                <button
+                  class="pai-btn pai-btn-primary text-xs"
+                  on:click={() => void loadSchema()}
+                  disabled={schemaLoading}>
                   {schemaLoading ? 'Loading...' : 'Schema'}
                 </button>
-                <button class="pai-btn text-xs" on:click={() => void peekTopic()} disabled={peekLoading}>
+                <button
+                  class="pai-btn pai-btn-primary text-xs"
+                  on:click={() => void peekTopic()}
+                  disabled={peekLoading}>
                   {peekLoading ? 'Peeking...' : 'Peek'}
                 </button>
-                <button class="pai-btn text-xs" on:click={togglePublishEditor}>
+                <button class="pai-btn pai-btn-primary text-xs" on:click={togglePublishEditor}>
                   {publishEditorOpen ? 'Cancel publish' : 'Publish'}
                 </button>
               </div>
@@ -1733,7 +1744,7 @@ onDestroy(() => {
                     <span>I confirm this one-shot message is safe for this topic's subscribers.</span>
                   </label>
                   <button
-                    class="pai-btn self-start text-xs"
+                    class="pai-btn pai-btn-primary self-start text-xs"
                     on:click={() => void publishSelectedTopic()}
                     disabled={publishLoading ||
                       !publishConfirmed ||
@@ -1750,10 +1761,18 @@ onDestroy(() => {
                   {/if}
                 </div>
               {/if}
-              {#if schema?.schema}<pre
-                  class="max-h-32 overflow-auto whitespace-pre-wrap break-all rounded border border-[var(--pd-content-card-border)] p-2 font-mono">{schema.schema}</pre>{/if}
-              {#if peekResult?.message}<pre
-                  class="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded border border-[var(--pd-content-card-border)] p-2 font-mono">{peekResult.message}</pre>{/if}
+              {#if schema?.schema}
+                <section class="pai-inspector-section" aria-label="Message schema">
+                  <h3 class="font-medium text-[var(--pd-content-header)]">Message schema</h3>
+                  <pre class="max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono">{schema.schema}</pre>
+                </section>
+              {/if}
+              {#if peekResult?.message}
+                <section class="pai-inspector-section" aria-label="Latest message">
+                  <h3 class="font-medium text-[var(--pd-content-header)]">Latest message</h3>
+                  <pre class="max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono">{peekResult.message}</pre>
+                </section>
+              {/if}
             </div>
           {/if}
         {:else if selectedNode}

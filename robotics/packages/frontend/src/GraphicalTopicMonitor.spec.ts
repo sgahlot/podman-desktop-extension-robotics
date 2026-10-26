@@ -114,11 +114,9 @@ describe('GraphicalTopicMonitor', () => {
 
     const topicButton = screen.getByRole('button', { name: 'Select topic /cmd_vel' });
     expect(topicButton.getAttribute('aria-pressed')).toBe('true');
-    expect(topicButton.querySelector('rect')?.getAttribute('style')).toContain(
-      'fill: var(--pd-button-secondary-bg, #ede9fe)',
-    );
+    expect(topicButton.querySelector('rect')?.getAttribute('style')).toContain('fill: var(--pai-selection-bg)');
     expect(topicButton.querySelector('text')?.getAttribute('style')).toContain(
-      'fill: var(--pd-button-secondary-text, var(--pai-accent, #7c3aed))',
+      'fill: var(--pd-content-header, #111827)',
     );
     expect(
       screen

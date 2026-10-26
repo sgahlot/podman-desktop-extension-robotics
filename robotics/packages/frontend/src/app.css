@@ -50,6 +50,18 @@ select {
     var(--pd-content-text, #374151) 82%,
     var(--pd-content-card-bg, #fff)
   );
+  --pai-selection-bg: color-mix(in srgb, var(--pai-accent) 24%, var(--pd-content-card-bg, #fff));
+  --pai-selection-border: color-mix(in srgb, var(--pai-accent) 72%, var(--pd-content-card-bg, #fff));
+  --pai-raised-surface: color-mix(
+    in srgb,
+    var(--pd-content-header, var(--pd-content-text, #374151)) 5%,
+    var(--pd-content-card-bg, #fff)
+  );
+  --pai-graph-node-border: color-mix(
+    in srgb,
+    var(--pd-content-header, var(--pd-content-text, #374151)) 34%,
+    var(--pd-content-card-bg, #fff)
+  );
 }
 
 .pai-topic-filter {
@@ -238,6 +250,53 @@ select {
   color: var(--pai-accent-text);
   font-weight: 600;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--pai-accent) 35%, transparent);
+}
+
+/* Topic Monitor's telemetry switch is a status-bearing control, not a bare
+ * checkbox. Its surface makes the on/off state readable before its text is. */
+.pai-toggle-card {
+  border: 1px solid var(--pai-graph-node-border);
+  border-radius: 0.625rem;
+  background-color: var(--pai-raised-surface);
+  color: var(--pd-content-text, #374151);
+  padding: 0.625rem 0.875rem;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.pai-toggle-card:hover {
+  border-color: var(--pai-selection-border);
+}
+
+.pai-toggle-card.enabled {
+  border-color: var(--pai-accent);
+  background-color: var(--pai-selection-bg);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pai-accent) 30%, transparent);
+}
+
+.pai-toggle-card input {
+  accent-color: var(--pai-accent);
+}
+
+.pai-toggle-title {
+  color: var(--pd-content-header, #111827);
+}
+
+.pai-toggle-card.enabled .pai-toggle-title {
+  color: var(--pai-accent);
+}
+
+.pai-inspector-section {
+  border: 1px solid var(--pai-graph-node-border);
+  border-radius: 0.375rem;
+  background-color: var(--pai-raised-surface);
+  padding: 0.625rem;
+}
+
+.pai-inspector-section pre {
+  margin: 0.5rem 0 0;
 }
 
 .pai-link {
