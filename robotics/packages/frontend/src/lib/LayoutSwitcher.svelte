@@ -17,9 +17,7 @@ const OPTIONS: Array<{ value: 'sidebar' | 'tabs' | 'cards'; label: string }> = [
       role="radio"
       aria-checked={value === opt.value}
       on:click={() => onSelect(opt.value)}
-      class="px-2.5 py-1 text-xs rounded border cursor-pointer transition-colors {value === opt.value
-        ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
-        : 'border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)]'}">
+      class="pai-choice px-2.5 py-1 text-xs rounded {value === opt.value ? 'pai-choice-active' : ''}">
       {opt.label}
     </button>
   {/each}

@@ -517,7 +517,7 @@ onDestroy(() => {
                 </select>
                 <span class="text-xs pai-text-warning"
                   >{selectedCustomTemplate.capability}: {selectedCustomTemplate.packages.join(', ')}</span>
-                <span class="text-xs text-[var(--pd-content-text)] opacity-80">
+                <span class="text-xs pai-text-muted">
                   Required parent: {selectedCustomTemplate.osFamily}
                   {selectedCustomTemplate.osVersion} · ROS 2
                   {selectedCustomTemplate.rosDistro} · {selectedCustomTemplate.packageManager}. ROS is provided by the
@@ -555,7 +555,7 @@ onDestroy(() => {
               <option value={otherArch} disabled={selection.ros === 'ros2-lyrical' && otherArch === 'arm64'}
                 >{otherArchLabel}</option>
             </select>
-            <span class="text-xs text-[var(--pd-content-text)] opacity-80">
+            <span class="text-xs pai-text-muted">
               The selected architecture controls the image platform, regardless of the tag you enter. OpenShift requires
               <span class="font-mono">amd64</span>.
             </span>
@@ -647,7 +647,7 @@ onDestroy(() => {
         {compactPresetsQuickStart ? 'Simulation image' : 'Build image'}
       </h3>
       {#if compactPresetsQuickStart}
-        <p class="text-xs text-[var(--pd-content-text)] opacity-80">
+        <p class="text-xs pai-text-muted">
           One image with ROS 2 Lyrical, Gazebo, Nav2, and TurtleBot3 on Fedora bootc 43. Base layers are resolved at
           build time. DDS runtime: <span class="font-medium">{middlewareDisplayLabel}</span>.
         </p>
