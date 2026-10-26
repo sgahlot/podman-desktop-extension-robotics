@@ -439,15 +439,15 @@ function onQuickStartClick(id: QuickStartId) {
               on:click={() => onQuickStartClick(quickStart.id)}
               disabled={buildBusy || saving}
               aria-label={quickStart.label}
-              class="px-3 py-1.5 text-sm rounded border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed {selectedQuickStartId ===
+              class="pai-choice px-3 py-1.5 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed {selectedQuickStartId ===
               quickStart.id
-                ? 'border-[var(--pd-content-header)] bg-[var(--pd-content-bg)] font-medium text-[var(--pd-content-header)]'
-                : 'border-[var(--pd-content-text)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] hover:border-[var(--pd-content-header)]'}">
+                ? 'pai-choice-active'
+                : ''}">
               {quickStart.label}
             </button>
           {/each}
         </div>
-        <span class="text-xs text-[var(--pd-content-text)] opacity-80">
+        <span class="text-xs pai-text-muted">
           {quickStartDescription}
         </span>
         {#if selectedQuickStart}
@@ -476,7 +476,7 @@ function onQuickStartClick(id: QuickStartId) {
         class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
         <div class="flex flex-row items-center justify-between flex-wrap gap-2 mb-3">
           <h2 class="text-xl text-[var(--pd-content-header)]">Preset Image Builder</h2>
-          <span class="text-xs text-[var(--pd-content-text)] opacity-80 font-mono">lyrical · amd64 · bootc 43</span>
+          <span class="text-xs pai-text-muted font-mono">lyrical · amd64 · bootc 43</span>
         </div>
         <LayerComposer
           bind:targetArch={targetArch}
@@ -498,7 +498,7 @@ function onQuickStartClick(id: QuickStartId) {
       <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
         <div class="flex flex-row items-center justify-between flex-wrap gap-2 mb-2">
           <h2 class="text-xl text-[var(--pd-content-header)]">Preset Image Builder</h2>
-          <span class="text-xs text-[var(--pd-content-text)] opacity-80 font-mono">
+          <span class="text-xs pai-text-muted font-mono">
             {robot} &middot; {distro} &middot; {middlewareDisplayLabel} &middot; {engine} &middot; {basePreset.label}
           </span>
         </div>
@@ -514,7 +514,7 @@ function onQuickStartClick(id: QuickStartId) {
                 <span class="text-xs pai-text-muted">&#9675; Not built</span>
               {/if}
               {#if baseTag}
-                <span class="text-xs text-[var(--pd-content-text)] opacity-80 font-mono">{baseTag}</span>
+                <span class="text-xs pai-text-muted font-mono">{baseTag}</span>
               {/if}
             </div>
             {#if baseImage === CUSTOM_SIMULATION_BASE_IMAGE && customSimulationMode === 'packages'}
@@ -567,7 +567,7 @@ function onQuickStartClick(id: QuickStartId) {
                 <span class="text-xs pai-text-muted">&#9675; Not built</span>
               {/if}
               {#if simTag}
-                <span class="text-xs text-[var(--pd-content-text)] opacity-80 font-mono">{simTag}</span>
+                <span class="text-xs pai-text-muted font-mono">{simTag}</span>
               {/if}
             </div>
             {#if baseImage === CUSTOM_SIMULATION_BASE_IMAGE && customSimulationMode === 'packages' && simTag}

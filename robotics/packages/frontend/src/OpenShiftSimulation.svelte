@@ -950,7 +950,7 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
       {#if context}
         <div class="text-xs text-[var(--pd-content-text)] flex flex-col gap-2">
           <div><strong>Context:</strong> <span class="font-mono break-all">{context.context}</span></div>
-          <div class="opacity-70 font-mono break-all">{context.kubeconfigPath}</div>
+          <div class="pai-text-muted font-mono break-all">{context.kubeconfigPath}</div>
           <div class="flex flex-col gap-1">
             <label for="dep-cluster-url" class="text-xs text-[var(--pd-content-text)]">Cluster URL</label>
             <select
@@ -1243,7 +1243,7 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
             to
             <span class="font-mono font-semibold pai-text-accent">{deployResult.namespace}</span>
           </div>
-          <div class="text-xs opacity-80">
+          <div class="text-xs pai-text-muted">
             Route:
             {#if deployResult.routeUrl}
               <span class="font-mono break-all">{deployResult.routeUrl}</span>
@@ -1251,7 +1251,7 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
               pending admission…
             {/if}
           </div>
-          <div class="text-xs opacity-80">Applied: {deployResult.applied.join(', ')}</div>
+          <div class="text-xs pai-text-muted">Applied: {deployResult.applied.join(', ')}</div>
         </div>
       {/if}
     </div>
@@ -1297,12 +1297,12 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
             <div
               class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 flex flex-col gap-3">
               <div class="flex flex-col gap-1">
-                <span class="text-xs font-medium text-[var(--pd-content-text)] opacity-80">Deployment</span>
+                <span class="text-xs font-medium pai-text-muted">Deployment</span>
                 <div class="font-medium text-[var(--pd-content-header)] font-mono text-base">{w.name}</div>
               </div>
               {#if w.image}
                 <div class="flex flex-col gap-1">
-                  <span class="text-xs font-medium text-[var(--pd-content-text)] opacity-80">Image</span>
+                  <span class="text-xs font-medium pai-text-muted">Image</span>
                   <div class="text-sm font-mono break-all text-[var(--pd-content-text)]">{w.image}</div>
                 </div>
               {/if}
