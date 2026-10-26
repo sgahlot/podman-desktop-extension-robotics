@@ -13,7 +13,13 @@ import { localTargetKey } from './lib/diagnosticsTargetKey';
 import { setSpawnedRobotsForTarget } from './lib/spawnedRobotsStore';
 import { clearCachedDiagnostics } from './lib/robotDiagnosticsCache';
 import { middlewareLabelForImage } from '/@shared/src/types/middlewareLabels';
-import type { EmbeddedRobotProfile } from '/@shared/src/types/EmbeddedRobotProfile';
+import RobotProfileEditor from './lib/RobotProfileEditor.svelte';
+import {
+  initialRobotProfileSelection,
+  customLaunchSelection,
+  type ImageRobotProfile,
+  type RobotProfileSelection,
+} from '/@shared/src/types/ImageRobotProfile';
 
 let localSimImages: string[] = [];
 let selectedImage = '';
@@ -29,11 +35,12 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 export let active = true;
 let wasActive = false;
 let simImageAllowlist = '';
-let robotPackage = 'nav2_minimal_tb3_sim';
-let robotLaunchFile = 'launch/spawn_tb3.launch.py';
-let robotLaunchArguments =
-  'use_sim_time:=True\nnamespace:={name}\nrobot_name:={name}\nx_pose:={x}\ny_pose:={y}\nyaw:={yaw}\nz_pose:=0.01';
 let robotLaunchError = '';
+let robotProfiles: ImageRobotProfile[] = [];
+let robotProfileSelection: RobotProfileSelection | undefined;
+let profileContainerId = '';
+let profileLoading = false;
+let profileLoadError = '';
 
 let spawnedRobots: RobotEntry[] = [];
 /** Whether the running container's robots have been reconciled against `ros2 node list`
@@ -96,21 +103,30 @@ async function loadImages() {
   }
 }
 
-async function loadEmbeddedRobotProfile() {
-  try {
-    const profile: EmbeddedRobotProfile | undefined = await physicalAiClient.getEmbeddedRobotProfile();
-    if (!profile) return;
-    robotPackage = 'ros_gz_sim';
-    robotLaunchFile = 'launch/gz_spawn_model.launch.py';
-    robotLaunchArguments = [
-      `world:=${profile.world}`,
-      `file:=/opt/physical-ai/robots/${profile.id}/${profile.modelFile}`,
-      'entity_name:={name}',
-      'allow_renaming:=False',
-    ].join('\n');
-  } catch {
-    // Generic launch defaults remain available.
-  }
+function loadRobotProfiles(containerId: string) {
+  if (profileContainerId === containerId) return;
+  profileContainerId = containerId;
+  robotProfiles = [];
+  robotProfileSelection = undefined;
+  profileLoadError = '';
+  profileLoading = true;
+  void physicalAiClient
+    .listRobotProfilesInSimulation(containerId)
+    .then(profiles => {
+      if (profileContainerId === containerId) {
+        robotProfiles = profiles;
+        robotProfileSelection = initialRobotProfileSelection(profiles);
+      }
+    })
+    .catch(error => {
+      if (profileContainerId === containerId) {
+        profileLoadError = error instanceof Error ? error.message : String(error);
+        robotProfileSelection = customLaunchSelection();
+      }
+    })
+    .finally(() => {
+      if (profileContainerId === containerId) profileLoading = false;
+    });
 }
 
 async function pollContainers() {
@@ -118,6 +134,16 @@ async function pollContainers() {
     const listed = await physicalAiClient.listSimulationContainers();
     removedContainerIds = removedContainerIds.filter(id => listed.some(c => c.id === id));
     containers = listed.filter(c => !removedContainerIds.includes(c.id));
+    const activeContainer = containers.find(c => c.state === 'running');
+    if (activeContainer) {
+      loadRobotProfiles(activeContainer.id);
+    } else if (profileContainerId) {
+      profileContainerId = '';
+      robotProfiles = [];
+      robotProfileSelection = undefined;
+      profileLoading = false;
+      profileLoadError = '';
+    }
     if (containers.some(c => c.state === 'running')) {
       launchError = '';
     }
@@ -128,7 +154,6 @@ async function pollContainers() {
 
 onMount(() => {
   loadImages();
-  void loadEmbeddedRobotProfile();
   pollContainers().then(reconcileRobots);
   pollTimer = setInterval(() => {
     pollContainers().then(reconcileRobots);
@@ -209,6 +234,8 @@ function toggleViewer(id: string) {
 
 async function spawnRobot(form: { name: string; x: string; y: string; yaw: string }) {
   if (!runningContainer) throw new Error('No running simulation');
+  const selection = robotProfileSelection;
+  const selectedProfile = robotProfiles.find(profile => profile.id === selection?.profileId);
   robotLaunchError = '';
   missingStreaks.delete(form.name);
   trackedSince.set(form.name, Date.now());
@@ -216,8 +243,14 @@ async function spawnRobot(form: { name: string; x: string; y: string; yaw: strin
   // snapshot (if any) is stale and must not be shown as if it were current.
   clearCachedDiagnostics(localTargetKey(runningContainer.id), form.name);
   const isDefaultTurtleBot3 =
-    robotPackage.trim() === 'nav2_minimal_tb3_sim' && robotLaunchFile.trim() === 'launch/spawn_tb3.launch.py';
-  const arguments_ = robotLaunchArguments
+    selectedProfile?.kind === 'launch' &&
+    selectedProfile.id === 'turtlebot3' &&
+    selection?.customized === false &&
+    selection?.packageName === selectedProfile.packageName &&
+    selection?.launchFile === selectedProfile.launchFile;
+  const usesEmbeddedProfile = selectedProfile?.kind === 'embedded-sdf' && selection?.customized === false;
+  const launchArguments = selection?.launchArguments ?? '';
+  const arguments_ = launchArguments
     .split(/\r?\n/)
     .map(argument => argument.trim())
     .filter(Boolean)
@@ -239,10 +272,19 @@ async function spawnRobot(form: { name: string; x: string; y: string; yaw: strin
         form.y,
         form.yaw,
       ]);
+    } else if (usesEmbeddedProfile && selectedProfile?.kind === 'embedded-sdf') {
+      await physicalAiClient.spawnEmbeddedRobotInSimulation(
+        runningContainer.id,
+        { ...selectedProfile.profile, sourceId: '' },
+        form.name,
+        form.x,
+        form.y,
+        form.yaw,
+      );
     } else {
       await physicalAiClient.launchRobotInSimulation(runningContainer.id, {
-        packageName: robotPackage.trim(),
-        launchFile: robotLaunchFile.trim(),
+        packageName: selection?.packageName.trim() ?? '',
+        launchFile: selection?.launchFile.trim() ?? '',
         arguments: arguments_,
       });
     }
@@ -256,14 +298,23 @@ async function spawnRobot(form: { name: string; x: string; y: string; yaw: strin
       name: form.name,
       x: form.x,
       y: form.y,
+      yaw: form.yaw,
       navStatus: 'idle',
       navTarget: { x: '2.0', y: '2.0' },
       navReached: null,
       positionManagedByProfile:
-        !isDefaultTurtleBot3 && !robotLaunchArguments.includes('{x}') && !robotLaunchArguments.includes('{y}'),
+        !isDefaultTurtleBot3 &&
+        !usesEmbeddedProfile &&
+        !launchArguments.includes('{x}') &&
+        !launchArguments.includes('{y}'),
       livenessManagedByProfile:
-        !isDefaultTurtleBot3 && !robotLaunchArguments.includes('{x}') && !robotLaunchArguments.includes('{y}'),
-      supportsNavigation: isDefaultTurtleBot3,
+        usesEmbeddedProfile ||
+        (!isDefaultTurtleBot3 && !launchArguments.includes('{x}') && !launchArguments.includes('{y}')),
+      supportsNavigation:
+        selectedProfile?.kind === 'launch' &&
+        selectedProfile.supportsNavigation === true &&
+        selection?.packageName === selectedProfile.packageName &&
+        selection?.launchFile === selectedProfile.launchFile,
       warmStatus: isDefaultTurtleBot3 && imageSupportsNav2Prewarm(runningContainer.imageTag) ? 'warming' : undefined,
     },
   ];
@@ -507,31 +558,15 @@ function diagnoseRobot(index: number): void {
     <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-lg">
       <h2 class="text-sm font-medium text-[var(--pd-content-header)] mb-2">Add Robot</h2>
       <div class="flex flex-col gap-2 mb-3">
-        <label for="robot-package" class="text-xs pai-text-muted">ROS package</label>
-        <input
-          id="robot-package"
-          bind:value={robotPackage}
-          placeholder="my_robot_gazebo"
-          class="px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] font-mono" />
-        <label for="robot-launch-file" class="text-xs pai-text-muted">Launch file</label>
-        <input
-          id="robot-launch-file"
-          bind:value={robotLaunchFile}
-          placeholder="launch/spawn.launch.py"
-          class="px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] font-mono" />
-        <label for="robot-launch-arguments" class="text-xs pai-text-muted"
-          >Launch arguments (one <span class="font-mono">name:=value</span> per line)</label>
-        <textarea
-          id="robot-launch-arguments"
-          bind:value={robotLaunchArguments}
-          rows="5"
-          class="px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] font-mono"
-        ></textarea>
-        <span class="text-xs pai-text-muted"
-          >The package and launch file must already be installed in this simulation image. <span class="font-mono"
-            >{'{name}'}</span
-          >, <span class="font-mono">{'{x}'}</span>, <span class="font-mono">{'{y}'}</span>, and
-          <span class="font-mono">{'{yaw}'}</span> are replaced when you add the robot.</span>
+        {#if profileLoading}
+          <p class="text-xs pai-text-muted">Reading robot profiles from the running image…</p>
+        {:else}
+          <RobotProfileEditor
+            profiles={robotProfiles}
+            bind:selection={robotProfileSelection}
+            idPrefix="local-robot-profile" />
+        {/if}
+        {#if profileLoadError}<span class="text-xs pai-text-error">{profileLoadError}</span>{/if}
         {#if robotLaunchError}<span class="text-xs pai-text-error">{robotLaunchError}</span>{/if}
       </div>
       <RobotControls
@@ -540,6 +575,7 @@ function diagnoseRobot(index: number): void {
         onNavigate={navigateRobot}
         onRemove={removeRobot}
         onDiagnose={diagnoseRobot}
+        disabled={profileLoading || !robotProfileSelection}
         spawnLabel="Add robot"
         idPrefix="local" />
     </div>

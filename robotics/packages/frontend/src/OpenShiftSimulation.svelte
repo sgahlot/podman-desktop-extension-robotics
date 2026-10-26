@@ -12,6 +12,14 @@ import {
   gpuGuiWorkloadUiTone,
 } from '/@shared/src/types/simRuntimeStatus';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
+import RobotProfileEditor from './lib/RobotProfileEditor.svelte';
+import {
+  CUSTOM_LAUNCH_PROFILE_ID,
+  customLaunchSelection,
+  initialRobotProfileSelection,
+  type ImageRobotProfile,
+  type RobotProfileSelection,
+} from '/@shared/src/types/ImageRobotProfile';
 import type { OpenShiftContext, OpenShiftDeployResult, OpenShiftWorkload } from '/@shared/src/types/OpenShiftDeploy';
 import RobotControls, { type RobotEntry } from './RobotControls.svelte';
 import { reconcileAdd, pruneStale } from './lib/robotReconcile';
@@ -139,12 +147,11 @@ let deployedName = '';
 let curlCopyFeedback: Record<string, string> = {};
 
 let workloads: OpenShiftWorkload[] = [];
-// Direct launch configuration for robots already installed in the selected image.
-// TurtleBot3 remains the default because it has a supported bridge/Nav2 workflow.
-let robotPackage = 'nav2_minimal_tb3_sim';
-let robotLaunchFile = 'launch/spawn_tb3.launch.py';
-let robotLaunchArguments =
-  'use_sim_time:=True\nnamespace:={name}\nrobot_name:={name}\nx_pose:={x}\ny_pose:={y}\nyaw:={yaw}\nz_pose:=0.01';
+let robotProfilesByWorkload: Record<string, ImageRobotProfile[]> = {};
+let robotProfileSelectionsByWorkload: Record<string, RobotProfileSelection | undefined> = {};
+let profileImageKeysByWorkload: Record<string, string> = {};
+let profileLoadingByWorkload: Record<string, boolean> = {};
+let profileLoadErrorsByWorkload: Record<string, string> = {};
 /** Workload names with the embedded viewer expanded (APPENG-6283). */
 let expandedViewerNames: string[] = [];
 let listBusy = false;
@@ -266,6 +273,55 @@ async function refreshLoginStatus() {
     loggedIn = true;
     loginMessage = '';
   }
+}
+
+function loadRobotProfiles(workload: OpenShiftWorkload, force = false) {
+  if (!workload.ready) return;
+  const key = `${selectedContext || ''}|${workload.namespace}/${workload.name}|${workload.image ?? ''}`;
+  const sameImage = profileImageKeysByWorkload[workload.name] === key;
+  if (sameImage && !force) return;
+  const previousSelection = sameImage ? robotProfileSelectionsByWorkload[workload.name] : undefined;
+  profileImageKeysByWorkload = { ...profileImageKeysByWorkload, [workload.name]: key };
+  robotProfilesByWorkload = { ...robotProfilesByWorkload, [workload.name]: [] };
+  robotProfileSelectionsByWorkload = { ...robotProfileSelectionsByWorkload, [workload.name]: undefined };
+  profileLoadingByWorkload = { ...profileLoadingByWorkload, [workload.name]: true };
+  profileLoadErrorsByWorkload = { ...profileLoadErrorsByWorkload, [workload.name]: '' };
+  void physicalAiClient
+    .listRobotProfilesInOpenShift(workload.namespace, workload.name, selectedContext || undefined)
+    .then(profiles => {
+      if (profileImageKeysByWorkload[workload.name] === key) {
+        robotProfilesByWorkload = { ...robotProfilesByWorkload, [workload.name]: profiles };
+        const previousProfile = profiles.find(profile => profile.id === previousSelection?.profileId);
+        robotProfileSelectionsByWorkload = {
+          ...robotProfileSelectionsByWorkload,
+          [workload.name]:
+            previousSelection?.profileId === CUSTOM_LAUNCH_PROFILE_ID
+              ? previousSelection
+              : previousProfile
+                ? previousSelection?.customized
+                  ? previousSelection
+                  : initialRobotProfileSelection([previousProfile])
+                : initialRobotProfileSelection(profiles),
+        };
+      }
+    })
+    .catch(error => {
+      if (profileImageKeysByWorkload[workload.name] === key) {
+        profileLoadErrorsByWorkload = {
+          ...profileLoadErrorsByWorkload,
+          [workload.name]: error instanceof Error ? error.message : String(error),
+        };
+        robotProfileSelectionsByWorkload = {
+          ...robotProfileSelectionsByWorkload,
+          [workload.name]: customLaunchSelection(),
+        };
+      }
+    })
+    .finally(() => {
+      if (profileImageKeysByWorkload[workload.name] === key) {
+        profileLoadingByWorkload = { ...profileLoadingByWorkload, [workload.name]: false };
+      }
+    });
 }
 
 /** Well-known OpenShift/Kubernetes system & default namespaces, hidden from the
@@ -615,10 +671,16 @@ async function refreshWorkloads(opts?: { silent?: boolean }) {
         delete robotsByWorkload[key];
         reconciledWorkloads.delete(key);
         clearMissingStreaksForWorkload(key);
+        delete robotProfilesByWorkload[key];
+        delete robotProfileSelectionsByWorkload[key];
+        delete profileImageKeysByWorkload[key];
+        delete profileLoadingByWorkload[key];
+        delete profileLoadErrorsByWorkload[key];
       }
     }
     for (const w of workloads) {
       robotsByWorkload[w.name] ??= [];
+      loadRobotProfiles(w, !silent);
       // Reconcile a ready workload's actually-running robots (S8-17) at most once —
       // pollWarmStatus's existing 3s loop already picks up warmStatus for whatever
       // ends up in robotsByWorkload, so no extra polling wire-up is needed here.
@@ -737,6 +799,9 @@ async function remove(w: OpenShiftWorkload) {
 }
 
 async function spawnRobot(w: OpenShiftWorkload, form: { name: string; x: string; y: string; yaw: string }) {
+  const profiles = robotProfilesByWorkload[w.name] ?? [];
+  const selection = robotProfileSelectionsByWorkload[w.name];
+  const selectedProfile = profiles.find(profile => profile.id === selection?.profileId);
   const key = `${w.name}::${form.name}`;
   missingStreaks.delete(key);
   trackedSince.set(key, Date.now());
@@ -744,8 +809,14 @@ async function spawnRobot(w: OpenShiftWorkload, form: { name: string; x: string;
   // snapshot (if any) is stale and must not be shown as if it were current.
   clearCachedDiagnostics(ocTargetKey(w.namespace, w.name, selectedContext || undefined), form.name);
   const isDefaultTurtleBot3 =
-    robotPackage.trim() === 'nav2_minimal_tb3_sim' && robotLaunchFile.trim() === 'launch/spawn_tb3.launch.py';
-  const arguments_ = robotLaunchArguments
+    selectedProfile?.kind === 'launch' &&
+    selectedProfile.id === 'turtlebot3' &&
+    selection?.customized === false &&
+    selection?.packageName === selectedProfile.packageName &&
+    selection?.launchFile === selectedProfile.launchFile;
+  const usesEmbeddedProfile = selectedProfile?.kind === 'embedded-sdf' && selection?.customized === false;
+  const launchArguments = selection?.launchArguments ?? '';
+  const arguments_ = launchArguments
     .split(/\r?\n/)
     .map(argument => argument.trim())
     .filter(Boolean)
@@ -767,11 +838,26 @@ async function spawnRobot(w: OpenShiftWorkload, form: { name: string; x: string;
         form.yaw,
         selectedContext || undefined,
       );
+    } else if (usesEmbeddedProfile && selectedProfile?.kind === 'embedded-sdf') {
+      await physicalAiClient.spawnEmbeddedRobotInOpenShift(
+        w.namespace,
+        w.name,
+        { ...selectedProfile.profile, sourceId: '' },
+        form.name,
+        form.x,
+        form.y,
+        form.yaw,
+        selectedContext || undefined,
+      );
     } else {
       await physicalAiClient.launchRobotInOpenShift(
         w.namespace,
         w.name,
-        { packageName: robotPackage.trim(), launchFile: robotLaunchFile.trim(), arguments: arguments_ },
+        {
+          packageName: selection?.packageName.trim() ?? '',
+          launchFile: selection?.launchFile.trim() ?? '',
+          arguments: arguments_,
+        },
         selectedContext || undefined,
       );
     }
@@ -784,10 +870,23 @@ async function spawnRobot(w: OpenShiftWorkload, form: { name: string; x: string;
       name: form.name,
       x: form.x,
       y: form.y,
+      yaw: form.yaw,
       navStatus: 'idle',
       navTarget: { x: '2.0', y: '0.5' },
       navReached: null,
-      supportsNavigation: isDefaultTurtleBot3,
+      supportsNavigation:
+        selectedProfile?.kind === 'launch' &&
+        selectedProfile.supportsNavigation === true &&
+        selection?.packageName === selectedProfile.packageName &&
+        selection?.launchFile === selectedProfile.launchFile,
+      positionManagedByProfile:
+        !isDefaultTurtleBot3 &&
+        !usesEmbeddedProfile &&
+        !launchArguments.includes('{x}') &&
+        !launchArguments.includes('{y}'),
+      livenessManagedByProfile:
+        usesEmbeddedProfile ||
+        (!isDefaultTurtleBot3 && !launchArguments.includes('{x}') && !launchArguments.includes('{y}')),
       // Backend pre-warms Nav2 for Nav2 sim images; show "warming…" optimistically there.
       warmStatus: isDefaultTurtleBot3 && w.image && imageSupportsNav2Prewarm(w.image) ? 'warming' : undefined,
     },
@@ -1311,29 +1410,17 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
                 <div class="mt-2 pt-2 border-t border-[var(--pd-content-card-border)] flex flex-col gap-2">
                   <div class="text-xs font-medium text-[var(--pd-content-header)]">Robots</div>
                   <div class="flex flex-col gap-1.5 max-w-lg">
-                    <label for={`oc-robot-package-${w.name}`} class="text-xs pai-text-muted">ROS package</label>
-                    <input
-                      id={`oc-robot-package-${w.name}`}
-                      bind:value={robotPackage}
-                      class="px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] font-mono" />
-                    <label for={`oc-robot-launch-${w.name}`} class="text-xs pai-text-muted">Launch file</label>
-                    <input
-                      id={`oc-robot-launch-${w.name}`}
-                      bind:value={robotLaunchFile}
-                      class="px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] font-mono" />
-                    <label for={`oc-robot-arguments-${w.name}`} class="text-xs pai-text-muted"
-                      >Launch arguments (one <span class="font-mono">name:=value</span> per line)</label>
-                    <textarea
-                      id={`oc-robot-arguments-${w.name}`}
-                      bind:value={robotLaunchArguments}
-                      rows="5"
-                      class="px-2 py-1 text-xs rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)] text-[var(--pd-content-text)] font-mono"
-                    ></textarea>
-                    <span class="text-xs pai-text-muted"
-                      >The package and launch file must already be installed in this deployment image. <span
-                        class="font-mono">{'{name}'}</span
-                      >, <span class="font-mono">{'{x}'}</span>, <span class="font-mono">{'{y}'}</span>, and
-                      <span class="font-mono">{'{yaw}'}</span> are replaced when you add the robot.</span>
+                    {#if profileLoadingByWorkload[w.name]}
+                      <p class="text-xs pai-text-muted">Reading robot profiles from this image…</p>
+                    {:else}
+                      <RobotProfileEditor
+                        profiles={robotProfilesByWorkload[w.name] ?? []}
+                        bind:selection={robotProfileSelectionsByWorkload[w.name]}
+                        idPrefix={`oc-${w.name}-robot-profile`} />
+                    {/if}
+                    {#if profileLoadErrorsByWorkload[w.name]}
+                      <span class="text-xs pai-text-error">{profileLoadErrorsByWorkload[w.name]}</span>
+                    {/if}
                   </div>
                   <RobotControls
                     robots={robotsByWorkload[w.name] ?? []}
@@ -1349,7 +1436,9 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
                           selectedContext || undefined,
                         ),
                       )}
-                    disabled={!loggedIn}
+                    disabled={!loggedIn ||
+                      profileLoadingByWorkload[w.name] ||
+                      !robotProfileSelectionsByWorkload[w.name]}
                     idPrefix={`oc-${w.name}`} />
                 </div>
               {/if}

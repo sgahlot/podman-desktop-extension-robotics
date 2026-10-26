@@ -30,6 +30,21 @@ for argument in "$@"; do
     echo "error: invalid launch argument '${argument}' (expected name:=value)" >&2
     exit 1
   fi
+  if [[ "${argument}" == file:=/opt/physical-ai/robots/* ]]; then
+    MODEL_FILE="${argument#file:=}"
+    if [[ ! "${MODEL_FILE}" =~ ^/opt/physical-ai/robots/[a-z][a-z0-9_-]{0,63}/([a-zA-Z0-9_.-]+/)*[a-zA-Z0-9_.-]+\.sdf$ || "${MODEL_FILE}" == *..* ]]; then
+      echo "error: invalid embedded SDF path '${MODEL_FILE}'" >&2
+      exit 1
+    fi
+    if [[ ! -r "${MODEL_FILE}" ]]; then
+      echo "error: embedded SDF '${MODEL_FILE}' is not readable in this image" >&2
+      exit 1
+    fi
+    PROFILE_ID="${MODEL_FILE#/opt/physical-ai/robots/}"
+    PROFILE_ID="${PROFILE_ID%%/*}"
+    PROFILE_ROOT="/opt/physical-ai/robots/${PROFILE_ID}"
+    export GZ_SIM_RESOURCE_PATH="${PROFILE_ROOT}:${PROFILE_ROOT}/robots:$(dirname "${MODEL_FILE}"):${GZ_SIM_RESOURCE_PATH:-}"
+  fi
 done
 
 export HOME="${ROBOTICS_HOME:-/tmp/ros-home}"

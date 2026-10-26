@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import SimulationPage from './LocalSimulation.svelte';
 import { spawnedRobotsByTarget } from './lib/spawnedRobotsStore';
 import { localTargetKey } from './lib/diagnosticsTargetKey';
+import { TURTLEBOT3_IMAGE_PROFILE, type ImageRobotProfile } from '../../shared/src/types/ImageRobotProfile';
 
 const mockClearCachedDiagnostics = vi.fn();
 
@@ -19,10 +20,11 @@ const mockStopSimulation = vi.fn();
 const mockOpenSimulationInBrowser = vi.fn();
 const mockExecInSimulation = vi.fn();
 const mockLaunchRobotInSimulation = vi.fn();
+const mockSpawnEmbeddedRobotInSimulation = vi.fn();
 const mockSendNavigationGoal = vi.fn();
 const mockGetRobotWarmStatus = vi.fn();
 const mockGetSimulationConfig = vi.fn();
-const mockGetEmbeddedRobotProfile = vi.fn();
+const mockListRobotProfilesInSimulation = vi.fn();
 const mockListSpawnedRobotsInSimulation = vi.fn();
 const mockDespawnRobot = vi.fn();
 const mockGoto = vi.fn();
@@ -38,10 +40,11 @@ vi.mock('./api/client', () => ({
     openSimulationInBrowser: (...args: unknown[]) => mockOpenSimulationInBrowser(...args),
     execInSimulation: (...args: unknown[]) => mockExecInSimulation(...args),
     launchRobotInSimulation: (...args: unknown[]) => mockLaunchRobotInSimulation(...args),
+    spawnEmbeddedRobotInSimulation: (...args: unknown[]) => mockSpawnEmbeddedRobotInSimulation(...args),
     sendNavigationGoal: (...args: unknown[]) => mockSendNavigationGoal(...args),
     getRobotWarmStatus: (...args: unknown[]) => mockGetRobotWarmStatus(...args),
     getSimulationConfig: (...args: unknown[]) => mockGetSimulationConfig(...args),
-    getEmbeddedRobotProfile: (...args: unknown[]) => mockGetEmbeddedRobotProfile(...args),
+    listRobotProfilesInSimulation: (...args: unknown[]) => mockListRobotProfilesInSimulation(...args),
     listSpawnedRobotsInSimulation: (...args: unknown[]) => mockListSpawnedRobotsInSimulation(...args),
     despawnRobot: (...args: unknown[]) => mockDespawnRobot(...args),
   },
@@ -65,6 +68,7 @@ describe('LocalSimulation', () => {
     mockStopSimulation.mockResolvedValue(undefined);
     mockOpenSimulationInBrowser.mockResolvedValue(undefined);
     mockExecInSimulation.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
+    mockSpawnEmbeddedRobotInSimulation.mockResolvedValue(undefined);
     mockGetRobotWarmStatus.mockResolvedValue('idle');
     mockListSpawnedRobotsInSimulation.mockResolvedValue([]);
     mockDespawnRobot.mockResolvedValue(undefined);
@@ -75,7 +79,7 @@ describe('LocalSimulation', () => {
       engine: 'gazebo',
       baseImage: 'jazzy-noble',
     });
-    mockGetEmbeddedRobotProfile.mockResolvedValue(undefined);
+    mockListRobotProfilesInSimulation.mockResolvedValue([TURTLEBOT3_IMAGE_PROFILE]);
   });
 
   afterEach(() => {
@@ -364,14 +368,24 @@ describe('LocalSimulation', () => {
     try {
       mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
       mockListSimulationContainers.mockResolvedValue([RUNNING_CONTAINER]);
-      mockGetEmbeddedRobotProfile.mockResolvedValue({
+      const profile: ImageRobotProfile = {
         id: 'boxbot',
         displayName: 'Box Bot',
-        modelFile: 'robots/boxbot/model.sdf',
-        world: 'tb3_sandbox',
-        sourceId: 'profile-source',
-      });
-      mockLaunchRobotInSimulation.mockResolvedValue(undefined);
+        kind: 'embedded-sdf',
+        profile: {
+          id: 'boxbot',
+          displayName: 'Box Bot',
+          modelFile: 'robots/boxbot/model.sdf',
+          world: 'tb3_sandbox',
+          z: 0.15,
+        },
+        launchDefaults: {
+          packageName: 'ros_gz_sim',
+          launchFile: 'launch/gz_spawn_model.launch.py',
+          launchArguments: 'world:=tb3_sandbox\nfile:=/opt/physical-ai/robots/boxbot/model.sdf\nentity_name:={name}',
+        },
+      };
+      mockListRobotProfilesInSimulation.mockResolvedValue([profile]);
       mockListSpawnedRobotsInSimulation.mockResolvedValue([]);
 
       render(SimulationPage);
@@ -379,17 +393,16 @@ describe('LocalSimulation', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Add robot' }));
       await vi.advanceTimersByTimeAsync(0); // static entity launch completes
 
-      expect(mockLaunchRobotInSimulation).toHaveBeenCalledWith('abc123def456', {
-        packageName: 'ros_gz_sim',
-        launchFile: 'launch/gz_spawn_model.launch.py',
-        arguments: [
-          'world:=tb3_sandbox',
-          'file:=/opt/physical-ai/robots/boxbot/robots/boxbot/model.sdf',
-          'entity_name:=robot_1',
-          'allow_renaming:=False',
-        ],
-      });
+      expect(mockSpawnEmbeddedRobotInSimulation).toHaveBeenCalledWith(
+        'abc123def456',
+        expect.objectContaining({ id: 'boxbot', z: 0.15, sourceId: '' }),
+        'robot_1',
+        '-2.0',
+        '-0.5',
+        '0.0',
+      );
       expect(screen.getByText('robot_1')).toBeTruthy();
+      expect(screen.getByText('spawned at (-2.0, -0.5), yaw 0.0')).toBeTruthy();
 
       await vi.advanceTimersByTimeAsync(6000); // later polls skip pruning for profile-managed entities
       expect(screen.getByText('robot_1')).toBeTruthy();

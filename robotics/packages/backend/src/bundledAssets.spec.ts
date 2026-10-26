@@ -77,6 +77,10 @@ describe('stageSimRuntimeAssetFiles', () => {
       '/ext/root/assets/ros2-jazzy-sim/entrypoint-gazebo.sh',
       '/tmp/layer-ctx/entrypoint-gazebo.sh',
     );
+    expect(cp).toHaveBeenCalledWith(
+      '/ext/root/assets/ros2-jazzy-sim/entrypoint-spawn-embedded-robot.sh',
+      '/tmp/layer-ctx/entrypoint-spawn-embedded-robot.sh',
+    );
     expect(cp).toHaveBeenCalledWith('/ext/root/assets/ros2-jazzy-sim/worlds', '/tmp/layer-ctx/worlds', {
       recursive: true,
     });

@@ -176,7 +176,7 @@ async function remove(index: number) {
             <span class="pai-text-muted"
               >{robot.positionManagedByProfile
                 ? 'position defined by profile'
-                : `spawned at (${robot.x}, ${robot.y})`}</span>
+                : `spawned at (${robot.x}, ${robot.y})${robot.yaw === undefined ? '' : ', yaw ' + robot.yaw}`}</span>
           {/if}
           {#if robot.warmStatus === 'warming'}
             <!-- Still warming: show the warm indicator and (after this block) Remove;

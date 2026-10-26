@@ -34,6 +34,8 @@ export let tagInputId = 'image-tag';
 export let busy = false;
 /** Called when a build settles (success or failure) so parents can refresh history. */
 export let onBuildComplete: ((builtTag: string) => void) | undefined = undefined;
+/** Called for direct edits to the tag input, before commitTag runs on blur/change. */
+export let onTagEdited: ((value: string) => void) | undefined = undefined;
 /** When true, the Build button is disabled (e.g. waiting for a prerequisite). */
 export let disabled = false;
 /** Whether the containing page is currently visible. Re-check image status on return. */
@@ -204,6 +206,7 @@ async function checkRegistryImage(imageTag: string = inputValue, gen: number = i
 }
 
 function onTagInput() {
+  onTagEdited?.(inputValue);
   imageCheckGen++;
   imageExistsLocally = false;
   imageExistsInRegistry = null;

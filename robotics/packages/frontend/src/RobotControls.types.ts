@@ -6,6 +6,7 @@ export type RobotEntry = {
    * position isn't recoverable from `ros2 node list`, so the row shows just the name. */
   x?: string;
   y?: string;
+  yaw?: string;
   /** The image-provided launch owns placement (for example an SDF <pose>). */
   positionManagedByProfile?: boolean;
   /** Static/profile-defined entities do not create a ROS node for liveness reconciliation. */

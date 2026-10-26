@@ -253,25 +253,37 @@ let topicMonitorCaption =
       <h2 class="text-lg font-medium text-[var(--pd-content-header)] mb-2">Image-provided robot launches</h2>
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
         <p>
-          Add a robot by entering the ROS package and launch file already installed in the selected simulation image.
-          TurtleBot3 is prefilled as a known-good example.
+          The Robot profile menu lists profiles found in the running simulation image: TurtleBot3 when its launch is
+          installed and embedded SDF profiles included in a derived image. Selecting a launch profile fills its ROS
+          package, launch file, and default arguments. You can edit these values and reset them to the profile defaults,
+          or choose Custom launch configuration to enter your own.
         </p>
         <p>
           Add one <span class="font-mono">name:=value</span> launch argument per line. The placeholders
           <span class="font-mono">{`{name}`}</span>, <span class="font-mono">{`{x}`}</span>,
           <span class="font-mono">{`{y}`}</span>, and <span class="font-mono">{`{yaw}`}</span> are replaced from the Add Robot
-          form. Only one local simulation container runs at a time.
+          form when the launch arguments use them. Embedded SDF profiles show the corresponding ROS package, launch file,
+          and arguments. With the defaults, the validated SDF spawn uses Add Robot X/Y/yaw directly; editing the launch settings
+          switches to launch-based spawning. Only one local simulation container runs at a time.
         </p>
         <p>
           Before starting a launch, the extension checks that its package and launch file exist in the image and reports
-          a clear error if either is missing. Values are passed as arguments, not shell commands. Only the prefilled
-          TurtleBot3 configuration offers the extension's Navigate control.
+          a clear error if either is missing. Values are passed as arguments, not shell commands. The TurtleBot3 launch
+          profile offers the extension's Navigate control while its package and launch file remain selected.
         </p>
         <p>
-          Image Builder can embed a selected directory containing a declarative <span class="font-mono"
-            >robot-profile.json</span>
-          and SDF assets into a derived local image; the directory is copied at build time and never mounted at runtime. Initial
-          SDF profiles only add a model to the world—they do not provide navigation, controllers, sensors, or ROS bridges.
+          Image Builder's optional Step 3 is collapsed by default. It embeds a selected directory containing a
+          declarative
+          <span class="font-mono">robot-profile.json</span> and SDF assets into a derived image; the directory is copied
+          at build time and never mounted at runtime. Build and push the derived image before deploying it to OpenShift.
+          Embedded profiles use the UI's X/Y/yaw at spawn and the profile's optional <span class="font-mono">z</span>
+          (default <span class="font-mono">0</span>). Choose the <span class="font-mono">amd64</span> build target for
+          OpenShift. The derived tag uses the profile ID and target architecture (for example,
+          <span class="font-mono">boxbot</span>
+          on <span class="font-mono">arm64</span> or <span class="font-mono">boxbot-amd64</span> on
+          <span class="font-mono">amd64</span>). Editing the tag keeps your custom value when the target architecture
+          changes. Embedded profiles add a model to the world but do not provide navigation, controllers, sensors, or
+          ROS bridges.
         </p>
       </div>
     </div>
@@ -317,12 +329,11 @@ let topicMonitorCaption =
           automatically if the container stops.
         </div>
         <div>
-          <strong>Add Robot</strong> — Enter the package and relative launch-file path for a robot already installed in
-          the selected image, plus optional <span class="font-mono">name:=value</span> launch arguments. The extension
-          checks that package/file before starting the launch. TurtleBot3 is prefilled; its arguments demonstrate the
-          <span class="font-mono">{`{name}`}</span>, <span class="font-mono">{`{x}`}</span>,
+          <strong>Add Robot</strong> — Choose an image-provided robot profile or select Custom launch configuration.
+          Launch profile defaults are editable, and the extension checks that package/file before starting. TurtleBot3's
+          arguments demonstrate the <span class="font-mono">{`{name}`}</span>, <span class="font-mono">{`{x}`}</span>,
           <span class="font-mono">{`{y}`}</span>, and <span class="font-mono">{`{yaw}`}</span> placeholders. An embedded SDF
-          profile may define its own pose, in which case the row reports that its position is profile-defined.
+          profile uses X/Y/yaw from this form and reports the spawned pose in the robot row.
         </div>
         <div>
           <strong>Navigate</strong> — Each spawned robot has a <strong>Navigate</strong> button with target X/Y
@@ -390,7 +401,8 @@ let topicMonitorCaption =
         </div>
         <div>
           <strong>Manage</strong> — Deployed sims are listed with delete/refresh and per-robot spawn/navigate/remove, same
-          as the local Simulation page.
+          as the local Simulation page. Embedded SDF profiles appear only when their assets are present in the deployed image;
+          choose one from the profile menu, then set X/Y/yaw before spawning.
         </div>
         <div>
           <strong>Cluster has a GPU</strong> — Toggle for NVIDIA GPU Operator clusters: requests

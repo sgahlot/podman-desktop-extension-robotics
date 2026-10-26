@@ -113,7 +113,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 * Dashboard landing page; the Quick Links feature-card grid is shown only in Cards mode. Under the Sidebar/Tabs layouts it doubles as the `Home` destination and instead renders a guidance dashboard (welcome + get-started + live metrics + explore) so it doesn't duplicate the persistent nav (`physical-ai.general.navigationLayout` preference, S8-13)
 * Image catalog browser with All/Curated views and pull progress _(APPENG-5770, done)_
 * Image Builder with Presets, Customize, and Layers layouts. Quick Starts are shared across all layouts; Customize and Layers independently compose base and simulation sources _(APPENG-6313)_
-* Simulation page — launch, status, open in browser, stop & remove, and add a robot through a ROS package + launch-file configuration already installed in the selected image. The frontend passes validated `name:=value` arguments to an in-image wrapper, which preflights package/file presence before a detached `ros2 launch`. TurtleBot3 is the prefilled known-good configuration and exposes per-robot X/Y + **Navigate** (Jazzy: Nav2 `navigate_to_pose`; Humble: `cmd_vel`). Custom image building, host mounts, and runtime URDF/SDF upload are out of scope. Lidar/IMU sensors active on Mac (2026-08).
+* Simulation page — Local and OpenShift robot controls discover supported robot profiles in each running image, seed launch fields from a selected profile, and allow users to customize or reset those defaults. The backend detects TurtleBot3 by its installed package/launch file and reads embedded SDF profile metadata under `/opt/physical-ai/robots/`. An embedded profile shows its `ros_gz_sim` package, `gz_spawn_model.launch.py`, and arguments; unchanged defaults use the validated SDF spawn entrypoint, while edits use the preflighted ROS launch path. Optional Image Builder Step 3 embeds a selected SDF asset directory into a derived image; its narrow in-image spawn entrypoint applies the Add Robot X/Y/yaw pose for both Podman and OpenShift. TurtleBot3 remains the navigation-capable profile (Jazzy: Nav2 `navigate_to_pose`; Humble: `cmd_vel`). Embedded SDF profiles provide model insertion only; mobile robot support remains follow-up scope. Runtime host mounts and arbitrary robot-file uploads are out of scope.
 * In-extension Help page _(done)_
 * ROS2 topic monitor — local and OpenShift topology browser with List, Graph, and Cards views, filters, schema, Peek, telemetry, guarded publish, and rosbag recording _(APPENG-5773 / APPENG-6620, shipped)_
 * Fleet status dashboard _(APPENG-5776, planned — Story 3)_
@@ -543,6 +543,14 @@ needed for this configuration. They are edited on the extension's **Registry Set
 | Frontend-backend communication
 | MessageProxy RPC with frontend polling
 | Podman Desktop webview does not deliver unsolicited backend-to-frontend messages, so frontend polls for progress (every 500ms while active)
+
+| Robot profile discovery
+| Runtime inspection of each selected simulation image
+| Local and OpenShift profile menus reflect the image contents: TurtleBot3 when its package and launch file exist, plus valid embedded SDF `robot-profile.json` files. Custom launch configuration remains available for other image-installed robots.
+
+| Embedded SDF spawn
+| Build-time assets plus a fixed in-image argv entrypoint
+| The selected directory is copied under `/opt/physical-ai/robots/<id>/`; the extension never mounts host paths. The same validated entrypoint invokes `ros_gz_sim create` through Podman or `oc exec`, applying the Add Robot pose. The derived image must target amd64 for OpenShift.
 
 | Routing
 | tinro (hash mode)

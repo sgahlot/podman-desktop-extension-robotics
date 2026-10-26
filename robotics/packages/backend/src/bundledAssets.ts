@@ -5,6 +5,7 @@ import { join as pathJoin } from 'node:path';
 const SIM_RUNTIME_FILES = [
   'entrypoint-gazebo.sh',
   'entrypoint-spawn-robot.sh',
+  'entrypoint-spawn-embedded-robot.sh',
   'entrypoint-launch-robot.sh',
   'entrypoint-nav2.sh',
 ] as const;

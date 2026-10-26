@@ -14,6 +14,7 @@ import {
   distroSupportsNav2PrewarmFromCatalog,
 } from '../config/rosDistroCatalog';
 import type { RobotLaunch } from '../types/RobotLaunch';
+import type { EmbeddedRobotProfile } from '../types/EmbeddedRobotProfile';
 
 /** Robot names used in spawn / nav (ROS namespace / Gazebo model). */
 export const ROBOT_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
@@ -95,6 +96,18 @@ export function assertRobotLaunch(launch: RobotLaunch): RobotLaunch {
     }
   }
   return { packageName: launch.packageName, launchFile: launch.launchFile, arguments: [...launch.arguments] };
+}
+
+/** Validate only the image-relative values used by the embedded-SDF spawn path. */
+export function assertEmbeddedRobotProfile(profile: EmbeddedRobotProfile): EmbeddedRobotProfile {
+  if (!profile || typeof profile !== 'object') throw new Error('Embedded robot profile is required.');
+  if (!/^[a-z][a-z0-9_-]{0,63}$/.test(profile.id)) throw new Error('Invalid embedded robot profile id.');
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(profile.world)) throw new Error('Invalid embedded robot world.');
+  if (!/^(?!.*\.\.)(?:[a-zA-Z0-9_.-]+\/)*[a-zA-Z0-9_.-]+\.sdf$/.test(profile.modelFile)) {
+    throw new Error('Invalid embedded robot SDF path.');
+  }
+  const z = assertNumericArg(String(profile.z), 'z');
+  return { ...profile, z: Number(z) };
 }
 
 /**

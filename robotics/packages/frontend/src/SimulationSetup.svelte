@@ -13,6 +13,7 @@ import {
   hasSimulationSupport,
   simulationImageTag,
   baseImageTag,
+  archTagSuffix,
 } from '/@shared/src/types/SimulationProfiles';
 import {
   resolveSimulationBaseImage,
@@ -178,16 +179,15 @@ $: {
 $: showStep1 = layout === 'presets' && !presetsLayerBuild;
 $: showStep2 = layout === 'presets' && !presetsLayerBuild;
 
-function embeddedRobotImageTag(profileId: string): string {
-  const slash = simTag.lastIndexOf('/');
-  const colon = simTag.lastIndexOf(':');
-  return colon > slash ? `${simTag.slice(0, colon + 1)}${profileId}` : `${simTag}:${profileId}`;
+function embeddedRobotImageTag(profileId: string, sourceTag = simTag, arch: TargetArch = targetArch): string {
+  const slash = sourceTag.lastIndexOf('/');
+  const colon = sourceTag.lastIndexOf(':');
+  const derivedTag = `${profileId}${archTagSuffix(arch)}`;
+  return colon > slash ? `${sourceTag.slice(0, colon + 1)}${derivedTag}` : `${sourceTag}:${derivedTag}`;
 }
 
 $: if (embeddedRobotProfile && embeddedRobotTagIsAutomatic && simTag) {
-  const expectedTag = embeddedRobotImageTag(embeddedRobotProfile.id);
-  if (embeddedRobotTag && embeddedRobotTag !== expectedTag) embeddedRobotTagIsAutomatic = false;
-  else embeddedRobotTag = expectedTag;
+  embeddedRobotTag = embeddedRobotImageTag(embeddedRobotProfile.id, simTag, targetArch);
 }
 
 async function refreshImageExistence(key: string) {
@@ -276,7 +276,9 @@ onMount(async () => {
   } finally {
     try {
       embeddedRobotProfile = await physicalAiClient.getEmbeddedRobotProfile();
-      if (embeddedRobotProfile) embeddedRobotTag = embeddedRobotImageTag(embeddedRobotProfile.id);
+      if (embeddedRobotProfile) {
+        embeddedRobotTag = embeddedRobotImageTag(embeddedRobotProfile.id, simTag, targetArch);
+      }
     } catch {
       // No selected profile yet.
     }
@@ -637,64 +639,70 @@ function onQuickStartClick(id: QuickStartId) {
                 <span class="font-mono">{distro}/{robot}/{middleware}/{engine}</span>. Choose a supported combination.
               </p>
             {/if}
-            <div class="flex flex-col gap-3 pt-3 mt-3 border-t border-[var(--pd-content-card-border)]">
-              <div class="flex flex-row items-center gap-3 flex-wrap">
-                <h3 class="text-sm font-medium text-[var(--pd-content-header)]">
-                  Optional Step 3 &middot; Embed Custom SDF Robot
-                </h3>
-              </div>
-              <p class="text-sm text-[var(--pd-content-text)]">
-                Builds a new local simulation image from Step 2 with a selected SDF asset directory embedded in it. The
-                source directory is copied at build time and never mounted into a running simulation.
-              </p>
-              <div class="flex flex-col gap-2">
+            <details class="pt-3 mt-3 border-t border-[var(--pd-content-card-border)]">
+              <summary class="cursor-pointer py-1 text-sm font-medium text-[var(--pd-content-header)]">
+                Optional Step 3 &middot; Embed Custom SDF Robot
+                {#if embeddedRobotProfile}
+                  <span class="ml-1 text-xs font-normal pai-text-muted"
+                    >({embeddedRobotProfile.displayName} selected)</span>
+                {/if}
+              </summary>
+              <div class="flex flex-col gap-3 pt-2">
                 <p class="text-sm text-[var(--pd-content-text)]">
-                  Select a directory containing <span class="font-mono">robot-profile.json</span> and its SDF assets.
+                  Builds a derived simulation image from Step 2 with a selected SDF asset directory embedded in it. The
+                  source directory is copied at build time and never mounted into a running simulation. Choose amd64 in
+                  the Image Builder target selector before building for OpenShift.
                 </p>
-                <div class="flex flex-row gap-3 flex-wrap items-center">
-                  <button
-                    class="pai-btn self-start"
-                    disabled={embeddedRobotBusy || buildBusy}
-                    on:click={async () => {
-                      embeddedRobotError = '';
-                      try {
-                        const selected = await physicalAiClient.selectEmbeddedRobotDirectory();
-                        if (selected) {
-                          embeddedRobotProfile = selected;
-                          embeddedRobotTag = embeddedRobotImageTag(selected.id);
-                          embeddedRobotTagIsAutomatic = true;
+                <div class="flex flex-col gap-2">
+                  <p class="text-sm text-[var(--pd-content-text)]">
+                    Select a directory containing <span class="font-mono">robot-profile.json</span> and its SDF assets.
+                  </p>
+                  <div class="flex flex-row gap-3 flex-wrap items-center">
+                    <button
+                      class="pai-btn self-start"
+                      disabled={embeddedRobotBusy || buildBusy}
+                      on:click={async () => {
+                        embeddedRobotError = '';
+                        try {
+                          const selected = await physicalAiClient.selectEmbeddedRobotDirectory();
+                          if (selected) {
+                            embeddedRobotProfile = selected;
+                            embeddedRobotTagIsAutomatic = true;
+                            embeddedRobotTag = embeddedRobotImageTag(selected.id, simTag, targetArch);
+                          }
+                        } catch (error) {
+                          embeddedRobotError = error instanceof Error ? error.message : String(error);
                         }
-                      } catch (error) {
-                        embeddedRobotError = error instanceof Error ? error.message : String(error);
-                      }
-                    }}>Select robot directory</button>
-                  {#if embeddedRobotProfile}
-                    <span class="text-sm text-[var(--pd-content-text)]"
-                      ><strong>{embeddedRobotProfile.displayName}</strong>
-                      <span class="font-mono">({embeddedRobotProfile.modelFile})</span></span>
-                  {/if}
+                      }}>Select robot directory</button>
+                    {#if embeddedRobotProfile}
+                      <span class="text-sm text-[var(--pd-content-text)]"
+                        ><strong>{embeddedRobotProfile.displayName}</strong>
+                        <span class="font-mono">({embeddedRobotProfile.modelFile})</span></span>
+                    {/if}
+                  </div>
                 </div>
+                {#if embeddedRobotProfile}
+                  <div class="flex flex-col gap-2 pt-2">
+                    <p class="text-xs text-[var(--pd-content-text)]">Derived simulation image tag</p>
+                    <BuildPushPanel
+                      bind:tag={embeddedRobotTag}
+                      bind:busy={embeddedRobotBusy}
+                      bind:buildLogsExpanded={embeddedRobotLogsExpanded}
+                      active={active}
+                      refreshIntervalSeconds={imageStatusRefreshIntervalSeconds}
+                      buildImage={t =>
+                        physicalAiClient.buildEmbeddedRobotImage(t, simTag, embeddedRobotProfile!.sourceId, targetArch)}
+                      onBuildComplete={builtTag => void buildHistoryPanel?.refreshAfterBuild(false, builtTag)}
+                      tagPlaceholder="e.g. quay.io/namespace/ros2-jazzy-sim:robot"
+                      tagInputId="embeddedRobotTag"
+                      onTagEdited={() => (embeddedRobotTagIsAutomatic = false)}
+                      pushRegistry={selectedPushRegistry}
+                      disabled={!simImageExists || buildBusy} />
+                  </div>
+                {/if}
+                {#if embeddedRobotError}<p class="text-xs pai-text-error">{embeddedRobotError}</p>{/if}
               </div>
-              {#if embeddedRobotProfile}
-                <div class="flex flex-col gap-2 pt-2">
-                  <p class="text-xs text-[var(--pd-content-text)]">Derived simulation image tag</p>
-                  <BuildPushPanel
-                    bind:tag={embeddedRobotTag}
-                    bind:busy={embeddedRobotBusy}
-                    bind:buildLogsExpanded={embeddedRobotLogsExpanded}
-                    active={active}
-                    refreshIntervalSeconds={imageStatusRefreshIntervalSeconds}
-                    buildImage={t =>
-                      physicalAiClient.buildEmbeddedRobotImage(t, simTag, embeddedRobotProfile!.sourceId)}
-                    onBuildComplete={builtTag => void buildHistoryPanel?.refreshAfterBuild(false, builtTag)}
-                    tagPlaceholder="e.g. quay.io/namespace/ros2-jazzy-sim:robot"
-                    tagInputId="embeddedRobotTag"
-                    pushRegistry={selectedPushRegistry}
-                    disabled={!simImageExists || buildBusy} />
-                </div>
-              {/if}
-              {#if embeddedRobotError}<p class="text-xs pai-text-error">{embeddedRobotError}</p>{/if}
-            </div>
+            </details>
           </div>
         {/if}
       </div>
