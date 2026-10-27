@@ -22,6 +22,7 @@ import type {
   TopicGraphTopology,
   TopicTelemetry,
   TopicPublishResult,
+  TopicOccupancyGridSnapshot,
 } from './types/TopicInfo';
 import type { NavigationGoalResult, Nav2WarmStatus } from './types/NavigationGoalResult';
 import type {
@@ -215,6 +216,8 @@ export abstract class PhysicalAiApi {
   ): Promise<TopicTelemetry[]>;
   /** One live message via `ros2 topic echo --once` (bounded wait). */
   abstract peekRosTopic(containerId: string, topicName: string): Promise<TopicPeekResult>;
+  /** One bounded, downsampled OccupancyGrid snapshot for Topic Monitor rendering. */
+  abstract getOccupancyGridTopicSnapshot(containerId: string, topicName: string): Promise<TopicOccupancyGridSnapshot>;
   /** OpenShift counterpart of peekRosTopic. */
   abstract peekRosTopicInOpenShift(
     namespace: string,
@@ -222,6 +225,13 @@ export abstract class PhysicalAiApi {
     topicName: string,
     context?: string,
   ): Promise<TopicPeekResult>;
+  /** OpenShift counterpart of getOccupancyGridTopicSnapshot. */
+  abstract getOccupancyGridTopicSnapshotInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    context?: string,
+  ): Promise<TopicOccupancyGridSnapshot>;
   /** Publish one confirmed, size-limited YAML message to a safe local simulation topic. */
   abstract publishRosTopic(
     containerId: string,

@@ -97,6 +97,7 @@ import type {
   TopicInfo,
   TopicPeekResult,
   TopicPublishResult,
+  TopicOccupancyGridSnapshot,
   TopicSchemaResult,
   TopicTelemetry,
 } from '/@shared/src/types/TopicInfo';
@@ -111,7 +112,7 @@ import TopicMonitor from './TopicMonitor.svelte';
 import TopicEndpoints from './lib/TopicEndpoints.svelte';
 import { navigationLayout } from './lib/navigationLayout';
 import { filterTopicsByName, groupTopicsByNamespace } from './lib/topicFilter';
-import { parseLaserScanVisualization, parsePoseVisualization } from './lib/topicVisualization';
+import { parseLaserScanVisualization, parsePathVisualization, parsePoseVisualization } from './lib/topicVisualization';
 import {
   createTopicMonitorTarget,
   type TopicMonitorTargetApi,
@@ -183,6 +184,7 @@ let expandedSubscriberNodes = false;
 let topicDetail: TopicDetailInfo | null = null;
 let schema: TopicSchemaResult | null = null;
 let peekResult: TopicPeekResult | null = null;
+let occupancyGridSnapshot: TopicOccupancyGridSnapshot | null = null;
 let peekCopyStatus = '';
 let inspectorLoading = false;
 let inspectorError = '';
@@ -231,6 +233,16 @@ $: poseVisualization =
   peekResult?.message
     ? parsePoseVisualization(peekResult.message)
     : undefined;
+$: pathVisualization =
+  topicDetail?.type === 'nav_msgs/msg/Path' && peekResult?.message
+    ? parsePathVisualization(peekResult.message)
+    : undefined;
+
+function occupancyCellColor(value: number): string {
+  if (value < 0) return '#4b5563';
+  if (value === 0) return '#f8fafc';
+  return `rgb(${Math.max(0, 255 - Math.min(value, 100) * 2)}, ${Math.max(0, 255 - Math.min(value, 100) * 2)}, ${Math.max(0, 255 - Math.min(value, 100) * 2)})`;
+}
 $: allNodes = topology?.nodes ?? [];
 $: selectedTopicNodes =
   selectedTopic && topicDetail?.topicName === selectedTopic
@@ -625,6 +637,7 @@ function clearSelection() {
   topicDetail = null;
   schema = null;
   peekResult = null;
+  occupancyGridSnapshot = null;
   inspectorError = '';
   expandedPublisherNodes = false;
   expandedSubscriberNodes = false;
@@ -960,6 +973,11 @@ async function peekTopic() {
     else
       inspectorError =
         result.error ?? (result.timedOut ? 'No message received before the peek timeout.' : 'No message received.');
+    if (topicDetail?.type === 'nav_msgs/msg/OccupancyGrid') {
+      const snapshot = await targetApi.getOccupancyGridTopicSnapshot(selectedContainerId, selectedTopic);
+      occupancyGridSnapshot = snapshot.cells.length > 0 ? snapshot : null;
+      if (snapshot.error) inspectorError = snapshot.error;
+    }
   } catch (e) {
     inspectorError = e instanceof Error ? e.message : String(e);
   } finally {
@@ -1836,6 +1854,54 @@ onDestroy(() => {
                         (poseVisualization.yaw * 180) /
                         Math.PI
                       ).toFixed(1)}°
+                    </p>
+                  </section>
+                {/if}
+                {#if pathVisualization}
+                  {@const pathXs = pathVisualization.points.map(point => point.x)}
+                  {@const pathYs = pathVisualization.points.map(point => point.y)}
+                  {@const minX = Math.min(...pathXs)}
+                  {@const maxX = Math.max(...pathXs)}
+                  {@const minY = Math.min(...pathYs)}
+                  {@const maxY = Math.max(...pathYs)}
+                  {@const extent = Math.max(maxX - minX, maxY - minY, 1)}
+                  <section class="pai-inspector-section" aria-label="Nav2 path visualization">
+                    <h3 class="font-medium text-[var(--pd-content-header)]">Nav2 path snapshot</h3>
+                    <svg
+                      viewBox={`${minX - extent * 0.1} ${-maxY - extent * 0.1} ${extent * 1.2} ${extent * 1.2}`}
+                      class="w-full aspect-square rounded bg-black"
+                      role="img"
+                      aria-label={`Nav2 path with ${pathVisualization.points.length} poses`}>
+                      <polyline
+                        points={pathVisualization.points.map(point => `${point.x},${-point.y}`).join(' ')}
+                        fill="none"
+                        stroke="var(--pai-accent, #7c3aed)"
+                        stroke-width={extent * 0.02}></polyline>
+                    </svg>
+                    <p class="pai-text-muted">{pathVisualization.points.length} poses</p>
+                  </section>
+                {/if}
+                {#if occupancyGridSnapshot}
+                  <section class="pai-inspector-section" aria-label="OccupancyGrid visualization">
+                    <h3 class="font-medium text-[var(--pd-content-header)]">OccupancyGrid snapshot</h3>
+                    <svg
+                      viewBox={`0 0 ${occupancyGridSnapshot.width} ${occupancyGridSnapshot.height}`}
+                      class="w-full aspect-square rounded bg-black"
+                      role="img"
+                      aria-label={`OccupancyGrid with ${occupancyGridSnapshot.width} by ${occupancyGridSnapshot.height} cells`}>
+                      {#each occupancyGridSnapshot.cells as cell, index}
+                        <rect
+                          x={index % occupancyGridSnapshot.width}
+                          y={occupancyGridSnapshot.height - 1 - Math.floor(index / occupancyGridSnapshot.width)}
+                          width="1"
+                          height="1"
+                          fill={occupancyCellColor(cell)}></rect>
+                      {/each}
+                    </svg>
+                    <p class="pai-text-muted">
+                      {occupancyGridSnapshot.width} × {occupancyGridSnapshot.height} cells · {occupancyGridSnapshot.resolutionMeters.toFixed(
+                        2,
+                      )} m/cell
                     </p>
                   </section>
                 {/if}

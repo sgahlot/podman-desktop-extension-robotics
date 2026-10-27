@@ -102,6 +102,7 @@ import type {
   NodeDetail,
   TopicGraphTopology,
   TopicTelemetry,
+  TopicOccupancyGridSnapshot,
 } from '/@shared/src/types/TopicInfo';
 import type { RosbagRecording } from '/@shared/src/types/RosbagRecording';
 import type { NavigationGoalResult, Nav2WarmStatus } from '/@shared/src/types/NavigationGoalResult';
@@ -139,6 +140,7 @@ import {
   TF_FRAME_PAIRS,
   parseTfEchoOutput,
   parseOccupancyGridEcho,
+  parseOccupancyGridCells,
   parseLaserScanEcho,
   parseImuEcho,
   discoverRobotSensorTopics,
@@ -2907,6 +2909,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     };
   }
 
+  async getOccupancyGridTopicSnapshot(containerId: string, topicName: string): Promise<TopicOccupancyGridSnapshot> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    const safeTopic = assertRosTopicName(topicName);
+    return this.#occupancyGridTopicSnapshotFor({ kind: 'podman', id }, await this.#detectRosDistro(id), safeTopic);
+  }
+
   async publishRosTopic(
     containerId: string,
     topicName: string,
@@ -3572,6 +3580,72 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
    * risks mismatching Nav2's actual publisher QoS (transient_local/reliable is common for
    * costmap layers).
    */
+  async #occupancyGridTopicSnapshotFor(
+    target: ExecTarget,
+    distro: SupportedRosDistro,
+    topicName: string,
+  ): Promise<TopicOccupancyGridSnapshot> {
+    const capturedAt = new Date().toISOString();
+    const unavailable = (error: string): TopicOccupancyGridSnapshot => ({
+      topicName,
+      width: 0,
+      height: 0,
+      resolutionMeters: 0,
+      originX: 0,
+      originY: 0,
+      cells: [],
+      capturedAt,
+      error,
+    });
+    let timeoutSec: number;
+    try {
+      timeoutSec = await this.getTopicPeekTimeoutSeconds();
+    } catch (e) {
+      return unavailable(e instanceof Error ? e.message : String(e));
+    }
+    const result = await this.#execRosBash(
+      target,
+      distro,
+      'timeout "$1" ros2 topic echo --once --full-length --flow-style --qos-reliability best_effort --qos-durability volatile "$2"',
+      [String(timeoutSec), topicName],
+    );
+    const parsed = parseOccupancyGridCells((result.stdout ?? '').trim());
+    if (!parsed)
+      return unavailable((result.stderr ?? '').trim() || `No complete OccupancyGrid received on ${topicName}.`);
+
+    const maxDimension = 96;
+    const width = Math.min(parsed.width, maxDimension);
+    const height = Math.min(parsed.height, maxDimension);
+    const cells: number[] = [];
+    for (let y = 0; y < height; y++) {
+      const sourceY0 = Math.floor((y * parsed.height) / height);
+      const sourceY1 = Math.floor(((y + 1) * parsed.height) / height);
+      for (let x = 0; x < width; x++) {
+        const sourceX0 = Math.floor((x * parsed.width) / width);
+        const sourceX1 = Math.floor(((x + 1) * parsed.width) / width);
+        let cell = -1;
+        for (let sourceY = sourceY0; sourceY < sourceY1; sourceY++) {
+          for (let sourceX = sourceX0; sourceX < sourceX1; sourceX++) {
+            const value = parsed.cells[sourceY * parsed.width + sourceX];
+            if (value > 0) cell = Math.max(cell, value);
+            else if (value === 0 && cell < 0) cell = 0;
+          }
+        }
+        cells.push(cell);
+      }
+    }
+    return {
+      topicName,
+      width,
+      height,
+      resolutionMeters: parsed.resolution * (parsed.width / width),
+      originX: parsed.originX,
+      originY: parsed.originY,
+      cells,
+      capturedAt,
+    };
+  }
+
   async getCostmapSummary(containerId: string, robotName: string): Promise<CostmapSummaryResult> {
     const { id } = await this.#resolveSimulationContainer(containerId);
     const safeRobot = assertRobotName(robotName);
@@ -4646,6 +4720,22 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
     const target = { kind: 'oc', pod, namespace: ns, context } as const;
     return this.#tfTreeStatusFor(target, distro, safeRobot);
+  }
+
+  /** OpenShift counterpart of getCostmapSummary — see #costmapSummaryFor for the shared logic. */
+  async getOccupancyGridTopicSnapshotInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    context?: string,
+  ): Promise<TopicOccupancyGridSnapshot> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeTopic = assertRosTopicName(topicName);
+    const image = await this.#openShiftDeploymentImage(ns, safeName, context);
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    return this.#occupancyGridTopicSnapshotFor({ kind: 'oc', pod, namespace: ns, context }, distro, safeTopic);
   }
 
   /** OpenShift counterpart of getCostmapSummary — see #costmapSummaryFor for the shared logic. */

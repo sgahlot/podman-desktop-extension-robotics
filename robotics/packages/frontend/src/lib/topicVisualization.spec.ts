@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseLaserScanVisualization, parsePoseVisualization } from './topicVisualization';
+import { parseLaserScanVisualization, parsePathVisualization, parsePoseVisualization } from './topicVisualization';
 
 describe('topic visualizations', () => {
   it('converts bounded LaserScan ranges to plot points', () => {
@@ -46,5 +46,16 @@ describe('topic visualizations', () => {
         'pose:\n  position:\n    x: 2\n    y: 3\n  orientation:\n    x: 0\n    y: 0\n    z: 0.70710678\n    w: 0.70710678',
       ),
     ).toMatchObject({ x: 2, y: 3, yaw: expect.closeTo(Math.PI / 2) });
+  });
+
+  it('extracts Path positions from flow-style YAML', () => {
+    expect(
+      parsePathVisualization('poses: [{pose: {position: {x: 1, y: 2, z: 0}}}, {pose: {position: {x: 3, y: 4, z: 0}}}]'),
+    ).toEqual({
+      points: [
+        { x: 1, y: 2 },
+        { x: 3, y: 4 },
+      ],
+    });
   });
 });

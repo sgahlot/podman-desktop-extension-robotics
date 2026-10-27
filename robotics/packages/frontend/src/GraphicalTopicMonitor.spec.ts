@@ -13,6 +13,7 @@ const mockListRosTopics = vi.fn();
 const mockListRosTopicSummaries = vi.fn();
 const mockGetTopicTelemetry = vi.fn();
 const mockCopyToClipboard = vi.fn();
+const mockGetOccupancyGridTopicSnapshot = vi.fn();
 
 vi.mock('./api/client', () => ({
   physicalAiClient: {
@@ -26,6 +27,7 @@ vi.mock('./api/client', () => ({
     listRosTopicSummaries: (...args: unknown[]) => mockListRosTopicSummaries(...args),
     getTopicTelemetry: (...args: unknown[]) => mockGetTopicTelemetry(...args),
     copyToClipboard: (...args: unknown[]) => mockCopyToClipboard(...args),
+    getOccupancyGridTopicSnapshot: (...args: unknown[]) => mockGetOccupancyGridTopicSnapshot(...args),
     getTopicPeekTimeoutSeconds: async () => 5,
   },
 }));
@@ -47,6 +49,7 @@ describe('GraphicalTopicMonitor', () => {
     mockListRosTopicSummaries.mockResolvedValue([]);
     mockGetTopicTelemetry.mockResolvedValue([]);
     mockCopyToClipboard.mockResolvedValue(undefined);
+    mockGetOccupancyGridTopicSnapshot.mockResolvedValue({ cells: [] });
     mockPeekRosTopic.mockResolvedValue({
       topicName: '',
       message: '',

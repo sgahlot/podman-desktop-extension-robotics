@@ -10,6 +10,18 @@ export interface PoseVisualization {
   yaw: number;
 }
 
+export interface PathVisualization {
+  points: Array<{ x: number; y: number }>;
+}
+
+/** Parses the flow-style Path output requested by the bounded Topic Monitor Peek command. */
+export function parsePathVisualization(message: string): PathVisualization | undefined {
+  const points = [...message.matchAll(/position:\s*\{\s*x:\s*([-+\d.eE]+),\s*y:\s*([-+\d.eE]+)/g)]
+    .map(match => ({ x: Number(match[1]), y: Number(match[2]) }))
+    .filter(point => Number.isFinite(point.x) && Number.isFinite(point.y));
+  return points.length ? { points } : undefined;
+}
+
 function scalar(message: string, key: string): number | undefined {
   const match = message.match(new RegExp(`(?:^|\\n)\\s*${key}:\\s*([-+\\d.eE]+)`));
   const value = match ? Number(match[1]) : NaN;

@@ -32,6 +32,16 @@ const localTargetApi: TopicMonitorTargetApi = {
   getRosTopicDetail: (...args) => mockGetRosTopicDetail(...args),
   getRosMessageSchema: (...args) => mockGetRosMessageSchema(...args),
   peekRosTopic: (...args) => mockPeekRosTopic(...args),
+  getOccupancyGridTopicSnapshot: async () => ({
+    topicName: '',
+    width: 0,
+    height: 0,
+    resolutionMeters: 0,
+    originX: 0,
+    originY: 0,
+    cells: [],
+    capturedAt: '',
+  }),
   getTopicTelemetry: async () => [],
   publishRosTopic: async () => ({ topicName: '', messageType: '', publishedAt: '' }),
   startRosbagRecording: async id => ({

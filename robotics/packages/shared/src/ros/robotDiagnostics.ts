@@ -114,6 +114,18 @@ export function parseOccupancyGridEcho(text: string): ParsedOccupancyGrid | unde
   };
 }
 
+/** Parses a complete flow-style OccupancyGrid data array for bounded visual downsampling. */
+export function parseOccupancyGridCells(text: string): (ParsedOccupancyGrid & { cells: number[] }) | undefined {
+  const summary = parseOccupancyGridEcho(text);
+  const dataMatch = text.match(/\bdata:\s*\[([^\]]*)]/);
+  if (!summary || !dataMatch) return undefined;
+  const cells = dataMatch[1]
+    .split(',')
+    .map(token => Number.parseInt(token.trim(), 10))
+    .filter(Number.isFinite);
+  return cells.length >= summary.width * summary.height ? { ...summary, cells } : undefined;
+}
+
 export interface ParsedLaserScan {
   angleMin: number;
   angleMax: number;

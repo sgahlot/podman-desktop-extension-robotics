@@ -19,6 +19,20 @@ export interface TopicDetailInfo {
   subscribers: TopicNodeInfo[];
 }
 
+/** A downsampled OccupancyGrid snapshot safe to render in the Topic Monitor. */
+export interface TopicOccupancyGridSnapshot {
+  topicName: string;
+  width: number;
+  height: number;
+  resolutionMeters: number;
+  originX: number;
+  originY: number;
+  /** Row-major cells: -1 unknown, 0 free, positive occupied. Capped at 96 × 96. */
+  cells: number[];
+  capturedAt: string;
+  error?: string;
+}
+
 /** A ROS node and the topic endpoints it exposes. */
 export interface NodeDetail {
   nodeName: string;

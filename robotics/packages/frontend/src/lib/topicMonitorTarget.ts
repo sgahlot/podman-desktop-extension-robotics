@@ -8,6 +8,7 @@ import type {
   TopicInfo,
   TopicPeekResult,
   TopicPublishResult,
+  TopicOccupancyGridSnapshot,
   TopicSchemaResult,
   TopicTelemetry,
 } from '/@shared/src/types/TopicInfo';
@@ -29,6 +30,7 @@ export interface TopicMonitorTargetApi {
   getRosTopicDetail(id: string, topicName: string): Promise<TopicDetailInfo>;
   getRosMessageSchema(id: string, messageType: string): Promise<TopicSchemaResult>;
   peekRosTopic(id: string, topicName: string): Promise<TopicPeekResult>;
+  getOccupancyGridTopicSnapshot(id: string, topicName: string): Promise<TopicOccupancyGridSnapshot>;
   getTopicTelemetry(id: string, topicNames: string[]): Promise<TopicTelemetry[]>;
   publishRosTopic(id: string, topicName: string, payload: string, confirmed: boolean): Promise<TopicPublishResult>;
   startRosbagRecording(id: string, topicNames: string[], outputPath: string): Promise<RosbagRecording>;
@@ -59,6 +61,7 @@ function localTargetApi(): TopicMonitorTargetApi {
     getRosTopicDetail: (id, topicName) => physicalAiClient.getRosTopicDetail(id, topicName),
     getRosMessageSchema: (id, type) => physicalAiClient.getRosMessageSchema(id, type),
     peekRosTopic: (id, topicName) => physicalAiClient.peekRosTopic(id, topicName),
+    getOccupancyGridTopicSnapshot: (id, topicName) => physicalAiClient.getOccupancyGridTopicSnapshot(id, topicName),
     getTopicTelemetry: (id, names) => physicalAiClient.getTopicTelemetry(id, names),
     publishRosTopic: (id, topicName, payload, confirmed) =>
       physicalAiClient.publishRosTopic(id, topicName, payload, confirmed),
@@ -123,6 +126,10 @@ function openShiftTargetApi(): TopicMonitorTargetApi {
     peekRosTopic: async (id, topicName) => {
       const t = target(id);
       return physicalAiClient.peekRosTopicInOpenShift(t.namespace, t.name, topicName, t.context);
+    },
+    getOccupancyGridTopicSnapshot: async (id, topicName) => {
+      const t = target(id);
+      return physicalAiClient.getOccupancyGridTopicSnapshotInOpenShift(t.namespace, t.name, topicName, t.context);
     },
     getTopicTelemetry: async (id, names) => {
       const t = target(id);
