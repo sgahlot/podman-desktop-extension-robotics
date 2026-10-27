@@ -111,6 +111,7 @@ import TopicMonitor from './TopicMonitor.svelte';
 import TopicEndpoints from './lib/TopicEndpoints.svelte';
 import { navigationLayout } from './lib/navigationLayout';
 import { filterTopicsByName, groupTopicsByNamespace } from './lib/topicFilter';
+import { parseLaserScanVisualization, parsePoseVisualization } from './lib/topicVisualization';
 import {
   createTopicMonitorTarget,
   type TopicMonitorTargetApi,
@@ -182,6 +183,7 @@ let expandedSubscriberNodes = false;
 let topicDetail: TopicDetailInfo | null = null;
 let schema: TopicSchemaResult | null = null;
 let peekResult: TopicPeekResult | null = null;
+let peekCopyStatus = '';
 let inspectorLoading = false;
 let inspectorError = '';
 let schemaLoading = false;
@@ -220,6 +222,15 @@ let graphViewportHeight = 0;
 $: runningContainers = containers.filter(container => container.ready);
 $: if (viewMode === 'list') listVisited = true;
 $: topics = topology?.topics ?? [];
+$: laserScanVisualization =
+  topicDetail?.type === 'sensor_msgs/msg/LaserScan' && peekResult?.message
+    ? parseLaserScanVisualization(peekResult.message)
+    : undefined;
+$: poseVisualization =
+  (topicDetail?.type === 'nav_msgs/msg/Odometry' || topicDetail?.type === 'geometry_msgs/msg/PoseStamped') &&
+  peekResult?.message
+    ? parsePoseVisualization(peekResult.message)
+    : undefined;
 $: allNodes = topology?.nodes ?? [];
 $: selectedTopicNodes =
   selectedTopic && topicDetail?.topicName === selectedTopic
@@ -942,6 +953,7 @@ async function peekTopic() {
   peekLoading = true;
   inspectorError = '';
   peekResult = null;
+  peekCopyStatus = '';
   try {
     const result = await targetApi.peekRosTopic(selectedContainerId, selectedTopic);
     if (result.message) peekResult = result;
@@ -952,6 +964,17 @@ async function peekTopic() {
     inspectorError = e instanceof Error ? e.message : String(e);
   } finally {
     peekLoading = false;
+  }
+}
+
+async function copyPeekMessage() {
+  if (!peekResult?.message) return;
+  peekCopyStatus = '';
+  try {
+    await targetApi.copyToClipboard(peekResult.message);
+    peekCopyStatus = 'Copied YAML.';
+  } catch (e) {
+    peekCopyStatus = `Could not copy: ${e instanceof Error ? e.message : String(e)}`;
   }
 }
 
@@ -1768,9 +1791,62 @@ onDestroy(() => {
                 </section>
               {/if}
               {#if peekResult?.message}
+                {#if laserScanVisualization}
+                  <section class="pai-inspector-section" aria-label="LaserScan visualization">
+                    <h3 class="font-medium text-[var(--pd-content-header)]">LaserScan snapshot</h3>
+                    <svg
+                      viewBox={`${-laserScanVisualization.displayRange} ${-laserScanVisualization.displayRange} ${laserScanVisualization.displayRange * 2} ${laserScanVisualization.displayRange * 2}`}
+                      class="w-full aspect-square rounded bg-black"
+                      role="img"
+                      aria-label={`LaserScan polar plot, auto-zoomed to ${laserScanVisualization.displayRange.toFixed(1)} metres`}>
+                      {#each [0.25, 0.5, 0.75, 1] as fraction}
+                        <circle
+                          cx="0"
+                          cy="0"
+                          r={laserScanVisualization.displayRange * fraction}
+                          fill="none"
+                          stroke="rgb(255 255 255 / 25%)"
+                          stroke-width={laserScanVisualization.displayRange * 0.006}></circle>
+                      {/each}
+                      <path
+                        d={`M ${-laserScanVisualization.displayRange} 0 H ${laserScanVisualization.displayRange} M 0 ${-laserScanVisualization.displayRange} V ${laserScanVisualization.displayRange}`}
+                        stroke="rgb(255 255 255 / 25%)"
+                        stroke-width={laserScanVisualization.displayRange * 0.006}></path>
+                      {#each laserScanVisualization.points as point}
+                        <circle
+                          cx={point.x}
+                          cy={-point.y}
+                          r={Math.max(laserScanVisualization.displayRange * 0.008, 0.04)}
+                          fill="var(--pai-accent, #7c3aed)"></circle>
+                      {/each}
+                      <circle cx="0" cy="0" r={Math.max(laserScanVisualization.displayRange * 0.02, 0.1)} fill="white"
+                      ></circle>
+                    </svg>
+                    <p class="pai-text-muted">
+                      {laserScanVisualization.points.length} finite ranges · view {laserScanVisualization.displayRange.toFixed(
+                        1,
+                      )} m · sensor max {laserScanVisualization.rangeMax} m
+                    </p>
+                  </section>
+                {:else if poseVisualization}
+                  <section class="pai-inspector-section" aria-label="Pose visualization">
+                    <h3 class="font-medium text-[var(--pd-content-header)]">Pose snapshot</h3>
+                    <p>
+                      x {poseVisualization.x.toFixed(2)} m · y {poseVisualization.y.toFixed(2)} m · yaw {(
+                        (poseVisualization.yaw * 180) /
+                        Math.PI
+                      ).toFixed(1)}°
+                    </p>
+                  </section>
+                {/if}
                 <section class="pai-inspector-section" aria-label="Latest message">
-                  <h3 class="font-medium text-[var(--pd-content-header)]">Latest message</h3>
-                  <pre class="max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono">{peekResult.message}</pre>
+                  <div class="flex items-center justify-between gap-2">
+                    <h3 class="font-medium text-[var(--pd-content-header)]">Latest message</h3>
+                    <button class="pai-btn text-xs" on:click={() => void copyPeekMessage()}>Copy YAML</button>
+                  </div>
+                  <p class="pai-text-muted">Formatted ROS 2 YAML · bounded snapshot</p>
+                  {#if peekCopyStatus}<p class="text-xs" role="status">{peekCopyStatus}</p>{/if}
+                  <pre class="max-h-40 overflow-auto whitespace-pre font-mono text-xs">{peekResult.message}</pre>
                 </section>
               {/if}
             </div>

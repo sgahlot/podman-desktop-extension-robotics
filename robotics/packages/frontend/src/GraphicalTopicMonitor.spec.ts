@@ -12,6 +12,7 @@ const mockPublishRosTopic = vi.fn();
 const mockListRosTopics = vi.fn();
 const mockListRosTopicSummaries = vi.fn();
 const mockGetTopicTelemetry = vi.fn();
+const mockCopyToClipboard = vi.fn();
 
 vi.mock('./api/client', () => ({
   physicalAiClient: {
@@ -24,6 +25,7 @@ vi.mock('./api/client', () => ({
     listRosTopics: (...args: unknown[]) => mockListRosTopics(...args),
     listRosTopicSummaries: (...args: unknown[]) => mockListRosTopicSummaries(...args),
     getTopicTelemetry: (...args: unknown[]) => mockGetTopicTelemetry(...args),
+    copyToClipboard: (...args: unknown[]) => mockCopyToClipboard(...args),
     getTopicPeekTimeoutSeconds: async () => 5,
   },
 }));
@@ -44,6 +46,7 @@ describe('GraphicalTopicMonitor', () => {
     mockListRosTopics.mockResolvedValue([]);
     mockListRosTopicSummaries.mockResolvedValue([]);
     mockGetTopicTelemetry.mockResolvedValue([]);
+    mockCopyToClipboard.mockResolvedValue(undefined);
     mockPeekRosTopic.mockResolvedValue({
       topicName: '',
       message: '',
@@ -322,6 +325,36 @@ describe('GraphicalTopicMonitor', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Peek' }));
     expect(await screen.findByText(/No message on \/robot_1\/tf within 5s/)).toBeTruthy();
     expect(screen.queryByText('Peeking...')).toBeNull();
+  });
+
+  it('copies the formatted bounded Peek YAML', async () => {
+    mockListSimulationContainers.mockResolvedValue([
+      { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
+    ]);
+    mockGetTopicTopology.mockResolvedValue({
+      topics: [{ name: '/robot_1/odom', type: 'nav_msgs/msg/Odometry', publishers: 1, subscribers: 0 }],
+      nodes: [],
+    });
+    mockGetRosTopicDetail.mockResolvedValue({
+      topicName: '/robot_1/odom',
+      type: 'nav_msgs/msg/Odometry',
+      publishers: [],
+      subscribers: [],
+    });
+    mockPeekRosTopic.mockResolvedValue({
+      topicName: '/robot_1/odom',
+      message: 'header:\n  frame_id: odom',
+      timedOut: false,
+      capturedAt: new Date().toISOString(),
+    });
+
+    render(GraphicalTopicMonitor);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Select topic /robot_1/odom' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Peek' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Copy YAML' }));
+
+    expect(mockCopyToClipboard).toHaveBeenCalledWith('header:\n  frame_id: odom');
+    expect(await screen.findByText('Copied YAML.')).toBeTruthy();
   });
 
   it('publishes a confirmed one-shot YAML message separately from Peek', async () => {

@@ -2804,7 +2804,9 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const result = await this.#execRosBash(
       target,
       distro,
-      'timeout "$1" ros2 topic echo --once --qos-reliability best_effort --qos-durability volatile "$2"',
+      // `--full-length` prevents ROS 2 YAML's default 128-element sequence elision.
+      // `cleanEchoOutput` still enforces PEEK_MAX_BYTES before data reaches the webview.
+      'timeout "$1" ros2 topic echo --once --full-length --flow-style --qos-reliability best_effort --qos-durability volatile "$2"',
       [peekTimeoutArg, safeTopic],
     );
 
@@ -2869,7 +2871,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const result = await this.#execRosBash(
       targetInfo.target,
       targetInfo.distro,
-      'timeout "$1" ros2 topic echo --once --qos-reliability best_effort --qos-durability volatile "$2"',
+      // Keep Local and OpenShift Peek output identical, including complete bounded LaserScans.
+      'timeout "$1" ros2 topic echo --once --full-length --flow-style --qos-reliability best_effort --qos-durability volatile "$2"',
       [String(peekTimeoutSec), safeTopic],
     );
     const stdout = (result.stdout ?? '').trim();
