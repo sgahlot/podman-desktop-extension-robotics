@@ -42,6 +42,7 @@ const localTargetApi: TopicMonitorTargetApi = {
     cells: [],
     capturedAt: '',
   }),
+  getCompressedImageTopicSnapshot: async () => ({ topicName: '', format: '', dataBase64: '', capturedAt: '' }),
   getTopicTelemetry: async () => [],
   publishRosTopic: async () => ({ topicName: '', messageType: '', publishedAt: '' }),
   startRosbagRecording: async id => ({

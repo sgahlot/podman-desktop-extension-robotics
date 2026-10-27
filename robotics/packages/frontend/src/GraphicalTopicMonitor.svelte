@@ -98,6 +98,7 @@ import type {
   TopicPeekResult,
   TopicPublishResult,
   TopicOccupancyGridSnapshot,
+  TopicCompressedImageSnapshot,
   TopicSchemaResult,
   TopicTelemetry,
 } from '/@shared/src/types/TopicInfo';
@@ -185,6 +186,7 @@ let topicDetail: TopicDetailInfo | null = null;
 let schema: TopicSchemaResult | null = null;
 let peekResult: TopicPeekResult | null = null;
 let occupancyGridSnapshot: TopicOccupancyGridSnapshot | null = null;
+let compressedImageSnapshot: TopicCompressedImageSnapshot | null = null;
 let peekCopyStatus = '';
 let inspectorLoading = false;
 let inspectorError = '';
@@ -638,6 +640,7 @@ function clearSelection() {
   schema = null;
   peekResult = null;
   occupancyGridSnapshot = null;
+  compressedImageSnapshot = null;
   inspectorError = '';
   expandedPublisherNodes = false;
   expandedSubscriberNodes = false;
@@ -976,6 +979,11 @@ async function peekTopic() {
     if (topicDetail?.type === 'nav_msgs/msg/OccupancyGrid') {
       const snapshot = await targetApi.getOccupancyGridTopicSnapshot(selectedContainerId, selectedTopic);
       occupancyGridSnapshot = snapshot.cells.length > 0 ? snapshot : null;
+      if (snapshot.error) inspectorError = snapshot.error;
+    }
+    if (topicDetail?.type === 'sensor_msgs/msg/CompressedImage') {
+      const snapshot = await targetApi.getCompressedImageTopicSnapshot(selectedContainerId, selectedTopic);
+      compressedImageSnapshot = snapshot.dataBase64 ? snapshot : null;
       if (snapshot.error) inspectorError = snapshot.error;
     }
   } catch (e) {
@@ -1902,6 +1910,18 @@ onDestroy(() => {
                       {occupancyGridSnapshot.width} × {occupancyGridSnapshot.height} cells · {occupancyGridSnapshot.resolutionMeters.toFixed(
                         2,
                       )} m/cell
+                    </p>
+                  </section>
+                {/if}
+                {#if compressedImageSnapshot}
+                  <section class="pai-inspector-section" aria-label="Compressed image preview">
+                    <h3 class="font-medium text-[var(--pd-content-header)]">Camera snapshot</h3>
+                    <img
+                      class="w-full rounded bg-black"
+                      src={`data:${compressedImageSnapshot.format.includes('png') ? 'image/png' : 'image/jpeg'};base64,${compressedImageSnapshot.dataBase64}`}
+                      alt={`Latest ${compressedImageSnapshot.format || 'compressed'} camera frame`} />
+                    <p class="pai-text-muted">
+                      Latest bounded frame · {compressedImageSnapshot.format || 'compressed image'}
                     </p>
                   </section>
                 {/if}

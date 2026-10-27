@@ -103,6 +103,7 @@ import type {
   TopicGraphTopology,
   TopicTelemetry,
   TopicOccupancyGridSnapshot,
+  TopicCompressedImageSnapshot,
 } from '/@shared/src/types/TopicInfo';
 import type { RosbagRecording } from '/@shared/src/types/RosbagRecording';
 import type { NavigationGoalResult, Nav2WarmStatus } from '/@shared/src/types/NavigationGoalResult';
@@ -2915,6 +2916,12 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return this.#occupancyGridTopicSnapshotFor({ kind: 'podman', id }, await this.#detectRosDistro(id), safeTopic);
   }
 
+  async getCompressedImageTopicSnapshot(containerId: string, topicName: string): Promise<TopicCompressedImageSnapshot> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    const safeTopic = assertRosTopicName(topicName);
+    return this.#compressedImageTopicSnapshotFor({ kind: 'podman', id }, await this.#detectRosDistro(id), safeTopic);
+  }
+
   async publishRosTopic(
     containerId: string,
     topicName: string,
@@ -3644,6 +3651,63 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       cells,
       capturedAt,
     };
+  }
+
+  async #compressedImageTopicSnapshotFor(
+    target: ExecTarget,
+    distro: SupportedRosDistro,
+    topicName: string,
+  ): Promise<TopicCompressedImageSnapshot> {
+    const capturedAt = new Date().toISOString();
+    const unavailable = (error: string): TopicCompressedImageSnapshot => ({
+      topicName,
+      format: '',
+      dataBase64: '',
+      capturedAt,
+      error,
+    });
+    let timeoutSec: number;
+    try {
+      timeoutSec = await this.getTopicPeekTimeoutSeconds();
+    } catch (e) {
+      return unavailable(e instanceof Error ? e.message : String(e));
+    }
+    const script = `
+import base64, json, sys, time
+import rclpy
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+from sensor_msgs.msg import CompressedImage
+topic, timeout = sys.argv[1], float(sys.argv[2])
+result = None
+def callback(message):
+  global result
+  if len(message.data) > 2097152:
+    result = {'error': 'Compressed image exceeds the 2 MiB preview limit.'}
+  else:
+    result = {'format': message.format, 'dataBase64': base64.b64encode(bytes(message.data)).decode('ascii')}
+rclpy.init(); node = rclpy.create_node('physical_ai_image_peek')
+node.create_subscription(CompressedImage, topic, callback, QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT, durability=DurabilityPolicy.VOLATILE))
+deadline = time.monotonic() + timeout
+while result is None and time.monotonic() < deadline: rclpy.spin_once(node, timeout_sec=0.1)
+node.destroy_node(); rclpy.shutdown()
+print(json.dumps(result or {'error': 'No image received before the peek timeout.'}))`;
+    const result = await this.#execRosBash(target, distro, 'python3 -c "$1" "$2" "$3"', [
+      script,
+      topicName,
+      String(timeoutSec),
+    ]);
+    try {
+      const parsed = JSON.parse((result.stdout ?? '').trim()) as {
+        format?: string;
+        dataBase64?: string;
+        error?: string;
+      };
+      return parsed.error
+        ? unavailable(parsed.error)
+        : { topicName, format: parsed.format ?? '', dataBase64: parsed.dataBase64 ?? '', capturedAt };
+    } catch {
+      return unavailable((result.stderr ?? '').trim() || 'Could not capture a compressed image.');
+    }
   }
 
   async getCostmapSummary(containerId: string, robotName: string): Promise<CostmapSummaryResult> {
@@ -4736,6 +4800,21 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const distro = PhysicalAiApiImpl.#distroFromImage(image);
     const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
     return this.#occupancyGridTopicSnapshotFor({ kind: 'oc', pod, namespace: ns, context }, distro, safeTopic);
+  }
+
+  async getCompressedImageTopicSnapshotInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    context?: string,
+  ): Promise<TopicCompressedImageSnapshot> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeTopic = assertRosTopicName(topicName);
+    const image = await this.#openShiftDeploymentImage(ns, safeName, context);
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    return this.#compressedImageTopicSnapshotFor({ kind: 'oc', pod, namespace: ns, context }, distro, safeTopic);
   }
 
   /** OpenShift counterpart of getCostmapSummary — see #costmapSummaryFor for the shared logic. */

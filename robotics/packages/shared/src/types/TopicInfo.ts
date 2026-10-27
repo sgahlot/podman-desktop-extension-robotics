@@ -33,6 +33,15 @@ export interface TopicOccupancyGridSnapshot {
   error?: string;
 }
 
+/** A byte-capped latest CompressedImage frame for safe webview preview. */
+export interface TopicCompressedImageSnapshot {
+  topicName: string;
+  format: string;
+  dataBase64: string;
+  capturedAt: string;
+  error?: string;
+}
+
 /** A ROS node and the topic endpoints it exposes. */
 export interface NodeDetail {
   nodeName: string;
