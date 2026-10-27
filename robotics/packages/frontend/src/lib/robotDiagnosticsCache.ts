@@ -5,6 +5,7 @@ import type {
 } from '/@shared/src/types/RobotDiagnostics';
 
 export interface CachedDiagnosticsSnapshot {
+  capturedAt?: string;
   tfResult: TfTreeResult | null;
   tfError: string;
   costmapResult: CostmapSummaryResult | null;

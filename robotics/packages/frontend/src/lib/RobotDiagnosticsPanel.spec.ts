@@ -15,6 +15,8 @@ const mockGetTfTreeStatusInOpenShift = vi.fn();
 const mockGetCostmapSummaryInOpenShift = vi.fn();
 const mockGetRobotSensorDiagnosticsInOpenShift = vi.fn();
 const mockListSpawnedRobotsInOpenShift = vi.fn();
+const mockCopyToClipboard = vi.fn();
+const mockSaveDiagnosticsSnapshot = vi.fn();
 
 vi.mock('../api/client', () => ({
   physicalAiClient: {
@@ -26,6 +28,8 @@ vi.mock('../api/client', () => ({
     getCostmapSummaryInOpenShift: (...args: unknown[]) => mockGetCostmapSummaryInOpenShift(...args),
     getRobotSensorDiagnosticsInOpenShift: (...args: unknown[]) => mockGetRobotSensorDiagnosticsInOpenShift(...args),
     listSpawnedRobotsInOpenShift: (...args: unknown[]) => mockListSpawnedRobotsInOpenShift(...args),
+    copyToClipboard: (...args: unknown[]) => mockCopyToClipboard(...args),
+    saveDiagnosticsSnapshot: (...args: unknown[]) => mockSaveDiagnosticsSnapshot(...args),
   },
 }));
 
@@ -135,6 +139,8 @@ describe('RobotDiagnosticsPanel', () => {
     mockGetCostmapSummaryInOpenShift.mockResolvedValue(COSTMAP_RESULT);
     mockGetRobotSensorDiagnosticsInOpenShift.mockResolvedValue(SENSOR_RESULT);
     mockListSpawnedRobotsInOpenShift.mockResolvedValue([]);
+    mockCopyToClipboard.mockResolvedValue(undefined);
+    mockSaveDiagnosticsSnapshot.mockResolvedValue(true);
   });
 
   it('shows an empty state and no robot picker when no robot is detected', async () => {
@@ -211,6 +217,24 @@ describe('RobotDiagnosticsPanel', () => {
     expect(screen.getByText('odom → base_footprint')).toBeTruthy();
     expect(screen.getAllByText('available').length).toBe(3);
     expect(screen.getByText('missing')).toBeTruthy();
+  });
+
+  it('enables JSON export after a refresh and uses the host clipboard and save dialog RPCs', async () => {
+    render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
+    expect((screen.getByRole('button', { name: 'Copy JSON' }) as HTMLButtonElement).disabled).toBe(true);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh diagnostics' }));
+    await screen.findByText(/Laser scan looks normal/);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Copy JSON' }));
+    expect(mockCopyToClipboard).toHaveBeenCalledWith(expect.stringContaining('"version": 1'));
+    expect(await screen.findByText('Diagnostics JSON copied to the clipboard.')).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Save JSON…' }));
+    expect(mockSaveDiagnosticsSnapshot).toHaveBeenCalledWith(
+      expect.stringMatching(/^diagnostics-local-robot_1-.*\.json$/),
+      expect.stringContaining('"identity": "c1"'),
+    );
   });
 
   it('remembers the last snapshot across remounts (e.g. navigating away and back) without refetching', async () => {

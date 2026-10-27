@@ -18,6 +18,7 @@ vi.mock('@podman-desktop/api', () => ({
     createWebviewPanel: vi.fn(),
     showInformationMessage: vi.fn(),
     showOpenDialog: vi.fn(),
+    showSaveDialog: vi.fn(),
   },
   commands: {
     registerCommand: vi.fn(),
@@ -51,6 +52,7 @@ vi.mock('@podman-desktop/api', () => ({
     },
   },
   Uri: {
+    file: vi.fn((path: string) => ({ fsPath: path })),
     joinPath: vi.fn(),
     parse: vi.fn((s: string) => ({ toString: () => s })),
   },
@@ -3367,6 +3369,38 @@ linear_acceleration:
       const bigSbom = 'x'.repeat(10 * 1024 * 1024);
       await api.copyToClipboard(bigSbom);
       expect(extensionApi.env.clipboard.writeText).toHaveBeenCalledWith(bigSbom);
+    });
+  });
+
+  describe('saveDiagnosticsSnapshot', () => {
+    it('uses a native JSON save dialog and writes only the user-selected path', async () => {
+      vi.mocked(extensionApi.window.showSaveDialog).mockResolvedValue({
+        fsPath: '/Users/test/diagnostics.json',
+      } as never);
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+
+      await expect(api.saveDiagnosticsSnapshot('diagnostics-local-robot_1.json', '{\n  "version": 1\n}')).resolves.toBe(
+        true,
+      );
+
+      expect(extensionApi.window.showSaveDialog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Save diagnostics snapshot',
+          filters: [{ name: 'JSON', extensions: ['json'] }],
+        }),
+      );
+      expect(writeFile).toHaveBeenCalledWith(
+        '/Users/test/diagnostics.json',
+        expect.stringContaining('"version"'),
+        'utf8',
+      );
+    });
+
+    it('does not write a file when the native save dialog is cancelled', async () => {
+      vi.mocked(extensionApi.window.showSaveDialog).mockResolvedValue(undefined);
+
+      await expect(api.saveDiagnosticsSnapshot('diagnostics.json', '{}')).resolves.toBe(false);
+      expect(writeFile).not.toHaveBeenCalled();
     });
   });
 
