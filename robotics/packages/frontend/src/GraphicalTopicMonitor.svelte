@@ -185,6 +185,9 @@ let expandedSubscriberNodes = false;
 let topicDetail: TopicDetailInfo | null = null;
 let schema: TopicSchemaResult | null = null;
 let peekResult: TopicPeekResult | null = null;
+let historyTracking = false;
+let snapshotHistory: Array<{ capturedAt: string; summary: string }> = [];
+let snapshotHistoryTimer: ReturnType<typeof setInterval> | null = null;
 let occupancyGridSnapshot: TopicOccupancyGridSnapshot | null = null;
 let compressedImageSnapshot: TopicCompressedImageSnapshot | null = null;
 let peekCopyStatus = '';
@@ -972,8 +975,19 @@ async function peekTopic() {
   peekCopyStatus = '';
   try {
     const result = await targetApi.peekRosTopic(selectedContainerId, selectedTopic);
-    if (result.message) peekResult = result;
-    else
+    if (result.message) {
+      peekResult = result;
+      const pose = parsePoseVisualization(result.message);
+      const scan = parseLaserScanVisualization(result.message);
+      if (pose || scan)
+        snapshotHistory = [
+          ...snapshotHistory,
+          {
+            capturedAt: result.capturedAt,
+            summary: pose ? `x ${pose.x.toFixed(2)}, y ${pose.y.toFixed(2)}` : `${scan!.points.length} finite ranges`,
+          },
+        ].slice(-12);
+    } else
       inspectorError =
         result.error ?? (result.timedOut ? 'No message received before the peek timeout.' : 'No message received.');
     if (topicDetail?.type === 'nav_msgs/msg/OccupancyGrid') {
@@ -991,6 +1005,19 @@ async function peekTopic() {
   } finally {
     peekLoading = false;
   }
+}
+
+function toggleSnapshotHistory() {
+  if (historyTracking) {
+    historyTracking = false;
+    if (snapshotHistoryTimer) clearInterval(snapshotHistoryTimer);
+    snapshotHistoryTimer = null;
+    return;
+  }
+  snapshotHistory = [];
+  historyTracking = true;
+  void peekTopic();
+  snapshotHistoryTimer = setInterval(() => void peekTopic(), 5000);
 }
 
 async function copyPeekMessage() {
@@ -1760,6 +1787,11 @@ onDestroy(() => {
                   disabled={peekLoading}>
                   {peekLoading ? 'Peeking...' : 'Peek'}
                 </button>
+                {#if topicDetail?.type === 'nav_msgs/msg/Odometry' || topicDetail?.type === 'sensor_msgs/msg/LaserScan'}
+                  <button class="pai-btn text-xs" on:click={toggleSnapshotHistory}>
+                    {historyTracking ? 'Stop history' : 'Track history'}
+                  </button>
+                {/if}
                 <button class="pai-btn pai-btn-primary text-xs" on:click={togglePublishEditor}>
                   {publishEditorOpen ? 'Cancel publish' : 'Publish'}
                 </button>
@@ -1887,6 +1919,21 @@ onDestroy(() => {
                         stroke-width={extent * 0.02}></polyline>
                     </svg>
                     <p class="pai-text-muted">{pathVisualization.points.length} poses</p>
+                  </section>
+                {/if}
+                {#if snapshotHistory.length > 0}
+                  <section class="pai-inspector-section" aria-label="Snapshot history">
+                    <h3 class="font-medium text-[var(--pd-content-header)]">Snapshot history</h3>
+                    <p class="pai-text-muted">
+                      Last {snapshotHistory.length}/12 snapshots · {historyTracking
+                        ? 'polling every 5 seconds'
+                        : 'paused'}
+                    </p>
+                    <ol class="max-h-24 overflow-auto font-mono text-xs">
+                      {#each snapshotHistory.slice().reverse() as sample}
+                        <li>{new Date(sample.capturedAt).toLocaleTimeString()} — {sample.summary}</li>
+                      {/each}
+                    </ol>
                   </section>
                 {/if}
                 {#if occupancyGridSnapshot}
