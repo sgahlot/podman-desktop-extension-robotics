@@ -18,6 +18,7 @@ import type { DiagnosticsTarget } from './RobotDiagnosticsPanel.types';
 import { getCachedDiagnostics, setCachedDiagnostics } from './robotDiagnosticsCache';
 import { localTargetKey, ocTargetKey } from './diagnosticsTargetKey';
 import { spawnedRobotsByTarget } from './spawnedRobotsStore';
+import { serializeDiagnosticsSnapshot } from '/@shared/src/types/DiagnosticsExport';
 
 export let target: DiagnosticsTarget;
 /** Pre-selects a robot on arrival (deep link from Simulation's Diagnose button), without
@@ -34,6 +35,8 @@ let costmapResult: CostmapSummaryResult | null = null;
 let costmapError = '';
 let sensorResult: RobotSensorDiagnosticsResult | null = null;
 let sensorError = '';
+let snapshotCapturedAt = '';
+let exportFeedback = '';
 /** True when the currently-shown results came from robotDiagnosticsCache (the last snapshot
  * from an earlier "Refresh diagnostics"), false once a fresh refresh completes — drives the
  * "last known snapshot" banner so older data is never mistaken for current. */
@@ -113,6 +116,8 @@ function clearResults(): void {
   costmapError = '';
   sensorResult = null;
   sensorError = '';
+  snapshotCapturedAt = '';
+  exportFeedback = '';
 }
 
 /**
@@ -134,6 +139,7 @@ $: {
       costmapError = cached.costmapError;
       sensorResult = cached.sensorResult;
       sensorError = cached.sensorError;
+      snapshotCapturedAt = cached.capturedAt ?? '';
       isCachedSnapshot = true;
     } else {
       clearResults();
@@ -169,6 +175,57 @@ $: costmapVerdictResult = costmapResult ? costmapVerdict(costmapResult) : null;
 
 function sensorVerdict(entry: SensorDiagnosticEntry) {
   return sensorDiagnosticVerdict(entry);
+}
+
+$: exportAvailable = Boolean(snapshotCapturedAt && (tfResult || costmapResult || sensorResult));
+
+function exportTarget() {
+  return target.kind === 'podman'
+    ? { kind: 'local' as const, identity: target.containerId }
+    : {
+        kind: 'openshift' as const,
+        identity: `${target.namespace}/${target.workload}`,
+        ...(target.context ? { context: target.context } : {}),
+      };
+}
+
+function exportJson(): string {
+  return serializeDiagnosticsSnapshot({
+    capturedAt: snapshotCapturedAt,
+    target: exportTarget(),
+    robot: robotName,
+    tfResult: tfResult ?? undefined,
+    tfError,
+    costmapResult: costmapResult ?? undefined,
+    costmapError,
+    sensorResult: sensorResult ?? undefined,
+    sensorError,
+  });
+}
+
+function exportFileName(): string {
+  const targetName = target.kind === 'podman' ? 'local' : 'openshift';
+  const safeRobot = robotName.replace(/[^a-zA-Z0-9_-]/g, '_');
+  return `diagnostics-${targetName}-${safeRobot}-${snapshotCapturedAt.replace(/[:.]/g, '-')}.json`;
+}
+
+async function copyDiagnostics(): Promise<void> {
+  try {
+    await physicalAiClient.copyToClipboard(exportJson());
+    exportFeedback = 'Diagnostics JSON copied to the clipboard.';
+  } catch (reason) {
+    exportFeedback = `Copy failed: ${errorMessage(reason)}`;
+  }
+}
+
+async function saveDiagnostics(): Promise<void> {
+  try {
+    exportFeedback = (await physicalAiClient.saveDiagnosticsSnapshot(exportFileName(), exportJson()))
+      ? 'Diagnostics JSON saved.'
+      : 'Save cancelled.';
+  } catch (reason) {
+    exportFeedback = `Save failed: ${errorMessage(reason)}`;
+  }
 }
 
 /**
@@ -242,7 +299,10 @@ async function refreshDiagnostics(): Promise<void> {
     sensorError = errorMessage(sensorSettled.reason);
   }
 
+  snapshotCapturedAt = new Date().toISOString();
+  exportFeedback = '';
   setCachedDiagnostics(snapshotKey, targetRobot, {
+    capturedAt: snapshotCapturedAt,
     tfResult,
     tfError,
     costmapResult,
@@ -284,8 +344,19 @@ async function refreshDiagnostics(): Promise<void> {
       <button on:click={refreshDiagnostics} disabled={refreshing} class="pai-btn pai-btn-primary">
         {refreshing ? 'Refreshing...' : 'Refresh diagnostics'}
       </button>
+      <button on:click={copyDiagnostics} disabled={!exportAvailable || refreshing} class="pai-btn"> Copy JSON </button>
+      <button on:click={saveDiagnostics} disabled={!exportAvailable || refreshing} class="pai-btn"> Save JSON… </button>
       <span class="text-xs pai-text-muted">One-shot snapshot, not live — click Refresh to re-capture.</span>
     </div>
+    {#if exportFeedback}
+      <div
+        class="text-xs {exportFeedback.startsWith('Copy failed') || exportFeedback.startsWith('Save failed')
+          ? 'pai-text-error'
+          : 'pai-text-muted'}"
+        role="status">
+        {exportFeedback}
+      </div>
+    {/if}
     <div class="text-xs pai-text-muted">
       A newly-spawned robot can show "missing"/timed-out cards for up to ~90s while Nav2 finishes starting — that's
       expected, not an error. Click Refresh again once it's warmed up.

@@ -15,7 +15,7 @@ let showViewerCaption =
 let openshiftDeployCaption =
   "<strong>Simulation:</strong> OpenShift tab — Deploy → preview manifests → Deploy → <strong>Show Viewer</strong>, rendering inline over the cluster's route.";
 let diagnosticsCaption =
-  '<strong>Diagnostics:</strong> Local or OpenShift tab → Refresh or List simulations → Refresh Diagnostics → see various diagnostics information.';
+  '<strong>Diagnostics:</strong> Local or OpenShift tab → Refresh or List simulations → Refresh Diagnostics → <strong>Copy JSON</strong> or <strong>Save JSON…</strong> to share that point-in-time snapshot.';
 let topicMonitorCaption =
   '<strong>Topic Monitor:</strong> choose a Local or OpenShift simulation, then use the shared List/Graph/Cards views, filters, live telemetry, schema/peek, guarded publish, and rosbag recording.';
 </script>
@@ -467,6 +467,14 @@ let topicMonitorCaption =
         <div>
           <strong>Access</strong> — Click <strong>Diagnose</strong> next to a spawned robot on the Simulation or OpenShift
           page, or open the Diagnostics page directly and pick a target/robot.
+        </div>
+        <div>
+          <strong>Export</strong> — After <strong>Refresh diagnostics</strong> completes, use <strong>Copy JSON</strong>
+          to put the snapshot on the host clipboard or <strong>Save JSON…</strong> to choose a file. The versioned JSON
+          records the capture time, target, robot, TF, costmap, and sensor summaries.
+          <span class="font-mono">version: 1</span>
+          identifies the JSON schema version, not the robot or extension version. It is a point-in-time capture, not live
+          state; unavailable sections retain their reason and raw command output is never included.
         </div>
 
         <hr class="border-[var(--pd-content-card-border)] my-3 opacity-60" />

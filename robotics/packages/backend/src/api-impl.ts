@@ -3271,6 +3271,21 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     await extensionApi.env.clipboard.writeText(text);
   }
 
+  async saveDiagnosticsSnapshot(suggestedFileName: string, contents: string): Promise<boolean> {
+    if (Buffer.byteLength(contents, 'utf8') > CLIPBOARD_MAX_BYTES) {
+      throw new Error('Diagnostics export exceeds the allowed size.');
+    }
+    const safeFileName = suggestedFileName.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^_+/, '') || 'diagnostics.json';
+    const target = await extensionApi.window.showSaveDialog({
+      title: 'Save diagnostics snapshot',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+      defaultUri: extensionApi.Uri.file(safeFileName),
+    });
+    if (!target) return false;
+    await writeFile(target.fsPath, contents, 'utf8');
+    return true;
+  }
+
   async sendNavigationGoal(
     containerId: string,
     robotName: string,

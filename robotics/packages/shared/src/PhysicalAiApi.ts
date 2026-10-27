@@ -274,6 +274,8 @@ export abstract class PhysicalAiApi {
   ): Promise<RosbagRecording | undefined>;
   /** Copy text via the host clipboard (webview Clipboard API is unavailable). */
   abstract copyToClipboard(text: string): Promise<void>;
+  /** Opens a native save dialog and writes a UTF-8 diagnostics export if the user confirms it. */
+  abstract saveDiagnosticsSnapshot(suggestedFileName: string, contents: string): Promise<boolean>;
   abstract sendNavigationGoal(
     containerId: string,
     robotName: string,
