@@ -2151,6 +2151,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return assertPeekTimeoutSeconds(raw);
   }
 
+  async getSimulationStateCacheRefreshSeconds(): Promise<number> {
+    const value = extensionApi.configuration
+      .getConfiguration('robotics')
+      .get<number>('simulation.stateCacheRefreshSeconds');
+    const seconds = value ?? 300;
+    if (!Number.isInteger(seconds) || seconds < 15 || seconds > 86400) return 300;
+    return seconds;
+  }
+
   async setTopicPeekTimeoutSeconds(seconds: number): Promise<void> {
     const safe = assertPeekTimeoutSeconds(seconds);
     const config = extensionApi.configuration.getConfiguration('robotics');

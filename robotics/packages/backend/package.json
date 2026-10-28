@@ -55,6 +55,13 @@
           "type": "markdown",
           "markdownDescription": "### Simulation"
         },
+        "robotics.simulation.stateCacheRefreshSeconds": {
+          "type": "number",
+          "minimum": 15,
+          "maximum": 86400,
+          "default": 300,
+          "description": "Seconds before Simulation refreshes cached Local or OpenShift state after returning to the page. Use 15 to refresh often or up to 86400 (24 hours) for stable deployments."
+        },
         "robotics.simulation.robot": {
           "type": "string",
           "default": "turtlebot3",

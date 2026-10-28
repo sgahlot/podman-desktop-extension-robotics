@@ -31,11 +31,11 @@ import { clearCachedDiagnostics } from './lib/robotDiagnosticsCache';
 import { formatRpcError } from './lib/formatRpcError';
 import { imageSupportsNav2Prewarm } from '/@shared/src/security/simInput';
 import { middlewareLabelForImage } from '/@shared/src/types/middlewareLabels';
+import { getOpenShiftSimulationSnapshot, setOpenShiftSimulationSnapshot } from './lib/simulationViewState';
 
 let loading = true;
+let stateCacheRefreshSeconds = 300;
 let context: OpenShiftContext | undefined = undefined;
-export let active = true;
-let wasActive = false;
 
 let name = 'ros2-jazzy-sim';
 /** Seeded from the current kube context's namespace on mount (see onMount); editable.
@@ -155,6 +155,7 @@ let profileLoadErrorsByWorkload: Record<string, string> = {};
 /** Workload names with the embedded viewer expanded (APPENG-6283). */
 let expandedViewerNames: string[] = [];
 let listBusy = false;
+let discoveryBusy = false;
 let listError = '';
 let deletingName = '';
 
@@ -281,16 +282,15 @@ function loadRobotProfiles(workload: OpenShiftWorkload, force = false) {
   const sameImage = profileImageKeysByWorkload[workload.name] === key;
   if (sameImage && !force) return;
   const previousSelection = sameImage ? robotProfileSelectionsByWorkload[workload.name] : undefined;
+  const previousProfiles = robotProfilesByWorkload[workload.name];
   profileImageKeysByWorkload = { ...profileImageKeysByWorkload, [workload.name]: key };
-  robotProfilesByWorkload = { ...robotProfilesByWorkload, [workload.name]: [] };
-  robotProfileSelectionsByWorkload = { ...robotProfileSelectionsByWorkload, [workload.name]: undefined };
   profileLoadingByWorkload = { ...profileLoadingByWorkload, [workload.name]: true };
-  profileLoadErrorsByWorkload = { ...profileLoadErrorsByWorkload, [workload.name]: '' };
   void physicalAiClient
     .listRobotProfilesInOpenShift(workload.namespace, workload.name, selectedContext || undefined)
     .then(profiles => {
       if (profileImageKeysByWorkload[workload.name] === key) {
         robotProfilesByWorkload = { ...robotProfilesByWorkload, [workload.name]: profiles };
+        profileLoadErrorsByWorkload = { ...profileLoadErrorsByWorkload, [workload.name]: '' };
         const previousProfile = profiles.find(profile => profile.id === previousSelection?.profileId);
         robotProfileSelectionsByWorkload = {
           ...robotProfileSelectionsByWorkload,
@@ -311,10 +311,13 @@ function loadRobotProfiles(workload: OpenShiftWorkload, force = false) {
           ...profileLoadErrorsByWorkload,
           [workload.name]: error instanceof Error ? error.message : String(error),
         };
-        robotProfileSelectionsByWorkload = {
-          ...robotProfileSelectionsByWorkload,
-          [workload.name]: customLaunchSelection(),
-        };
+        // Retain usable cached profile controls when a replacement lookup fails.
+        if (!previousProfiles) {
+          robotProfileSelectionsByWorkload = {
+            ...robotProfileSelectionsByWorkload,
+            [workload.name]: customLaunchSelection(),
+          };
+        }
       }
     })
     .finally(() => {
@@ -431,6 +434,37 @@ async function refreshLocalAmd64Images() {
   }
 }
 
+/**
+ * Explicitly refresh all externally discovered inputs without replacing the selected
+ * cluster/namespace. This keeps a cached return fast while still giving users a way
+ * to discover clusters, projects, images, and deployments created outside the UI.
+ */
+async function refreshTabData() {
+  discoveryBusy = true;
+  try {
+    const contexts = physicalAiClient
+      .listKubeContexts()
+      .then(result => (kubeContexts = result))
+      .catch(() => (kubeContexts = []));
+    await Promise.all([contexts, refreshLoginStatus(), refreshProjects(), refreshLocalAmd64Images()]);
+    await refreshWorkloads();
+  } finally {
+    discoveryBusy = false;
+  }
+}
+
+function refreshIntervalDescription(): string {
+  if (stateCacheRefreshSeconds % 3600 === 0) {
+    const hours = stateCacheRefreshSeconds / 3600;
+    return `${hours} hour${hours === 1 ? '' : 's'}`;
+  }
+  if (stateCacheRefreshSeconds % 60 === 0) {
+    const minutes = stateCacheRefreshSeconds / 60;
+    return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+  }
+  return `${stateCacheRefreshSeconds} seconds`;
+}
+
 /** Pick the initial Image field value from images actually present locally (APPENG-6302).
  * Prefer the sim-config tag when it exists on disk; otherwise the first local amd64
  * candidate; otherwise leave the field empty for free-text entry. */
@@ -502,6 +536,28 @@ async function onContextChange() {
 }
 
 onMount(async () => {
+  const cached = getOpenShiftSimulationSnapshot();
+  try {
+    stateCacheRefreshSeconds = await physicalAiClient.getSimulationStateCacheRefreshSeconds();
+  } catch {
+    // Keep the documented five-minute default when configuration is unavailable.
+  }
+  const cacheFresh = !!cached && Date.now() - cached.capturedAt < stateCacheRefreshSeconds * 1000;
+  if (cached) {
+    namespace = cached.namespace;
+    selectedContext = cached.selectedContext;
+    workloads = cached.workloads;
+    robotsByWorkload = cached.robotsByWorkload as Record<string, RobotEntry[]>;
+    robotProfilesByWorkload = cached.robotProfilesByWorkload as Record<string, ImageRobotProfile[]>;
+    robotProfileSelectionsByWorkload = cached.robotProfileSelectionsByWorkload as Record<
+      string,
+      RobotProfileSelection | undefined
+    >;
+    profileImageKeysByWorkload = cached.profileImageKeysByWorkload;
+    profileLoadingByWorkload = cached.profileLoadingByWorkload;
+    profileLoadErrorsByWorkload = cached.profileLoadErrorsByWorkload;
+    loading = false;
+  }
   try {
     context = await physicalAiClient.getOpenShiftContext();
     if (context) selectedContext = context.context;
@@ -534,32 +590,33 @@ onMount(async () => {
     seedImageFromLocal(undefined);
   }
   loading = false;
-  refreshWorkloads();
+  if (!cacheFresh) void refreshWorkloads({ silent: true });
   // Auto-refresh the deployment list + robot warm-status so a newly-ready
   // deployment reveals its Robots section without a manual Refresh click.
   warmTimer = setInterval(async () => {
     await refreshWorkloads({ silent: true });
     await pollWarmStatus();
     await pruneStaleRobots();
-  }, 3000);
+  }, stateCacheRefreshSeconds * 1000);
 });
 
 onDestroy(() => {
+  setOpenShiftSimulationSnapshot({
+    namespace,
+    selectedContext,
+    workloads,
+    robotsByWorkload,
+    robotProfilesByWorkload,
+    robotProfileSelectionsByWorkload,
+    profileImageKeysByWorkload,
+    profileLoadingByWorkload,
+    profileLoadErrorsByWorkload,
+    capturedAt: Date.now(),
+  });
   if (warmTimer) clearInterval(warmTimer);
   if (namespaceBlurTimeout) clearTimeout(namespaceBlurTimeout);
   if (imageBlurTimeout) clearTimeout(imageBlurTimeout);
 });
-
-$: if (active && !wasActive) {
-  wasActive = true;
-  if (!loading) {
-    void refreshLoginStatus();
-    void refreshProjects();
-    void refreshLocalAmd64Images();
-    void refreshWorkloads();
-  }
-}
-$: if (!active) wasActive = false;
 
 /** Poll Nav2 pre-warm state for robots still warming across all deployments. */
 async function pollWarmStatus() {
@@ -680,7 +737,9 @@ async function refreshWorkloads(opts?: { silent?: boolean }) {
     }
     for (const w of workloads) {
       robotsByWorkload[w.name] ??= [];
-      loadRobotProfiles(w, !silent);
+      // A deployment-list refresh must never blank profile controls while its
+      // replacement profile lookup is pending. Reload only when the workload image changes.
+      loadRobotProfiles(w);
       // Reconcile a ready workload's actually-running robots (S8-17) at most once —
       // pollWarmStatus's existing 3s loop already picks up warmStatus for whatever
       // ends up in robotsByWorkload, so no extra polling wire-up is needed here.
@@ -940,6 +999,16 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
     Deploy a simulation image (Gazebo + noVNC) to your current OpenShift cluster and reach it via a Route, then spawn
     and navigate robots in it. Build an <span class="font-mono">amd64</span> image first from the Image Builder.
   </p>
+
+  <div class="flex flex-row flex-wrap items-center gap-x-3 gap-y-1">
+    <button on:click={refreshTabData} disabled={discoveryBusy || listBusy} class="pai-btn text-sm">
+      {discoveryBusy || listBusy ? 'Refreshing tab data…' : 'Refresh tab data'}
+    </button>
+    <span class="text-xs font-medium pai-text-muted">
+      Cached snapshot — refresh manually to discover cluster, project, image, and deployment changes. Deployments also
+      refresh silently every {refreshIntervalDescription()}.
+    </span>
+  </div>
 
   {#if loading}
     <div class="text-sm text-[var(--pd-content-text)]">Loading…</div>
@@ -1277,9 +1346,15 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
     <div class="w-full flex flex-col gap-2">
       <div class="flex flex-row items-center gap-3">
         <h2 class="text-xl text-[var(--pd-content-header)]">Deployed simulations</h2>
-        <button on:click={() => refreshWorkloads()} disabled={listBusy || !namespace} class="pai-btn text-sm">
-          {listBusy ? 'Refreshing…' : 'Refresh'}
+        <button
+          on:click={() => refreshWorkloads()}
+          disabled={discoveryBusy || listBusy || !namespace}
+          class="pai-btn text-sm">
+          {listBusy ? 'Refreshing deployments…' : 'Refresh deployments'}
         </button>
+        <span class="text-xs font-medium pai-text-muted">
+          Cached deployment snapshot — refresh to update this list now.
+        </span>
       </div>
 
       {#if listError}

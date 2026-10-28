@@ -160,6 +160,8 @@ export abstract class PhysicalAiApi {
   abstract getOpenShiftImageAllowlist(): Promise<string>;
   /** Peek wait in seconds (Preferences: physical-ai.topicMonitor.topicPeekTimeoutSeconds, 1–30). */
   abstract getTopicPeekTimeoutSeconds(): Promise<number>;
+  /** Configured cache freshness interval for Simulation route state. */
+  abstract getSimulationStateCacheRefreshSeconds(): Promise<number>;
   /** Validates and persists peek timeout (1–30). Throws a user-facing error if out of range. */
   abstract setTopicPeekTimeoutSeconds(seconds: number): Promise<void>;
   /** Image-aware page status refresh interval in seconds (Preferences: physical-ai.general.imageStatusRefreshIntervalSeconds, 1–60). */
