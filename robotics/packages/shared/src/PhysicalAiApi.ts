@@ -227,7 +227,10 @@ export abstract class PhysicalAiApi {
     topicName: string,
   ): Promise<TopicCompressedImageSnapshot>;
   /** Start a bounded backend-owned CompressedImage subscriber for this Local target. */
-  abstract startCompressedImageTopicPreview(containerId: string, topicName: string): Promise<TopicCompressedImagePreview>;
+  abstract startCompressedImageTopicPreview(
+    containerId: string,
+    topicName: string,
+  ): Promise<TopicCompressedImagePreview>;
   /** Read the latest frame retained by the Local preview subscriber. */
   abstract getCompressedImageTopicPreview(containerId: string, topicName: string): Promise<TopicCompressedImagePreview>;
   /** Stop and discard the Local preview subscriber and retained frame. */

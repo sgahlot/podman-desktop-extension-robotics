@@ -676,7 +676,12 @@ async function pollCompressedImagePreview(generation: number, targetId: string, 
   compressedImagePreviewInFlight = true;
   try {
     const preview = await targetApi.getCompressedImageTopicPreview(targetId, topicName);
-    if (generation !== compressedImagePreviewGeneration || selectedContainerId !== targetId || selectedTopic !== topicName) return;
+    if (
+      generation !== compressedImagePreviewGeneration ||
+      selectedContainerId !== targetId ||
+      selectedTopic !== topicName
+    )
+      return;
     compressedImagePreview = preview;
     compressedImageSnapshot = preview.dataBase64 ? preview : null;
   } catch (e) {
@@ -695,7 +700,12 @@ async function startCompressedImagePreview(): Promise<void> {
   inspectorError = '';
   try {
     compressedImagePreview = await targetApi.startCompressedImageTopicPreview(targetId, topicName);
-    if (generation !== compressedImagePreviewGeneration || selectedContainerId !== targetId || selectedTopic !== topicName) return;
+    if (
+      generation !== compressedImagePreviewGeneration ||
+      selectedContainerId !== targetId ||
+      selectedTopic !== topicName
+    )
+      return;
     compressedImagePreviewTargetId = targetId;
     void pollCompressedImagePreview(generation, targetId, topicName);
     compressedImagePreviewTimer = setInterval(
@@ -1801,13 +1811,16 @@ onDestroy(() => {
               <div><span class="pai-text-muted">Publishers:</span> {topicDetail.publishers.length}</div>
               <div><span class="pai-text-muted">Subscribers:</span> {topicDetail.subscribers.length}</div>
               {#if topicDetail.type === 'sensor_msgs/msg/CompressedImage'}
-                <section class="rounded border border-[var(--pd-content-card-border)] p-2" aria-label="Continuous camera preview">
+                <section
+                  class="rounded border border-[var(--pd-content-card-border)] p-2"
+                  aria-label="Continuous camera preview">
                   <div class="flex items-center justify-between gap-2">
                     <span class="font-medium">Continuous camera preview</span>
                     {#if compressedImagePreviewTargetId}
                       <button class="pai-btn text-xs" on:click={stopCompressedImagePreview}>Stop preview</button>
                     {:else}
-                      <button class="pai-btn text-xs" on:click={() => void startCompressedImagePreview()}>Start preview</button>
+                      <button class="pai-btn text-xs" on:click={() => void startCompressedImagePreview()}
+                        >Start preview</button>
                     {/if}
                   </div>
                   <p class="mt-1 pai-text-muted">
@@ -1819,7 +1832,9 @@ onDestroy(() => {
                       Starts one bounded backend subscriber for up to 15 minutes; frames are capped at 2 MiB.
                     {/if}
                   </p>
-                  {#if compressedImagePreview?.error}<p class="mt-1 pai-text-error">{compressedImagePreview.error}</p>{/if}
+                  {#if compressedImagePreview?.error}<p class="mt-1 pai-text-error">
+                      {compressedImagePreview.error}
+                    </p>{/if}
                 </section>
               {/if}
               <div class="rounded border border-[var(--pd-content-card-border)] p-2" role="status" aria-live="polite">
@@ -1933,8 +1948,9 @@ onDestroy(() => {
               {/if}
               {#if compressedImageSnapshot}
                 <section class="pai-inspector-section" aria-label="Compressed image preview">
-                  <h3 class="font-medium text-[var(--pd-content-header)]"
-                    >{compressedImagePreviewTargetId ? 'Live camera preview' : 'Camera snapshot'}</h3>
+                  <h3 class="font-medium text-[var(--pd-content-header)]">
+                    {compressedImagePreviewTargetId ? 'Live camera preview' : 'Camera snapshot'}
+                  </h3>
                   <img
                     class="w-full rounded bg-black"
                     src={`data:${compressedImageSnapshot.format.includes('png') ? 'image/png' : 'image/jpeg'};base64,${compressedImageSnapshot.dataBase64}`}

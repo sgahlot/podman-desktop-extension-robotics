@@ -59,8 +59,18 @@ describe('GraphicalTopicMonitor', () => {
     mockCopyToClipboard.mockResolvedValue(undefined);
     mockGetOccupancyGridTopicSnapshot.mockResolvedValue({ cells: [] });
     mockGetCompressedImageTopicSnapshot.mockResolvedValue({ dataBase64: '' });
-    mockStartCompressedImageTopicPreview.mockResolvedValue({ status: 'waiting', dataBase64: '', format: '', capturedAt: '' });
-    mockGetCompressedImageTopicPreview.mockResolvedValue({ status: 'active', dataBase64: '', format: '', capturedAt: '' });
+    mockStartCompressedImageTopicPreview.mockResolvedValue({
+      status: 'waiting',
+      dataBase64: '',
+      format: '',
+      capturedAt: '',
+    });
+    mockGetCompressedImageTopicPreview.mockResolvedValue({
+      status: 'active',
+      dataBase64: '',
+      format: '',
+      capturedAt: '',
+    });
     mockStopCompressedImageTopicPreview.mockResolvedValue(undefined);
     mockPeekRosTopic.mockResolvedValue({
       topicName: '',

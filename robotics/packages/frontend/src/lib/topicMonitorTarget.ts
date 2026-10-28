@@ -69,7 +69,8 @@ function localTargetApi(): TopicMonitorTargetApi {
     peekRosTopic: (id, topicName) => physicalAiClient.peekRosTopic(id, topicName),
     getOccupancyGridTopicSnapshot: (id, topicName) => physicalAiClient.getOccupancyGridTopicSnapshot(id, topicName),
     getCompressedImageTopicSnapshot: (id, topicName) => physicalAiClient.getCompressedImageTopicSnapshot(id, topicName),
-    startCompressedImageTopicPreview: (id, topicName) => physicalAiClient.startCompressedImageTopicPreview(id, topicName),
+    startCompressedImageTopicPreview: (id, topicName) =>
+      physicalAiClient.startCompressedImageTopicPreview(id, topicName),
     getCompressedImageTopicPreview: (id, topicName) => physicalAiClient.getCompressedImageTopicPreview(id, topicName),
     stopCompressedImageTopicPreview: id => physicalAiClient.stopCompressedImageTopicPreview(id),
     getTopicTelemetry: (id, names) => physicalAiClient.getTopicTelemetry(id, names),
