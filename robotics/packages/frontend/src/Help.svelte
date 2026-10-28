@@ -586,9 +586,7 @@ let topicMonitorCaption =
           the inspector polls that retained frame once per second. The subscriber stops after 15 minutes, when you
           choose
           <strong>Stop preview</strong>, change selection, or leave Topic Monitor. This complements the interactive
-          Gazebo noVNC view; it does not expose ROS/DDS directly to the browser. The managed Jazzy simulation includes
-          the test-only <span class="font-mono">/physical_ai/test_camera/compressed</span> topic (a 1 Hz, 1×1 PNG stream)
-          so you can validate this workflow without custom robot camera hardware.
+          Gazebo noVNC view; it does not expose ROS/DDS directly to the browser.
         </div>
 
         <hr class="border-[var(--pd-content-card-border)] my-3 opacity-60" />

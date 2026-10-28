@@ -642,7 +642,7 @@ needed for this configuration. They are edited on the extension's **Registry Set
 
 | Compressed-camera preview
 | One bounded backend-owned `rclpy` subscriber per selected target
-| A Graph inspector Start preview action for `sensor_msgs/msg/CompressedImage` launches one time-limited (15 minute) Local or OpenShift subscriber. Its sensor-QoS depth is one and it atomically retains only the latest frame, rejecting frames over 2 MiB. The webview polls the backend cache once per second; it never receives ROS/DDS directly and does not use repeated Peek calls. The managed Jazzy image provides `/physical_ai/test_camera/compressed`, a test-only 1 Hz 1×1 PNG source, so the workflow is testable without changing TurtleBot3 hardware or bridges. Stop, topic/target selection changes, and component teardown stop the subscriber and discard its retained frame. noVNC remains the interactive Gazebo GUI; PointCloud2 streaming is deferred pending a distinct memory/rate/renderer contract.
+| A Graph inspector Start preview action for `sensor_msgs/msg/CompressedImage` launches one time-limited (15 minute) Local or OpenShift subscriber. Its sensor-QoS depth is one and it atomically retains only the latest frame, rejecting frames over 2 MiB. The webview polls the backend cache once per second; it never receives ROS/DDS directly and does not use repeated Peek calls. Stop, topic/target selection changes, and component teardown stop the subscriber and discard its retained frame. noVNC remains the interactive Gazebo GUI; PointCloud2 streaming is deferred pending a distinct memory/rate/renderer contract.
 
 | Bash entrypoints vs Podman APIs
 | Keep in-image scripts; use PD/Podman for lifecycle + exec only
