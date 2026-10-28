@@ -97,6 +97,9 @@ import type {
   TopicInfo,
   TopicPeekResult,
   TopicPublishResult,
+  TopicOccupancyGridSnapshot,
+  TopicCompressedImageSnapshot,
+  TopicCompressedImagePreview,
   TopicSchemaResult,
   TopicTelemetry,
 } from '/@shared/src/types/TopicInfo';
@@ -111,6 +114,7 @@ import TopicMonitor from './TopicMonitor.svelte';
 import TopicEndpoints from './lib/TopicEndpoints.svelte';
 import { navigationLayout } from './lib/navigationLayout';
 import { filterTopicsByName, groupTopicsByNamespace } from './lib/topicFilter';
+import { parseLaserScanVisualization, parsePathVisualization, parsePoseVisualization } from './lib/topicVisualization';
 import {
   createTopicMonitorTarget,
   type TopicMonitorTargetApi,
@@ -122,6 +126,7 @@ const GRAPH_WIDTH = 1000;
 const GRAPH_MIN_HEIGHT = 160;
 const MAX_CONNECTED_NODES = 5;
 const TOPIC_TELEMETRY_REFRESH_MS = 8000;
+const COMPRESSED_IMAGE_PREVIEW_REFRESH_MS = 1000;
 const TOPIC_TELEMETRY_SAMPLE_SECONDS = 3;
 const PUBLISH_FLOW_DURATION_MS = 1000;
 
@@ -182,6 +187,17 @@ let expandedSubscriberNodes = false;
 let topicDetail: TopicDetailInfo | null = null;
 let schema: TopicSchemaResult | null = null;
 let peekResult: TopicPeekResult | null = null;
+let historyTracking = false;
+let snapshotHistory: Array<{ capturedAt: string; summary: string }> = [];
+let snapshotHistoryTimer: ReturnType<typeof setInterval> | null = null;
+let occupancyGridSnapshot: TopicOccupancyGridSnapshot | null = null;
+let compressedImageSnapshot: TopicCompressedImageSnapshot | null = null;
+let compressedImagePreview: TopicCompressedImagePreview | null = null;
+let compressedImagePreviewTimer: ReturnType<typeof setInterval> | null = null;
+let compressedImagePreviewInFlight = false;
+let compressedImagePreviewTargetId = '';
+let compressedImagePreviewGeneration = 0;
+let peekCopyStatus = '';
 let inspectorLoading = false;
 let inspectorError = '';
 let schemaLoading = false;
@@ -220,6 +236,25 @@ let graphViewportHeight = 0;
 $: runningContainers = containers.filter(container => container.ready);
 $: if (viewMode === 'list') listVisited = true;
 $: topics = topology?.topics ?? [];
+$: laserScanVisualization =
+  topicDetail?.type === 'sensor_msgs/msg/LaserScan' && peekResult?.message
+    ? parseLaserScanVisualization(peekResult.message)
+    : undefined;
+$: poseVisualization =
+  (topicDetail?.type === 'nav_msgs/msg/Odometry' || topicDetail?.type === 'geometry_msgs/msg/PoseStamped') &&
+  peekResult?.message
+    ? parsePoseVisualization(peekResult.message)
+    : undefined;
+$: pathVisualization =
+  topicDetail?.type === 'nav_msgs/msg/Path' && peekResult?.message
+    ? parsePathVisualization(peekResult.message)
+    : undefined;
+
+function occupancyCellColor(value: number): string {
+  if (value < 0) return '#4b5563';
+  if (value === 0) return '#f8fafc';
+  return `rgb(${Math.max(0, 255 - Math.min(value, 100) * 2)}, ${Math.max(0, 255 - Math.min(value, 100) * 2)}, ${Math.max(0, 255 - Math.min(value, 100) * 2)})`;
+}
 $: allNodes = topology?.nodes ?? [];
 $: selectedTopicNodes =
   selectedTopic && topicDetail?.topicName === selectedTopic
@@ -555,6 +590,7 @@ function restoreTargetSnapshot(snapshot: TargetViewSnapshot): void {
 
 function switchTarget(kind: TopicMonitorTargetKind): void {
   if (kind === targetKind) return;
+  stopCompressedImagePreview();
   saveTargetSnapshot();
   stopTopicTelemetry();
   if (recordPollTimer) clearInterval(recordPollTimer);
@@ -605,6 +641,7 @@ async function pollContainers(forceTopology = false) {
 }
 
 function clearSelection() {
+  stopCompressedImagePreview();
   stopTopicTelemetry();
   resetPublishState();
   clearPublishPulse();
@@ -614,9 +651,70 @@ function clearSelection() {
   topicDetail = null;
   schema = null;
   peekResult = null;
+  occupancyGridSnapshot = null;
+  compressedImageSnapshot = null;
+  compressedImagePreview = null;
   inspectorError = '';
   expandedPublisherNodes = false;
   expandedSubscriberNodes = false;
+}
+
+function stopCompressedImagePreview(): void {
+  compressedImagePreviewGeneration += 1;
+  if (compressedImagePreviewTimer) clearInterval(compressedImagePreviewTimer);
+  compressedImagePreviewTimer = null;
+  const targetId = compressedImagePreviewTargetId;
+  compressedImagePreviewTargetId = '';
+  compressedImagePreviewInFlight = false;
+  compressedImagePreview = null;
+  compressedImageSnapshot = null;
+  if (targetId) void targetApi.stopCompressedImageTopicPreview(targetId).catch(() => undefined);
+}
+
+async function pollCompressedImagePreview(generation: number, targetId: string, topicName: string): Promise<void> {
+  if (compressedImagePreviewInFlight) return;
+  compressedImagePreviewInFlight = true;
+  try {
+    const preview = await targetApi.getCompressedImageTopicPreview(targetId, topicName);
+    if (
+      generation !== compressedImagePreviewGeneration ||
+      selectedContainerId !== targetId ||
+      selectedTopic !== topicName
+    )
+      return;
+    compressedImagePreview = preview;
+    compressedImageSnapshot = preview.dataBase64 ? preview : null;
+  } catch (e) {
+    if (generation === compressedImagePreviewGeneration) inspectorError = e instanceof Error ? e.message : String(e);
+  } finally {
+    compressedImagePreviewInFlight = false;
+  }
+}
+
+async function startCompressedImagePreview(): Promise<void> {
+  if (!selectedContainerId || !selectedTopic || topicDetail?.type !== 'sensor_msgs/msg/CompressedImage') return;
+  stopCompressedImagePreview();
+  const generation = compressedImagePreviewGeneration;
+  const targetId = selectedContainerId;
+  const topicName = selectedTopic;
+  inspectorError = '';
+  try {
+    compressedImagePreview = await targetApi.startCompressedImageTopicPreview(targetId, topicName);
+    if (
+      generation !== compressedImagePreviewGeneration ||
+      selectedContainerId !== targetId ||
+      selectedTopic !== topicName
+    )
+      return;
+    compressedImagePreviewTargetId = targetId;
+    void pollCompressedImagePreview(generation, targetId, topicName);
+    compressedImagePreviewTimer = setInterval(
+      () => void pollCompressedImagePreview(generation, targetId, topicName),
+      COMPRESSED_IMAGE_PREVIEW_REFRESH_MS,
+    );
+  } catch (e) {
+    if (generation === compressedImagePreviewGeneration) inspectorError = e instanceof Error ? e.message : String(e);
+  }
 }
 
 function resetPublishState(): void {
@@ -878,6 +976,7 @@ async function selectTopic(topicName: string) {
     return;
   }
   stopTopicTelemetry();
+  stopCompressedImagePreview();
   resetPublishState();
   clearPublishPulse();
   beginFilteredFocus();
@@ -913,6 +1012,7 @@ function selectNode(node: NodeDetail, role: 'publisher' | 'subscriber') {
   }
   beginFilteredFocus();
   stopTopicTelemetry();
+  stopCompressedImagePreview();
   resetPublishState();
   selectedNode = node;
   selectedNodeRole = role;
@@ -942,16 +1042,62 @@ async function peekTopic() {
   peekLoading = true;
   inspectorError = '';
   peekResult = null;
+  peekCopyStatus = '';
   try {
     const result = await targetApi.peekRosTopic(selectedContainerId, selectedTopic);
-    if (result.message) peekResult = result;
-    else
+    if (result.message) {
+      peekResult = result;
+      const pose = parsePoseVisualization(result.message);
+      const scan = parseLaserScanVisualization(result.message);
+      if (pose || scan)
+        snapshotHistory = [
+          ...snapshotHistory,
+          {
+            capturedAt: result.capturedAt,
+            summary: pose ? `x ${pose.x.toFixed(2)}, y ${pose.y.toFixed(2)}` : `${scan!.points.length} finite ranges`,
+          },
+        ].slice(-12);
+    } else
       inspectorError =
         result.error ?? (result.timedOut ? 'No message received before the peek timeout.' : 'No message received.');
+    if (topicDetail?.type === 'nav_msgs/msg/OccupancyGrid') {
+      const snapshot = await targetApi.getOccupancyGridTopicSnapshot(selectedContainerId, selectedTopic);
+      occupancyGridSnapshot = snapshot.cells.length > 0 ? snapshot : null;
+      if (snapshot.error) inspectorError = snapshot.error;
+    }
+    if (topicDetail?.type === 'sensor_msgs/msg/CompressedImage') {
+      const snapshot = await targetApi.getCompressedImageTopicSnapshot(selectedContainerId, selectedTopic);
+      compressedImageSnapshot = snapshot.dataBase64 ? snapshot : null;
+      if (snapshot.error) inspectorError = snapshot.error;
+    }
   } catch (e) {
     inspectorError = e instanceof Error ? e.message : String(e);
   } finally {
     peekLoading = false;
+  }
+}
+
+function toggleSnapshotHistory() {
+  if (historyTracking) {
+    historyTracking = false;
+    if (snapshotHistoryTimer) clearInterval(snapshotHistoryTimer);
+    snapshotHistoryTimer = null;
+    return;
+  }
+  snapshotHistory = [];
+  historyTracking = true;
+  void peekTopic();
+  snapshotHistoryTimer = setInterval(() => void peekTopic(), 5000);
+}
+
+async function copyPeekMessage() {
+  if (!peekResult?.message) return;
+  peekCopyStatus = '';
+  try {
+    await targetApi.copyToClipboard(peekResult.message);
+    peekCopyStatus = 'Copied YAML.';
+  } catch (e) {
+    peekCopyStatus = `Could not copy: ${e instanceof Error ? e.message : String(e)}`;
   }
 }
 
@@ -984,6 +1130,7 @@ onDestroy(() => {
   window.removeEventListener('keydown', handleWindowKeydown);
   if (recordPollTimer) clearInterval(recordPollTimer);
   stopTopicTelemetry();
+  stopCompressedImagePreview();
   clearPublishPulse();
   clearPublishFlow();
 });
@@ -1663,6 +1810,33 @@ onDestroy(() => {
               <div><span class="pai-text-muted">Type:</span> <span class="font-mono">{topicDetail.type}</span></div>
               <div><span class="pai-text-muted">Publishers:</span> {topicDetail.publishers.length}</div>
               <div><span class="pai-text-muted">Subscribers:</span> {topicDetail.subscribers.length}</div>
+              {#if topicDetail.type === 'sensor_msgs/msg/CompressedImage'}
+                <section
+                  class="rounded border border-[var(--pd-content-card-border)] p-2"
+                  aria-label="Continuous camera preview">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="font-medium">Continuous camera preview</span>
+                    {#if compressedImagePreviewTargetId}
+                      <button class="pai-btn text-xs" on:click={stopCompressedImagePreview}>Stop preview</button>
+                    {:else}
+                      <button class="pai-btn text-xs" on:click={() => void startCompressedImagePreview()}
+                        >Start preview</button>
+                    {/if}
+                  </div>
+                  <p class="mt-1 pai-text-muted">
+                    {#if compressedImagePreviewTargetId}
+                      {compressedImagePreview?.status === 'waiting'
+                        ? 'Waiting for a frame…'
+                        : 'Polling the backend-owned latest frame once per second.'}
+                    {:else}
+                      Starts one bounded backend subscriber for up to 15 minutes; frames are capped at 2 MiB.
+                    {/if}
+                  </p>
+                  {#if compressedImagePreview?.error}<p class="mt-1 pai-text-error">
+                      {compressedImagePreview.error}
+                    </p>{/if}
+                </section>
+              {/if}
               <div class="rounded border border-[var(--pd-content-card-border)] p-2" role="status" aria-live="polite">
                 <div class="flex items-center justify-between gap-2">
                   <span class="font-medium">Live telemetry</span>
@@ -1711,6 +1885,11 @@ onDestroy(() => {
                   disabled={peekLoading}>
                   {peekLoading ? 'Peeking...' : 'Peek'}
                 </button>
+                {#if topicDetail?.type === 'nav_msgs/msg/Odometry' || topicDetail?.type === 'sensor_msgs/msg/LaserScan'}
+                  <button class="pai-btn text-xs" on:click={toggleSnapshotHistory}>
+                    {historyTracking ? 'Stop history' : 'Track history'}
+                  </button>
+                {/if}
                 <button class="pai-btn pai-btn-primary text-xs" on:click={togglePublishEditor}>
                   {publishEditorOpen ? 'Cancel publish' : 'Publish'}
                 </button>
@@ -1767,10 +1946,142 @@ onDestroy(() => {
                   <pre class="max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono">{schema.schema}</pre>
                 </section>
               {/if}
+              {#if compressedImageSnapshot}
+                <section class="pai-inspector-section" aria-label="Compressed image preview">
+                  <h3 class="font-medium text-[var(--pd-content-header)]">
+                    {compressedImagePreviewTargetId ? 'Live camera preview' : 'Camera snapshot'}
+                  </h3>
+                  <img
+                    class="w-full rounded bg-black"
+                    src={`data:${compressedImageSnapshot.format.includes('png') ? 'image/png' : 'image/jpeg'};base64,${compressedImageSnapshot.dataBase64}`}
+                    alt={`Latest ${compressedImageSnapshot.format || 'compressed'} camera frame`} />
+                  <p class="pai-text-muted">
+                    {compressedImagePreviewTargetId
+                      ? `Latest streamed frame · updated ${new Date(compressedImageSnapshot.capturedAt).toLocaleTimeString()}`
+                      : 'Latest bounded frame'} · {compressedImageSnapshot.format || 'compressed image'}
+                  </p>
+                </section>
+              {/if}
               {#if peekResult?.message}
+                {#if laserScanVisualization}
+                  <section class="pai-inspector-section" aria-label="LaserScan visualization">
+                    <h3 class="font-medium text-[var(--pd-content-header)]">LaserScan snapshot</h3>
+                    <svg
+                      viewBox={`${-laserScanVisualization.displayRange} ${-laserScanVisualization.displayRange} ${laserScanVisualization.displayRange * 2} ${laserScanVisualization.displayRange * 2}`}
+                      class="w-full aspect-square rounded bg-black"
+                      role="img"
+                      aria-label={`LaserScan polar plot, auto-zoomed to ${laserScanVisualization.displayRange.toFixed(1)} metres`}>
+                      {#each [0.25, 0.5, 0.75, 1] as fraction}
+                        <circle
+                          cx="0"
+                          cy="0"
+                          r={laserScanVisualization.displayRange * fraction}
+                          fill="none"
+                          stroke="rgb(255 255 255 / 25%)"
+                          stroke-width={laserScanVisualization.displayRange * 0.006}></circle>
+                      {/each}
+                      <path
+                        d={`M ${-laserScanVisualization.displayRange} 0 H ${laserScanVisualization.displayRange} M 0 ${-laserScanVisualization.displayRange} V ${laserScanVisualization.displayRange}`}
+                        stroke="rgb(255 255 255 / 25%)"
+                        stroke-width={laserScanVisualization.displayRange * 0.006}></path>
+                      {#each laserScanVisualization.points as point}
+                        <circle
+                          cx={point.x}
+                          cy={-point.y}
+                          r={Math.max(laserScanVisualization.displayRange * 0.008, 0.04)}
+                          fill="var(--pai-accent, #7c3aed)"></circle>
+                      {/each}
+                      <circle cx="0" cy="0" r={Math.max(laserScanVisualization.displayRange * 0.02, 0.1)} fill="white"
+                      ></circle>
+                    </svg>
+                    <p class="pai-text-muted">
+                      {laserScanVisualization.points.length} finite ranges · view {laserScanVisualization.displayRange.toFixed(
+                        1,
+                      )} m · sensor max {laserScanVisualization.rangeMax} m
+                    </p>
+                  </section>
+                {:else if poseVisualization}
+                  <section class="pai-inspector-section" aria-label="Pose visualization">
+                    <h3 class="font-medium text-[var(--pd-content-header)]">Pose snapshot</h3>
+                    <p>
+                      x {poseVisualization.x.toFixed(2)} m · y {poseVisualization.y.toFixed(2)} m · yaw {(
+                        (poseVisualization.yaw * 180) /
+                        Math.PI
+                      ).toFixed(1)}°
+                    </p>
+                  </section>
+                {/if}
+                {#if pathVisualization}
+                  {@const pathXs = pathVisualization.points.map(point => point.x)}
+                  {@const pathYs = pathVisualization.points.map(point => point.y)}
+                  {@const minX = Math.min(...pathXs)}
+                  {@const maxX = Math.max(...pathXs)}
+                  {@const minY = Math.min(...pathYs)}
+                  {@const maxY = Math.max(...pathYs)}
+                  {@const extent = Math.max(maxX - minX, maxY - minY, 1)}
+                  <section class="pai-inspector-section" aria-label="Nav2 path visualization">
+                    <h3 class="font-medium text-[var(--pd-content-header)]">Nav2 path snapshot</h3>
+                    <svg
+                      viewBox={`${minX - extent * 0.1} ${-maxY - extent * 0.1} ${extent * 1.2} ${extent * 1.2}`}
+                      class="w-full aspect-square rounded bg-black"
+                      role="img"
+                      aria-label={`Nav2 path with ${pathVisualization.points.length} poses`}>
+                      <polyline
+                        points={pathVisualization.points.map(point => `${point.x},${-point.y}`).join(' ')}
+                        fill="none"
+                        stroke="var(--pai-accent, #7c3aed)"
+                        stroke-width={extent * 0.02}></polyline>
+                    </svg>
+                    <p class="pai-text-muted">{pathVisualization.points.length} poses</p>
+                  </section>
+                {/if}
+                {#if snapshotHistory.length > 0}
+                  <section class="pai-inspector-section" aria-label="Snapshot history">
+                    <h3 class="font-medium text-[var(--pd-content-header)]">Snapshot history</h3>
+                    <p class="pai-text-muted">
+                      Last {snapshotHistory.length}/12 snapshots · {historyTracking
+                        ? 'polling every 5 seconds'
+                        : 'paused'}
+                    </p>
+                    <ol class="max-h-24 overflow-auto font-mono text-xs">
+                      {#each snapshotHistory.slice().reverse() as sample}
+                        <li>{new Date(sample.capturedAt).toLocaleTimeString()} — {sample.summary}</li>
+                      {/each}
+                    </ol>
+                  </section>
+                {/if}
+                {#if occupancyGridSnapshot}
+                  <section class="pai-inspector-section" aria-label="OccupancyGrid visualization">
+                    <h3 class="font-medium text-[var(--pd-content-header)]">OccupancyGrid snapshot</h3>
+                    <svg
+                      viewBox={`0 0 ${occupancyGridSnapshot.width} ${occupancyGridSnapshot.height}`}
+                      class="w-full aspect-square rounded bg-black"
+                      role="img"
+                      aria-label={`OccupancyGrid with ${occupancyGridSnapshot.width} by ${occupancyGridSnapshot.height} cells`}>
+                      {#each occupancyGridSnapshot.cells as cell, index}
+                        <rect
+                          x={index % occupancyGridSnapshot.width}
+                          y={occupancyGridSnapshot.height - 1 - Math.floor(index / occupancyGridSnapshot.width)}
+                          width="1"
+                          height="1"
+                          fill={occupancyCellColor(cell)}></rect>
+                      {/each}
+                    </svg>
+                    <p class="pai-text-muted">
+                      {occupancyGridSnapshot.width} × {occupancyGridSnapshot.height} cells · {occupancyGridSnapshot.resolutionMeters.toFixed(
+                        2,
+                      )} m/cell
+                    </p>
+                  </section>
+                {/if}
                 <section class="pai-inspector-section" aria-label="Latest message">
-                  <h3 class="font-medium text-[var(--pd-content-header)]">Latest message</h3>
-                  <pre class="max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono">{peekResult.message}</pre>
+                  <div class="flex items-center justify-between gap-2">
+                    <h3 class="font-medium text-[var(--pd-content-header)]">Latest message</h3>
+                    <button class="pai-btn text-xs" on:click={() => void copyPeekMessage()}>Copy YAML</button>
+                  </div>
+                  <p class="pai-text-muted">Formatted ROS 2 YAML · bounded snapshot</p>
+                  {#if peekCopyStatus}<p class="text-xs" role="status">{peekCopyStatus}</p>{/if}
+                  <pre class="max-h-40 overflow-auto whitespace-pre font-mono text-xs">{peekResult.message}</pre>
                 </section>
               {/if}
             </div>

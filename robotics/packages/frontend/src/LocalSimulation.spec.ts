@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import SimulationPage from './LocalSimulation.svelte';
 import { spawnedRobotsByTarget } from './lib/spawnedRobotsStore';
 import { localTargetKey } from './lib/diagnosticsTargetKey';
+import { clearSimulationViewState } from './lib/simulationViewState';
 import { TURTLEBOT3_IMAGE_PROFILE, type ImageRobotProfile } from '../../shared/src/types/ImageRobotProfile';
 
 const mockClearCachedDiagnostics = vi.fn();
@@ -24,6 +25,7 @@ const mockSpawnEmbeddedRobotInSimulation = vi.fn();
 const mockSendNavigationGoal = vi.fn();
 const mockGetRobotWarmStatus = vi.fn();
 const mockGetSimulationConfig = vi.fn();
+const mockGetSimulationStateCacheRefreshSeconds = vi.fn();
 const mockListRobotProfilesInSimulation = vi.fn();
 const mockListSpawnedRobotsInSimulation = vi.fn();
 const mockDespawnRobot = vi.fn();
@@ -44,6 +46,7 @@ vi.mock('./api/client', () => ({
     sendNavigationGoal: (...args: unknown[]) => mockSendNavigationGoal(...args),
     getRobotWarmStatus: (...args: unknown[]) => mockGetRobotWarmStatus(...args),
     getSimulationConfig: (...args: unknown[]) => mockGetSimulationConfig(...args),
+    getSimulationStateCacheRefreshSeconds: (...args: unknown[]) => mockGetSimulationStateCacheRefreshSeconds(...args),
     listRobotProfilesInSimulation: (...args: unknown[]) => mockListRobotProfilesInSimulation(...args),
     listSpawnedRobotsInSimulation: (...args: unknown[]) => mockListSpawnedRobotsInSimulation(...args),
     despawnRobot: (...args: unknown[]) => mockDespawnRobot(...args),
@@ -60,6 +63,7 @@ describe('LocalSimulation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     spawnedRobotsByTarget.set({});
+    clearSimulationViewState();
     mockGetSimulationImageAllowlist.mockResolvedValue('');
     mockListLocalImages.mockResolvedValue([]);
     mockListSimulationContainers.mockResolvedValue([]);
@@ -79,6 +83,8 @@ describe('LocalSimulation', () => {
       engine: 'gazebo',
       baseImage: 'jazzy-noble',
     });
+    // Keep existing poll-timer tests fast; production defaults to five minutes.
+    mockGetSimulationStateCacheRefreshSeconds.mockResolvedValue(3);
     mockListRobotProfilesInSimulation.mockResolvedValue([TURTLEBOT3_IMAGE_PROFILE]);
   });
 

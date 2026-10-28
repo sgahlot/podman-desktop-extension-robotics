@@ -2688,6 +2688,7 @@ RUN apt-get install -y ros-jazzy-desktop
       const args = execArgs(0);
       const bashCmd = args.find((arg: string) => arg.includes('topic echo'));
       expect(bashCmd).toContain('timeout "$1" ros2 topic echo --once');
+      expect(bashCmd).toContain('--full-length --flow-style');
       expect(bashCmd).toContain('--qos-reliability best_effort');
       expect(args).toContain('5');
       expect(args).toContain('/robot_1/cmd_vel');

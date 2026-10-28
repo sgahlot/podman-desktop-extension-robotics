@@ -4,10 +4,18 @@ import LocalSimulation from './LocalSimulation.svelte';
 import OpenShiftSimulation from './OpenShiftSimulation.svelte';
 import QuickLinks from './lib/QuickLinks.svelte';
 import { navigationLayout } from './lib/navigationLayout';
+import { lastSimulationTarget } from './lib/simulationViewState';
 
 export let active = true;
 
-$: tab = $router.path.startsWith('/simulation/openshift') ? 'openshift' : 'local';
+$: tab = $router.path.startsWith('/simulation/openshift') ? 'openshift' : $lastSimulationTarget;
+
+$: if (tab === 'openshift') lastSimulationTarget.set('openshift');
+
+function selectTab(target: 'local' | 'openshift') {
+  lastSimulationTarget.set(target);
+  router.goto(target === 'openshift' ? '/simulation/openshift' : '/simulation');
+}
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-hidden">
@@ -27,14 +35,14 @@ $: tab = $router.path.startsWith('/simulation/openshift') ? 'openshift' : 'local
     <button
       role="tab"
       aria-selected={tab === 'local'}
-      on:click={() => router.goto('/simulation')}
+      on:click={() => selectTab('local')}
       class="px-5 py-2 text-sm pai-tab {tab === 'local' ? 'pai-tab-active' : ''}">
       Local
     </button>
     <button
       role="tab"
       aria-selected={tab === 'openshift'}
-      on:click={() => router.goto('/simulation/openshift')}
+      on:click={() => selectTab('openshift')}
       class="px-5 py-2 text-sm pai-tab {tab === 'openshift' ? 'pai-tab-active' : ''}">
       OpenShift
     </button>
@@ -42,9 +50,9 @@ $: tab = $router.path.startsWith('/simulation/openshift') ? 'openshift' : 'local
 
   <div class="flex-1 min-h-0 overflow-auto">
     {#if tab === 'openshift'}
-      <OpenShiftSimulation active={active} />
+      <OpenShiftSimulation />
     {:else}
-      <LocalSimulation active={active} />
+      <LocalSimulation />
     {/if}
   </div>
 </div>

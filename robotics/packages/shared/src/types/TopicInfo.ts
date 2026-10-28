@@ -19,6 +19,37 @@ export interface TopicDetailInfo {
   subscribers: TopicNodeInfo[];
 }
 
+/** A downsampled OccupancyGrid snapshot safe to render in the Topic Monitor. */
+export interface TopicOccupancyGridSnapshot {
+  topicName: string;
+  width: number;
+  height: number;
+  resolutionMeters: number;
+  originX: number;
+  originY: number;
+  /** Row-major cells: -1 unknown, 0 free, positive occupied. Capped at 96 × 96. */
+  cells: number[];
+  capturedAt: string;
+  error?: string;
+}
+
+/** A byte-capped latest CompressedImage frame for safe webview preview. */
+export interface TopicCompressedImageSnapshot {
+  topicName: string;
+  format: string;
+  dataBase64: string;
+  capturedAt: string;
+  error?: string;
+}
+
+/** Latest frame and lifecycle state for a bounded backend-owned camera preview. */
+export interface TopicCompressedImagePreview extends TopicCompressedImageSnapshot {
+  /** A preview has one subscriber per selected Local/OpenShift target. */
+  status: 'active' | 'waiting' | 'stopped' | 'expired';
+  /** Wall-clock ISO time at which the bounded subscriber will stop itself. */
+  expiresAt?: string;
+}
+
 /** A ROS node and the topic endpoints it exposes. */
 export interface NodeDetail {
   nodeName: string;

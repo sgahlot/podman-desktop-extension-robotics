@@ -102,6 +102,9 @@ import type {
   NodeDetail,
   TopicGraphTopology,
   TopicTelemetry,
+  TopicOccupancyGridSnapshot,
+  TopicCompressedImageSnapshot,
+  TopicCompressedImagePreview,
 } from '/@shared/src/types/TopicInfo';
 import type { RosbagRecording } from '/@shared/src/types/RosbagRecording';
 import type { NavigationGoalResult, Nav2WarmStatus } from '/@shared/src/types/NavigationGoalResult';
@@ -139,6 +142,7 @@ import {
   TF_FRAME_PAIRS,
   parseTfEchoOutput,
   parseOccupancyGridEcho,
+  parseOccupancyGridCells,
   parseLaserScanEcho,
   parseImuEcho,
   discoverRobotSensorTopics,
@@ -209,6 +213,8 @@ const TF_DIAGNOSTIC_TIMEOUT_SEC = 5;
  */
 const NAV2_COSTMAP_REFILL_MS = 2000;
 const TOPIC_GRAPH_CACHE_MS = 3000;
+const COMPRESSED_IMAGE_PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
+const COMPRESSED_IMAGE_PREVIEW_LIFETIME_SECONDS = 15 * 60;
 
 /** Build history JSON file name, written under ExtensionContext.storagePath. */
 const BUILD_HISTORY_FILE_NAME = 'build-history.json';
@@ -516,6 +522,11 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   private topicGraphInFlight = new Map<string, Promise<NodeDetail[]>>();
   private topicPublishLastAt = new Map<string, number>();
   private topicPublishInFlight = new Set<string>();
+  /** One bounded CompressedImage subscriber per Local/OpenShift target. */
+  private compressedImagePreviews = new Map<
+    string,
+    { target: ExecTarget; distro: SupportedRosDistro; topicName: string; cachePath: string; expiresAt: number }
+  >();
   private rosbagRecordings = new Map<string, { state: RosbagRecording; tempPath: string; pidFile: string }>();
   private embeddedRobotSources = new Map<string, string>();
 
@@ -2148,6 +2159,15 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return assertPeekTimeoutSeconds(raw);
   }
 
+  async getSimulationStateCacheRefreshSeconds(): Promise<number> {
+    const value = extensionApi.configuration
+      .getConfiguration('robotics')
+      .get<number>('simulation.stateCacheRefreshSeconds');
+    const seconds = value ?? 300;
+    if (!Number.isInteger(seconds) || seconds < 15 || seconds > 86400) return 300;
+    return seconds;
+  }
+
   async setTopicPeekTimeoutSeconds(seconds: number): Promise<void> {
     const safe = assertPeekTimeoutSeconds(seconds);
     const config = extensionApi.configuration.getConfiguration('robotics');
@@ -2804,7 +2824,9 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const result = await this.#execRosBash(
       target,
       distro,
-      'timeout "$1" ros2 topic echo --once --qos-reliability best_effort --qos-durability volatile "$2"',
+      // `--full-length` prevents ROS 2 YAML's default 128-element sequence elision.
+      // `cleanEchoOutput` still enforces PEEK_MAX_BYTES before data reaches the webview.
+      'timeout "$1" ros2 topic echo --once --full-length --flow-style --qos-reliability best_effort --qos-durability volatile "$2"',
       [peekTimeoutArg, safeTopic],
     );
 
@@ -2869,7 +2891,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const result = await this.#execRosBash(
       targetInfo.target,
       targetInfo.distro,
-      'timeout "$1" ros2 topic echo --once --qos-reliability best_effort --qos-durability volatile "$2"',
+      // Keep Local and OpenShift Peek output identical, including complete bounded LaserScans.
+      'timeout "$1" ros2 topic echo --once --full-length --flow-style --qos-reliability best_effort --qos-durability volatile "$2"',
       [String(peekTimeoutSec), safeTopic],
     );
     const stdout = (result.stdout ?? '').trim();
@@ -2902,6 +2925,37 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       capturedAt,
       error: stderr || `Failed to peek ${safeTopic} (exit ${result.exitCode})`,
     };
+  }
+
+  async getOccupancyGridTopicSnapshot(containerId: string, topicName: string): Promise<TopicOccupancyGridSnapshot> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    const safeTopic = assertRosTopicName(topicName);
+    return this.#occupancyGridTopicSnapshotFor({ kind: 'podman', id }, await this.#detectRosDistro(id), safeTopic);
+  }
+
+  async getCompressedImageTopicSnapshot(containerId: string, topicName: string): Promise<TopicCompressedImageSnapshot> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    const safeTopic = assertRosTopicName(topicName);
+    return this.#compressedImageTopicSnapshotFor({ kind: 'podman', id }, await this.#detectRosDistro(id), safeTopic);
+  }
+
+  async startCompressedImageTopicPreview(containerId: string, topicName: string): Promise<TopicCompressedImagePreview> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    const safeTopic = assertRosTopicName(topicName);
+    return this.#startCompressedImageTopicPreview({ kind: 'podman', id }, await this.#detectRosDistro(id), safeTopic);
+  }
+
+  async getCompressedImageTopicPreview(containerId: string, topicName: string): Promise<TopicCompressedImagePreview> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    return this.#getCompressedImageTopicPreview(
+      PhysicalAiApiImpl.#previewTargetKey({ kind: 'podman', id }),
+      assertRosTopicName(topicName),
+    );
+  }
+
+  async stopCompressedImageTopicPreview(containerId: string): Promise<void> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    await this.#stopCompressedImageTopicPreview(PhysicalAiApiImpl.#previewTargetKey({ kind: 'podman', id }));
   }
 
   async publishRosTopic(
@@ -3569,6 +3623,246 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
    * risks mismatching Nav2's actual publisher QoS (transient_local/reliable is common for
    * costmap layers).
    */
+  async #occupancyGridTopicSnapshotFor(
+    target: ExecTarget,
+    distro: SupportedRosDistro,
+    topicName: string,
+  ): Promise<TopicOccupancyGridSnapshot> {
+    const capturedAt = new Date().toISOString();
+    const unavailable = (error: string): TopicOccupancyGridSnapshot => ({
+      topicName,
+      width: 0,
+      height: 0,
+      resolutionMeters: 0,
+      originX: 0,
+      originY: 0,
+      cells: [],
+      capturedAt,
+      error,
+    });
+    let timeoutSec: number;
+    try {
+      timeoutSec = await this.getTopicPeekTimeoutSeconds();
+    } catch (e) {
+      return unavailable(e instanceof Error ? e.message : String(e));
+    }
+    const result = await this.#execRosBash(
+      target,
+      distro,
+      'timeout "$1" ros2 topic echo --once --full-length --flow-style --qos-reliability best_effort --qos-durability volatile "$2"',
+      [String(timeoutSec), topicName],
+    );
+    const parsed = parseOccupancyGridCells((result.stdout ?? '').trim());
+    if (!parsed)
+      return unavailable((result.stderr ?? '').trim() || `No complete OccupancyGrid received on ${topicName}.`);
+
+    const maxDimension = 96;
+    const width = Math.min(parsed.width, maxDimension);
+    const height = Math.min(parsed.height, maxDimension);
+    const cells: number[] = [];
+    for (let y = 0; y < height; y++) {
+      const sourceY0 = Math.floor((y * parsed.height) / height);
+      const sourceY1 = Math.floor(((y + 1) * parsed.height) / height);
+      for (let x = 0; x < width; x++) {
+        const sourceX0 = Math.floor((x * parsed.width) / width);
+        const sourceX1 = Math.floor(((x + 1) * parsed.width) / width);
+        let cell = -1;
+        for (let sourceY = sourceY0; sourceY < sourceY1; sourceY++) {
+          for (let sourceX = sourceX0; sourceX < sourceX1; sourceX++) {
+            const value = parsed.cells[sourceY * parsed.width + sourceX];
+            if (value > 0) cell = Math.max(cell, value);
+            else if (value === 0 && cell < 0) cell = 0;
+          }
+        }
+        cells.push(cell);
+      }
+    }
+    return {
+      topicName,
+      width,
+      height,
+      resolutionMeters: parsed.resolution * (parsed.width / width),
+      originX: parsed.originX,
+      originY: parsed.originY,
+      cells,
+      capturedAt,
+    };
+  }
+
+  static #previewTargetKey(target: ExecTarget): string {
+    return target.kind === 'podman'
+      ? `podman:${target.id}`
+      : `oc:${target.context ?? ''}:${target.namespace}:${target.pod}`;
+  }
+
+  async #startCompressedImageTopicPreview(
+    target: ExecTarget,
+    distro: SupportedRosDistro,
+    topicName: string,
+  ): Promise<TopicCompressedImagePreview> {
+    const key = PhysicalAiApiImpl.#previewTargetKey(target);
+    await this.#stopCompressedImageTopicPreview(key);
+    const cachePath = `/tmp/pai-compressed-preview-${key.replace(/[^a-zA-Z0-9]/g, '_').slice(-120)}.json`;
+    const expiresAt = Date.now() + COMPRESSED_IMAGE_PREVIEW_LIFETIME_SECONDS * 1000;
+    const script = String.raw`
+import base64, json, os, sys, time
+import rclpy
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+from sensor_msgs.msg import CompressedImage
+topic, cache_path, lifetime = sys.argv[1], sys.argv[2], float(sys.argv[3])
+max_bytes = ${COMPRESSED_IMAGE_PREVIEW_MAX_BYTES}
+def write(value):
+    temporary = cache_path + '.tmp'
+    with open(temporary, 'w') as output: json.dump(value, output, separators=(',', ':'))
+    os.replace(temporary, cache_path)
+def callback(message):
+    if len(message.data) > max_bytes:
+        write({'status':'active','error':'Compressed image exceeds the 2 MiB preview limit.'})
+        return
+    write({'status':'active','format':message.format,'dataBase64':base64.b64encode(bytes(message.data)).decode('ascii'),'capturedAt':time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())})
+write({'status':'waiting'})
+rclpy.init(); node = rclpy.create_node('physical_ai_image_preview')
+node.create_subscription(CompressedImage, topic, callback, QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT, durability=DurabilityPolicy.VOLATILE))
+deadline = time.monotonic() + lifetime
+while time.monotonic() < deadline: rclpy.spin_once(node, timeout_sec=0.2)
+node.destroy_node(); rclpy.shutdown()`;
+    await this.#execDetached(target, 'bash', [
+      '-c',
+      `source /opt/ros/${distro}/setup.bash && exec python3 -c "$1" "$2" "$3" "$4"`,
+      '_',
+      script,
+      topicName,
+      cachePath,
+      String(COMPRESSED_IMAGE_PREVIEW_LIFETIME_SECONDS),
+    ]);
+    this.compressedImagePreviews.set(key, { target, distro, topicName, cachePath, expiresAt });
+    return {
+      topicName,
+      format: '',
+      dataBase64: '',
+      capturedAt: new Date().toISOString(),
+      status: 'waiting',
+      expiresAt: new Date(expiresAt).toISOString(),
+    };
+  }
+
+  async #getCompressedImageTopicPreview(key: string, topicName: string): Promise<TopicCompressedImagePreview> {
+    const entry = this.compressedImagePreviews.get(key);
+    const capturedAt = new Date().toISOString();
+    if (entry?.topicName !== topicName) return { topicName, format: '', dataBase64: '', capturedAt, status: 'stopped' };
+    const expiresAt = new Date(entry.expiresAt).toISOString();
+    if (Date.now() >= entry.expiresAt) {
+      this.compressedImagePreviews.delete(key);
+      return { topicName, format: '', dataBase64: '', capturedAt, status: 'expired', expiresAt };
+    }
+    const result = await this.#execRosBash(entry.target, entry.distro, 'cat "$1" 2>/dev/null || true', [
+      entry.cachePath,
+    ]);
+    try {
+      const value = JSON.parse((result.stdout ?? '').trim()) as {
+        status?: string;
+        format?: string;
+        dataBase64?: string;
+        capturedAt?: string;
+        error?: string;
+      };
+      const dataBase64 = value.dataBase64 ?? '';
+      if (dataBase64.length > Math.ceil(COMPRESSED_IMAGE_PREVIEW_MAX_BYTES / 3) * 4)
+        return {
+          topicName,
+          format: '',
+          dataBase64: '',
+          capturedAt,
+          status: 'active',
+          expiresAt,
+          error: 'Preview frame exceeded the 2 MiB limit.',
+        };
+      return {
+        topicName,
+        format: value.format ?? '',
+        dataBase64,
+        capturedAt: value.capturedAt ?? capturedAt,
+        status: value.status === 'waiting' ? 'waiting' : 'active',
+        expiresAt,
+        error: value.error,
+      };
+    } catch {
+      return { topicName, format: '', dataBase64: '', capturedAt, status: 'waiting', expiresAt };
+    }
+  }
+
+  async #stopCompressedImageTopicPreview(key: string): Promise<void> {
+    const entry = this.compressedImagePreviews.get(key);
+    if (!entry) return;
+    this.compressedImagePreviews.delete(key);
+    // The subscriber writes its latest frame atomically. Let a callback already
+    // holding the temporary file finish after TERM before removing both paths;
+    // otherwise it can recreate the cache just after this cleanup returns.
+    await this.#execRosBash(
+      entry.target,
+      entry.distro,
+      'pkill -TERM -f "$1" >/dev/null 2>&1 || true; sleep 0.3; rm -f "$1" "$1.tmp"',
+      [entry.cachePath],
+    );
+  }
+
+  async #compressedImageTopicSnapshotFor(
+    target: ExecTarget,
+    distro: SupportedRosDistro,
+    topicName: string,
+  ): Promise<TopicCompressedImageSnapshot> {
+    const capturedAt = new Date().toISOString();
+    const unavailable = (error: string): TopicCompressedImageSnapshot => ({
+      topicName,
+      format: '',
+      dataBase64: '',
+      capturedAt,
+      error,
+    });
+    let timeoutSec: number;
+    try {
+      timeoutSec = await this.getTopicPeekTimeoutSeconds();
+    } catch (e) {
+      return unavailable(e instanceof Error ? e.message : String(e));
+    }
+    const script = `
+import base64, json, sys, time
+import rclpy
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+from sensor_msgs.msg import CompressedImage
+topic, timeout = sys.argv[1], float(sys.argv[2])
+result = None
+def callback(message):
+  global result
+  if len(message.data) > 2097152:
+    result = {'error': 'Compressed image exceeds the 2 MiB preview limit.'}
+  else:
+    result = {'format': message.format, 'dataBase64': base64.b64encode(bytes(message.data)).decode('ascii')}
+rclpy.init(); node = rclpy.create_node('physical_ai_image_peek')
+node.create_subscription(CompressedImage, topic, callback, QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT, durability=DurabilityPolicy.VOLATILE))
+deadline = time.monotonic() + timeout
+while result is None and time.monotonic() < deadline: rclpy.spin_once(node, timeout_sec=0.1)
+node.destroy_node(); rclpy.shutdown()
+print(json.dumps(result or {'error': 'No image received before the peek timeout.'}))`;
+    const result = await this.#execRosBash(target, distro, 'python3 -c "$1" "$2" "$3"', [
+      script,
+      topicName,
+      String(timeoutSec),
+    ]);
+    try {
+      const parsed = JSON.parse((result.stdout ?? '').trim()) as {
+        format?: string;
+        dataBase64?: string;
+        error?: string;
+      };
+      return parsed.error
+        ? unavailable(parsed.error)
+        : { topicName, format: parsed.format ?? '', dataBase64: parsed.dataBase64 ?? '', capturedAt };
+    } catch {
+      return unavailable((result.stderr ?? '').trim() || 'Could not capture a compressed image.');
+    }
+  }
+
   async getCostmapSummary(containerId: string, robotName: string): Promise<CostmapSummaryResult> {
     const { id } = await this.#resolveSimulationContainer(containerId);
     const safeRobot = assertRobotName(robotName);
@@ -4643,6 +4937,77 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
     const target = { kind: 'oc', pod, namespace: ns, context } as const;
     return this.#tfTreeStatusFor(target, distro, safeRobot);
+  }
+
+  /** OpenShift counterpart of getCostmapSummary — see #costmapSummaryFor for the shared logic. */
+  async getOccupancyGridTopicSnapshotInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    context?: string,
+  ): Promise<TopicOccupancyGridSnapshot> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeTopic = assertRosTopicName(topicName);
+    const image = await this.#openShiftDeploymentImage(ns, safeName, context);
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    return this.#occupancyGridTopicSnapshotFor({ kind: 'oc', pod, namespace: ns, context }, distro, safeTopic);
+  }
+
+  async getCompressedImageTopicSnapshotInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    context?: string,
+  ): Promise<TopicCompressedImageSnapshot> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeTopic = assertRosTopicName(topicName);
+    const image = await this.#openShiftDeploymentImage(ns, safeName, context);
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    return this.#compressedImageTopicSnapshotFor({ kind: 'oc', pod, namespace: ns, context }, distro, safeTopic);
+  }
+
+  async startCompressedImageTopicPreviewInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    context?: string,
+  ): Promise<TopicCompressedImagePreview> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeTopic = assertRosTopicName(topicName);
+    const image = await this.#openShiftDeploymentImage(ns, safeName, context);
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    return this.#startCompressedImageTopicPreview({ kind: 'oc', pod, namespace: ns, context }, distro, safeTopic);
+  }
+
+  async getCompressedImageTopicPreviewInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    context?: string,
+  ): Promise<TopicCompressedImagePreview> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeTopic = assertRosTopicName(topicName);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    return this.#getCompressedImageTopicPreview(
+      PhysicalAiApiImpl.#previewTargetKey({ kind: 'oc', pod, namespace: ns, context }),
+      safeTopic,
+    );
+  }
+
+  async stopCompressedImageTopicPreviewInOpenShift(namespace: string, name: string, context?: string): Promise<void> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    await this.#stopCompressedImageTopicPreview(
+      PhysicalAiApiImpl.#previewTargetKey({ kind: 'oc', pod, namespace: ns, context }),
+    );
   }
 
   /** OpenShift counterpart of getCostmapSummary — see #costmapSummaryFor for the shared logic. */

@@ -20,8 +20,10 @@ import {
   type ImageRobotProfile,
   type RobotProfileSelection,
 } from '/@shared/src/types/ImageRobotProfile';
+import { getLocalSimulationSnapshot, setLocalSimulationSnapshot } from './lib/simulationViewState';
 
 let localSimImages: string[] = [];
+let stateCacheRefreshSeconds = 300;
 let selectedImage = '';
 let selectedMiddleware: 'dds' | 'zenoh' = 'dds';
 let containers: SimContainerInfo[] = [];
@@ -32,8 +34,6 @@ let actionInfo = '';
 /** Container ids removed this session — hide until list API stops returning them. */
 let removedContainerIds: string[] = [];
 let pollTimer: ReturnType<typeof setInterval> | null = null;
-export let active = true;
-let wasActive = false;
 let simImageAllowlist = '';
 let robotLaunchError = '';
 let robotProfiles: ImageRobotProfile[] = [];
@@ -152,26 +152,31 @@ async function pollContainers() {
   }
 }
 
-onMount(() => {
+onMount(async () => {
+  const cached = getLocalSimulationSnapshot();
+  if (cached) {
+    containers = cached.containers;
+    spawnedRobots = cached.robots as RobotEntry[];
+  }
+  try {
+    stateCacheRefreshSeconds = await physicalAiClient.getSimulationStateCacheRefreshSeconds();
+  } catch {
+    // Keep the documented five-minute default when configuration is unavailable.
+  }
+  const cacheFresh = !!cached && Date.now() - cached.capturedAt < stateCacheRefreshSeconds * 1000;
   loadImages();
-  pollContainers().then(reconcileRobots);
+  if (!cacheFresh) pollContainers().then(reconcileRobots);
   pollTimer = setInterval(() => {
     pollContainers().then(reconcileRobots);
     pollWarmStatus();
     pruneStaleRobots();
-  }, 3000);
+  }, stateCacheRefreshSeconds * 1000);
 });
 
 onDestroy(() => {
+  setLocalSimulationSnapshot({ containers, robots: spawnedRobots, capturedAt: Date.now() });
   if (pollTimer) clearInterval(pollTimer);
 });
-
-$: if (active && !wasActive) {
-  wasActive = true;
-  void loadImages();
-  void pollContainers().then(reconcileRobots);
-}
-$: if (!active) wasActive = false;
 
 async function launchSim() {
   if (!selectedImage || hasRunning) return;

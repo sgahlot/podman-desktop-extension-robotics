@@ -4,7 +4,12 @@ import DeployOpenShift from './OpenShiftSimulation.svelte';
 import { lastOpenShiftSelection } from './lib/simSelection';
 import { spawnedRobotsByTarget } from './lib/spawnedRobotsStore';
 import { ocTargetKey } from './lib/diagnosticsTargetKey';
-import { TURTLEBOT3_IMAGE_PROFILE, type ImageRobotProfile } from '../../shared/src/types/ImageRobotProfile';
+import { clearSimulationViewState, setOpenShiftSimulationSnapshot } from './lib/simulationViewState';
+import {
+  initialRobotProfileSelection,
+  TURTLEBOT3_IMAGE_PROFILE,
+  type ImageRobotProfile,
+} from '../../shared/src/types/ImageRobotProfile';
 
 const mockClearCachedDiagnostics = vi.fn();
 
@@ -22,6 +27,7 @@ const mockListLocalImagesWithArch = vi.fn();
 const mockGetOpenShiftImageAllowlist = vi.fn();
 const mockGetSimulationConfig = vi.fn();
 const mockGetDefaultSoftwareRenderCpus = vi.fn();
+const mockGetSimulationStateCacheRefreshSeconds = vi.fn();
 const mockListOpenShiftDeployments = vi.fn();
 const mockDeployToOpenShift = vi.fn();
 const mockDeleteOpenShiftDeployment = vi.fn();
@@ -48,6 +54,7 @@ vi.mock('./api/client', () => ({
     getOpenShiftImageAllowlist: (...args: unknown[]) => mockGetOpenShiftImageAllowlist(...args),
     getSimulationConfig: (...args: unknown[]) => mockGetSimulationConfig(...args),
     getDefaultSoftwareRenderCpus: (...args: unknown[]) => mockGetDefaultSoftwareRenderCpus(...args),
+    getSimulationStateCacheRefreshSeconds: (...args: unknown[]) => mockGetSimulationStateCacheRefreshSeconds(...args),
     generateOpenShiftManifests: vi.fn(),
     listOpenShiftDeployments: (...args: unknown[]) => mockListOpenShiftDeployments(...args),
     deployToOpenShift: (...args: unknown[]) => mockDeployToOpenShift(...args),
@@ -87,6 +94,7 @@ describe('OpenShiftSimulation', () => {
     vi.resetAllMocks();
     lastOpenShiftSelection.set(undefined);
     spawnedRobotsByTarget.set({});
+    clearSimulationViewState();
     // The real OpenShiftContext carries the context's namespace (via the
     // kubeconfigContextNamespace helper); the component seeds its namespace from it,
     // and refreshWorkloads() no-ops without one — so the mock must provide it.
@@ -103,6 +111,8 @@ describe('OpenShiftSimulation', () => {
     mockListLocalImagesWithArch.mockResolvedValue([{ tag: DEFAULT_LOCAL_AMD64_IMAGE, arch: 'amd64' }]);
     mockGetOpenShiftImageAllowlist.mockResolvedValue('');
     mockGetDefaultSoftwareRenderCpus.mockResolvedValue(8);
+    // Keep legacy timer-driven tests fast; production defaults to five minutes.
+    mockGetSimulationStateCacheRefreshSeconds.mockResolvedValue(3);
     // getSimulationConfig rejected — image seeds from the first local amd64 image instead.
     mockGetSimulationConfig.mockRejectedValue(new Error('no config'));
     mockListOpenShiftDeployments.mockResolvedValue([]);
@@ -127,6 +137,51 @@ describe('OpenShiftSimulation', () => {
     render(DeployOpenShift);
     expect(await screen.findByText('ros2-jazzy-sim')).toBeTruthy();
     expect(screen.getByText('1/1 ready')).toBeTruthy();
+  });
+
+  it('uses a fresh OpenShift snapshot without re-listing deployments on return', async () => {
+    const selection = initialRobotProfileSelection([TURTLEBOT3_IMAGE_PROFILE]);
+    setOpenShiftSimulationSnapshot({
+      namespace: READY_WORKLOAD.namespace,
+      selectedContext: 'ctx',
+      workloads: [READY_WORKLOAD],
+      robotsByWorkload: { [READY_WORKLOAD.name]: [] },
+      robotProfilesByWorkload: { [READY_WORKLOAD.name]: [TURTLEBOT3_IMAGE_PROFILE] },
+      robotProfileSelectionsByWorkload: { [READY_WORKLOAD.name]: selection },
+      profileImageKeysByWorkload: {
+        [READY_WORKLOAD.name]: `ctx|${READY_WORKLOAD.namespace}/${READY_WORKLOAD.name}|${READY_WORKLOAD.image}`,
+      },
+      profileLoadingByWorkload: { [READY_WORKLOAD.name]: false },
+      profileLoadErrorsByWorkload: { [READY_WORKLOAD.name]: '' },
+      capturedAt: Date.now(),
+    });
+
+    render(DeployOpenShift);
+
+    expect(await screen.findByText('ros2-jazzy-sim')).toBeTruthy();
+    expect(mockListOpenShiftDeployments).not.toHaveBeenCalled();
+  });
+
+  it('refreshes externally discovered cluster, project, image, and deployment data on request', async () => {
+    render(DeployOpenShift);
+    await screen.findByText('Deployed simulations');
+    await waitFor(() => expect(mockListOpenShiftDeployments).toHaveBeenCalled());
+    vi.clearAllMocks();
+    mockListKubeContexts.mockResolvedValue([{ name: 'new-context', namespace: 'new-project' }]);
+    mockCheckOpenShiftLogin.mockResolvedValue({ loggedIn: true });
+    mockListOpenShiftProjects.mockResolvedValue(['new-project']);
+    mockListLocalImagesWithArch.mockResolvedValue([{ tag: 'quay.io/ns/new:latest-amd64', arch: 'amd64' }]);
+    mockGetOpenShiftImageAllowlist.mockResolvedValue('');
+    mockListOpenShiftDeployments.mockResolvedValue([]);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh tab data' }));
+
+    await waitFor(() => {
+      expect(mockListKubeContexts).toHaveBeenCalled();
+      expect(mockListOpenShiftProjects).toHaveBeenCalledWith('ctx');
+      expect(mockListLocalImagesWithArch).toHaveBeenCalled();
+      expect(mockListOpenShiftDeployments).toHaveBeenCalledWith('sgahlot-pd-extn', 'ctx');
+    });
   });
 
   it('opens the Route via the host browser (not a raw link)', async () => {
@@ -651,6 +706,7 @@ describe('OpenShiftSimulation', () => {
     vi.useFakeTimers();
     try {
       const notReady = { ...READY_WORKLOAD, readyReplicas: 0, ready: false, routeUrl: undefined };
+      mockGetSimulationStateCacheRefreshSeconds.mockResolvedValue(3);
       // First list (onMount) is not-ready; the 3 s auto-refresh sees it become ready.
       mockListOpenShiftDeployments.mockResolvedValueOnce([notReady]).mockResolvedValue([READY_WORKLOAD]);
 
@@ -999,7 +1055,7 @@ describe('OpenShiftSimulation', () => {
     await screen.findByText('robot_1');
     expect(mockListSpawnedRobotsInOpenShift).toHaveBeenCalledTimes(1);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh deployments' }));
     await waitFor(() => expect(mockListOpenShiftDeployments).toHaveBeenCalledTimes(2));
 
     // Reconciliation runs at most once per workload — a second refresh must not

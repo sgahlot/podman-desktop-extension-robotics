@@ -115,7 +115,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 * Image Builder with Presets, Customize, and Layers layouts. Quick Starts are shared across all layouts; Customize and Layers independently compose base and simulation sources _(APPENG-6313)_
 * Simulation page — Local and OpenShift robot controls discover supported robot profiles in each running image, seed launch fields from a selected profile, and allow users to customize or reset those defaults. The backend detects TurtleBot3 by its installed package/launch file and reads embedded SDF profile metadata under `/opt/physical-ai/robots/`. An embedded profile shows its `ros_gz_sim` package, `gz_spawn_model.launch.py`, and arguments; unchanged defaults use the validated SDF spawn entrypoint, while edits use the preflighted ROS launch path. Optional Image Builder Step 3 embeds a selected SDF asset directory into a derived image; its narrow in-image spawn entrypoint applies the Add Robot X/Y/yaw pose for both Podman and OpenShift. TurtleBot3 remains the navigation-capable profile (Jazzy: Nav2 `navigate_to_pose`; Humble: `cmd_vel`). Embedded SDF profiles provide model insertion only; mobile robot support remains follow-up scope. Runtime host mounts and arbitrary robot-file uploads are out of scope.
 * In-extension Help page _(done)_
-* ROS2 topic monitor — local and OpenShift topology browser with List, Graph, and Cards views, filters, schema, Peek, telemetry, guarded publish, and rosbag recording _(APPENG-5773 / APPENG-6620, shipped)_
+* ROS2 topic monitor — local and OpenShift topology browser with List, Graph, and Cards views, filters, schema, Peek, telemetry, guarded publish, rosbag recording, and bounded compressed-camera preview _(APPENG-5773 / APPENG-6620, shipped)_
 * Fleet status dashboard _(APPENG-5776, planned — Story 3)_
 
 ==== Key Files
@@ -174,7 +174,7 @@ Frontend (RpcBrowser)                    Backend (RpcExtension)
 The `PhysicalAiApi` abstract class defines the contract. Both the frontend proxy and backend implementation conform to it.
 
 The Topic Monitor contract has local and OpenShift variants for topic summaries, topology, detail, Peek, schema, telemetry,
-guarded one-shot publish, and rosbag recording. Local calls use the selected Podman container; OpenShift calls resolve the
+guarded one-shot publish, rosbag recording, and bounded compressed-camera preview. Local calls use the selected Podman container; OpenShift calls resolve the
 selected workload's running pod and execute the same bounded ROS operations through `oc`. Publish remains local-only; bags
 are copied from the selected container or pod to the host when recording stops.
 
@@ -639,6 +639,10 @@ needed for this configuration. They are edited on the extension's **Registry Set
 | Topic rosbag recording
 | Selected-topic recording for local and OpenShift targets
 | The frontend starts and stops `ros2 bag record` through the target adapter. Local recordings are copied from the simulation container; OpenShift recordings are copied from the selected pod when recording stops. Recording is explicit and bounded to the user's start/stop action.
+
+| Compressed-camera preview
+| One bounded backend-owned `rclpy` subscriber per selected target
+| A Graph inspector Start preview action for `sensor_msgs/msg/CompressedImage` launches one time-limited (15 minute) Local or OpenShift subscriber. Its sensor-QoS depth is one and it atomically retains only the latest frame, rejecting frames over 2 MiB. The webview polls the backend cache once per second; it never receives ROS/DDS directly and does not use repeated Peek calls. Stop, topic/target selection changes, and component teardown stop the subscriber and discard its retained frame. noVNC remains the interactive Gazebo GUI; PointCloud2 streaming is deferred pending a distinct memory/rate/renderer contract.
 
 | Bash entrypoints vs Podman APIs
 | Keep in-image scripts; use PD/Podman for lifecycle + exec only

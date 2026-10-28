@@ -22,6 +22,9 @@ import type {
   TopicGraphTopology,
   TopicTelemetry,
   TopicPublishResult,
+  TopicOccupancyGridSnapshot,
+  TopicCompressedImageSnapshot,
+  TopicCompressedImagePreview,
 } from './types/TopicInfo';
 import type { NavigationGoalResult, Nav2WarmStatus } from './types/NavigationGoalResult';
 import type {
@@ -158,6 +161,8 @@ export abstract class PhysicalAiApi {
   abstract getOpenShiftImageAllowlist(): Promise<string>;
   /** Peek wait in seconds (Preferences: physical-ai.topicMonitor.topicPeekTimeoutSeconds, 1–30). */
   abstract getTopicPeekTimeoutSeconds(): Promise<number>;
+  /** Configured cache freshness interval for Simulation route state. */
+  abstract getSimulationStateCacheRefreshSeconds(): Promise<number>;
   /** Validates and persists peek timeout (1–30). Throws a user-facing error if out of range. */
   abstract setTopicPeekTimeoutSeconds(seconds: number): Promise<void>;
   /** Image-aware page status refresh interval in seconds (Preferences: physical-ai.general.imageStatusRefreshIntervalSeconds, 1–60). */
@@ -215,6 +220,21 @@ export abstract class PhysicalAiApi {
   ): Promise<TopicTelemetry[]>;
   /** One live message via `ros2 topic echo --once` (bounded wait). */
   abstract peekRosTopic(containerId: string, topicName: string): Promise<TopicPeekResult>;
+  /** One bounded, downsampled OccupancyGrid snapshot for Topic Monitor rendering. */
+  abstract getOccupancyGridTopicSnapshot(containerId: string, topicName: string): Promise<TopicOccupancyGridSnapshot>;
+  abstract getCompressedImageTopicSnapshot(
+    containerId: string,
+    topicName: string,
+  ): Promise<TopicCompressedImageSnapshot>;
+  /** Start a bounded backend-owned CompressedImage subscriber for this Local target. */
+  abstract startCompressedImageTopicPreview(
+    containerId: string,
+    topicName: string,
+  ): Promise<TopicCompressedImagePreview>;
+  /** Read the latest frame retained by the Local preview subscriber. */
+  abstract getCompressedImageTopicPreview(containerId: string, topicName: string): Promise<TopicCompressedImagePreview>;
+  /** Stop and discard the Local preview subscriber and retained frame. */
+  abstract stopCompressedImageTopicPreview(containerId: string): Promise<void>;
   /** OpenShift counterpart of peekRosTopic. */
   abstract peekRosTopicInOpenShift(
     namespace: string,
@@ -222,6 +242,32 @@ export abstract class PhysicalAiApi {
     topicName: string,
     context?: string,
   ): Promise<TopicPeekResult>;
+  /** OpenShift counterpart of getOccupancyGridTopicSnapshot. */
+  abstract getOccupancyGridTopicSnapshotInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    context?: string,
+  ): Promise<TopicOccupancyGridSnapshot>;
+  abstract getCompressedImageTopicSnapshotInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    context?: string,
+  ): Promise<TopicCompressedImageSnapshot>;
+  abstract startCompressedImageTopicPreviewInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    context?: string,
+  ): Promise<TopicCompressedImagePreview>;
+  abstract getCompressedImageTopicPreviewInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    context?: string,
+  ): Promise<TopicCompressedImagePreview>;
+  abstract stopCompressedImageTopicPreviewInOpenShift(namespace: string, name: string, context?: string): Promise<void>;
   /** Publish one confirmed, size-limited YAML message to a safe local simulation topic. */
   abstract publishRosTopic(
     containerId: string,

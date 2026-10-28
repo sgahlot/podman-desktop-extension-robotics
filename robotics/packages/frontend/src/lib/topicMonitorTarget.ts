@@ -8,6 +8,9 @@ import type {
   TopicInfo,
   TopicPeekResult,
   TopicPublishResult,
+  TopicOccupancyGridSnapshot,
+  TopicCompressedImageSnapshot,
+  TopicCompressedImagePreview,
   TopicSchemaResult,
   TopicTelemetry,
 } from '/@shared/src/types/TopicInfo';
@@ -29,6 +32,11 @@ export interface TopicMonitorTargetApi {
   getRosTopicDetail(id: string, topicName: string): Promise<TopicDetailInfo>;
   getRosMessageSchema(id: string, messageType: string): Promise<TopicSchemaResult>;
   peekRosTopic(id: string, topicName: string): Promise<TopicPeekResult>;
+  getOccupancyGridTopicSnapshot(id: string, topicName: string): Promise<TopicOccupancyGridSnapshot>;
+  getCompressedImageTopicSnapshot(id: string, topicName: string): Promise<TopicCompressedImageSnapshot>;
+  startCompressedImageTopicPreview(id: string, topicName: string): Promise<TopicCompressedImagePreview>;
+  getCompressedImageTopicPreview(id: string, topicName: string): Promise<TopicCompressedImagePreview>;
+  stopCompressedImageTopicPreview(id: string): Promise<void>;
   getTopicTelemetry(id: string, topicNames: string[]): Promise<TopicTelemetry[]>;
   publishRosTopic(id: string, topicName: string, payload: string, confirmed: boolean): Promise<TopicPublishResult>;
   startRosbagRecording(id: string, topicNames: string[], outputPath: string): Promise<RosbagRecording>;
@@ -59,6 +67,12 @@ function localTargetApi(): TopicMonitorTargetApi {
     getRosTopicDetail: (id, topicName) => physicalAiClient.getRosTopicDetail(id, topicName),
     getRosMessageSchema: (id, type) => physicalAiClient.getRosMessageSchema(id, type),
     peekRosTopic: (id, topicName) => physicalAiClient.peekRosTopic(id, topicName),
+    getOccupancyGridTopicSnapshot: (id, topicName) => physicalAiClient.getOccupancyGridTopicSnapshot(id, topicName),
+    getCompressedImageTopicSnapshot: (id, topicName) => physicalAiClient.getCompressedImageTopicSnapshot(id, topicName),
+    startCompressedImageTopicPreview: (id, topicName) =>
+      physicalAiClient.startCompressedImageTopicPreview(id, topicName),
+    getCompressedImageTopicPreview: (id, topicName) => physicalAiClient.getCompressedImageTopicPreview(id, topicName),
+    stopCompressedImageTopicPreview: id => physicalAiClient.stopCompressedImageTopicPreview(id),
     getTopicTelemetry: (id, names) => physicalAiClient.getTopicTelemetry(id, names),
     publishRosTopic: (id, topicName, payload, confirmed) =>
       physicalAiClient.publishRosTopic(id, topicName, payload, confirmed),
@@ -123,6 +137,26 @@ function openShiftTargetApi(): TopicMonitorTargetApi {
     peekRosTopic: async (id, topicName) => {
       const t = target(id);
       return physicalAiClient.peekRosTopicInOpenShift(t.namespace, t.name, topicName, t.context);
+    },
+    getOccupancyGridTopicSnapshot: async (id, topicName) => {
+      const t = target(id);
+      return physicalAiClient.getOccupancyGridTopicSnapshotInOpenShift(t.namespace, t.name, topicName, t.context);
+    },
+    getCompressedImageTopicSnapshot: async (id, topicName) => {
+      const t = target(id);
+      return physicalAiClient.getCompressedImageTopicSnapshotInOpenShift(t.namespace, t.name, topicName, t.context);
+    },
+    startCompressedImageTopicPreview: async (id, topicName) => {
+      const t = target(id);
+      return physicalAiClient.startCompressedImageTopicPreviewInOpenShift(t.namespace, t.name, topicName, t.context);
+    },
+    getCompressedImageTopicPreview: async (id, topicName) => {
+      const t = target(id);
+      return physicalAiClient.getCompressedImageTopicPreviewInOpenShift(t.namespace, t.name, topicName, t.context);
+    },
+    stopCompressedImageTopicPreview: async id => {
+      const t = target(id);
+      await physicalAiClient.stopCompressedImageTopicPreviewInOpenShift(t.namespace, t.name, t.context);
     },
     getTopicTelemetry: async (id, names) => {
       const t = target(id);

@@ -579,6 +579,15 @@ let topicMonitorCaption =
           <span class="font-mono">/tmp/ros-home/spawn-&lt;robot&gt;.log</span> for ROS launch output and
           <span class="font-mono">/tmp/ros-home/bridge-&lt;robot&gt;.log</span> for standalone bridge output.
         </div>
+        <div>
+          <strong>Camera preview</strong> — For a <span class="font-mono">sensor_msgs/msg/CompressedImage</span> topic,
+          use <strong>Start preview</strong> in the Graph inspector for a continuous latest-frame view. The backend owns
+          one subscriber for the selected Local or OpenShift target, retains only the latest frame (maximum 2 MiB), and
+          the inspector polls that retained frame once per second. The subscriber stops after 15 minutes, when you
+          choose
+          <strong>Stop preview</strong>, change selection, or leave Topic Monitor. This complements the interactive
+          Gazebo noVNC view; it does not expose ROS/DDS directly to the browser.
+        </div>
 
         <hr class="border-[var(--pd-content-card-border)] my-3 opacity-60" />
 
