@@ -99,6 +99,7 @@ import type {
   TopicPublishResult,
   TopicOccupancyGridSnapshot,
   TopicCompressedImageSnapshot,
+  TopicCompressedImagePreview,
   TopicSchemaResult,
   TopicTelemetry,
 } from '/@shared/src/types/TopicInfo';
@@ -125,6 +126,7 @@ const GRAPH_WIDTH = 1000;
 const GRAPH_MIN_HEIGHT = 160;
 const MAX_CONNECTED_NODES = 5;
 const TOPIC_TELEMETRY_REFRESH_MS = 8000;
+const COMPRESSED_IMAGE_PREVIEW_REFRESH_MS = 1000;
 const TOPIC_TELEMETRY_SAMPLE_SECONDS = 3;
 const PUBLISH_FLOW_DURATION_MS = 1000;
 
@@ -190,6 +192,11 @@ let snapshotHistory: Array<{ capturedAt: string; summary: string }> = [];
 let snapshotHistoryTimer: ReturnType<typeof setInterval> | null = null;
 let occupancyGridSnapshot: TopicOccupancyGridSnapshot | null = null;
 let compressedImageSnapshot: TopicCompressedImageSnapshot | null = null;
+let compressedImagePreview: TopicCompressedImagePreview | null = null;
+let compressedImagePreviewTimer: ReturnType<typeof setInterval> | null = null;
+let compressedImagePreviewInFlight = false;
+let compressedImagePreviewTargetId = '';
+let compressedImagePreviewGeneration = 0;
 let peekCopyStatus = '';
 let inspectorLoading = false;
 let inspectorError = '';
@@ -583,6 +590,7 @@ function restoreTargetSnapshot(snapshot: TargetViewSnapshot): void {
 
 function switchTarget(kind: TopicMonitorTargetKind): void {
   if (kind === targetKind) return;
+  stopCompressedImagePreview();
   saveTargetSnapshot();
   stopTopicTelemetry();
   if (recordPollTimer) clearInterval(recordPollTimer);
@@ -633,6 +641,7 @@ async function pollContainers(forceTopology = false) {
 }
 
 function clearSelection() {
+  stopCompressedImagePreview();
   stopTopicTelemetry();
   resetPublishState();
   clearPublishPulse();
@@ -644,9 +653,58 @@ function clearSelection() {
   peekResult = null;
   occupancyGridSnapshot = null;
   compressedImageSnapshot = null;
+  compressedImagePreview = null;
   inspectorError = '';
   expandedPublisherNodes = false;
   expandedSubscriberNodes = false;
+}
+
+function stopCompressedImagePreview(): void {
+  compressedImagePreviewGeneration += 1;
+  if (compressedImagePreviewTimer) clearInterval(compressedImagePreviewTimer);
+  compressedImagePreviewTimer = null;
+  const targetId = compressedImagePreviewTargetId;
+  compressedImagePreviewTargetId = '';
+  compressedImagePreviewInFlight = false;
+  compressedImagePreview = null;
+  compressedImageSnapshot = null;
+  if (targetId) void targetApi.stopCompressedImageTopicPreview(targetId).catch(() => undefined);
+}
+
+async function pollCompressedImagePreview(generation: number, targetId: string, topicName: string): Promise<void> {
+  if (compressedImagePreviewInFlight) return;
+  compressedImagePreviewInFlight = true;
+  try {
+    const preview = await targetApi.getCompressedImageTopicPreview(targetId, topicName);
+    if (generation !== compressedImagePreviewGeneration || selectedContainerId !== targetId || selectedTopic !== topicName) return;
+    compressedImagePreview = preview;
+    compressedImageSnapshot = preview.dataBase64 ? preview : null;
+  } catch (e) {
+    if (generation === compressedImagePreviewGeneration) inspectorError = e instanceof Error ? e.message : String(e);
+  } finally {
+    compressedImagePreviewInFlight = false;
+  }
+}
+
+async function startCompressedImagePreview(): Promise<void> {
+  if (!selectedContainerId || !selectedTopic || topicDetail?.type !== 'sensor_msgs/msg/CompressedImage') return;
+  stopCompressedImagePreview();
+  const generation = compressedImagePreviewGeneration;
+  const targetId = selectedContainerId;
+  const topicName = selectedTopic;
+  inspectorError = '';
+  try {
+    compressedImagePreview = await targetApi.startCompressedImageTopicPreview(targetId, topicName);
+    if (generation !== compressedImagePreviewGeneration || selectedContainerId !== targetId || selectedTopic !== topicName) return;
+    compressedImagePreviewTargetId = targetId;
+    void pollCompressedImagePreview(generation, targetId, topicName);
+    compressedImagePreviewTimer = setInterval(
+      () => void pollCompressedImagePreview(generation, targetId, topicName),
+      COMPRESSED_IMAGE_PREVIEW_REFRESH_MS,
+    );
+  } catch (e) {
+    if (generation === compressedImagePreviewGeneration) inspectorError = e instanceof Error ? e.message : String(e);
+  }
 }
 
 function resetPublishState(): void {
@@ -908,6 +966,7 @@ async function selectTopic(topicName: string) {
     return;
   }
   stopTopicTelemetry();
+  stopCompressedImagePreview();
   resetPublishState();
   clearPublishPulse();
   beginFilteredFocus();
@@ -943,6 +1002,7 @@ function selectNode(node: NodeDetail, role: 'publisher' | 'subscriber') {
   }
   beginFilteredFocus();
   stopTopicTelemetry();
+  stopCompressedImagePreview();
   resetPublishState();
   selectedNode = node;
   selectedNodeRole = role;
@@ -1060,6 +1120,7 @@ onDestroy(() => {
   window.removeEventListener('keydown', handleWindowKeydown);
   if (recordPollTimer) clearInterval(recordPollTimer);
   stopTopicTelemetry();
+  stopCompressedImagePreview();
   clearPublishPulse();
   clearPublishFlow();
 });
@@ -1739,6 +1800,28 @@ onDestroy(() => {
               <div><span class="pai-text-muted">Type:</span> <span class="font-mono">{topicDetail.type}</span></div>
               <div><span class="pai-text-muted">Publishers:</span> {topicDetail.publishers.length}</div>
               <div><span class="pai-text-muted">Subscribers:</span> {topicDetail.subscribers.length}</div>
+              {#if topicDetail.type === 'sensor_msgs/msg/CompressedImage'}
+                <section class="rounded border border-[var(--pd-content-card-border)] p-2" aria-label="Continuous camera preview">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="font-medium">Continuous camera preview</span>
+                    {#if compressedImagePreviewTargetId}
+                      <button class="pai-btn text-xs" on:click={stopCompressedImagePreview}>Stop preview</button>
+                    {:else}
+                      <button class="pai-btn text-xs" on:click={() => void startCompressedImagePreview()}>Start preview</button>
+                    {/if}
+                  </div>
+                  <p class="mt-1 pai-text-muted">
+                    {#if compressedImagePreviewTargetId}
+                      {compressedImagePreview?.status === 'waiting'
+                        ? 'Waiting for a frame…'
+                        : 'Polling the backend-owned latest frame once per second.'}
+                    {:else}
+                      Starts one bounded backend subscriber for up to 15 minutes; frames are capped at 2 MiB.
+                    {/if}
+                  </p>
+                  {#if compressedImagePreview?.error}<p class="mt-1 pai-text-error">{compressedImagePreview.error}</p>{/if}
+                </section>
+              {/if}
               <div class="rounded border border-[var(--pd-content-card-border)] p-2" role="status" aria-live="polite">
                 <div class="flex items-center justify-between gap-2">
                   <span class="font-medium">Live telemetry</span>
@@ -1846,6 +1929,21 @@ onDestroy(() => {
                 <section class="pai-inspector-section" aria-label="Message schema">
                   <h3 class="font-medium text-[var(--pd-content-header)]">Message schema</h3>
                   <pre class="max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono">{schema.schema}</pre>
+                </section>
+              {/if}
+              {#if compressedImageSnapshot}
+                <section class="pai-inspector-section" aria-label="Compressed image preview">
+                  <h3 class="font-medium text-[var(--pd-content-header)]"
+                    >{compressedImagePreviewTargetId ? 'Live camera preview' : 'Camera snapshot'}</h3>
+                  <img
+                    class="w-full rounded bg-black"
+                    src={`data:${compressedImageSnapshot.format.includes('png') ? 'image/png' : 'image/jpeg'};base64,${compressedImageSnapshot.dataBase64}`}
+                    alt={`Latest ${compressedImageSnapshot.format || 'compressed'} camera frame`} />
+                  <p class="pai-text-muted">
+                    {compressedImagePreviewTargetId
+                      ? `Latest streamed frame · updated ${new Date(compressedImageSnapshot.capturedAt).toLocaleTimeString()}`
+                      : 'Latest bounded frame'} · {compressedImageSnapshot.format || 'compressed image'}
+                  </p>
                 </section>
               {/if}
               {#if peekResult?.message}
@@ -1957,18 +2055,6 @@ onDestroy(() => {
                       {occupancyGridSnapshot.width} × {occupancyGridSnapshot.height} cells · {occupancyGridSnapshot.resolutionMeters.toFixed(
                         2,
                       )} m/cell
-                    </p>
-                  </section>
-                {/if}
-                {#if compressedImageSnapshot}
-                  <section class="pai-inspector-section" aria-label="Compressed image preview">
-                    <h3 class="font-medium text-[var(--pd-content-header)]">Camera snapshot</h3>
-                    <img
-                      class="w-full rounded bg-black"
-                      src={`data:${compressedImageSnapshot.format.includes('png') ? 'image/png' : 'image/jpeg'};base64,${compressedImageSnapshot.dataBase64}`}
-                      alt={`Latest ${compressedImageSnapshot.format || 'compressed'} camera frame`} />
-                    <p class="pai-text-muted">
-                      Latest bounded frame · {compressedImageSnapshot.format || 'compressed image'}
                     </p>
                   </section>
                 {/if}

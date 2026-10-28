@@ -15,6 +15,9 @@ const mockGetTopicTelemetry = vi.fn();
 const mockCopyToClipboard = vi.fn();
 const mockGetOccupancyGridTopicSnapshot = vi.fn();
 const mockGetCompressedImageTopicSnapshot = vi.fn();
+const mockStartCompressedImageTopicPreview = vi.fn();
+const mockGetCompressedImageTopicPreview = vi.fn();
+const mockStopCompressedImageTopicPreview = vi.fn();
 
 vi.mock('./api/client', () => ({
   physicalAiClient: {
@@ -30,6 +33,9 @@ vi.mock('./api/client', () => ({
     copyToClipboard: (...args: unknown[]) => mockCopyToClipboard(...args),
     getOccupancyGridTopicSnapshot: (...args: unknown[]) => mockGetOccupancyGridTopicSnapshot(...args),
     getCompressedImageTopicSnapshot: (...args: unknown[]) => mockGetCompressedImageTopicSnapshot(...args),
+    startCompressedImageTopicPreview: (...args: unknown[]) => mockStartCompressedImageTopicPreview(...args),
+    getCompressedImageTopicPreview: (...args: unknown[]) => mockGetCompressedImageTopicPreview(...args),
+    stopCompressedImageTopicPreview: (...args: unknown[]) => mockStopCompressedImageTopicPreview(...args),
     getTopicPeekTimeoutSeconds: async () => 5,
   },
 }));
@@ -53,6 +59,9 @@ describe('GraphicalTopicMonitor', () => {
     mockCopyToClipboard.mockResolvedValue(undefined);
     mockGetOccupancyGridTopicSnapshot.mockResolvedValue({ cells: [] });
     mockGetCompressedImageTopicSnapshot.mockResolvedValue({ dataBase64: '' });
+    mockStartCompressedImageTopicPreview.mockResolvedValue({ status: 'waiting', dataBase64: '', format: '', capturedAt: '' });
+    mockGetCompressedImageTopicPreview.mockResolvedValue({ status: 'active', dataBase64: '', format: '', capturedAt: '' });
+    mockStopCompressedImageTopicPreview.mockResolvedValue(undefined);
     mockPeekRosTopic.mockResolvedValue({
       topicName: '',
       message: '',
@@ -136,6 +145,39 @@ describe('GraphicalTopicMonitor', () => {
 
     await fireEvent.click(topicButton);
     expect(await screen.findByText('Select a node or topic to inspect its relationships.')).toBeTruthy();
+  });
+
+  it('starts and stops a bounded continuous compressed-camera preview', async () => {
+    mockListSimulationContainers.mockResolvedValue([
+      { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
+    ]);
+    mockGetTopicTopology.mockResolvedValue({
+      topics: [{ name: '/camera/compressed', type: 'sensor_msgs/msg/CompressedImage', publishers: 1, subscribers: 0 }],
+      nodes: [],
+      capturedAt: new Date().toISOString(),
+    });
+    mockGetRosTopicDetail.mockResolvedValue({
+      topicName: '/camera/compressed',
+      type: 'sensor_msgs/msg/CompressedImage',
+      publishers: [],
+      subscribers: [],
+    });
+    mockGetCompressedImageTopicPreview.mockResolvedValue({
+      status: 'active',
+      format: 'png',
+      dataBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL6pQAAAABJRU5ErkJggg==',
+      capturedAt: new Date().toISOString(),
+    });
+
+    render(GraphicalTopicMonitor);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Select topic /camera/compressed' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Start preview' }));
+    expect(mockStartCompressedImageTopicPreview).toHaveBeenCalledWith('c1', '/camera/compressed');
+    expect(await screen.findByRole('button', { name: 'Stop preview' })).toBeTruthy();
+    expect(await screen.findByRole('img', { name: 'Latest png camera frame' })).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Stop preview' }));
+    expect(mockStopCompressedImageTopicPreview).toHaveBeenCalledWith('c1');
+    expect(screen.queryByRole('img', { name: 'Latest png camera frame' })).toBeNull();
   });
 
   it('shows bounded live rate and bandwidth telemetry for the selected topic', async () => {

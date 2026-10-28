@@ -104,6 +104,7 @@ import type {
   TopicTelemetry,
   TopicOccupancyGridSnapshot,
   TopicCompressedImageSnapshot,
+  TopicCompressedImagePreview,
 } from '/@shared/src/types/TopicInfo';
 import type { RosbagRecording } from '/@shared/src/types/RosbagRecording';
 import type { NavigationGoalResult, Nav2WarmStatus } from '/@shared/src/types/NavigationGoalResult';
@@ -212,6 +213,8 @@ const TF_DIAGNOSTIC_TIMEOUT_SEC = 5;
  */
 const NAV2_COSTMAP_REFILL_MS = 2000;
 const TOPIC_GRAPH_CACHE_MS = 3000;
+const COMPRESSED_IMAGE_PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
+const COMPRESSED_IMAGE_PREVIEW_LIFETIME_SECONDS = 15 * 60;
 
 /** Build history JSON file name, written under ExtensionContext.storagePath. */
 const BUILD_HISTORY_FILE_NAME = 'build-history.json';
@@ -519,6 +522,11 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   private topicGraphInFlight = new Map<string, Promise<NodeDetail[]>>();
   private topicPublishLastAt = new Map<string, number>();
   private topicPublishInFlight = new Set<string>();
+  /** One bounded CompressedImage subscriber per Local/OpenShift target. */
+  private compressedImagePreviews = new Map<
+    string,
+    { target: ExecTarget; distro: SupportedRosDistro; topicName: string; cachePath: string; expiresAt: number }
+  >();
   private rosbagRecordings = new Map<string, { state: RosbagRecording; tempPath: string; pidFile: string }>();
   private embeddedRobotSources = new Map<string, string>();
 
@@ -2931,6 +2939,22 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     return this.#compressedImageTopicSnapshotFor({ kind: 'podman', id }, await this.#detectRosDistro(id), safeTopic);
   }
 
+  async startCompressedImageTopicPreview(containerId: string, topicName: string): Promise<TopicCompressedImagePreview> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    const safeTopic = assertRosTopicName(topicName);
+    return this.#startCompressedImageTopicPreview({ kind: 'podman', id }, await this.#detectRosDistro(id), safeTopic);
+  }
+
+  async getCompressedImageTopicPreview(containerId: string, topicName: string): Promise<TopicCompressedImagePreview> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    return this.#getCompressedImageTopicPreview(PhysicalAiApiImpl.#previewTargetKey({ kind: 'podman', id }), assertRosTopicName(topicName));
+  }
+
+  async stopCompressedImageTopicPreview(containerId: string): Promise<void> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    await this.#stopCompressedImageTopicPreview(PhysicalAiApiImpl.#previewTargetKey({ kind: 'podman', id }));
+  }
+
   async publishRosTopic(
     containerId: string,
     topicName: string,
@@ -3660,6 +3684,95 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       cells,
       capturedAt,
     };
+  }
+
+  static #previewTargetKey(target: ExecTarget): string {
+    return target.kind === 'podman'
+      ? `podman:${target.id}`
+      : `oc:${target.context ?? ''}:${target.namespace}:${target.pod}`;
+  }
+
+  async #startCompressedImageTopicPreview(
+    target: ExecTarget,
+    distro: SupportedRosDistro,
+    topicName: string,
+  ): Promise<TopicCompressedImagePreview> {
+    const key = PhysicalAiApiImpl.#previewTargetKey(target);
+    await this.#stopCompressedImageTopicPreview(key);
+    const cachePath = `/tmp/pai-compressed-preview-${key.replace(/[^a-zA-Z0-9]/g, '_').slice(-120)}.json`;
+    const expiresAt = Date.now() + COMPRESSED_IMAGE_PREVIEW_LIFETIME_SECONDS * 1000;
+    const script = String.raw`
+import base64, json, os, sys, time
+import rclpy
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+from sensor_msgs.msg import CompressedImage
+topic, cache_path, lifetime = sys.argv[1], sys.argv[2], float(sys.argv[3])
+max_bytes = ${COMPRESSED_IMAGE_PREVIEW_MAX_BYTES}
+def write(value):
+    temporary = cache_path + '.tmp'
+    with open(temporary, 'w') as output: json.dump(value, output, separators=(',', ':'))
+    os.replace(temporary, cache_path)
+def callback(message):
+    if len(message.data) > max_bytes:
+        write({'status':'active','error':'Compressed image exceeds the 2 MiB preview limit.'})
+        return
+    write({'status':'active','format':message.format,'dataBase64':base64.b64encode(bytes(message.data)).decode('ascii'),'capturedAt':time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())})
+write({'status':'waiting'})
+rclpy.init(); node = rclpy.create_node('physical_ai_image_preview')
+node.create_subscription(CompressedImage, topic, callback, QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT, durability=DurabilityPolicy.VOLATILE))
+deadline = time.monotonic() + lifetime
+while time.monotonic() < deadline: rclpy.spin_once(node, timeout_sec=0.2)
+node.destroy_node(); rclpy.shutdown()`;
+    await this.#execDetached(target, 'bash', ['-c', `source /opt/ros/${distro}/setup.bash && exec python3 -c "$1" "$2" "$3" "$4"`, '_', script, topicName, cachePath, String(COMPRESSED_IMAGE_PREVIEW_LIFETIME_SECONDS)]);
+    this.compressedImagePreviews.set(key, { target, distro, topicName, cachePath, expiresAt });
+    return { topicName, format: '', dataBase64: '', capturedAt: new Date().toISOString(), status: 'waiting', expiresAt: new Date(expiresAt).toISOString() };
+  }
+
+  async #getCompressedImageTopicPreview(key: string, topicName: string): Promise<TopicCompressedImagePreview> {
+    const entry = this.compressedImagePreviews.get(key);
+    const capturedAt = new Date().toISOString();
+    if (entry?.topicName !== topicName)
+      return { topicName, format: '', dataBase64: '', capturedAt, status: 'stopped' };
+    const expiresAt = new Date(entry.expiresAt).toISOString();
+    if (Date.now() >= entry.expiresAt) {
+      this.compressedImagePreviews.delete(key);
+      return { topicName, format: '', dataBase64: '', capturedAt, status: 'expired', expiresAt };
+    }
+    const result = await this.#execRosBash(entry.target, entry.distro, 'cat "$1" 2>/dev/null || true', [entry.cachePath]);
+    try {
+      const value = JSON.parse((result.stdout ?? '').trim()) as {
+        status?: string; format?: string; dataBase64?: string; capturedAt?: string; error?: string;
+      };
+      const dataBase64 = value.dataBase64 ?? '';
+      if (dataBase64.length > Math.ceil(COMPRESSED_IMAGE_PREVIEW_MAX_BYTES / 3) * 4)
+        return { topicName, format: '', dataBase64: '', capturedAt, status: 'active', expiresAt, error: 'Preview frame exceeded the 2 MiB limit.' };
+      return {
+        topicName,
+        format: value.format ?? '',
+        dataBase64,
+        capturedAt: value.capturedAt ?? capturedAt,
+        status: value.status === 'waiting' ? 'waiting' : 'active',
+        expiresAt,
+        error: value.error,
+      };
+    } catch {
+      return { topicName, format: '', dataBase64: '', capturedAt, status: 'waiting', expiresAt };
+    }
+  }
+
+  async #stopCompressedImageTopicPreview(key: string): Promise<void> {
+    const entry = this.compressedImagePreviews.get(key);
+    if (!entry) return;
+    this.compressedImagePreviews.delete(key);
+    // The subscriber writes its latest frame atomically. Let a callback already
+    // holding the temporary file finish after TERM before removing both paths;
+    // otherwise it can recreate the cache just after this cleanup returns.
+    await this.#execRosBash(
+      entry.target,
+      entry.distro,
+      'pkill -TERM -f "$1" >/dev/null 2>&1 || true; sleep 0.3; rm -f "$1" "$1.tmp"',
+      [entry.cachePath],
+    );
   }
 
   async #compressedImageTopicSnapshotFor(
@@ -4824,6 +4937,41 @@ print(json.dumps(result or {'error': 'No image received before the peek timeout.
     const distro = PhysicalAiApiImpl.#distroFromImage(image);
     const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
     return this.#compressedImageTopicSnapshotFor({ kind: 'oc', pod, namespace: ns, context }, distro, safeTopic);
+  }
+
+  async startCompressedImageTopicPreviewInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    context?: string,
+  ): Promise<TopicCompressedImagePreview> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeTopic = assertRosTopicName(topicName);
+    const image = await this.#openShiftDeploymentImage(ns, safeName, context);
+    const distro = PhysicalAiApiImpl.#distroFromImage(image);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    return this.#startCompressedImageTopicPreview({ kind: 'oc', pod, namespace: ns, context }, distro, safeTopic);
+  }
+
+  async getCompressedImageTopicPreviewInOpenShift(
+    namespace: string,
+    name: string,
+    topicName: string,
+    context?: string,
+  ): Promise<TopicCompressedImagePreview> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeTopic = assertRosTopicName(topicName);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    return this.#getCompressedImageTopicPreview(PhysicalAiApiImpl.#previewTargetKey({ kind: 'oc', pod, namespace: ns, context }), safeTopic);
+  }
+
+  async stopCompressedImageTopicPreviewInOpenShift(namespace: string, name: string, context?: string): Promise<void> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    await this.#stopCompressedImageTopicPreview(PhysicalAiApiImpl.#previewTargetKey({ kind: 'oc', pod, namespace: ns, context }));
   }
 
   /** OpenShift counterpart of getCostmapSummary — see #costmapSummaryFor for the shared logic. */

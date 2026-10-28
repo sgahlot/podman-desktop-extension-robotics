@@ -43,6 +43,9 @@ const localTargetApi: TopicMonitorTargetApi = {
     capturedAt: '',
   }),
   getCompressedImageTopicSnapshot: async () => ({ topicName: '', format: '', dataBase64: '', capturedAt: '' }),
+  startCompressedImageTopicPreview: async () => ({ topicName: '', format: '', dataBase64: '', capturedAt: '', status: 'waiting' }),
+  getCompressedImageTopicPreview: async () => ({ topicName: '', format: '', dataBase64: '', capturedAt: '', status: 'waiting' }),
+  stopCompressedImageTopicPreview: async () => undefined,
   getTopicTelemetry: async () => [],
   publishRosTopic: async () => ({ topicName: '', messageType: '', publishedAt: '' }),
   startRosbagRecording: async id => ({

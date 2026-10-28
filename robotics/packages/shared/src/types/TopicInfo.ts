@@ -42,6 +42,14 @@ export interface TopicCompressedImageSnapshot {
   error?: string;
 }
 
+/** Latest frame and lifecycle state for a bounded backend-owned camera preview. */
+export interface TopicCompressedImagePreview extends TopicCompressedImageSnapshot {
+  /** A preview has one subscriber per selected Local/OpenShift target. */
+  status: 'active' | 'waiting' | 'stopped' | 'expired';
+  /** Wall-clock ISO time at which the bounded subscriber will stop itself. */
+  expiresAt?: string;
+}
+
 /** A ROS node and the topic endpoints it exposes. */
 export interface NodeDetail {
   nodeName: string;

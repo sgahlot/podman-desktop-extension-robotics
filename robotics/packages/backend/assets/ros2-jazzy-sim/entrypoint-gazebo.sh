@@ -73,6 +73,17 @@ if [[ "${RMW_IMPLEMENTATION:-}" == "rmw_zenoh_cpp" ]]; then
   sleep 2
 fi
 
+# Keep a tiny, model-independent compressed camera stream available for Topic
+# Monitor preview validation. It is a 1×1 PNG at 1 Hz, not a Gazebo sensor or a
+# substitute for the interactive noVNC view. Set PHYSICAL_AI_TEST_CAMERA=0 to
+# omit it in an environment where the validation source is not wanted.
+TEST_CAMERA_PID=""
+if [[ "${PHYSICAL_AI_TEST_CAMERA:-1}" != "0" ]]; then
+  echo "[gazebo] Starting Topic Monitor test camera on /physical_ai/test_camera/compressed..."
+  /entrypoint-test-camera.sh &
+  TEST_CAMERA_PID=$!
+fi
+
 # Cap render/physics thread pools to the CPU quota so they stop oversubscribing it
 # (Story 5 / story5-image-thread-caps.md). The container sees the node's nproc, but
 # under a cgroup CPU quota (e.g. the OpenShift Guaranteed pod) Gazebo/Ogre/llvmpipe/
@@ -474,7 +485,7 @@ echo "[gazebo] Simulation ready. noVNC at http://localhost:${NOVNC_PORT}"
 
 term_handler() {
   echo "[gazebo] Shutting down..."
-  kill "${GUI_SUPERVISOR_PID:-}" 2>/dev/null || true
+  kill "${GUI_SUPERVISOR_PID:-}" "${TEST_CAMERA_PID:-}" 2>/dev/null || true
   kill "${GZ_GUI_PID:-}" "${SPAWN_PIDS[@]:-}" "${GZ_SERVER_PID}" "${XVFB_PID}" "${ZENOHD_PID:-}" 2>/dev/null || true
   pkill -P $$ 2>/dev/null || true
   wait "${GZ_SERVER_PID}" 2>/dev/null || true
