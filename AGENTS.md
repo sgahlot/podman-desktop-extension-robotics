@@ -234,14 +234,16 @@ Load only one worktree’s extension in Podman Desktop at a time (canonical
   whether the ticket already has its final implementation comment. If the
   ticket is already Closed, do not modify it; report whether the expected
   final comment is present. If it is open and the final comment is absent,
-  post exactly one final Jira comment using `contentFormat: markdown`, then
-  close the ticket. If the final comment already exists, do not duplicate it;
-  close only if needed. Read Jira once more after the transition to verify the
-  Closed status and final comment. Main/Terra/Sol may perform this read-only
-  verification but must never create, edit, or transition Jira activity. Match
-  the final-comment visual structure below, including blank lines; render
-  `main` as inline code and render the two link labels as Markdown hyperlinks.
-  Use no raw URLs or references to private planning material:
+  post exactly one final Jira comment using `contentFormat: markdown`. Before
+  transitioning, read the saved comment and verify its two footer lines match
+  the renderer-safe template below. If they differ, edit that same comment and
+  verify again; never add a duplicate final comment. If the final comment
+  already exists, do not duplicate it; close only if needed. Read Jira once
+  more after the transition to verify the Closed status and final comment.
+  Main/Terra/Sol may perform this read-only verification but must never create,
+  edit, or transition Jira activity. Match the final-comment visual structure
+  below, including blank lines. Use no raw URLs or references to private
+  planning material:
 
   ```text
   Implementation complete, tested, and merged to main.
@@ -252,10 +254,13 @@ Load only one worktree’s extension in Podman Desktop at a time (canonical
   • Zero-errors gate green (typecheck, lint, svelte-check, format, all package
     tests) on the integrated main.
 
-  Repo: podman-work                         [rendered repository hyperlink]
-  Work done: Merge feature/APPENG-<NNNN>-<slug> → main
-                                             [rendered merge-commit hyperlink]
+  Repo: [podman-work](<repository-link>)
+  Work done: [Merge feature/APPENG-<NNNN>-<slug> → main](<merge-commit-link>)
   ```
+
+  Do not use a parenthetical or separate SHA link, alter the two link labels,
+  or nest inline code in a link label: Jira Markdown does not render that
+  combination reliably.
 
 - After Jira closure is verified, rename that ticket's selected current plan
   from `APPENG-<NNNN>-<slug>.md` to `APPENG-<NNNN>-<slug>-DONE.md`, and update
