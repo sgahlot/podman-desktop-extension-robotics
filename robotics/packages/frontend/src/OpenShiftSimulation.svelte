@@ -35,6 +35,8 @@ import { getOpenShiftSimulationSnapshot, setOpenShiftSimulationSnapshot } from '
 
 let loading = true;
 let stateCacheRefreshSeconds = 300;
+let isCachedTabSnapshot = false;
+let isCachedDeploymentSnapshot = false;
 let context: OpenShiftContext | undefined = undefined;
 
 let name = 'ros2-jazzy-sim';
@@ -448,6 +450,7 @@ async function refreshTabData() {
       .catch(() => (kubeContexts = []));
     await Promise.all([contexts, refreshLoginStatus(), refreshProjects(), refreshLocalAmd64Images()]);
     await refreshWorkloads();
+    isCachedTabSnapshot = false;
   } finally {
     discoveryBusy = false;
   }
@@ -557,6 +560,8 @@ onMount(async () => {
     profileLoadingByWorkload = cached.profileLoadingByWorkload;
     profileLoadErrorsByWorkload = cached.profileLoadErrorsByWorkload;
     loading = false;
+    isCachedTabSnapshot = true;
+    isCachedDeploymentSnapshot = true;
   }
   try {
     context = await physicalAiClient.getOpenShiftContext();
@@ -720,6 +725,7 @@ async function refreshWorkloads(opts?: { silent?: boolean }) {
   }
   try {
     workloads = await physicalAiClient.listOpenShiftDeployments(namespace, selectedContext || undefined);
+    isCachedDeploymentSnapshot = false;
     listError = '';
     // Drop robot state for deployments that no longer exist; seed the rest.
     const names = new Set(workloads.map(w => w.name));
@@ -1004,10 +1010,12 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
     <button on:click={refreshTabData} disabled={discoveryBusy || listBusy} class="pai-btn text-sm">
       {discoveryBusy || listBusy ? 'Refreshing tab data…' : 'Refresh tab data'}
     </button>
-    <span class="text-xs font-medium pai-text-muted">
-      Cached snapshot — refresh manually to discover cluster, project, image, and deployment changes. Deployments also
-      refresh silently every {refreshIntervalDescription()}.
-    </span>
+    {#if isCachedTabSnapshot && !discoveryBusy && !listBusy}
+      <span class="text-xs font-medium pai-text-muted">
+        Cached snapshot — refresh manually to discover cluster, project, image, and deployment changes. Deployments also
+        refresh silently every {refreshIntervalDescription()}.
+      </span>
+    {/if}
   </div>
 
   {#if loading}
@@ -1352,9 +1360,11 @@ async function removeRobot(w: OpenShiftWorkload, index: number) {
           class="pai-btn text-sm">
           {listBusy ? 'Refreshing deployments…' : 'Refresh deployments'}
         </button>
-        <span class="text-xs font-medium pai-text-muted">
-          Cached deployment snapshot — refresh to update this list now.
-        </span>
+        {#if isCachedDeploymentSnapshot && !discoveryBusy && !listBusy}
+          <span class="text-xs font-medium pai-text-muted">
+            Cached deployment snapshot — refresh to update this list now.
+          </span>
+        {/if}
       </div>
 
       {#if listError}

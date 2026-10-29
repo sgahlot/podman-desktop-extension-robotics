@@ -130,6 +130,8 @@ describe('OpenShiftSimulation', () => {
   it('renders the deployed-simulations section', async () => {
     render(DeployOpenShift);
     expect(await screen.findByText('Deployed simulations')).toBeTruthy();
+    expect(screen.queryByText(/Cached snapshot — refresh manually/)).toBeNull();
+    expect(screen.queryByText(/Cached deployment snapshot/)).toBeNull();
   });
 
   it('lists a ready workload with its ready count', async () => {
@@ -159,6 +161,8 @@ describe('OpenShiftSimulation', () => {
     render(DeployOpenShift);
 
     expect(await screen.findByText('ros2-jazzy-sim')).toBeTruthy();
+    expect(screen.getByText(/Cached snapshot — refresh manually/)).toBeTruthy();
+    expect(screen.getByText(/Cached deployment snapshot/)).toBeTruthy();
     expect(mockListOpenShiftDeployments).not.toHaveBeenCalled();
   });
 
