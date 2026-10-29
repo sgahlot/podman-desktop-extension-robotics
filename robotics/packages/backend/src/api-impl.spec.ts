@@ -3130,12 +3130,14 @@ linear_acceleration:
       } as unknown as extensionApi.Configuration);
       expect(await api.getNavigationLayout()).toBe('tabs');
     });
-    it('returns "cards" when configured', async () => {
+    it('migrates the removed "cards" layout to "sidebar"', async () => {
+      const update = vi.fn().mockResolvedValue(undefined);
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
         get: vi.fn().mockReturnValue('cards'),
-        update: vi.fn(),
+        update,
       } as unknown as extensionApi.Configuration);
-      expect(await api.getNavigationLayout()).toBe('cards');
+      expect(await api.getNavigationLayout()).toBe('sidebar');
+      expect(update).toHaveBeenCalledWith('general.navigationLayout', 'sidebar');
     });
     it('falls back to "sidebar" for an unexpected stored value', async () => {
       vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({

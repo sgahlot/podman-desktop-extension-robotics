@@ -13,9 +13,7 @@ import type {
 import { parseEchoYamlTree, shortMessageType, PEEK_TIMEOUT_DEFAULT_SEC } from '/@shared/src/ros/topicPeek';
 import { topicSnapshotsEqual, mergeTopicSummaries, applyTopicCounts } from '/@shared/src/ros/topicList';
 import MessageTree from './lib/MessageTree.svelte';
-import QuickLinks from './lib/QuickLinks.svelte';
 import TopicEndpoints from './lib/TopicEndpoints.svelte';
-import { navigationLayout } from './lib/navigationLayout';
 import { filterTopicsByName, groupTopicsByNamespace } from './lib/topicFilter';
 import {
   createTopicMonitorTarget,
@@ -398,13 +396,7 @@ onDestroy(() => {
 </script>
 
 <div class="flex flex-col {embedded ? 'gap-4' : 'p-4 gap-4'} w-full flex-1 min-h-0 min-w-0 overflow-auto">
-  {#if $navigationLayout === 'cards' && !embedded}
-    <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
-  {/if}
   {#if !embedded}<h1 class="text-3xl text-[var(--pd-content-header)]">Topic Monitor</h1>{/if}
-  {#if $navigationLayout === 'cards' && !embedded}
-    <QuickLinks links={[{ label: 'Simulation', to: '/simulation' }]} />
-  {/if}
   {#if !embedded}
     <p class="text-sm text-[var(--pd-content-text)]">
       Inspect active ROS2 topics, message types, and publisher/subscriber counts in a running simulation.

@@ -7,8 +7,6 @@ import type { TopicInfo } from '/@shared/src/types/TopicInfo';
 import type { OpenShiftWorkload } from '/@shared/src/types/OpenShiftDeploy';
 import RobotDiagnosticsPanel from './lib/RobotDiagnosticsPanel.svelte';
 import type { DiagnosticsTarget } from './lib/RobotDiagnosticsPanel.types';
-import QuickLinks from './lib/QuickLinks.svelte';
-import { navigationLayout } from './lib/navigationLayout';
 import { lastOpenShiftSelection } from './lib/simSelection';
 import { resolveOpenShiftNamespace } from './lib/resolveOpenShiftNamespace';
 
@@ -277,13 +275,7 @@ onDestroy(() => {
 </script>
 
 <div class="flex flex-col p-4 gap-4 w-full flex-1 min-h-0 min-w-0 overflow-auto">
-  {#if $navigationLayout === 'cards'}
-    <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
-  {/if}
   <h1 class="text-3xl text-[var(--pd-content-header)]">Diagnostics</h1>
-  {#if $navigationLayout === 'cards'}
-    <QuickLinks links={[{ label: 'Simulation', to: '/simulation' }]} />
-  {/if}
   <p class="text-sm text-[var(--pd-content-text)]">
     Plain-language TF/costmap/sensor snapshots for a running robot — one-shot, click Refresh to re-capture.
   </p>

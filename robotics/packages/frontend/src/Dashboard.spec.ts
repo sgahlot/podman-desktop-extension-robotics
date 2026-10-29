@@ -62,16 +62,6 @@ describe('Dashboard', () => {
     expect(screen.getByText('Robotics')).toBeTruthy();
   });
 
-  it('renders quick link cards', () => {
-    render(Dashboard);
-    expect(screen.getByText('Image Builder')).toBeTruthy();
-    expect(screen.getByText('Image Catalog')).toBeTruthy();
-    expect(screen.getByText('Simulation')).toBeTruthy();
-    expect(screen.getByText('Topic Monitor')).toBeTruthy();
-    expect(screen.getByText('Fleet')).toBeTruthy();
-    expect(screen.getByText('Help')).toBeTruthy();
-  });
-
   it('shows status after loading', async () => {
     render(Dashboard);
     const statusEl = await screen.findByText(/Robotics extension is running/);
@@ -87,27 +77,21 @@ describe('Dashboard', () => {
 
   it('navigates to Image Catalog on click', async () => {
     render(Dashboard);
-    const btn = screen.getByText('Image Catalog');
+    const btn = screen.getByText('Local ROS 2 images');
     await fireEvent.click(btn);
     expect(mockGoto).toHaveBeenCalledWith('/images');
   });
 
   it('navigates to Help on click', async () => {
     render(Dashboard);
-    const btn = screen.getByText('Help');
+    const btn = screen.getByText(/Read the full guide/);
     await fireEvent.click(btn);
     expect(mockGoto).toHaveBeenCalledWith('/help');
   });
 
-  it('marks Fleet as coming soon', () => {
-    render(Dashboard);
-    const comingSoon = screen.getAllByText('Coming soon');
-    expect(comingSoon).toHaveLength(1);
-  });
-
   it('navigates to Simulation on click', async () => {
     render(Dashboard);
-    const btn = screen.getByText('Simulation');
+    const btn = screen.getByText(/Simulate/);
     await fireEvent.click(btn);
     expect(mockGoto).toHaveBeenCalledWith('/simulation');
   });
@@ -129,48 +113,8 @@ describe('Dashboard', () => {
     expect(screen.queryByText(/drive the robot/)).toBeNull();
   });
 
-  it('navigates to Image Builder on click', async () => {
+  it('shows the guidance dashboard', async () => {
     render(Dashboard);
-    const btn = screen.getByText('Image Builder');
-    await fireEvent.click(btn);
-    expect(mockGoto).toHaveBeenCalledWith('/build');
-  });
-
-  it('navigates to Topic Monitor on click', async () => {
-    render(Dashboard);
-    const btn = screen.getByText('Topic Monitor');
-    await fireEvent.click(btn);
-    expect(mockGoto).toHaveBeenCalledWith('/topics');
-  });
-
-  it('shows the layout switcher in cards layout when onLayoutChange is provided', () => {
-    render(Dashboard, { layout: 'cards', onLayoutChange: vi.fn() });
-    expect(screen.getByText('Layout')).toBeTruthy();
-    expect(screen.getByText('Sidebar')).toBeTruthy();
-    expect(screen.getByText('Tabs')).toBeTruthy();
-    expect(screen.getByText('Cards')).toBeTruthy();
-  });
-
-  it('hides the layout switcher by default', () => {
-    render(Dashboard);
-    expect(screen.queryByText('Layout')).toBeNull();
-  });
-
-  it('calls onLayoutChange when a switcher option is clicked in cards mode', async () => {
-    const onLayoutChange = vi.fn();
-    render(Dashboard, { layout: 'cards', onLayoutChange });
-    await fireEvent.click(screen.getByText('Tabs'));
-    expect(onLayoutChange).toHaveBeenCalledWith('tabs');
-  });
-
-  it('shows Quick Links in cards mode', () => {
-    render(Dashboard, { layout: 'cards' });
-    expect(screen.getByText('Quick Links')).toBeTruthy();
-  });
-
-  it('shows shared guidance content alongside Quick Links in cards mode', async () => {
-    render(Dashboard, { layout: 'cards' });
-    expect(screen.getByText('Quick Links')).toBeTruthy();
     expect(screen.getByText('Welcome to Robotics')).toBeTruthy();
     expect(screen.getByText('Open Image Builder')).toBeTruthy();
     expect(screen.getByText('Local ROS 2 images')).toBeTruthy();
@@ -180,32 +124,10 @@ describe('Dashboard', () => {
     expect(screen.getByText('TurtleBot3')).toBeTruthy();
     expect(screen.getByText('Nav2')).toBeTruthy();
     expect(screen.getByText('Extension guide')).toBeTruthy();
-    // Metric counts load async.
-    const imagesTile = screen.getByText('Local ROS 2 images').closest('button');
-    expect(imagesTile).toBeTruthy();
-    expect(await within(imagesTile as HTMLElement).findByText('1')).toBeTruthy();
-    const localTile = metricButton('Local simulations');
-    expect(within(localTile).getByText('1')).toBeTruthy();
-    const openShiftTile = metricButton('OpenShift simulations');
-    expect(await within(openShiftTile).findByText('1')).toBeTruthy();
   });
 
-  it('shows dashboard content instead of Quick Links in sidebar layout', async () => {
-    render(Dashboard, { layout: 'sidebar' });
-    expect(screen.getByText('Welcome to Robotics')).toBeTruthy();
-    expect(screen.getByText('Open Image Builder')).toBeTruthy();
-    expect(screen.getByText('Local ROS 2 images')).toBeTruthy();
-    expect(screen.getByText('local')).toBeTruthy();
-    expect(screen.getByText('OpenShift')).toBeTruthy();
-    expect(screen.getByText('ROS 2 Jazzy documentation')).toBeTruthy();
-    expect(screen.getByText('TurtleBot3')).toBeTruthy();
-    expect(screen.getByText('Nav2')).toBeTruthy();
-    expect(screen.getByText('Extension guide')).toBeTruthy();
-    expect(screen.queryByText('Quick Links')).toBeNull();
-  });
-
-  it('loads and shows metric counts in sidebar layout', async () => {
-    render(Dashboard, { layout: 'sidebar' });
+  it('loads and shows metric counts', async () => {
+    render(Dashboard);
     // Only the quay.io/x/ros2-jazzy-sim ref matches the ros2- image name filter.
     const imagesTile = screen.getByText('Local ROS 2 images').closest('button');
     expect(imagesTile).toBeTruthy();

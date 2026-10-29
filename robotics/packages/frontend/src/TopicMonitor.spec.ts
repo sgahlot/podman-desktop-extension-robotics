@@ -138,20 +138,6 @@ describe('TopicMonitor', () => {
     expect(screen.getByText('Topic Monitor')).toBeTruthy();
   });
 
-  it('shows the back-to-dashboard link and Quick Links when navigation layout is cards', () => {
-    navigationLayout.set('cards');
-    renderTopicMonitor();
-    expect(screen.getByText(/Back to Dashboard/)).toBeTruthy();
-    expect(screen.getByText('Quick Links:')).toBeTruthy();
-  });
-
-  it('hides the back-to-dashboard link and Quick Links when navigation layout is sidebar', () => {
-    navigationLayout.set('sidebar');
-    renderTopicMonitor();
-    expect(screen.queryByText(/Back to Dashboard/)).toBeNull();
-    expect(screen.queryByText('Quick Links:')).toBeNull();
-  });
-
   it('shows no-simulation message when no containers running', async () => {
     renderTopicMonitor();
     const msg = await screen.findByText(/No local simulation is available/);

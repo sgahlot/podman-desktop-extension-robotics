@@ -168,26 +168,6 @@ describe('SimulationSetup (Image Builder)', () => {
     expect(presetsLayerBuild?.querySelector('button')).toBeTruthy();
   });
 
-  it('shows the back-to-dashboard link and Quick Links when navigation layout is cards', async () => {
-    navigationLayout.set('cards');
-    render(SimulationSetup);
-    await waitFor(() => {
-      expect(screen.queryByText('Loading configuration...')).toBeNull();
-    });
-    expect(screen.getByText(/Back to Dashboard/)).toBeTruthy();
-    expect(screen.getByText('Quick Links:')).toBeTruthy();
-  });
-
-  it('hides the back-to-dashboard link and Quick Links when navigation layout is sidebar', async () => {
-    navigationLayout.set('sidebar');
-    render(SimulationSetup);
-    await waitFor(() => {
-      expect(screen.queryByText('Loading configuration...')).toBeNull();
-    });
-    expect(screen.queryByText(/Back to Dashboard/)).toBeNull();
-    expect(screen.queryByText('Quick Links:')).toBeNull();
-  });
-
   it('renders heading after config loads', async () => {
     mockGetImageBuilderLayout.mockResolvedValue('presets');
     render(SimulationSetup);

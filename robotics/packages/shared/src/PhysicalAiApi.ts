@@ -145,8 +145,8 @@ export abstract class PhysicalAiApi {
   abstract setCatalogViewMode(mode: 'all' | 'curated'): Promise<void>;
   abstract getImageBuilderLayout(): Promise<'presets' | 'customize' | 'layers'>;
   abstract setImageBuilderLayout(layout: 'presets' | 'customize' | 'layers'): Promise<void>;
-  abstract getNavigationLayout(): Promise<'sidebar' | 'tabs' | 'cards'>;
-  abstract setNavigationLayout(layout: 'sidebar' | 'tabs' | 'cards'): Promise<void>;
+  abstract getNavigationLayout(): Promise<'sidebar' | 'tabs'>;
+  abstract setNavigationLayout(layout: 'sidebar' | 'tabs'): Promise<void>;
   abstract getCatalogCuratedAllowlist(): Promise<string>;
   /** Enforced (see assertLaunchImageTag) — Simulation launch fails if the tag doesn't
    * match. Empty string = default ros2-*-sim* / ros2-*-turtlebot3 patterns; a configured

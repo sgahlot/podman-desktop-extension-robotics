@@ -8,34 +8,6 @@
   outline-offset: 4px;
 }
 
-.live-telemetry-toggle {
-  border: 1px solid var(--pai-accent, #7c3aed);
-  border-radius: 0.6rem;
-  background: var(--pd-button-secondary-bg, #ede9fe);
-  padding: 0.4rem 0.75rem;
-  box-shadow: 0 0 0 1px rgb(124 58 237 / 12%);
-  transition:
-    box-shadow 120ms ease,
-    background-color 120ms ease;
-}
-
-.live-telemetry-toggle:hover,
-.live-telemetry-toggle:focus-within {
-  box-shadow: 0 0 0 2px rgb(124 58 237 / 24%);
-}
-
-.live-telemetry-toggle.enabled {
-  border-width: 2px;
-  padding: calc(0.4rem - 1px) calc(0.75rem - 1px);
-  box-shadow: 0 0 0 2px rgb(124 58 237 / 24%);
-}
-
-.live-telemetry-toggle input {
-  width: 1rem;
-  height: 1rem;
-  accent-color: var(--pai-accent, #7c3aed);
-}
-
 .topic-publish-pulse rect {
   animation: pai-topic-publish-success 900ms ease-out 1;
 }
@@ -109,10 +81,8 @@ import {
   ROS_TOPIC_PUBLISH_MAX_BYTES,
   topicPublishPayloadBytes,
 } from '/@shared/src/ros/topicPublish';
-import QuickLinks from './lib/QuickLinks.svelte';
 import TopicMonitor from './TopicMonitor.svelte';
 import TopicEndpoints from './lib/TopicEndpoints.svelte';
-import { navigationLayout } from './lib/navigationLayout';
 import { filterTopicsByName, groupTopicsByNamespace } from './lib/topicFilter';
 import { parseLaserScanVisualization, parsePathVisualization, parsePoseVisualization } from './lib/topicVisualization';
 import {
@@ -1169,9 +1139,6 @@ onDestroy(() => {
 </script>
 
 <div class="flex flex-col p-4 gap-4 w-full flex-1 min-h-0 min-w-0 overflow-auto">
-  {#if $navigationLayout === 'cards'}
-    <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
-  {/if}
   <div class="flex flex-row items-center justify-between gap-3 flex-wrap">
     <h1 class="text-3xl text-[var(--pd-content-header)]">Topic Monitor</h1>
   </div>
@@ -1191,9 +1158,6 @@ onDestroy(() => {
       OpenShift
     </button>
   </div>
-  {#if $navigationLayout === 'cards'}
-    <QuickLinks links={[{ label: 'Simulation', to: '/simulation' }]} />
-  {/if}
   <p class="text-sm text-[var(--pd-content-text)]">
     Explore ROS2 nodes, topics, and publisher/subscriber relationships.
   </p>

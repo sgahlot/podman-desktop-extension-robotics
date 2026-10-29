@@ -68,12 +68,6 @@ describe('NavShell', () => {
     expect(screen.getByRole('tablist')).toBeTruthy();
   });
 
-  it('renders no chrome in cards layout', () => {
-    render(NavShell, { layout: 'cards', onLayoutChange: vi.fn() });
-    expect(screen.queryByText('Fleet')).toBeNull();
-    expect(screen.queryByRole('tablist')).toBeNull();
-  });
-
   it('navigates to /build when Image Builder is clicked in sidebar layout', async () => {
     render(NavShell, { layout: 'sidebar', onLayoutChange: vi.fn() });
     await fireEvent.click(screen.getByText('Image Builder'));

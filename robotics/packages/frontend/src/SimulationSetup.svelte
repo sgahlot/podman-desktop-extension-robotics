@@ -6,8 +6,6 @@ import BuildPushPanel from './lib/BuildPushPanel.svelte';
 import BuildHistoryPanel from './lib/BuildHistoryPanel.svelte';
 import LayerComposer from './lib/LayerComposer.svelte';
 import RegistrySelector from './lib/RegistrySelector.svelte';
-import QuickLinks from './lib/QuickLinks.svelte';
-import { navigationLayout } from './lib/navigationLayout';
 import {
   resolveSimulationProfile,
   hasSimulationSupport,
@@ -377,17 +375,7 @@ function onQuickStartClick(id: QuickStartId) {
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
-  {#if $navigationLayout === 'cards'}
-    <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
-  {/if}
   <h1 class="text-3xl text-[var(--pd-content-header)]">Image Builder</h1>
-  {#if $navigationLayout === 'cards'}
-    <QuickLinks
-      links={[
-        { label: 'Image Catalog', to: '/images' },
-        { label: 'Simulation', to: '/simulation' },
-      ]} />
-  {/if}
   <p class="text-sm text-[var(--pd-content-text)]">
     Configure, build, and push ROS2 base and simulation container images.
   </p>

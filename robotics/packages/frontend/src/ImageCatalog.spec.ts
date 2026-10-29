@@ -165,21 +165,6 @@ describe('ImageCatalog', () => {
     });
   });
 
-  it('navigates back to dashboard', async () => {
-    navigationLayout.set('cards');
-    render(ImageCatalog);
-    const backBtn = screen.getByText(/Back to Dashboard/);
-    await fireEvent.click(backBtn);
-    expect(mockGoto).toHaveBeenCalledWith('/');
-  });
-
-  it('hides the back-to-dashboard link and Quick Links when navigation layout is sidebar', () => {
-    navigationLayout.set('sidebar');
-    render(ImageCatalog);
-    expect(screen.queryByText(/Back to Dashboard/)).toBeNull();
-    expect(screen.queryByText('Quick Links:')).toBeNull();
-  });
-
   it('expands repo to show tags', async () => {
     mockListCatalogImages.mockResolvedValue([{ name: 'ros2-base', namespace: 'ecosystem-appeng' }]);
     mockGetImageTags.mockResolvedValue([

@@ -3,8 +3,8 @@ import { router } from 'tinro';
 import LayoutSwitcher from './LayoutSwitcher.svelte';
 import { NAV_ITEMS } from './navItems';
 
-export let layout: 'sidebar' | 'tabs' | 'cards';
-export let onLayoutChange: (next: 'sidebar' | 'tabs' | 'cards') => void;
+export let layout: 'sidebar' | 'tabs';
+export let onLayoutChange: (next: 'sidebar' | 'tabs') => void;
 
 // Reactive active-route detection — same pattern as Simulation.svelte:7 ($router.path).
 $: activePath = $router.path;
