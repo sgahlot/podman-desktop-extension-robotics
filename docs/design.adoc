@@ -110,7 +110,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 
 ==== Responsibilities
 
-* Dashboard landing page; the Quick Links feature-card grid is shown only in Cards mode. Under the Sidebar/Tabs layouts it doubles as the `Home` destination and instead renders a guidance dashboard (welcome + get-started + live metrics + explore) so it doesn't duplicate the persistent nav (`physical-ai.general.navigationLayout` preference, S8-13)
+* Dashboard landing page; it is the `Home` destination for the Sidebar and Tabs layouts and renders a guidance dashboard (welcome + get-started + live metrics + explore) (`physical-ai.general.navigationLayout` preference, S8-13)
 * Image catalog browser with All/Curated views and pull progress _(APPENG-5770, done)_
 * Image Builder with Presets, Customize, and Layers layouts. Quick Starts are shared across all layouts; Customize and Layers independently compose base and simulation sources _(APPENG-6313)_
 * Simulation page — Local and OpenShift robot controls discover supported robot profiles in each running image, seed launch fields from a selected profile, and allow users to customize or reset those defaults. The backend detects TurtleBot3 by its installed package/launch file and reads embedded SDF profile metadata under `/opt/physical-ai/robots/`. An embedded profile shows its `ros_gz_sim` package, `gz_spawn_model.launch.py`, and arguments; unchanged defaults use the validated SDF spawn entrypoint, while edits use the preflighted ROS launch path. Optional Image Builder Step 3 embeds a selected SDF asset directory into a derived image; its narrow in-image spawn entrypoint applies the Add Robot X/Y/yaw pose for both Podman and OpenShift. TurtleBot3 remains the navigation-capable profile (Jazzy: Nav2 `navigate_to_pose`; Humble: `cmd_vel`). Embedded SDF profiles provide model insertion only; mobile robot support remains follow-up scope. Runtime host mounts and arbitrary robot-file uploads are out of scope.
@@ -124,8 +124,8 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 |===
 | File | Role
 
-| `src/App.svelte` | Root component, hash-based routing via tinro; wraps routed content in `NavShell` for the persistent Sidebar/Tabs layouts
-| `src/Dashboard.svelte` | Layout-aware Home: Quick Links grid in cards mode; welcome/get-started/metrics/explore dashboard under sidebar/tabs
+| `src/App.svelte` | Root component, hash-based routing via tinro; wraps routed content in `NavShell` for Sidebar/Tabs navigation
+| `src/Dashboard.svelte` | Home dashboard with welcome, get-started, metrics, and explore guidance
 | `src/ImageCatalog.svelte` | Browse configured Quay, Docker Hub, or generic OCI repos (All/Curated), pull images, show local images
 | `src/RegistrySettings.svelte` | Shared registry configuration page used by Image Catalog and Image Builder
 | `src/SimulationSetup.svelte` | Image Builder — configure + build/push base and simulation images; one Registry selector applies to each active tab
@@ -138,8 +138,8 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 | `src/lib/BuildPushPanel.svelte` | Shared component for build/push/cancel lifecycle with polling
 | `src/lib/RegistryConfiguration.svelte` | Validated multiline JSON editor for shared registry definitions
 | `src/lib/RegistrySelector.svelte` | Tab-level Image Builder registry selector and Registry Settings link
-| `src/lib/NavShell.svelte` | Persistent nav shell wrapping routed content — renders Sidebar, Tabs, or nothing (Cards) per `physical-ai.general.navigationLayout`; highlights the active route via `$router.path` (S8-13)
-| `src/lib/LayoutSwitcher.svelte` | 3-way in-app radiogroup for the navigation layout (Sidebar / Tabs / Cards), mirrored by the PD preference (S8-13)
+| `src/lib/NavShell.svelte` | Persistent nav shell wrapping routed content — renders Sidebar or Tabs per `physical-ai.general.navigationLayout`; highlights the active route via `$router.path` (S8-13)
+| `src/lib/LayoutSwitcher.svelte` | In-app radiogroup for the navigation layout (Sidebar / Tabs), mirrored by the PD preference (S8-13)
 | `src/lib/navItems.ts` | Single source of truth for nav destinations (route, label, icon, disabled state e.g. Fleet "Coming soon") (S8-13)
 | `src/app.css` | `.pai-*` theme classes (buttons, links, text colors, cards, progress bars) using `--pd-*` CSS variables
 | `src/api/client.ts` | RPC client — creates proxy to backend API
@@ -511,7 +511,7 @@ needed for this configuration. They are edited on the extension's **Registry Set
 | `physical-ai.build.baseImage` | enum | `sloretz` | Base preset: `sloretz` (multi-arch Humble), `osrf` (amd64 Humble), `jazzy-noble` (Noble / multi-arch Quick Start), or `jazzy` (amd64 Jazzy `:latest`)
 | `physical-ai.catalog.viewMode` | enum | `all` | Image Catalog view: `all` (show all public repos) or `curated` (filter by allowlist)
 | `physical-ai.build.layout` | enum | `presets` | Layout for the Image Builder page: `presets` (known-good recipes), `customize` (independent base/simulation sources), or `layers` (advanced Bootc/Hummingbird/layer composition with a live compatibility verdict)
-| `physical-ai.general.navigationLayout` | enum | `sidebar` | Navigation layout for the extension shell: `sidebar` (persistent left sidebar), `tabs` (persistent horizontal tab bar), or `cards` (original Dashboard-only hub, no persistent chrome) (S8-13)
+| `physical-ai.general.navigationLayout` | enum | `sidebar` | Navigation layout for the extension shell: `sidebar` (persistent left sidebar) or `tabs` (persistent horizontal tab bar). Persisted `cards` values migrate to `sidebar`. (S8-13, APPENG-6808)
 | `physical-ai.catalog.curatedAllowlist` | string | `ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*` | Comma-separated wildcard patterns for curated catalog view
 | `physical-ai.simulation.imageAllowlist` | string | _(empty)_ | **Enforced** (not just a suggestion) — Simulation launch fails if the tag doesn't match. Comma-separated image refs or patterns. Empty = default `ros2-*-sim*` / `ros2-*-turtlebot3`. A custom value REPLACES the defaults entirely, not adds to them.
 | `physical-ai.topicMonitor.topicPeekTimeoutSeconds` | number | `5` | Timeout in seconds for Topic Monitor Peek (`ros2 topic echo --once`). Whole number from 1 to 30.

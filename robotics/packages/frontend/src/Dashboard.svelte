@@ -1,41 +1,10 @@
-<style>
-.card-tooltip {
-  position: relative;
-}
-.card-tooltip .tooltip-text {
-  visibility: hidden;
-  opacity: 0;
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  white-space: nowrap;
-  background-color: var(--pai-tooltip-bg);
-  color: var(--pai-tooltip-text);
-  pointer-events: none;
-  transition: opacity 0.15s;
-  margin-bottom: 4px;
-  z-index: 10;
-}
-.card-tooltip:hover .tooltip-text {
-  visibility: visible;
-  opacity: 1;
-}
-</style>
-
 <script lang="ts">
 import { physicalAiClient } from './api/client';
 import { onMount } from 'svelte';
 import { router } from 'tinro';
-import LayoutSwitcher from './lib/LayoutSwitcher.svelte';
 import { resolveOpenShiftNamespace } from './lib/resolveOpenShiftNamespace';
 
 export let active = true;
-export let layout: 'sidebar' | 'tabs' | 'cards' = 'cards';
-export let onLayoutChange: ((next: 'sidebar' | 'tabs' | 'cards') => void) | undefined = undefined;
-
 let wasActive = false;
 
 let status = 'Loading...';
@@ -107,15 +76,7 @@ $: if (!active) wasActive = false;
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
-  <div class="flex flex-row items-start justify-between gap-4">
-    <h1 class="text-3xl text-[var(--pd-content-header)]">Robotics</h1>
-    {#if layout === 'cards' && onLayoutChange}
-      <div class="flex flex-col items-end gap-1 shrink-0">
-        <span class="text-xs pai-text-muted">Layout</span>
-        <LayoutSwitcher value={layout} onSelect={onLayoutChange} />
-      </div>
-    {/if}
-  </div>
+  <h1 class="text-3xl text-[var(--pd-content-header)]">Robotics</h1>
   <div class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4">
     <h2 class="text-lg font-medium text-[var(--pd-content-header)]">Welcome to Robotics</h2>
     <p class="text-sm text-[var(--pd-content-text)] mt-2">
@@ -125,50 +86,6 @@ $: if (!active) wasActive = false;
     </p>
     <button on:click={() => router.goto('/help')} class="pai-link mt-2">Read the full guide &rarr;</button>
   </div>
-
-  {#if layout === 'cards'}
-    <div class="flex flex-col gap-2">
-      <div class="text-lg text-[var(--pd-content-header)]">Quick Links</div>
-      <div class="grid grid-cols-3 gap-4">
-        <button
-          on:click={() => router.goto('/build')}
-          class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer">
-          <span class="tooltip-text">Build and push ROS2 base and simulation images</span>
-          <div class="text-lg text-[var(--pd-content-header)]">Image Builder</div>
-        </button>
-        <button
-          on:click={() => router.goto('/images')}
-          class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer">
-          <span class="tooltip-text">Browse and pull container images</span>
-          <div class="text-lg text-[var(--pd-content-header)]">Image Catalog</div>
-        </button>
-        <button
-          on:click={() => router.goto('/simulation')}
-          class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer">
-          <span class="tooltip-text">Run robot simulations locally or on OpenShift</span>
-          <div class="text-lg text-[var(--pd-content-header)]">Simulation</div>
-        </button>
-        <button
-          on:click={() => router.goto('/topics')}
-          class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer">
-          <span class="tooltip-text">View active ROS2 topics and message details</span>
-          <div class="text-lg text-[var(--pd-content-header)]">Topic Monitor</div>
-        </button>
-        <div
-          class="card-tooltip p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)]">
-          <span class="tooltip-text">Scale to multi-robot local fleet</span>
-          <div class="text-lg text-[var(--pd-content-header)]">Fleet</div>
-          <div class="text-xs pai-text-muted mt-2">Coming soon</div>
-        </div>
-        <button
-          on:click={() => router.goto('/help')}
-          class="card-tooltip pai-card-interactive p-4 rounded-lg bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-left cursor-pointer">
-          <span class="tooltip-text">Guide to using this extension</span>
-          <div class="text-lg text-[var(--pd-content-header)]">Help</div>
-        </button>
-      </div>
-    </div>
-  {/if}
 
   <div
     class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 flex flex-col gap-3">

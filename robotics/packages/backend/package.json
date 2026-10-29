@@ -33,13 +33,11 @@
           "type": "string",
           "enum": [
             "sidebar",
-            "tabs",
-            "cards"
+            "tabs"
           ],
           "enumDescriptions": [
             "Persistent left sidebar listing every destination, with the active page highlighted",
-            "Persistent horizontal tab bar listing every destination, with the active page highlighted",
-            "No persistent navigation chrome — the Dashboard grid of cards is the hub (original behavior)"
+            "Persistent horizontal tab bar listing every destination, with the active page highlighted"
           ],
           "default": "sidebar",
           "description": "Navigation layout for the Robotics extension shell"

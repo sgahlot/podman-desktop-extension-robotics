@@ -1,6 +1,4 @@
 <script lang="ts">
-import { router } from 'tinro';
-import { navigationLayout } from './lib/navigationLayout';
 import { helpScreenshots as ss } from './lib/helpScreenshots';
 
 // Defining strings for image captions
@@ -21,9 +19,6 @@ let topicMonitorCaption =
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
-  {#if $navigationLayout === 'cards'}
-    <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
-  {/if}
   <h1 class="text-3xl text-[var(--pd-content-header)]">Help</h1>
   <p class="text-sm text-[var(--pd-content-text)]">Quick guide to using the Robotics extension for Podman Desktop.</p>
 
@@ -68,9 +63,8 @@ let topicMonitorCaption =
           hub.
         </div>
         <div>
-          <strong>Quick Links</strong> — When navigation layout is <strong>Cards</strong>, a grid of tiles opens Image
-          Builder, Image Catalog, Simulation, Topic Monitor, and Help (Fleet is listed as coming soon). Switch layout
-          under Settings &rarr; Preferences &rarr; Robotics if you prefer sidebar or tabs instead.
+          <strong>Navigation layout</strong> — Choose either the persistent <strong>Sidebar</strong> or horizontal
+          <strong>Tabs</strong> layout under Settings &rarr; Preferences &rarr; Robotics.
         </div>
         <div>
           <strong>Explore</strong> — Opens vetted external docs in your browser (ROS 2 Jazzy, TurtleBot3, Nav2) or

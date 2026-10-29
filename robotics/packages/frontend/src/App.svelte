@@ -18,9 +18,9 @@ import { navigationLayout as navigationLayoutStore } from './lib/navigationLayou
 router.mode.hash();
 
 let isMounted = false;
-let navigationLayout: 'sidebar' | 'tabs' | 'cards' = 'sidebar';
+let navigationLayout: 'sidebar' | 'tabs' = 'sidebar';
 
-function setNavigationLayout(next: 'sidebar' | 'tabs' | 'cards'): void {
+function setNavigationLayout(next: 'sidebar' | 'tabs'): void {
   navigationLayout = next;
   navigationLayoutStore.set(next);
   void physicalAiClient.setNavigationLayout(next);
@@ -44,7 +44,7 @@ onMount(async () => {
     <!-- min-h-0 lets the active page become the scroll container instead of growing past the viewport -->
     <NavShell layout={navigationLayout} onLayoutChange={setNavigationLayout}>
       <Route path="/" breadcrumb="Dashboard" let:active>
-        <Dashboard active={active} layout={navigationLayout} onLayoutChange={setNavigationLayout} />
+        <Dashboard active={active} />
       </Route>
       <Route path="/images" breadcrumb="Image Catalog" let:active>
         <ImageCatalog active={active} />
@@ -59,7 +59,7 @@ onMount(async () => {
         <ImageBuilder active={active} />
       </Route>
       <Route path="/simulation/*" breadcrumb="Simulation" let:active>
-        <Simulation active={active} />
+        <Simulation />
       </Route>
       <Route path="/topics" breadcrumb="Topic Monitor">
         <GraphicalTopicMonitor />

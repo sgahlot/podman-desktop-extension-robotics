@@ -4,8 +4,6 @@ import { onMount, onDestroy } from 'svelte';
 import { router } from 'tinro';
 import type { CatalogRegistry, CatalogRepository, CatalogTag, PullProgress } from '/@shared/src/types/ImageCatalog';
 import { filterCuratedRepos, type CatalogViewMode, DEFAULT_CURATED_ALLOWLIST } from '/@shared/src/types/CatalogCurated';
-import QuickLinks from './lib/QuickLinks.svelte';
-import { navigationLayout } from './lib/navigationLayout';
 
 /** False while another route is visible — Route.svelte keeps this page mounted. */
 export let active = true;
@@ -339,17 +337,7 @@ onDestroy(() => {
 </script>
 
 <div class="flex flex-col p-4 gap-4 h-full overflow-auto">
-  {#if $navigationLayout === 'cards'}
-    <button on:click={() => router.goto('/')} class="pai-link self-start"> &larr; Back to Dashboard </button>
-  {/if}
   <h1 class="text-3xl text-[var(--pd-content-header)]">Image Catalog</h1>
-  {#if $navigationLayout === 'cards'}
-    <QuickLinks
-      links={[
-        { label: 'Image Builder', to: '/build' },
-        { label: 'Registry Settings', to: '/registries' },
-      ]} />
-  {/if}
   <p class="text-sm text-[var(--pd-content-text)]">
     Browse and pull public ROS2 container images from a configured registry. Curated pulls focus on Ubuntu + Jazzy
     sim/base tags; build Fedora bootc 43 + ROS 2 Lyrical sims via <strong>Image Builder &rarr; Customize</strong>.

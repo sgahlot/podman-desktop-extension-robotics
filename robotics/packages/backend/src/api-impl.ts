@@ -2067,15 +2067,17 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     await config.update('build.layout', layout);
   }
 
-  async getNavigationLayout(): Promise<'sidebar' | 'tabs' | 'cards'> {
+  async getNavigationLayout(): Promise<'sidebar' | 'tabs'> {
     const config = extensionApi.configuration.getConfiguration('robotics');
     const layout = config.get<string>('general.navigationLayout');
-    return layout === 'tabs' || layout === 'cards' ? layout : 'sidebar';
+    if (layout === 'tabs') return layout;
+    if (layout === 'cards') await config.update('general.navigationLayout', 'sidebar');
+    return 'sidebar';
   }
 
-  async setNavigationLayout(layout: 'sidebar' | 'tabs' | 'cards'): Promise<void> {
-    if (layout !== 'sidebar' && layout !== 'tabs' && layout !== 'cards') {
-      throw new Error(`Invalid navigation layout "${String(layout)}". Use "sidebar", "tabs", or "cards".`);
+  async setNavigationLayout(layout: 'sidebar' | 'tabs'): Promise<void> {
+    if (layout !== 'sidebar' && layout !== 'tabs') {
+      throw new Error(`Invalid navigation layout "${String(layout)}". Use "sidebar" or "tabs".`);
     }
     const config = extensionApi.configuration.getConfiguration('robotics');
     await config.update('general.navigationLayout', layout);
