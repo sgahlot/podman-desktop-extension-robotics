@@ -157,6 +157,7 @@ interface TargetViewSnapshot {
   recordTopicNames: string[];
   recording: RosbagRecording | null;
   lastRetrievedAt: number | null;
+  hasLoadedTargets: boolean;
 }
 
 let targetKind: TopicMonitorTargetKind = 'local';
@@ -169,6 +170,7 @@ let targetApi: TopicMonitorTargetApi = targetApis.get(targetKind)!;
 let containers: TopicMonitorTargetOption[] = [];
 let topology: TopicGraphTopology | null = null;
 let lastRetrievedAt: number | null = null;
+let isCachedSnapshot = false;
 let selectedContainerId = '';
 let topicFilterQuery = '';
 let publisherFilterQuery = '';
@@ -179,6 +181,8 @@ let groupByNamespace = false;
 let loading = false;
 let error = '';
 let pollInFlight = false;
+let targetRequestGeneration = 0;
+let hasLoadedTargets = false;
 let selectedTopic = '';
 let selectedNode: NodeDetail | null = null;
 let selectedNodeRole: 'publisher' | 'subscriber' = 'publisher';
@@ -512,24 +516,32 @@ function restoreFilterResults(): void {
   subscriberFilterQuery = previous.kind === 'subscriber' ? previous.value : '';
 }
 
-async function refreshTopology() {
-  if (!selectedContainerId || pollInFlight) return;
+async function refreshTopology(api = targetApi, generation = targetRequestGeneration) {
+  if (!selectedContainerId) return;
+  const targetId = selectedContainerId;
   pollInFlight = true;
   try {
-    topology = await targetApi.getTopicTopology(selectedContainerId);
+    const nextTopology = await api.getTopicTopology(targetId);
+    if (generation !== targetRequestGeneration || api !== targetApi || targetId !== selectedContainerId) return;
+    topology = nextTopology;
     lastRetrievedAt = Date.now();
+    isCachedSnapshot = false;
     error = '';
   } catch (e) {
-    error = e instanceof Error ? e.message : String(e);
+    if (generation === targetRequestGeneration && api === targetApi && targetId === selectedContainerId) {
+      error = e instanceof Error ? e.message : String(e);
+    }
   } finally {
-    pollInFlight = false;
+    if (generation === targetRequestGeneration) pollInFlight = false;
   }
 }
 
 async function refresh() {
+  const generation = targetRequestGeneration;
+  const api = targetApi;
   loading = true;
-  await pollContainers(true);
-  loading = false;
+  await pollContainers(true, api, generation);
+  if (generation === targetRequestGeneration) loading = false;
 }
 
 function saveTargetSnapshot(): void {
@@ -557,6 +569,7 @@ function saveTargetSnapshot(): void {
     recordTopicNames,
     recording,
     lastRetrievedAt,
+    hasLoadedTargets,
   });
 }
 
@@ -584,6 +597,9 @@ function restoreTargetSnapshot(snapshot: TargetViewSnapshot): void {
   recordTopicNames = snapshot.recordTopicNames;
   recording = snapshot.recording;
   lastRetrievedAt = snapshot.lastRetrievedAt;
+  hasLoadedTargets = snapshot.hasLoadedTargets;
+  // Only a completed topology is a view that can be restored as cached data.
+  isCachedSnapshot = Boolean(snapshot.topology);
   error = '';
   loading = false;
 }
@@ -595,6 +611,7 @@ function switchTarget(kind: TopicMonitorTargetKind): void {
   stopTopicTelemetry();
   if (recordPollTimer) clearInterval(recordPollTimer);
   recordPollTimer = null;
+  targetRequestGeneration += 1;
   targetKind = kind;
   targetApi = targetApis.get(kind)!;
   const snapshot = targetSnapshots.get(kind);
@@ -607,11 +624,19 @@ function switchTarget(kind: TopicMonitorTargetKind): void {
         void pollRecording();
       }, 2000);
     }
+    // A target switch during its first request can retain an empty placeholder. Fetch it
+    // again rather than mistaking that incomplete state for a reusable snapshot.
+    if (!snapshot.hasLoadedTargets || (snapshot.containers.some(container => container.ready) && !snapshot.topology)) {
+      void refresh();
+    }
     return;
   }
   containers = [];
   selectedContainerId = '';
   topology = null;
+  lastRetrievedAt = null;
+  hasLoadedTargets = false;
+  isCachedSnapshot = false;
   clearSelection();
   void refresh();
 }
@@ -620,9 +645,16 @@ function formatRetrievedAt(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-async function pollContainers(forceTopology = false) {
+function formatCachedRetrievedAt(timestamp: number): string {
+  return new Date(timestamp).toLocaleString();
+}
+
+async function pollContainers(forceTopology = false, api = targetApi, generation = targetRequestGeneration) {
   try {
-    containers = await targetApi.listTargets();
+    const nextContainers = await api.listTargets();
+    if (generation !== targetRequestGeneration) return;
+    containers = nextContainers;
+    hasLoadedTargets = true;
     const nextRunningContainers = containers.filter(container => container.ready);
     const nextContainerId =
       nextRunningContainers.find(container => container.id === selectedContainerId)?.id ??
@@ -634,9 +666,9 @@ async function pollContainers(forceTopology = false) {
       topology = null;
       clearSelection();
     }
-    if (forceTopology || selectionChanged || !topology) await refreshTopology();
+    if (forceTopology || selectionChanged || !topology) await refreshTopology(api, generation);
   } catch (e) {
-    error = e instanceof Error ? e.message : String(e);
+    if (generation === targetRequestGeneration) error = e instanceof Error ? e.message : String(e);
   }
 }
 
@@ -1345,7 +1377,9 @@ onDestroy(() => {
       {loading ? 'Refreshing...' : 'Refresh'}
     </button>
     <span class="text-xs pai-text-muted" role="status" aria-live="polite">
-      {#if lastRetrievedAt}
+      {#if loading}
+        Retrieving current topics and topology…
+      {:else if lastRetrievedAt && !isCachedSnapshot}
         Retrieved {topics.length}
         {topics.length === 1 ? 'topic' : 'topics'} at {formatRetrievedAt(lastRetrievedAt)} · Refresh to update
       {:else}
@@ -1353,6 +1387,16 @@ onDestroy(() => {
       {/if}
     </span>
   </div>
+  {#if isCachedSnapshot && !loading}
+    <div class="text-sm p-3 rounded pai-banner-warning" role="status" aria-live="polite">
+      <span class="font-medium">Cached Topic Monitor data.</span>
+      {#if lastRetrievedAt}
+        Retrieved {topics.length}
+        {topics.length === 1 ? 'topic' : 'topics'} at {formatCachedRetrievedAt(lastRetrievedAt)}.
+      {/if}
+      <strong>Refresh</strong> to retrieve current topics and topology.
+    </div>
+  {/if}
   {#if error}<div class="p-3 rounded text-sm pai-banner-error max-w-lg">{error}</div>{/if}
 
   {#if listVisited}

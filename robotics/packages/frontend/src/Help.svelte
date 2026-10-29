@@ -476,6 +476,11 @@ let topicMonitorCaption =
           identifies the JSON schema version, not the robot or extension version. It is a point-in-time capture, not live
           state; unavailable sections retain their reason and raw command output is never included.
         </div>
+        <div>
+          <strong>Cached diagnostics</strong> — Returning to a Diagnostics target can restore the last bounded snapshot.
+          The prominent <strong>Cached diagnostics snapshot</strong> notice shows when this happens; click
+          <strong>Refresh diagnostics</strong> for current data.
+        </div>
 
         <hr class="border-[var(--pd-content-card-border)] my-3 opacity-60" />
 
@@ -493,6 +498,12 @@ let topicMonitorCaption =
           <strong>Overview</strong> — Shows active ROS2 topics inside a running local container or OpenShift workload, including
           message types and publisher/subscriber counts. Use List, Graph, or Cards view to inspect topology and relationships.
           Auto-refreshes every 5 seconds.
+        </div>
+        <div>
+          <strong>Cached target views</strong> — Returning to a Local or OpenShift target restores its last bounded
+          view. The prominent <strong>Cached Topic Monitor data</strong> notice identifies it; click
+          <strong>Refresh</strong>
+          to retrieve current topics and topology.
         </div>
         <div>
           <strong>Targets and recording</strong> — Switch between <strong>Local</strong> and <strong>OpenShift</strong>

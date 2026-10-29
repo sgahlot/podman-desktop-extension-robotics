@@ -18,6 +18,8 @@ const mockGetCompressedImageTopicSnapshot = vi.fn();
 const mockStartCompressedImageTopicPreview = vi.fn();
 const mockGetCompressedImageTopicPreview = vi.fn();
 const mockStopCompressedImageTopicPreview = vi.fn();
+const mockListOpenShiftDeployments = vi.fn();
+const mockResolveOpenShiftNamespace = vi.fn();
 
 vi.mock('./api/client', () => ({
   physicalAiClient: {
@@ -36,8 +38,13 @@ vi.mock('./api/client', () => ({
     startCompressedImageTopicPreview: (...args: unknown[]) => mockStartCompressedImageTopicPreview(...args),
     getCompressedImageTopicPreview: (...args: unknown[]) => mockGetCompressedImageTopicPreview(...args),
     stopCompressedImageTopicPreview: (...args: unknown[]) => mockStopCompressedImageTopicPreview(...args),
+    listOpenShiftDeployments: (...args: unknown[]) => mockListOpenShiftDeployments(...args),
     getTopicPeekTimeoutSeconds: async () => 5,
   },
+}));
+
+vi.mock('./lib/resolveOpenShiftNamespace', () => ({
+  resolveOpenShiftNamespace: () => mockResolveOpenShiftNamespace(),
 }));
 
 vi.mock('tinro', () => ({
@@ -72,6 +79,8 @@ describe('GraphicalTopicMonitor', () => {
       capturedAt: '',
     });
     mockStopCompressedImageTopicPreview.mockResolvedValue(undefined);
+    mockListOpenShiftDeployments.mockResolvedValue([]);
+    mockResolveOpenShiftNamespace.mockResolvedValue({ namespace: 'test-project', context: 'test-context' });
     mockPeekRosTopic.mockResolvedValue({
       topicName: '',
       message: '',
@@ -115,6 +124,76 @@ describe('GraphicalTopicMonitor', () => {
     expect(
       screen.getByRole('img', { name: 'ROS 2 topic topology graph' }).querySelectorAll(':scope > path'),
     ).toHaveLength(0);
+  });
+
+  it('prominently identifies a restored target view as cached until refreshed', async () => {
+    mockListSimulationContainers.mockResolvedValue([
+      { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
+    ]);
+    mockGetTopicTopology.mockResolvedValue({
+      topics: [{ name: '/cmd_vel', type: 'geometry_msgs/msg/Twist', publishers: 1, subscribers: 1 }],
+      nodes: [],
+      capturedAt: new Date().toISOString(),
+    });
+
+    render(GraphicalTopicMonitor);
+    await screen.findByText(/1 topics · 0 connected nodes/);
+    await fireEvent.click(screen.getByRole('tab', { name: 'OpenShift' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Local' }));
+
+    const notice = screen.getByText('Cached Topic Monitor data.');
+    expect(notice.parentElement?.textContent).toMatch(/Retrieved 1\s+topic at/);
+    expect(notice.parentElement?.textContent).toMatch(/Refresh to retrieve current topics and topology/);
+    expect(screen.queryByText(/1 topic at .*Refresh to update/)).toBeNull();
+
+    let resolveRefresh: (value: unknown) => void = () => {};
+    mockGetTopicTopology.mockReturnValueOnce(
+      new Promise(resolve => {
+        resolveRefresh = resolve;
+      }),
+    );
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(screen.queryByText('Cached Topic Monitor data.')).toBeNull();
+    resolveRefresh({ topics: [], nodes: [], capturedAt: new Date().toISOString() });
+    await screen.findByRole('button', { name: 'Refresh' });
+  });
+
+  it('retries an incomplete target when switching back before its initial request finishes', async () => {
+    let resolveInitialLocal: (containers: unknown[]) => void = () => {};
+    let resolveRetriedLocal: (containers: unknown[]) => void = () => {};
+    mockListSimulationContainers
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveInitialLocal = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveRetriedLocal = resolve;
+          }),
+      );
+    mockGetTopicTopology.mockResolvedValue({
+      topics: [{ name: '/cmd_vel', type: 'geometry_msgs/msg/Twist', publishers: 1, subscribers: 1 }],
+      nodes: [],
+      capturedAt: new Date().toISOString(),
+    });
+
+    render(GraphicalTopicMonitor);
+    await Promise.resolve();
+    expect(mockListSimulationContainers).toHaveBeenCalledTimes(1);
+    await fireEvent.click(screen.getByRole('tab', { name: 'OpenShift' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Local' }));
+    expect(mockListSimulationContainers).toHaveBeenCalledTimes(2);
+
+    resolveInitialLocal([]);
+    resolveRetriedLocal([
+      { id: 'c1', name: 'pai-sim-123', imageTag: 'ros2-jazzy-sim:noble', state: 'running', ports: [] },
+    ]);
+
+    expect(await screen.findByText(/1 topics · 0 connected nodes/)).toBeTruthy();
+    expect((screen.getByLabelText('Simulation container') as HTMLSelectElement).value).toBe('c1');
   });
 
   it('opens a topic inspector from the graph', async () => {

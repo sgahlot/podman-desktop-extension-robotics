@@ -249,6 +249,8 @@ describe('RobotDiagnosticsPanel', () => {
 
     render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
     expect(screen.getByText(/Laser scan looks normal/)).toBeTruthy();
+    expect(screen.getByText('Cached diagnostics snapshot.')).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toMatch(/Refresh diagnostics for current data/);
     expect(mockGetTfTreeStatus).not.toHaveBeenCalled();
     expect(mockGetCostmapSummary).not.toHaveBeenCalled();
     expect(mockGetRobotSensorDiagnostics).not.toHaveBeenCalled();
@@ -312,14 +314,35 @@ describe('RobotDiagnosticsPanel', () => {
     const { unmount } = render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
     await fireEvent.click(screen.getByRole('button', { name: 'Refresh diagnostics' }));
     expect(await screen.findByText(/Laser scan looks normal/)).toBeTruthy();
-    expect(screen.queryByText(/Last known snapshot/)).toBeNull();
+    expect(screen.queryByText('Cached diagnostics snapshot.')).toBeNull();
     unmount();
 
     render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
-    expect(await screen.findByText(/Last known snapshot/)).toBeTruthy();
+    expect(await screen.findByText('Cached diagnostics snapshot.')).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Refresh diagnostics' }));
-    await waitFor(() => expect(screen.queryByText(/Last known snapshot/)).toBeNull());
+    await waitFor(() => expect(screen.queryByText('Cached diagnostics snapshot.')).toBeNull());
+  });
+
+  it('hides a restored-snapshot warning while Refresh diagnostics is in progress', async () => {
+    const { unmount } = render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh diagnostics' }));
+    await screen.findByText(/Laser scan looks normal/);
+    unmount();
+
+    let resolveTf: (value: typeof TF_RESULT) => void = () => {};
+    mockGetTfTreeStatus.mockReturnValue(
+      new Promise(resolve => {
+        resolveTf = resolve;
+      }),
+    );
+    render(RobotDiagnosticsPanel, { props: { target: podmanTarget(SCAN_TOPICS) } });
+    expect(await screen.findByText('Cached diagnostics snapshot.')).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh diagnostics' }));
+    expect(screen.queryByText('Cached diagnostics snapshot.')).toBeNull();
+    resolveTf(TF_RESULT);
+    await screen.findByRole('button', { name: 'Refresh diagnostics' });
   });
 
   describe('OpenShift target', () => {

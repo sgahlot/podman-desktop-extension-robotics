@@ -346,7 +346,6 @@ async function refreshDiagnostics(): Promise<void> {
       </button>
       <button on:click={copyDiagnostics} disabled={!exportAvailable || refreshing} class="pai-btn"> Copy JSON </button>
       <button on:click={saveDiagnostics} disabled={!exportAvailable || refreshing} class="pai-btn"> Save JSON… </button>
-      <span class="text-xs pai-text-muted">One-shot snapshot, not live — click Refresh to re-capture.</span>
     </div>
     {#if exportFeedback}
       <div
@@ -362,9 +361,12 @@ async function refreshDiagnostics(): Promise<void> {
       expected, not an error. Click Refresh again once it's warmed up.
     </div>
 
-    {#if isCachedSnapshot}
-      <div class="text-sm p-3 rounded pai-banner-info">
-        Last known snapshot — click Refresh diagnostics for current data.
+    {#if isCachedSnapshot && !refreshing}
+      <div class="text-sm p-3 rounded pai-banner-warning" role="status" aria-live="polite">
+        <span class="font-medium">Cached diagnostics snapshot.</span>
+        {#if snapshotCapturedAt}
+          Captured {formatCapturedAt(snapshotCapturedAt)}.{/if}
+        Click Refresh diagnostics for current data.
       </div>
     {/if}
 
