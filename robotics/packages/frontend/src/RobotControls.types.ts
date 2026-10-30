@@ -16,5 +16,9 @@ export type RobotEntry = {
   navReached: { x: string; y: string } | null;
   /** Nav2 pre-warm state, polled by the parent; drives the "warming…/ready" badge. */
   warmStatus?: Nav2WarmStatus;
+  /** Local UI timing for this spawn/navigation lifecycle; it is not restored after reload. */
+  warmStartedAt?: number;
+  warmElapsedMs?: number;
+  navElapsedMs?: number;
   supportsNavigation: boolean;
 };

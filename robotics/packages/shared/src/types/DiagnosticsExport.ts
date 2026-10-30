@@ -1,4 +1,9 @@
-import type { CostmapSummaryResult, RobotSensorDiagnosticsResult, TfTreeResult } from './RobotDiagnostics';
+import type {
+  CostmapSummaryResult,
+  NavigationRuntimeDiagnosticsResult,
+  RobotSensorDiagnosticsResult,
+  TfTreeResult,
+} from './RobotDiagnostics';
 
 export interface DiagnosticsExportSnapshot {
   capturedAt: string;
@@ -8,6 +13,8 @@ export interface DiagnosticsExportSnapshot {
   tfError: string;
   costmapResult: CostmapSummaryResult | undefined;
   costmapError: string;
+  navigationResult?: NavigationRuntimeDiagnosticsResult;
+  navigationError?: string;
   sensorResult: RobotSensorDiagnosticsResult | undefined;
   sensorError: string;
 }
@@ -22,6 +29,9 @@ export function serializeDiagnosticsSnapshot(snapshot: DiagnosticsExportSnapshot
       robot: snapshot.robot,
       tf: snapshot.tfResult ?? { unavailable: snapshot.tfError || 'No TF result captured.' },
       costmap: snapshot.costmapResult ?? { unavailable: snapshot.costmapError || 'No costmap result captured.' },
+      navigation: snapshot.navigationResult ?? {
+        unavailable: snapshot.navigationError ?? 'No Nav2 runtime result captured.',
+      },
       sensors: snapshot.sensorResult ?? { unavailable: snapshot.sensorError || 'No sensor result captured.' },
     },
     undefined,

@@ -634,7 +634,13 @@ async function pollWarmStatus() {
       try {
         const status = await physicalAiClient.getRobotWarmStatusInOpenShift(namespace, wname, robot.name);
         if (status !== robot.warmStatus) {
-          robots[i] = { ...robot, warmStatus: status };
+          robots[i] = {
+            ...robot,
+            warmStatus: status,
+            ...((status === 'ready' || status === 'failed') && robot.warmStartedAt
+              ? { warmElapsedMs: Date.now() - robot.warmStartedAt }
+              : {}),
+          };
           changed = true;
         }
       } catch {
@@ -954,6 +960,7 @@ async function spawnRobot(w: OpenShiftWorkload, form: { name: string; x: string;
         (!isDefaultTurtleBot3 && !launchArguments.includes('{x}') && !launchArguments.includes('{y}')),
       // Backend pre-warms Nav2 for Nav2 sim images; show "warming…" optimistically there.
       warmStatus: isDefaultTurtleBot3 && w.image && imageSupportsNav2Prewarm(w.image) ? 'warming' : undefined,
+      warmStartedAt: isDefaultTurtleBot3 && w.image && imageSupportsNav2Prewarm(w.image) ? Date.now() : undefined,
     },
   ];
   robotsByWorkload = robotsByWorkload;
@@ -964,6 +971,7 @@ async function navigateRobot(w: OpenShiftWorkload, index: number) {
   const robot = robots?.[index];
   if (!robot) return;
   const snapshot = { x: robot.navTarget.x, y: robot.navTarget.y };
+  const navigationStartedAt = Date.now();
   robots[index] = { ...robot, navStatus: 'navigating', navReached: null };
   robotsByWorkload = robotsByWorkload;
   try {
@@ -979,9 +987,15 @@ async function navigateRobot(w: OpenShiftWorkload, index: number) {
       ...robots[index],
       navStatus: result.status === 'reached' ? 'reached' : 'failed',
       navReached: snapshot,
+      navElapsedMs: Date.now() - navigationStartedAt,
     };
   } catch {
-    robots[index] = { ...robots[index], navStatus: 'failed', navReached: snapshot };
+    robots[index] = {
+      ...robots[index],
+      navStatus: 'failed',
+      navReached: snapshot,
+      navElapsedMs: Date.now() - navigationStartedAt,
+    };
   }
   robotsByWorkload = robotsByWorkload;
 }

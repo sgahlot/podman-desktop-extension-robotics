@@ -34,6 +34,8 @@ let actionInfo = '';
 /** Container ids removed this session — hide until list API stops returning them. */
 let removedContainerIds: string[] = [];
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+/** Nav2 warm state must be polled promptly; the container inventory may be cached for minutes. */
+let warmTimer: ReturnType<typeof setInterval> | null = null;
 let simImageAllowlist = '';
 let robotLaunchError = '';
 let robotProfiles: ImageRobotProfile[] = [];
@@ -168,14 +170,17 @@ onMount(async () => {
   if (!cacheFresh) pollContainers().then(reconcileRobots);
   pollTimer = setInterval(() => {
     pollContainers().then(reconcileRobots);
-    pollWarmStatus();
     pruneStaleRobots();
   }, stateCacheRefreshSeconds * 1000);
+  warmTimer = setInterval(() => {
+    pollWarmStatus();
+  }, 3000);
 });
 
 onDestroy(() => {
   setLocalSimulationSnapshot({ containers, robots: spawnedRobots, capturedAt: Date.now() });
   if (pollTimer) clearInterval(pollTimer);
+  if (warmTimer) clearInterval(warmTimer);
 });
 
 async function launchSim() {
@@ -321,6 +326,8 @@ async function spawnRobot(form: { name: string; x: string; y: string; yaw: strin
         selection?.packageName === selectedProfile.packageName &&
         selection?.launchFile === selectedProfile.launchFile,
       warmStatus: isDefaultTurtleBot3 && imageSupportsNav2Prewarm(runningContainer.imageTag) ? 'warming' : undefined,
+      warmStartedAt:
+        isDefaultTurtleBot3 && imageSupportsNav2Prewarm(runningContainer.imageTag) ? Date.now() : undefined,
     },
   ];
 }
@@ -383,7 +390,13 @@ async function pollWarmStatus() {
     try {
       const status = await physicalAiClient.getRobotWarmStatus(runningContainer.id, robot.name);
       if (status !== robot.warmStatus) {
-        spawnedRobots[i] = { ...spawnedRobots[i], warmStatus: status };
+        spawnedRobots[i] = {
+          ...spawnedRobots[i],
+          warmStatus: status,
+          ...((status === 'ready' || status === 'failed') && robot.warmStartedAt
+            ? { warmElapsedMs: Date.now() - robot.warmStartedAt }
+            : {}),
+        };
         changed = true;
       }
     } catch {
@@ -402,6 +415,7 @@ async function navigateRobot(index: number) {
   if (isNaN(targetX) || isNaN(targetY)) return;
 
   const snapshot = { x: robot.navTarget.x, y: robot.navTarget.y };
+  const navigationStartedAt = Date.now();
   spawnedRobots[index] = { ...robot, navStatus: 'navigating', navReached: null };
   spawnedRobots = [...spawnedRobots];
 
@@ -411,9 +425,15 @@ async function navigateRobot(index: number) {
       ...spawnedRobots[index],
       navStatus: result.status === 'reached' ? 'reached' : 'failed',
       navReached: snapshot,
+      navElapsedMs: Date.now() - navigationStartedAt,
     };
   } catch {
-    spawnedRobots[index] = { ...spawnedRobots[index], navStatus: 'failed', navReached: snapshot };
+    spawnedRobots[index] = {
+      ...spawnedRobots[index],
+      navStatus: 'failed',
+      navReached: snapshot,
+      navElapsedMs: Date.now() - navigationStartedAt,
+    };
   }
   spawnedRobots = [...spawnedRobots];
 }

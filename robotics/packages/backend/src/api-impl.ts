@@ -151,6 +151,7 @@ import {
 import type {
   TfTreeResult,
   CostmapSummaryResult,
+  NavigationRuntimeDiagnosticsResult,
   OccupancyGridSummary,
   LaserScanSummary,
   ImuSummary,
@@ -189,9 +190,16 @@ const PROGRESS_RETENTION_MS = 30_000;
 /**
  * Seconds to poll for the map→base_link TF after launching Nav2. Sized for the
  * software-render cold-start (~40–90 s under llvmpipe); GPU/warm paths return
- * well before this. Pre-warm runs in the background, so a long wait is invisible.
+ * well before this. The pre-warm path first waits for the spawn script's bridge
+ * readiness condition, so Nav2 does not start against a silent bridge.
  */
 const NAV2_TF_POLL_ATTEMPTS = 120;
+/**
+ * Allow the spawn entrypoint to complete its 30-second launch-bridge probe and,
+ * if needed, its direct-bridge fallback probe before Nav2 starts. This mirrors
+ * the existing October bridge-recovery contract rather than racing it.
+ */
+const NAV2_BRIDGE_READY_ATTEMPTS = 70;
 
 /**
  * Fixed per-pair timeout for the curated TF chain (getTfTreeStatus), NOT the user-configurable
@@ -3543,6 +3551,16 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
         this.nav2WarmStatus.set(warmKey, 'failed');
         return;
       }
+      // entrypoint-spawn-robot.sh owns the Gazebo-to-ROS bridge recovery added in
+      // October. It waits for /<robot>/scan and starts a direct bridge fallback
+      // when the launch-managed bridge is silent. Starting Nav2 immediately after
+      // Gazebo creates the model races that recovery: AMCL can start before scan,
+      // odom, and TF are actually flowing, then spend minutes waiting for map→TF.
+      // Keep the same observable readiness gate here before launching Nav2.
+      if (!(await this.#waitForRobotBridge(target, robotName, distro))) {
+        this.nav2WarmStatus.set(warmKey, 'failed');
+        return;
+      }
       await this.#ensureNav2Running(target, robotName, pose, distro);
       this.nav2WarmStatus.set(warmKey, 'ready');
     } catch (err) {
@@ -3558,6 +3576,21 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
    */
   static #warmKey(scope: string, robotName: string): string {
     return `${scope} ${robotName}`;
+  }
+
+  /** Match the spawn entrypoint's successful bridge condition before Nav2 starts. */
+  async #waitForRobotBridge(target: ExecTarget, robotName: string, distro: SupportedRosDistro): Promise<boolean> {
+    for (let attempt = 0; attempt < NAV2_BRIDGE_READY_ATTEMPTS; attempt++) {
+      const sample = await this.#execRosBash(
+        target,
+        distro,
+        'ROS2CLI_USE_DAEMON=0 timeout 2 ros2 topic echo --once "/$1/scan" >/dev/null 2>&1',
+        [robotName],
+      );
+      if (sample.exitCode === 0) return true;
+      await PhysicalAiApiImpl.#sleep(1000);
+    }
+    return false;
   }
 
   async #hasMapBaseLinkTf(target: ExecTarget, robotName: string, distro: SupportedRosDistro): Promise<boolean> {
@@ -3871,6 +3904,53 @@ print(json.dumps(result or {'error': 'No image received before the peek timeout.
     const distro = await this.#detectRosDistro(id);
     const target = { kind: 'podman', id } as const;
     return this.#costmapSummaryFor(target, distro, safeRobot);
+  }
+
+  async getNavigationRuntimeDiagnostics(
+    containerId: string,
+    robotName: string,
+  ): Promise<NavigationRuntimeDiagnosticsResult> {
+    const { id } = await this.#resolveSimulationContainer(containerId);
+    const safeRobot = assertRobotName(robotName);
+    const distro = await this.#detectRosDistro(id);
+    return this.#navigationRuntimeDiagnosticsFor({ kind: 'podman', id }, distro, safeRobot);
+  }
+
+  /**
+   * Capture bounded runtime evidence without reading unbounded process logs. A controller that
+   * keeps publishing cmd_vel while the robot makes no progress distinguishes a planning/recovery
+   * investigation from a Nav2 bringup failure; absence of a rate is intentionally inconclusive.
+   */
+  async #navigationRuntimeDiagnosticsFor(
+    target: ExecTarget,
+    distro: SupportedRosDistro,
+    safeRobot: string,
+  ): Promise<NavigationRuntimeDiagnosticsResult> {
+    const capturedAt = new Date().toISOString();
+    const cmdVelTopic = `/${safeRobot}/cmd_vel`;
+    const [nodes, actions, cmdVel] = await Promise.all([
+      this.#execRosBash(target, distro, 'ros2 node list 2>/dev/null || true', []),
+      this.#execRosBash(target, distro, 'ros2 action list -t 2>/dev/null || true', []),
+      this.#execRosBash(target, distro, 'timeout "$1" ros2 topic hz "$2" --window 10 2>&1 || true', ['3', cmdVelTopic]),
+    ]);
+    const nodeList = nodes.stdout ?? '';
+    const actionList = actions.stdout ?? '';
+    const rateMatch = (cmdVel.stdout ?? '').match(/average rate:\s*([0-9]+(?:\.[0-9]+)?)/i);
+    const cmdVelError = rateMatch
+      ? undefined
+      : `No velocity-rate sample on ${cmdVelTopic} in 3s. The controller may be idle, recovering, or not publishing.`;
+
+    return {
+      robotNamespace: safeRobot,
+      capturedAt,
+      navigateToPoseAvailable: actionList.includes(`/${safeRobot}/navigate_to_pose`),
+      controllerServerAvailable: nodeList.includes(`/${safeRobot}/controller_server`),
+      behaviorServerAvailable: nodeList.includes(`/${safeRobot}/behavior_server`),
+      cmdVel: {
+        topic: cmdVelTopic,
+        ...(rateMatch ? { messagesPerSecond: Number(rateMatch[1]) } : { error: cmdVelError }),
+      },
+    };
   }
 
   async #costmapSummaryFor(
@@ -5027,6 +5107,24 @@ print(json.dumps(result or {'error': 'No image received before the peek timeout.
     const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
     const target = { kind: 'oc', pod, namespace: ns, context } as const;
     return this.#costmapSummaryFor(target, distro, safeRobot);
+  }
+
+  async getNavigationRuntimeDiagnosticsInOpenShift(
+    namespace: string,
+    name: string,
+    robotName: string,
+    context?: string,
+  ): Promise<NavigationRuntimeDiagnosticsResult> {
+    const ns = assertNamespace(namespace);
+    const safeName = assertK8sName(name, 'name');
+    const safeRobot = assertRobotName(robotName);
+    const image = await this.#openShiftDeploymentImage(ns, safeName, context);
+    const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
+    return this.#navigationRuntimeDiagnosticsFor(
+      { kind: 'oc', pod, namespace: ns, context },
+      PhysicalAiApiImpl.#distroFromImage(image),
+      safeRobot,
+    );
   }
 
   /** OpenShift counterpart of getLaserScanSummary — see #laserScanSummaryFor for the shared logic. */

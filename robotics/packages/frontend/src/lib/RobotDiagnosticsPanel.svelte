@@ -4,6 +4,7 @@ import { physicalAiClient } from '../api/client';
 import type {
   TfTreeResult,
   CostmapSummaryResult,
+  NavigationRuntimeDiagnosticsResult,
   RobotSensorDiagnosticsResult,
   SensorDiagnosticEntry,
 } from '/@shared/src/types/RobotDiagnostics';
@@ -33,6 +34,8 @@ let tfResult: TfTreeResult | null = null;
 let tfError = '';
 let costmapResult: CostmapSummaryResult | null = null;
 let costmapError = '';
+let navigationResult: NavigationRuntimeDiagnosticsResult | null = null;
+let navigationError = '';
 let sensorResult: RobotSensorDiagnosticsResult | null = null;
 let sensorError = '';
 let snapshotCapturedAt = '';
@@ -114,6 +117,8 @@ function clearResults(): void {
   tfError = '';
   costmapResult = null;
   costmapError = '';
+  navigationResult = null;
+  navigationError = '';
   sensorResult = null;
   sensorError = '';
   snapshotCapturedAt = '';
@@ -137,6 +142,8 @@ $: {
       tfError = cached.tfError;
       costmapResult = cached.costmapResult;
       costmapError = cached.costmapError;
+      navigationResult = cached.navigationResult ?? null;
+      navigationError = cached.navigationError ?? '';
       sensorResult = cached.sensorResult;
       sensorError = cached.sensorError;
       snapshotCapturedAt = cached.capturedAt ?? '';
@@ -177,7 +184,7 @@ function sensorVerdict(entry: SensorDiagnosticEntry) {
   return sensorDiagnosticVerdict(entry);
 }
 
-$: exportAvailable = Boolean(snapshotCapturedAt && (tfResult || costmapResult || sensorResult));
+$: exportAvailable = Boolean(snapshotCapturedAt && (tfResult || costmapResult || navigationResult || sensorResult));
 
 function exportTarget() {
   return target.kind === 'podman'
@@ -198,6 +205,8 @@ function exportJson(): string {
     tfError,
     costmapResult: costmapResult ?? undefined,
     costmapError,
+    navigationResult: navigationResult ?? undefined,
+    navigationError,
     sensorResult: sensorResult ?? undefined,
     sensorError,
   });
@@ -240,11 +249,17 @@ async function refreshDiagnostics(): Promise<void> {
   const targetRobot = robotName;
   refreshing = true;
 
-  const calls: [Promise<TfTreeResult>, Promise<CostmapSummaryResult>, Promise<RobotSensorDiagnosticsResult>] =
+  const calls: [
+    Promise<TfTreeResult>,
+    Promise<CostmapSummaryResult>,
+    Promise<NavigationRuntimeDiagnosticsResult>,
+    Promise<RobotSensorDiagnosticsResult>,
+  ] =
     targetSnapshot.kind === 'podman'
       ? [
           physicalAiClient.getTfTreeStatus(targetSnapshot.containerId, targetRobot),
           physicalAiClient.getCostmapSummary(targetSnapshot.containerId, targetRobot),
+          physicalAiClient.getNavigationRuntimeDiagnostics(targetSnapshot.containerId, targetRobot),
           physicalAiClient.getRobotSensorDiagnostics(targetSnapshot.containerId, targetRobot),
         ]
       : [
@@ -260,6 +275,12 @@ async function refreshDiagnostics(): Promise<void> {
             targetRobot,
             targetSnapshot.context,
           ),
+          physicalAiClient.getNavigationRuntimeDiagnosticsInOpenShift(
+            targetSnapshot.namespace,
+            targetSnapshot.workload,
+            targetRobot,
+            targetSnapshot.context,
+          ),
           physicalAiClient.getRobotSensorDiagnosticsInOpenShift(
             targetSnapshot.namespace,
             targetSnapshot.workload,
@@ -268,7 +289,7 @@ async function refreshDiagnostics(): Promise<void> {
           ),
         ];
 
-  const [tfSettled, costmapSettled, sensorSettled] = await Promise.allSettled(calls);
+  const [tfSettled, costmapSettled, navigationSettled, sensorSettled] = await Promise.allSettled(calls);
 
   if (targetKey(target) !== snapshotKey || robotName !== targetRobot) {
     refreshing = false;
@@ -291,6 +312,14 @@ async function refreshDiagnostics(): Promise<void> {
     costmapError = errorMessage(costmapSettled.reason);
   }
 
+  if (navigationSettled.status === 'fulfilled') {
+    navigationResult = navigationSettled.value;
+    navigationError = '';
+  } else {
+    navigationResult = null;
+    navigationError = errorMessage(navigationSettled.reason);
+  }
+
   if (sensorSettled.status === 'fulfilled') {
     sensorResult = sensorSettled.value;
     sensorError = '';
@@ -307,6 +336,8 @@ async function refreshDiagnostics(): Promise<void> {
     tfError,
     costmapResult,
     costmapError,
+    navigationResult,
+    navigationError,
     sensorResult,
     sensorError,
   });
@@ -481,6 +512,40 @@ async function refreshDiagnostics(): Promise<void> {
               {/each}
             </div>
           </details>
+        {/if}
+      </div>
+
+      <!-- Nav2 runtime -->
+      <div
+        class="min-w-0 rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-3 flex flex-col gap-2">
+        <div class="text-sm font-medium text-[var(--pd-content-header)]">Nav2 runtime</div>
+        {#if navigationError}
+          <div class="text-xs pai-text-error">{navigationError}</div>
+        {:else if !navigationResult}
+          <div class="text-xs pai-text-muted">No snapshot yet.</div>
+        {:else}
+          <div class="text-xs pai-text-muted">
+            Capture this while the robot is stalled. It shows whether Nav2 is available and whether the controller is
+            still publishing velocity commands; it does not diagnose a recovery by itself.
+          </div>
+          <div class="text-xs text-[var(--pd-content-text)]">
+            Navigate action: {navigationResult.navigateToPoseAvailable ? 'available' : 'missing'}
+          </div>
+          <div class="text-xs text-[var(--pd-content-text)]">
+            Controller: {navigationResult.controllerServerAvailable ? 'available' : 'missing'} · Behavior server:
+            {navigationResult.behaviorServerAvailable ? 'available' : 'missing'}
+          </div>
+          {#if navigationResult.cmdVel.error}
+            <div class="text-xs pai-text-muted break-all">{navigationResult.cmdVel.error}</div>
+          {:else if navigationResult.cmdVel.messagesPerSecond !== undefined}
+            <div class="text-xs text-[var(--pd-content-text)]">
+              <span class="font-mono">{navigationResult.cmdVel.topic}</span>: {navigationResult.cmdVel.messagesPerSecond.toFixed(
+                1,
+              )} messages/s
+            </div>
+          {:else}
+            <div class="text-xs pai-text-muted">No velocity-rate sample was returned.</div>
+          {/if}
         {/if}
       </div>
     </div>

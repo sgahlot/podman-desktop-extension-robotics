@@ -9,10 +9,12 @@ import { localTargetKey } from './diagnosticsTargetKey';
 
 const mockGetTfTreeStatus = vi.fn();
 const mockGetCostmapSummary = vi.fn();
+const mockGetNavigationRuntimeDiagnostics = vi.fn();
 const mockGetRobotSensorDiagnostics = vi.fn();
 const mockListSpawnedRobotsInSimulation = vi.fn();
 const mockGetTfTreeStatusInOpenShift = vi.fn();
 const mockGetCostmapSummaryInOpenShift = vi.fn();
+const mockGetNavigationRuntimeDiagnosticsInOpenShift = vi.fn();
 const mockGetRobotSensorDiagnosticsInOpenShift = vi.fn();
 const mockListSpawnedRobotsInOpenShift = vi.fn();
 const mockCopyToClipboard = vi.fn();
@@ -22,10 +24,13 @@ vi.mock('../api/client', () => ({
   physicalAiClient: {
     getTfTreeStatus: (...args: unknown[]) => mockGetTfTreeStatus(...args),
     getCostmapSummary: (...args: unknown[]) => mockGetCostmapSummary(...args),
+    getNavigationRuntimeDiagnostics: (...args: unknown[]) => mockGetNavigationRuntimeDiagnostics(...args),
     getRobotSensorDiagnostics: (...args: unknown[]) => mockGetRobotSensorDiagnostics(...args),
     listSpawnedRobotsInSimulation: (...args: unknown[]) => mockListSpawnedRobotsInSimulation(...args),
     getTfTreeStatusInOpenShift: (...args: unknown[]) => mockGetTfTreeStatusInOpenShift(...args),
     getCostmapSummaryInOpenShift: (...args: unknown[]) => mockGetCostmapSummaryInOpenShift(...args),
+    getNavigationRuntimeDiagnosticsInOpenShift: (...args: unknown[]) =>
+      mockGetNavigationRuntimeDiagnosticsInOpenShift(...args),
     getRobotSensorDiagnosticsInOpenShift: (...args: unknown[]) => mockGetRobotSensorDiagnosticsInOpenShift(...args),
     listSpawnedRobotsInOpenShift: (...args: unknown[]) => mockListSpawnedRobotsInOpenShift(...args),
     copyToClipboard: (...args: unknown[]) => mockCopyToClipboard(...args),
@@ -133,10 +138,26 @@ describe('RobotDiagnosticsPanel', () => {
     spawnedRobotsByTarget.set({});
     mockGetTfTreeStatus.mockResolvedValue(TF_RESULT);
     mockGetCostmapSummary.mockResolvedValue(COSTMAP_RESULT);
+    mockGetNavigationRuntimeDiagnostics.mockResolvedValue({
+      robotNamespace: 'robot_1',
+      capturedAt: '2026-10-30T00:00:00.000Z',
+      navigateToPoseAvailable: true,
+      controllerServerAvailable: true,
+      behaviorServerAvailable: true,
+      cmdVel: { topic: '/robot_1/cmd_vel', messagesPerSecond: 10 },
+    });
     mockGetRobotSensorDiagnostics.mockResolvedValue(SENSOR_RESULT);
     mockListSpawnedRobotsInSimulation.mockResolvedValue([]);
     mockGetTfTreeStatusInOpenShift.mockResolvedValue(TF_RESULT);
     mockGetCostmapSummaryInOpenShift.mockResolvedValue(COSTMAP_RESULT);
+    mockGetNavigationRuntimeDiagnosticsInOpenShift.mockResolvedValue({
+      robotNamespace: 'robot_1',
+      capturedAt: '2026-10-30T00:00:00.000Z',
+      navigateToPoseAvailable: true,
+      controllerServerAvailable: true,
+      behaviorServerAvailable: true,
+      cmdVel: { topic: '/robot_1/cmd_vel', messagesPerSecond: 10 },
+    });
     mockGetRobotSensorDiagnosticsInOpenShift.mockResolvedValue(SENSOR_RESULT);
     mockListSpawnedRobotsInOpenShift.mockResolvedValue([]);
     mockCopyToClipboard.mockResolvedValue(undefined);

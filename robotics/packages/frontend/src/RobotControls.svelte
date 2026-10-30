@@ -3,6 +3,7 @@ export type { RobotEntry } from './RobotControls.types';
 </script>
 
 <script lang="ts">
+import { onMount } from 'svelte';
 import type { RobotEntry } from './RobotControls.types';
 
 /**
@@ -39,6 +40,14 @@ let removing: Record<string, boolean> = {};
 /** True once the user types into the Name field; blocks the auto-suggestion below so we
  * never clobber a name they picked themselves. */
 let nameEdited = false;
+let clockNow = Date.now();
+
+onMount(() => {
+  const timer = setInterval(() => {
+    clockNow = Date.now();
+  }, 1000);
+  return () => clearInterval(timer);
+});
 
 function startCounter(n: string): number {
   const m = /^robot_(\d+)$/.exec(n);
@@ -119,6 +128,13 @@ async function remove(index: number) {
     removing = removing;
   }
 }
+
+function formatElapsed(milliseconds: number | undefined): string {
+  if (milliseconds === undefined) return '';
+  return milliseconds < 60_000
+    ? `${(milliseconds / 1000).toFixed(1)}s`
+    : `${Math.floor(milliseconds / 60_000)}m ${((milliseconds % 60_000) / 1000).toFixed(1)}s`;
+}
 </script>
 
 <div class="flex flex-col gap-2">
@@ -187,13 +203,18 @@ async function remove(index: number) {
               class="inline-flex items-center gap-1.5 text-sm font-medium px-2.5 py-0.5 rounded-full border border-[var(--pd-content-card-border)] pai-text-accent"
               title="Nav2 is starting in the background; navigation controls appear once it's ready.">
               <span class="inline-block w-2 h-2 rounded-full bg-current animate-pulse"></span>
-              Nav2 warming…
+              Nav2 warming…{robot.warmStartedAt ? ` (${formatElapsed(clockNow - robot.warmStartedAt)})` : ''}
             </span>
           {:else if robot.supportsNavigation}
+            {#if robot.warmStatus === 'ready' && robot.warmElapsedMs !== undefined}
+              <span class="pai-text-success">Nav2 warmed in {formatElapsed(robot.warmElapsedMs)}</span>
+            {/if}
             {#if robot.warmStatus === 'failed'}
               <!-- Pre-warm gave up; controls stay available (the goal can still cold-start Nav2). -->
               <span class="pai-text-warning" title="Nav2 pre-warm didn't complete; Navigate may cold-start it.">
-                Nav2 warm-up failed
+                Nav2 warm-up failed{robot.warmElapsedMs !== undefined
+                  ? ` after ${formatElapsed(robot.warmElapsedMs)}`
+                  : ''}
               </span>
             {/if}
             <span class="pai-text-muted">→</span>
@@ -225,10 +246,10 @@ async function remove(index: number) {
                 ? 'Navigating…'
                 : robot.navStatus === 'reached'
                   ? robot.navReached
-                    ? `Reached (${robot.navReached.x}, ${robot.navReached.y})`
+                    ? `Reached (${robot.navReached.x}, ${robot.navReached.y}) — Navigate took ${formatElapsed(robot.navElapsedMs)}`
                     : 'Reached'
                   : robot.navStatus === 'failed'
-                    ? 'Failed'
+                    ? `Navigate failed after ${formatElapsed(robot.navElapsedMs)} to (${robot.navReached?.x ?? robot.navTarget.x}, ${robot.navReached?.y ?? robot.navTarget.y})`
                     : 'Idle'}
             </span>
           {:else}

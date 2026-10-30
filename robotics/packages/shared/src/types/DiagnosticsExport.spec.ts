@@ -24,6 +24,7 @@ describe('serializeDiagnosticsSnapshot', () => {
       robot: 'robot_1',
       tf: { unavailable: 'TF probe timed out.' },
       costmap: { local: undefined, global: undefined },
+      navigation: { unavailable: 'No Nav2 runtime result captured.' },
       sensors: { unavailable: 'Sensor probe failed.' },
     });
   });
@@ -38,6 +39,14 @@ describe('serializeDiagnosticsSnapshot', () => {
         tfError: '',
         costmapResult: undefined,
         costmapError: 'No costmap result captured.',
+        navigationResult: {
+          robotNamespace: 'robot_2',
+          capturedAt: '2026-10-26T11:59:59.000Z',
+          navigateToPoseAvailable: true,
+          controllerServerAvailable: true,
+          behaviorServerAvailable: true,
+          cmdVel: { topic: '/robot_2/cmd_vel', messagesPerSecond: 10 },
+        },
         sensorResult: { robotNamespace: 'robot_2', capturedAt: '2026-10-26T11:59:59.000Z', sensors: [] },
         sensorError: '',
       }),
@@ -47,5 +56,32 @@ describe('serializeDiagnosticsSnapshot', () => {
     expect(document.tf.frames).toEqual([]);
     expect(document.sensors.sensors).toEqual([]);
     expect(document.costmap).toEqual({ unavailable: 'No costmap result captured.' });
+    expect(document.navigation).toEqual({
+      robotNamespace: 'robot_2',
+      capturedAt: '2026-10-26T11:59:59.000Z',
+      navigateToPoseAvailable: true,
+      controllerServerAvailable: true,
+      behaviorServerAvailable: true,
+      cmdVel: { topic: '/robot_2/cmd_vel', messagesPerSecond: 10 },
+    });
+  });
+
+  it('preserves a Nav2 runtime probe failure', () => {
+    const document = JSON.parse(
+      serializeDiagnosticsSnapshot({
+        capturedAt: '2026-10-26T12:00:00.000Z',
+        target: { kind: 'local', identity: 'container-1' },
+        robot: 'robot_1',
+        tfResult: undefined,
+        tfError: '',
+        costmapResult: undefined,
+        costmapError: '',
+        navigationError: 'Nav2 runtime probe failed.',
+        sensorResult: undefined,
+        sensorError: '',
+      }),
+    );
+
+    expect(document.navigation).toEqual({ unavailable: 'Nav2 runtime probe failed.' });
   });
 });
