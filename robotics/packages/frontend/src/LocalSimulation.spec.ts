@@ -251,8 +251,9 @@ describe('LocalSimulation', () => {
     expect(screen.queryByText('Launch a simulation first to add robots.')).toBeNull();
   });
 
-  it('shows Navigate on spawned robots once Nav2 has warmed up', async () => {
+  it('polls Nav2 warm status every three seconds independently of the simulation cache interval', async () => {
     vi.useFakeTimers();
+    mockGetSimulationStateCacheRefreshSeconds.mockResolvedValue(300);
     mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
     mockListSimulationContainers.mockResolvedValue([
       {
@@ -282,6 +283,7 @@ describe('LocalSimulation', () => {
 
     expect(screen.queryByRole('button', { name: 'Navigate' })).toBeNull();
     await vi.advanceTimersByTimeAsync(3000);
+    expect(mockGetRobotWarmStatus).toHaveBeenCalledWith('abc123def456', 'robot_1');
     expect(screen.getByRole('button', { name: 'Navigate' })).toBeTruthy();
   });
 

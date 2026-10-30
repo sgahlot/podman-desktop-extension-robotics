@@ -1,6 +1,7 @@
 import type {
   TfTreeResult,
   CostmapSummaryResult,
+  NavigationRuntimeDiagnosticsResult,
   RobotSensorDiagnosticsResult,
 } from '/@shared/src/types/RobotDiagnostics';
 
@@ -10,6 +11,8 @@ export interface CachedDiagnosticsSnapshot {
   tfError: string;
   costmapResult: CostmapSummaryResult | null;
   costmapError: string;
+  navigationResult?: NavigationRuntimeDiagnosticsResult | null;
+  navigationError?: string;
   sensorResult: RobotSensorDiagnosticsResult | null;
   sensorError: string;
 }

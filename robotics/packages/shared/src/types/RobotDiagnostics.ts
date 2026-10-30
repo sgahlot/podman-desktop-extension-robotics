@@ -34,6 +34,20 @@ export interface CostmapSummaryResult {
   global?: OccupancyGridSummary;
 }
 
+/** Bounded Nav2 runtime evidence captured while investigating a stalled goal. */
+export interface NavigationRuntimeDiagnosticsResult {
+  robotNamespace: string;
+  capturedAt: string;
+  navigateToPoseAvailable: boolean;
+  controllerServerAvailable: boolean;
+  behaviorServerAvailable: boolean;
+  cmdVel: {
+    topic: string;
+    messagesPerSecond?: number;
+    error?: string;
+  };
+}
+
 export interface LaserScanSummary {
   topic: string;
   angleMinRad: number;

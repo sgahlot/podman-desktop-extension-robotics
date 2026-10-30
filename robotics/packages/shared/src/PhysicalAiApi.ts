@@ -31,6 +31,7 @@ import type {
   TfTreeResult,
   CostmapSummaryResult,
   LaserScanSummary,
+  NavigationRuntimeDiagnosticsResult,
   RobotSensorDiagnosticsResult,
 } from './types/RobotDiagnostics';
 import type {
@@ -342,6 +343,11 @@ export abstract class PhysicalAiApi {
   abstract getTfTreeStatus(containerId: string, robotName: string): Promise<TfTreeResult>;
   /** Local + global Nav2 OccupancyGrid summaries (cell counts, not raw grids). */
   abstract getCostmapSummary(containerId: string, robotName: string): Promise<CostmapSummaryResult>;
+  /** Bounded Nav2 action/node and cmd_vel-rate evidence for a selected robot. */
+  abstract getNavigationRuntimeDiagnostics(
+    containerId: string,
+    robotName: string,
+  ): Promise<NavigationRuntimeDiagnosticsResult>;
   /** LaserScan summary (angle/range bounds, min/max/mean of finite ranges). */
   abstract getLaserScanSummary(containerId: string, robotName: string): Promise<LaserScanSummary>;
   /** Dynamic sensor list for a robot: discovers `sensor_msgs/*` topics and peeks supported types. */
@@ -438,6 +444,13 @@ export abstract class PhysicalAiApi {
     robotName: string,
     context?: string,
   ): Promise<CostmapSummaryResult>;
+  /** OpenShift counterpart of getNavigationRuntimeDiagnostics. */
+  abstract getNavigationRuntimeDiagnosticsInOpenShift(
+    namespace: string,
+    name: string,
+    robotName: string,
+    context?: string,
+  ): Promise<NavigationRuntimeDiagnosticsResult>;
   /** LaserScan summary for a robot in a deployed pod — see getLaserScanSummary. */
   abstract getLaserScanSummaryInOpenShift(
     namespace: string,

@@ -2921,6 +2921,56 @@ Could not determine the type for the passed topic
     });
   });
 
+  describe('getNavigationRuntimeDiagnostics', () => {
+    const CONTAINER_ID = 'navigation-diagnostics';
+
+    beforeEach(() => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+      ] as unknown as extensionApi.ContainerInfo[]);
+    });
+
+    it('reports Nav2 availability and a bounded cmd_vel rate sample', async () => {
+      vi.mocked(extensionApi.process.exec)
+        .mockResolvedValueOnce({
+          stdout: '/robot_1/controller_server\n/robot_1/behavior_server\n',
+          stderr: '',
+          command: 'podman',
+        } as extensionApi.RunResult)
+        .mockResolvedValueOnce({
+          stdout: '/robot_1/navigate_to_pose [nav2_msgs/action/NavigateToPose]\n',
+          stderr: '',
+          command: 'podman',
+        } as extensionApi.RunResult)
+        .mockResolvedValueOnce({
+          stdout: 'average rate: 10.25\n',
+          stderr: '',
+          command: 'podman',
+        } as extensionApi.RunResult);
+
+      await expect(api.getNavigationRuntimeDiagnostics(CONTAINER_ID, 'robot_1')).resolves.toMatchObject({
+        robotNamespace: 'robot_1',
+        navigateToPoseAvailable: true,
+        controllerServerAvailable: true,
+        behaviorServerAvailable: true,
+        cmdVel: { topic: '/robot_1/cmd_vel', messagesPerSecond: 10.25 },
+      });
+
+      expect(vi.mocked(extensionApi.process.exec).mock.calls.flat().join(' ')).toContain('topic hz');
+    });
+
+    it('returns bounded no-sample evidence without failing the whole diagnostics refresh', async () => {
+      vi.mocked(extensionApi.process.exec)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', command: 'podman' } as extensionApi.RunResult)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', command: 'podman' } as extensionApi.RunResult)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', command: 'podman' } as extensionApi.RunResult);
+
+      const result = await api.getNavigationRuntimeDiagnostics(CONTAINER_ID, 'robot_1');
+      expect(result.cmdVel.error).toMatch(/No velocity-rate sample/);
+      expect(result.navigateToPoseAvailable).toBe(false);
+    });
+  });
+
   describe('getLaserScanSummary', () => {
     const CONTAINER_ID = 'abc123def456';
     const SCAN_ECHO = `angle_min: 0.0
@@ -3839,6 +3889,15 @@ linear_acceleration:
         .mocked(extensionApi.process.exec)
         .mock.calls.some(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes(NAV2_ENTRYPOINT)));
       expect(launched).toBe(true);
+      const calls = vi.mocked(extensionApi.process.exec).mock.calls;
+      const bridgeProbeIndex = calls.findIndex(c =>
+        (c[1] as string[]).some(a => typeof a === 'string' && a.includes('topic echo --once "/$1/scan"')),
+      );
+      const navLaunchIndex = calls.findIndex(c =>
+        (c[1] as string[]).some(a => typeof a === 'string' && a.includes(NAV2_ENTRYPOINT)),
+      );
+      expect(bridgeProbeIndex).toBeGreaterThanOrEqual(0);
+      expect(navLaunchIndex).toBeGreaterThan(bridgeProbeIndex);
     });
 
     it('rejects arbitrary commands', async () => {

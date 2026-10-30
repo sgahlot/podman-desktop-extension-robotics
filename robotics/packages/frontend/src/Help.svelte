@@ -341,8 +341,9 @@ let topicMonitorCaption =
           <strong>Nav2 warming</strong> — After you spawn a robot on a Jazzy image, the extension starts Nav2 in the
           background so the first <strong>Navigate</strong> is not starting from a cold stop. While warming you see
           <strong>Nav2 warming&hellip;</strong> and the target/Navigate controls stay hidden; once Nav2 is ready the
-          controls appear. Warming is best-effort (if it fails, <strong>Navigate</strong> can still cold-start Nav2, just
-          slower).
+          controls appear with the elapsed warm-up time. Each completed or failed Navigate also reports its elapsed time
+          and target X/Y. Warming is best-effort (if it fails, <strong>Navigate</strong> can still cold-start Nav2, just slower).
+          Times are for the current extension session and are reset by a reload.
         </div>
         <div>
           <strong>Why nothing moves for ~15&ndash;20&nbsp;s after Navigate</strong> — On the <em>first</em> navigation after
@@ -454,9 +455,12 @@ let topicMonitorCaption =
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
         <div>
           <strong>Overview</strong> — A health-check panel for a selected spawned robot (local or OpenShift): TF tree
-          status, costmap topic, and a dynamic list of the robot's <span class="font-mono">sensor_msgs</span> topics. LaserScan
-          and Imu sensors get a one-shot peek on refresh; other sensor types are listed with type and publisher count. Useful
-          for confirming Nav2 is actually ready before you hit Navigate.
+          status, costmap topic, bounded Nav2 runtime evidence (Navigate action, controller/behavior nodes, and a
+          3-second
+          <span class="font-mono">/cmd_vel</span> rate sample), and a dynamic list of the robot's
+          <span class="font-mono">sensor_msgs</span> topics. LaserScan and Imu sensors get a one-shot peek on refresh; other
+          sensor types are listed with type and publisher count. Useful for confirming Nav2 is actually ready before you hit
+          Navigate.
         </div>
         <div>
           <strong>Access</strong> — Click <strong>Diagnose</strong> next to a spawned robot on the Simulation or OpenShift
@@ -465,7 +469,9 @@ let topicMonitorCaption =
         <div>
           <strong>Export</strong> — After <strong>Refresh diagnostics</strong> completes, use <strong>Copy JSON</strong>
           to put the snapshot on the host clipboard or <strong>Save JSON…</strong> to choose a file. The versioned JSON
-          records the capture time, target, robot, TF, costmap, and sensor summaries.
+          records the capture time, target, robot, TF, costmap, Nav2 runtime, and sensor summaries. Capture while a goal
+          is stalled to distinguish an unavailable Nav2 stack from one still emitting velocity commands; this evidence
+          alone does not prove a recovery behavior.
           <span class="font-mono">version: 1</span>
           identifies the JSON schema version, not the robot or extension version. It is a point-in-time capture, not live
           state; unavailable sections retain their reason and raw command output is never included.
