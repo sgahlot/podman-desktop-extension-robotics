@@ -135,6 +135,31 @@ function formatElapsed(milliseconds: number | undefined): string {
     ? `${(milliseconds / 1000).toFixed(1)}s`
     : `${Math.floor(milliseconds / 60_000)}m ${((milliseconds % 60_000) / 1000).toFixed(1)}s`;
 }
+
+function navigationResult(robot: RobotEntry): string {
+  if (robot.navStatus === 'navigating') return 'Navigating…';
+  if (robot.navStatus === 'reached') {
+    return robot.navReached
+      ? `Reached (${robot.navReached.x}, ${robot.navReached.y}) — Navigate took ${formatElapsed(robot.navElapsedMs)}`
+      : 'Reached';
+  }
+  if (robot.navStatus === 'failed') {
+    return `Navigate failed after ${formatElapsed(robot.navElapsedMs)} to (${robot.navReached?.x ?? robot.navTarget.x}, ${robot.navReached?.y ?? robot.navTarget.y})`;
+  }
+  return 'Idle';
+}
+
+function hasRobotDetails(robot: RobotEntry): boolean {
+  // Startup context is no longer useful once navigation starts or has a result.
+  if (robot.navStatus !== 'idle') return false;
+  return (
+    (robot.x !== undefined && robot.y !== undefined) ||
+    robot.warmStatus === 'warming' ||
+    robot.warmStatus === 'failed' ||
+    (robot.warmStatus === 'ready' && robot.warmElapsedMs !== undefined) ||
+    !robot.supportsNavigation
+  );
+}
 </script>
 
 <div class="flex flex-col gap-2">
@@ -185,89 +210,102 @@ function formatElapsed(milliseconds: number | undefined): string {
   {#if robots.length > 0}
     <div class="flex flex-col gap-1">
       {#each robots as robot, i (robot.name)}
-        <div
-          class="flex flex-row flex-wrap items-center gap-2 text-xs rounded border border-[var(--pd-content-card-border)] p-2">
-          <span class="font-mono font-medium text-[var(--pd-content-header)]">{robot.name}</span>
-          {#if robot.x !== undefined && robot.y !== undefined}
-            <span class="pai-text-muted"
-              >{robot.positionManagedByProfile
-                ? 'position defined by profile'
-                : `spawned at (${robot.x}, ${robot.y})${robot.yaw === undefined ? '' : ', yaw ' + robot.yaw}`}</span>
-          {/if}
-          {#if robot.warmStatus === 'warming'}
-            <!-- Still warming: show the warm indicator and (after this block) Remove;
+        <div class="flex min-w-0 flex-col gap-2 text-xs rounded border border-[var(--pd-content-card-border)] p-2">
+          <!-- Keep the identity and navigation together, regardless of result length. -->
+          <div class="flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto">
+            <span class="shrink-0 font-mono font-medium text-[var(--pd-content-header)]">{robot.name}</span>
+            {#if robot.warmStatus !== 'warming' && robot.supportsNavigation}
+              <div
+                role="group"
+                aria-label="Navigation target for {robot.name}"
+                class="flex shrink-0 flex-nowrap items-center gap-2">
+                <span class="pai-text-muted">→</span>
+                <input
+                  aria-label="target X for {robot.name}"
+                  bind:value={robot.navTarget.x}
+                  disabled={robot.navStatus === 'navigating'}
+                  class="w-14 px-2 py-1 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
+                <input
+                  aria-label="target Y for {robot.name}"
+                  bind:value={robot.navTarget.y}
+                  disabled={robot.navStatus === 'navigating'}
+                  class="w-14 px-2 py-1 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
+                <button
+                  on:click={() => navigate(i)}
+                  disabled={robot.navStatus === 'navigating'}
+                  class="pai-btn pai-btn-primary text-xs">
+                  Navigate
+                </button>
+              </div>
+              {#if robot.navStatus === 'idle'}
+                <span class="pai-text-muted">Idle</span>
+              {/if}
+            {/if}
+          </div>
+          {#if hasRobotDetails(robot)}
+            <div class="flex min-w-0 flex-wrap items-center gap-2">
+              {#if robot.x !== undefined && robot.y !== undefined}
+                <span class="pai-text-muted"
+                  >{robot.positionManagedByProfile
+                    ? 'position defined by profile'
+                    : `spawned at (${robot.x}, ${robot.y})${robot.yaw === undefined ? '' : ', yaw ' + robot.yaw}`}</span>
+              {/if}
+              {#if robot.warmStatus === 'warming'}
+                <!-- Still warming: show the warm indicator and (after this block) Remove;
                  hide only the nav controls so the user can't fire a goal before Nav2 is
                  up (which stutters/queues). Remove stays available so a robot stuck in
                  warm-up can still be reaped. -->
+                <span
+                  class="inline-flex items-center gap-1.5 text-sm font-medium px-2.5 py-0.5 rounded-full border border-[var(--pd-content-card-border)] pai-text-accent"
+                  title="Nav2 is starting in the background; navigation controls appear once it's ready.">
+                  <span class="inline-block w-2 h-2 rounded-full bg-current animate-pulse"></span>
+                  Nav2 warming…{robot.warmStartedAt ? ` (${formatElapsed(clockNow - robot.warmStartedAt)})` : ''}
+                </span>
+              {:else if robot.supportsNavigation}
+                {#if robot.warmStatus === 'ready' && robot.warmElapsedMs !== undefined}
+                  <span class="pai-text-success">Nav2 warmed in {formatElapsed(robot.warmElapsedMs)}</span>
+                {/if}
+                {#if robot.warmStatus === 'failed'}
+                  <!-- Pre-warm gave up; controls stay available (the goal can still cold-start Nav2). -->
+                  <span class="pai-text-warning" title="Nav2 pre-warm didn't complete; Navigate may cold-start it.">
+                    Nav2 warm-up failed{robot.warmElapsedMs !== undefined
+                      ? ` after ${formatElapsed(robot.warmElapsedMs)}`
+                      : ''}
+                  </span>
+                {/if}
+              {:else}
+                <span class="pai-text-muted">Navigation unavailable for this profile</span>
+              {/if}
+            </div>
+          {/if}
+          {#if robot.warmStatus !== 'warming' && robot.supportsNavigation && robot.navStatus !== 'idle'}
             <span
-              class="inline-flex items-center gap-1.5 text-sm font-medium px-2.5 py-0.5 rounded-full border border-[var(--pd-content-card-border)] pai-text-accent"
-              title="Nav2 is starting in the background; navigation controls appear once it's ready.">
-              <span class="inline-block w-2 h-2 rounded-full bg-current animate-pulse"></span>
-              Nav2 warming…{robot.warmStartedAt ? ` (${formatElapsed(clockNow - robot.warmStartedAt)})` : ''}
-            </span>
-          {:else if robot.supportsNavigation}
-            {#if robot.warmStatus === 'ready' && robot.warmElapsedMs !== undefined}
-              <span class="pai-text-success">Nav2 warmed in {formatElapsed(robot.warmElapsedMs)}</span>
-            {/if}
-            {#if robot.warmStatus === 'failed'}
-              <!-- Pre-warm gave up; controls stay available (the goal can still cold-start Nav2). -->
-              <span class="pai-text-warning" title="Nav2 pre-warm didn't complete; Navigate may cold-start it.">
-                Nav2 warm-up failed{robot.warmElapsedMs !== undefined
-                  ? ` after ${formatElapsed(robot.warmElapsedMs)}`
-                  : ''}
-              </span>
-            {/if}
-            <span class="pai-text-muted">→</span>
-            <input
-              aria-label="target X for {robot.name}"
-              bind:value={robot.navTarget.x}
-              disabled={robot.navStatus === 'navigating'}
-              class="w-14 px-2 py-1 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
-            <input
-              aria-label="target Y for {robot.name}"
-              bind:value={robot.navTarget.y}
-              disabled={robot.navStatus === 'navigating'}
-              class="w-14 px-2 py-1 rounded border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] text-[var(--pd-content-text)] font-mono" />
-            <button
-              on:click={() => navigate(i)}
-              disabled={robot.navStatus === 'navigating'}
-              class="pai-btn pai-btn-primary text-xs">
-              Navigate
-            </button>
-            <span
-              class={robot.navStatus === 'reached'
+              title={navigationResult(robot)}
+              class="min-w-0 truncate {robot.navStatus === 'reached'
                 ? 'pai-text-success'
                 : robot.navStatus === 'failed'
                   ? 'pai-text-error'
                   : robot.navStatus === 'navigating'
                     ? 'pai-text-accent'
-                    : 'pai-text-muted'}>
-              {robot.navStatus === 'navigating'
-                ? 'Navigating…'
-                : robot.navStatus === 'reached'
-                  ? robot.navReached
-                    ? `Reached (${robot.navReached.x}, ${robot.navReached.y}) — Navigate took ${formatElapsed(robot.navElapsedMs)}`
-                    : 'Reached'
-                  : robot.navStatus === 'failed'
-                    ? `Navigate failed after ${formatElapsed(robot.navElapsedMs)} to (${robot.navReached?.x ?? robot.navTarget.x}, ${robot.navReached?.y ?? robot.navTarget.y})`
-                    : 'Idle'}
+                    : 'pai-text-muted'}">
+              {navigationResult(robot)}
             </span>
-          {:else}
-            <span class="pai-text-muted">Navigation unavailable for this profile</span>
           {/if}
-          <!-- Remove is always shown (even while Nav2 is warming) so a robot stuck in
+          <div role="group" aria-label="Actions for {robot.name}" class="flex flex-nowrap items-center gap-2">
+            <!-- Remove is always shown (even while Nav2 is warming) so a robot stuck in
                warm-up can be reaped. Disabled only mid-navigation or mid-removal. -->
-          <button
-            on:click={() => remove(i)}
-            disabled={removing[robot.name] || robot.navStatus === 'navigating'}
-            class="pai-btn pai-btn-danger text-xs">
-            {removing[robot.name] ? 'Removing…' : 'Remove'}
-          </button>
-          {#if onDiagnose}
-            <!-- Always visible, even while warming/failed — that's often exactly when it's
+            <button
+              on:click={() => remove(i)}
+              disabled={removing[robot.name] || robot.navStatus === 'navigating'}
+              class="pai-btn pai-btn-danger text-xs">
+              {removing[robot.name] ? 'Removing…' : 'Remove'}
+            </button>
+            {#if onDiagnose}
+              <!-- Always visible, even while warming/failed — that's often exactly when it's
                  most useful to jump to diagnostics. -->
-            <button on:click={() => onDiagnose?.(i)} class="pai-btn text-xs"> Diagnose </button>
-          {/if}
+              <button on:click={() => onDiagnose?.(i)} class="pai-btn text-xs"> Diagnose </button>
+            {/if}
+          </div>
         </div>
       {/each}
     </div>

@@ -1,5 +1,5 @@
 import { vi, describe, it, expect } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
 import RobotControls from './RobotControls.svelte';
 import type { RobotEntry } from './RobotControls.types';
 
@@ -120,6 +120,124 @@ describe('RobotControls', () => {
     });
     expect(screen.getByText('Nav2 warm-up failed')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Navigate' })).toBeTruthy();
+  });
+
+  it('keeps an idle robot name and navigation on one row when no extra details are displayed', () => {
+    render(RobotControls, {
+      robots: [robot('robot_1', { x: undefined, y: undefined, warmStatus: 'ready' })],
+      onSpawn: vi.fn(),
+      onNavigate: vi.fn(),
+      onRemove: vi.fn(),
+      onDiagnose: vi.fn(),
+    });
+
+    const identity = screen.getByText('robot_1').parentElement;
+    const navigation = screen.getByRole('group', { name: 'Navigation target for robot_1' }).parentElement;
+    const card = identity?.parentElement;
+    expect(navigation).toBe(identity);
+    expect(navigation?.classList.contains('flex-nowrap')).toBe(true);
+    expect(within(navigation as HTMLElement).getByText('Idle')).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Actions for robot_1' }).parentElement).toBe(card);
+    expect(card?.children).toHaveLength(2);
+  });
+
+  it.each<Partial<RobotEntry>>([
+    { x: '0', y: '0' },
+    { warmStatus: 'ready', warmElapsedMs: 22_100 },
+    { warmStatus: 'failed' },
+    { navStatus: 'navigating' },
+    { navStatus: 'reached' },
+    { navStatus: 'failed' },
+  ])('keeps identity and navigation together with extra details below: %j', details => {
+    render(RobotControls, {
+      robots: [robot('robot_1', { x: undefined, y: undefined, ...details })],
+      onSpawn: vi.fn(),
+      onNavigate: vi.fn(),
+      onRemove: vi.fn(),
+    });
+
+    const card = screen.getByText('robot_1').parentElement?.parentElement;
+    const header = screen.getByText('robot_1').parentElement;
+    const controls = screen.getByRole('group', { name: 'Navigation target for robot_1' });
+    expect(controls.parentElement).toBe(header);
+    expect(header?.classList.contains('flex-nowrap')).toBe(true);
+    expect(card?.children.length).toBeGreaterThan(2);
+    if (details.navStatus) {
+      const result = screen.getByText(
+        details.navStatus === 'navigating'
+          ? 'Navigating…'
+          : details.navStatus === 'reached'
+            ? 'Reached'
+            : /Navigate failed/,
+      );
+      expect(result.parentElement).toBe(card);
+      expect(header?.contains(result)).toBe(false);
+    }
+  });
+
+  it.each(['reached', 'failed'] as const)(
+    'constrains a long %s result without splitting controls or actions',
+    navStatus => {
+      render(RobotControls, {
+        robots: [
+          robot('robot_1', {
+            warmStatus: 'ready',
+            warmElapsedMs: 22_100,
+            navStatus,
+            navReached: { x: '123456789.123456789', y: '-987654321.987654321' },
+            navElapsedMs: 292_800,
+          }),
+        ],
+        onSpawn: vi.fn(),
+        onNavigate: vi.fn(),
+        onRemove: vi.fn(),
+        onDiagnose: vi.fn(),
+      });
+
+      const controls = screen.getByRole('group', { name: 'Navigation target for robot_1' });
+      expect(within(controls).getByLabelText('target X for robot_1')).toBeTruthy();
+      expect(within(controls).getByLabelText('target Y for robot_1')).toBeTruthy();
+      expect(within(controls).getByRole('button', { name: 'Navigate' })).toBeTruthy();
+      expect(controls.classList.contains('flex-nowrap')).toBe(true);
+
+      const resultText =
+        navStatus === 'reached'
+          ? 'Reached (123456789.123456789, -987654321.987654321) — Navigate took 4m 52.8s'
+          : 'Navigate failed after 4m 52.8s to (123456789.123456789, -987654321.987654321)';
+      const result = screen.getByText(resultText);
+      expect(result.getAttribute('title')).toBe(resultText);
+      expect(result.classList.contains('truncate')).toBe(true);
+      expect(controls.parentElement).toBe(screen.getByText('robot_1').parentElement);
+      expect(result.parentElement).toBe(controls.parentElement?.parentElement);
+      expect(controls.parentElement?.contains(result)).toBe(false);
+
+      const actions = screen.getByRole('group', { name: 'Actions for robot_1' });
+      expect(within(actions).getByRole('button', { name: 'Remove' })).toBeTruthy();
+      expect(within(actions).getByRole('button', { name: 'Diagnose' })).toBeTruthy();
+      expect(actions.parentElement).toBe(controls.parentElement?.parentElement);
+      expect(actions.contains(result)).toBe(false);
+      expect(screen.queryByText(/Nav2 warmed in/)).toBeNull();
+      expect(screen.queryByText(/spawned at/)).toBeNull();
+      expect(actions.parentElement?.children).toHaveLength(3);
+    },
+  );
+
+  it('hides startup details when navigation starts and keeps them hidden after completion', async () => {
+    const initialRobot = robot('robot_1', { warmStatus: 'ready', warmElapsedMs: 29_700 });
+    const callbacks = { onSpawn: vi.fn(), onNavigate: vi.fn(), onRemove: vi.fn(), onDiagnose: vi.fn() };
+    const { rerender } = render(RobotControls, { robots: [initialRobot], ...callbacks });
+
+    expect(screen.getByText(/spawned at/)).toBeTruthy();
+    expect(screen.getByText('Nav2 warmed in 29.7s')).toBeTruthy();
+
+    for (const navStatus of ['navigating', 'reached', 'failed'] as const) {
+      await rerender({ robots: [{ ...initialRobot, navStatus }], ...callbacks });
+      expect(screen.queryByText(/spawned at/)).toBeNull();
+      expect(screen.queryByText(/Nav2 warmed in/)).toBeNull();
+      const header = screen.getByText('robot_1').parentElement;
+      expect(screen.getByRole('group', { name: 'Navigation target for robot_1' }).parentElement).toBe(header);
+      expect(header?.parentElement?.children).toHaveLength(3);
+    }
   });
 
   it('uses the custom spawn label', () => {
