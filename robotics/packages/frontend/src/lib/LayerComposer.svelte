@@ -33,6 +33,7 @@ import type { SimulationConfig, TargetArch } from '/@shared/src/types/Simulation
 import { imageRefForRegistry, type CatalogRegistry } from '/@shared/src/types/ImageCatalog';
 import { physicalAiClient } from '../api/client';
 import { middlewareLabel } from '/@shared/src/types/middlewareLabels';
+import { DEFAULT_ROBOT_ID } from '/@shared/src/types/RobotDefinitions';
 import { onMount, onDestroy } from 'svelte';
 import BuildPushPanel from './BuildPushPanel.svelte';
 import RegistrySelector from './RegistrySelector.svelte';
@@ -222,7 +223,7 @@ $: middlewareDisplayLabel = middlewareLabel('dds', {
   parentProvided: selection.sim === 'custom-template',
 });
 $: presetConfig = {
-  robot: 'turtlebot3',
+  robot: DEFAULT_ROBOT_ID,
   distro: presetDistro,
   middleware: 'dds',
   engine: 'gazebo',

@@ -16,6 +16,7 @@ import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import type { RobotLaunch } from '/@shared/src/types/RobotLaunch';
 import type { EmbeddedRobotProfile } from '/@shared/src/types/EmbeddedRobotProfile';
 import { TURTLEBOT3_IMAGE_PROFILE, type ImageRobotProfile } from '/@shared/src/types/ImageRobotProfile';
+import { DEFAULT_ROBOT_ID, resolveRobotDefinition } from '/@shared/src/types/RobotDefinitions';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from '/@shared/src/types/SimulationContainer';
 import {
   SIM_CONTAINER_LABEL,
@@ -248,6 +249,7 @@ function firstNonEmpty(...values: (string | undefined)[]): string {
 }
 /** Cap concurrent in-flight pull/build/push ops. */
 const MAX_IN_FLIGHT_OPS = 5;
+const DEFAULT_ROBOT = resolveRobotDefinition(DEFAULT_ROBOT_ID);
 
 const IMAGE_ROBOT_PROFILE_DISCOVERY_PYTHON = String.raw`
 import json
@@ -258,13 +260,13 @@ import subprocess
 profiles = []
 try:
     prefix = subprocess.run(
-        ['ros2', 'pkg', 'prefix', 'nav2_minimal_tb3_sim'],
+        ['ros2', 'pkg', 'prefix', ${JSON.stringify(DEFAULT_ROBOT.minimalSimPackage)}],
         check=True, capture_output=True, text=True, timeout=5
     ).stdout.strip()
-    launch = pathlib.Path(prefix) / 'share/nav2_minimal_tb3_sim/launch/spawn_tb3.launch.py'
+    launch = pathlib.Path(prefix) / ${JSON.stringify(`share/${DEFAULT_ROBOT.minimalSimPackage}/launch/${DEFAULT_ROBOT.minimalSimLaunch}`)}
     if launch.is_file():
         profiles.append({
-            'id': 'turtlebot3', 'displayName': 'TurtleBot3', 'kind': 'builtin-turtlebot3',
+            'id': ${JSON.stringify(DEFAULT_ROBOT.id)}, 'displayName': ${JSON.stringify(DEFAULT_ROBOT.displayName)}, 'kind': 'builtin-turtlebot3',
         })
 except Exception:
     pass
@@ -2107,7 +2109,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const baseImage =
       rawBase === CUSTOM_SIMULATION_BASE_IMAGE ? CUSTOM_SIMULATION_BASE_IMAGE : resolveSimulationBaseImage(rawBase).id;
     return {
-      robot: config.get<string>('simulation.robot') ?? 'turtlebot3',
+      robot: config.get<string>('simulation.robot') ?? DEFAULT_ROBOT_ID,
       distro: config.get<string>('simulation.distro') ?? 'jazzy',
       middleware: config.get<string>('simulation.middleware') ?? 'dds',
       engine: config.get<string>('simulation.engine') ?? 'gazebo',
@@ -2381,7 +2383,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const y = argumentValue('y_pose');
     const yaw = argumentValue('yaw') ?? '0';
     const isKnownTurtleBot3 =
-      safeLaunch.packageName === 'nav2_minimal_tb3_sim' && safeLaunch.launchFile === 'launch/spawn_tb3.launch.py';
+      safeLaunch.packageName === TURTLEBOT3_IMAGE_PROFILE.packageName &&
+      safeLaunch.launchFile === TURTLEBOT3_IMAGE_PROFILE.launchFile;
     const usesLegacyTurtleBot3Arguments =
       !!robotName &&
       !!x &&

@@ -23,6 +23,7 @@ RUN dnf --releasever=43 install -y ros-lyrical-navigation2-runtime ros-lyrical-n
 # Layer 5 — Sim runtime: noVNC display stack + extension entrypoints
 LABEL io.physical-ai.simulation.capability="managed"
 ENV ROBOTICS_ROS_SETUP=/opt/ros/lyrical/setup.bash
+ENV PHYSICAL_AI_ROBOT_ID=turtlebot3
 ENV ROBOTICS_SIM_DIR=/opt/ros/lyrical/share/nav2_minimal_tb3_sim
 ENV ROBOTICS_NAV2_MAP=/opt/ros/lyrical/share/nav2_bringup/maps/tb3_sandbox.yaml
 # Display stack: Xvfb + VNC + noVNC + Mesa software GL/EGL for in-cluster sensors
@@ -43,6 +44,8 @@ COPY entrypoint-nav2.sh /entrypoint-nav2.sh
 COPY lib/validate-input.sh /usr/local/lib/robotics/validate-input.sh
 COPY lib/load-validate-input.sh /usr/local/lib/robotics/load-validate-input.sh
 COPY lib/patch-nav2-params.py /usr/local/lib/robotics/patch-nav2-params.py
+COPY lib/robot-definition.py /usr/local/lib/robotics/robot-definition.py
+COPY config/robot-definitions.json /opt/ros2-demo/config/robot-definitions.json
 COPY config/cyclonedds-qos.xml /opt/ros2-demo/config/cyclonedds-qos.xml
 COPY worlds/ /opt/ros2-demo/worlds/
 COPY www/ /opt/ros2-demo/www/

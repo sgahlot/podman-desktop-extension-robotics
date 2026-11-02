@@ -1,5 +1,6 @@
 import { SIM_RUNTIME_BUNDLE_ASSET_DIR } from '../config/platformDefaultsCatalog';
 import type { BaseOsLayer, LayerSelection, RosLayer } from './layerCompatibility';
+import { DEFAULT_ROBOT_ID, resolveRobotDefinition } from './RobotDefinitions';
 
 const ROS_DISTRO: Record<Exclude<RosLayer, 'none' | 'provided-by-parent'>, string> = {
   'ros2-jazzy': 'jazzy',
@@ -60,14 +61,16 @@ export function generateSimOperationalLayerFragment(
   installCommands?: SimOperationalInstallCommands,
 ): string {
   const distro = resolveRosDistro(sel);
+  const robot = resolveRobotDefinition(DEFAULT_ROBOT_ID);
   const rosSetup = `/opt/ros/${distro}/setup.bash`;
-  const simDir = `/opt/ros/${distro}/share/nav2_minimal_tb3_sim`;
-  const nav2Map = `/opt/ros/${distro}/share/nav2_bringup/maps/tb3_sandbox.yaml`;
+  const simDir = `/opt/ros/${distro}/share/${robot.descriptionPackage}`;
+  const nav2Map = `/opt/ros/${distro}/share/${robot.navigationPackage}/${robot.navigationMap}`;
 
   const lines: string[] = [
     `${SIM_RUNTIME_LAYER_MARKER} noVNC display stack + extension entrypoints`,
     'LABEL io.physical-ai.simulation.capability="managed"',
     `ENV ROBOTICS_ROS_SETUP=${rosSetup}`,
+    `ENV PHYSICAL_AI_ROBOT_ID=${robot.id}`,
     `ENV ROBOTICS_SIM_DIR=${simDir}`,
     `ENV ROBOTICS_NAV2_MAP=${nav2Map}`,
   ];
@@ -125,6 +128,8 @@ export function generateSimOperationalLayerFragment(
     'COPY lib/validate-input.sh /usr/local/lib/robotics/validate-input.sh',
     'COPY lib/load-validate-input.sh /usr/local/lib/robotics/load-validate-input.sh',
     'COPY lib/patch-nav2-params.py /usr/local/lib/robotics/patch-nav2-params.py',
+    'COPY lib/robot-definition.py /usr/local/lib/robotics/robot-definition.py',
+    'COPY config/robot-definitions.json /opt/ros2-demo/config/robot-definitions.json',
     'COPY config/cyclonedds-qos.xml /opt/ros2-demo/config/cyclonedds-qos.xml',
     'COPY worlds/ /opt/ros2-demo/worlds/',
     'COPY www/ /opt/ros2-demo/www/',
@@ -132,7 +137,7 @@ export function generateSimOperationalLayerFragment(
     '    && chmod 644 /usr/local/lib/robotics/validate-input.sh \\',
     '                 /usr/local/lib/robotics/load-validate-input.sh \\',
     '                 /usr/local/lib/robotics/patch-nav2-params.py',
-    'ENV TURTLEBOT3_MODEL=waffle',
+    `ENV ${robot.modelEnvVar}=${robot.modelValue}`,
     'EXPOSE 6080 8080',
     'ENTRYPOINT ["/bin/bash"]',
   );

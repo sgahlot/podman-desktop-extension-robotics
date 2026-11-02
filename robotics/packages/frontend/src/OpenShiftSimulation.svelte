@@ -13,6 +13,7 @@ import {
 } from '/@shared/src/types/simRuntimeStatus';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import RobotProfileEditor from './lib/RobotProfileEditor.svelte';
+import { DEFAULT_ROBOT_ID } from '/@shared/src/types/RobotDefinitions';
 import {
   CUSTOM_LAUNCH_PROFILE_ID,
   customLaunchSelection,
@@ -881,7 +882,7 @@ async function spawnRobot(w: OpenShiftWorkload, form: { name: string; x: string;
   clearCachedDiagnostics(ocTargetKey(w.namespace, w.name, selectedContext || undefined), form.name);
   const isDefaultTurtleBot3 =
     selectedProfile?.kind === 'launch' &&
-    selectedProfile.id === 'turtlebot3' &&
+    selectedProfile.id === DEFAULT_ROBOT_ID &&
     selection?.customized === false &&
     selection?.packageName === selectedProfile.packageName &&
     selection?.launchFile === selectedProfile.launchFile;

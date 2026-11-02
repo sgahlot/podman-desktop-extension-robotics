@@ -1,6 +1,7 @@
 import * as catalogModule from './simulation-profiles.json';
 import { invalidCatalog, loadJsonCatalog } from './loadJsonCatalog';
 import type { SimulationConfig } from '../types/SimulationConfig';
+import { resolveRobotDefinition } from '../types/RobotDefinitions';
 
 export interface SimulationProfile {
   id: string;
@@ -26,6 +27,7 @@ function profiles(): SimulationProfile[] {
     if (!profile.id?.trim() || !profile.robot || !profile.distro || !profile.label) {
       invalidCatalog('simulation-profiles.json', `profile ${profile.id ?? 'unknown'}`);
     }
+    resolveRobotDefinition(profile.robot);
   }
   return catalog.profiles;
 }

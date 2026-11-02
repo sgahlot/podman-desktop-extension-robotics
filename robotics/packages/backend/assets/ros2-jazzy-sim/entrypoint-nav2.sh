@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-# Launch the Nav2 navigation stack for a spawned TurtleBot3 robot.
+# Launch the configured Nav2 navigation stack for a spawned robot.
 # Designed to be called via: podman exec -d <container> /entrypoint-nav2.sh <robot_name>
 #
 # The robot must already be spawned (entrypoint-spawn-robot.sh) before running this.
@@ -31,6 +31,7 @@ export ROS_LOG_DIR="${HOME}/.ros/log"
 
 # shellcheck disable=SC1090
 source "${ROBOTICS_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
+pai_load_robot_definition
 
 PATCH_SCRIPT="${SCRIPT_DIR}/lib/patch-nav2-params.py"
 [[ -f "${PATCH_SCRIPT}" ]] || PATCH_SCRIPT="/usr/local/lib/robotics/patch-nav2-params.py"
@@ -40,8 +41,8 @@ if [[ ! -f "${PATCH_SCRIPT}" ]]; then
 fi
 
 PARAMS_FILE="${HOME}/nav2-${ROBOT_NAME}-params.yaml"
-MAP_FILE="${ROBOTICS_NAV2_MAP:-/opt/ros/jazzy/share/nav2_bringup/maps/tb3_sandbox.yaml}"
-NAV2_PARAMS_SOURCE="$(dirname "$(dirname "${MAP_FILE}")")/params/nav2_params.yaml"
+MAP_FILE="${ROBOTICS_NAV2_MAP}"
+NAV2_PARAMS_SOURCE="${PHYSICAL_AI_NAV2_PARAMS}"
 
 python3 "${PATCH_SCRIPT}" --source "${NAV2_PARAMS_SOURCE}" --output "${PARAMS_FILE}"
 
@@ -50,7 +51,7 @@ echo "[nav2] Starting Nav2 bringup for ${ROBOT_NAME} (map: ${MAP_FILE})..."
 # navigation_launch.py alone applies RewrittenYaml root_key without PushROSNamespace,
 # which leaves params under ${ROBOT_NAME} while nodes stay at /. bringup_launch.py
 # applies both, which matches namespaced robot topics (/robot_1/scan, /robot_1/tf, ...).
-ros2 launch nav2_bringup bringup_launch.py \
+ros2 launch "${PHYSICAL_AI_NAV2_PACKAGE}" "${PHYSICAL_AI_NAV2_LAUNCH}" \
   namespace:="${ROBOT_NAME}" \
   use_namespace:=True \
   use_composition:=False \

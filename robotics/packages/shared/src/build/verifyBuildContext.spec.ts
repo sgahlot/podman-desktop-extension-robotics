@@ -48,6 +48,8 @@ describe('verifyBuildContext', () => {
     'lib/load-validate-input.sh',
     'lib/validate-input.sh',
     'lib/patch-nav2-params.py',
+    'lib/robot-definition.py',
+    'config/robot-definitions.json',
     'config/cyclonedds-qos.xml',
     'worlds/tb3_sandbox.world',
     'www/index.html',
@@ -66,6 +68,17 @@ COPY lib/load-validate-input.sh /usr/local/lib/robotics/load-validate-input.sh
     const issues = verifyBuildContext(presetLike, new Set(['entrypoint-gazebo.sh']));
     expect(issues.some(i => i.kind === 'missing-copy-source')).toBe(true);
   });
+
+  it.each(['config/robot-definitions.json', 'lib/robot-definition.py'])(
+    'rejects managed images missing the robot runtime dependency %s',
+    missing => {
+      const context = new Set(fullRuntimeContext);
+      context.delete(missing);
+      const issues = verifyBuildContext(managedContainerfile, context, { bundleSimRuntime: true });
+      expect(issues.some(issue => issue.kind === 'missing-copy-source')).toBe(true);
+      expect(issues.some(issue => issue.kind === 'sim-runtime-incomplete')).toBe(true);
+    },
+  );
 
   it('flags legacy physical-ai lib COPY targets', () => {
     const legacy = `

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-# Spawn a TurtleBot3 into a running Gazebo simulation.
+# Spawn the configured robot into a running Gazebo simulation.
 # Designed to be called via: podman exec <container> /entrypoint-spawn-robot.sh <name> <x> <y> <yaw>
 #
 # Usage:
@@ -36,12 +36,11 @@ export ROS_LOG_DIR="${HOME}/.ros/log"
 # shellcheck disable=SC1090
 source "${ROBOTICS_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
 
-export TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-waffle}"
+pai_load_robot_definition
 pai_export_gz_sim_resource_path
 
-SIM_DIR="${ROBOTICS_SIM_DIR:-/opt/ros/jazzy/share/nav2_minimal_tb3_sim}"
-URDF_FILE="${SIM_DIR}/urdf/turtlebot3_waffle.urdf"
-BRIDGE_CONFIG="${SIM_DIR}/configs/turtlebot3_waffle_bridge.yaml"
+URDF_FILE="${PHYSICAL_AI_ROBOT_URDF}"
+BRIDGE_CONFIG="${PHYSICAL_AI_ROBOT_BRIDGE_CONFIG}"
 BRIDGE_PROBE_TOPIC="/${ROBOT_NAME}/scan"
 # A cold Podman machine can take longer than the historical 8 seconds for DDS
 # discovery and the first Gazebo scan. Keep the launch-managed bridge intact
@@ -91,7 +90,7 @@ cleanup_children() {
   wait "${pids[@]}" 2>/dev/null || true
 }
 
-ros2 launch nav2_minimal_tb3_sim spawn_tb3.launch.py \
+ros2 launch "${PHYSICAL_AI_MINIMAL_SIM_PKG}" "${PHYSICAL_AI_MINIMAL_SIM_LAUNCH}" \
   use_sim_time:=True \
   namespace:="${ROBOT_NAME}" \
   robot_name:="${ROBOT_NAME}" \

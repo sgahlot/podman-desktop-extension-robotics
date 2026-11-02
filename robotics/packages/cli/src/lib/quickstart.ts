@@ -1,4 +1,5 @@
 import type { SimulationConfig } from '../../../shared/src/types/SimulationConfig';
+import { DEFAULT_ROBOT_ID } from '../../../shared/src/types/RobotDefinitions';
 
 /**
  * Mirrors the extension's Quick Start preset exactly (packages/frontend/src/SimulationSetup.svelte
@@ -14,7 +15,7 @@ import type { SimulationConfig } from '../../../shared/src/types/SimulationConfi
  * natural shape for a CLI flag than two separately-orthogonal ones.
  */
 export const QUICK_START_PRESET = {
-  robot: 'turtlebot3',
+  robot: DEFAULT_ROBOT_ID,
   distro: 'jazzy',
   middleware: 'dds',
   engine: 'gazebo',

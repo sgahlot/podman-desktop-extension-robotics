@@ -14,6 +14,7 @@ import { setSpawnedRobotsForTarget } from './lib/spawnedRobotsStore';
 import { clearCachedDiagnostics } from './lib/robotDiagnosticsCache';
 import { middlewareLabelForImage } from '/@shared/src/types/middlewareLabels';
 import RobotProfileEditor from './lib/RobotProfileEditor.svelte';
+import { DEFAULT_ROBOT_ID } from '/@shared/src/types/RobotDefinitions';
 import {
   initialRobotProfileSelection,
   customLaunchSelection,
@@ -254,7 +255,7 @@ async function spawnRobot(form: { name: string; x: string; y: string; yaw: strin
   clearCachedDiagnostics(localTargetKey(runningContainer.id), form.name);
   const isDefaultTurtleBot3 =
     selectedProfile?.kind === 'launch' &&
-    selectedProfile.id === 'turtlebot3' &&
+    selectedProfile.id === DEFAULT_ROBOT_ID &&
     selection?.customized === false &&
     selection?.packageName === selectedProfile.packageName &&
     selection?.launchFile === selectedProfile.launchFile;

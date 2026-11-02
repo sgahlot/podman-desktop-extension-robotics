@@ -1,4 +1,5 @@
 import type { EmbeddedRobotProfile } from './EmbeddedRobotProfile';
+import { DEFAULT_ROBOT_ID, resolveRobotDefinition } from './RobotDefinitions';
 
 export interface LaunchImageRobotProfile {
   id: string;
@@ -33,14 +34,15 @@ export interface RobotProfileSelection {
 
 export const CUSTOM_LAUNCH_PROFILE_ID = '__custom_launch__';
 
+const defaultRobot = resolveRobotDefinition(DEFAULT_ROBOT_ID);
+
 export const TURTLEBOT3_IMAGE_PROFILE: LaunchImageRobotProfile = {
-  id: 'turtlebot3',
-  displayName: 'TurtleBot3',
+  id: defaultRobot.id,
+  displayName: defaultRobot.displayName,
   kind: 'launch',
-  packageName: 'nav2_minimal_tb3_sim',
-  launchFile: 'launch/spawn_tb3.launch.py',
-  launchArguments:
-    'use_sim_time:=True\nnamespace:={name}\nrobot_name:={name}\nx_pose:={x}\ny_pose:={y}\nyaw:={yaw}\nz_pose:=0.01',
+  packageName: defaultRobot.minimalSimPackage,
+  launchFile: `launch/${defaultRobot.minimalSimLaunch}`,
+  launchArguments: defaultRobot.launchArguments,
   supportsNavigation: true,
 };
 
@@ -65,6 +67,6 @@ export function customLaunchSelection(customized = false): RobotProfileSelection
 }
 
 export function initialRobotProfileSelection(profiles: ImageRobotProfile[]): RobotProfileSelection {
-  const preferred = profiles.find(profile => profile.id === 'turtlebot3') ?? profiles[0];
+  const preferred = profiles.find(profile => profile.id === DEFAULT_ROBOT_ID) ?? profiles[0];
   return preferred ? defaultRobotProfileSelection(preferred) : customLaunchSelection();
 }
