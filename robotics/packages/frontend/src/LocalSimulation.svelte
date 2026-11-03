@@ -14,6 +14,7 @@ import { setSpawnedRobotsForTarget } from './lib/spawnedRobotsStore';
 import { clearCachedDiagnostics } from './lib/robotDiagnosticsCache';
 import { middlewareLabelForImage } from '/@shared/src/types/middlewareLabels';
 import RobotProfileEditor from './lib/RobotProfileEditor.svelte';
+import { DEFAULT_ROBOT_ID } from '/@shared/src/types/RobotDefinitions';
 import {
   initialRobotProfileSelection,
   customLaunchSelection,
@@ -36,6 +37,8 @@ let removedContainerIds: string[] = [];
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 /** Nav2 warm state must be polled promptly; the container inventory may be cached for minutes. */
 let warmTimer: ReturnType<typeof setInterval> | null = null;
+let warmPollBusy = false;
+let destroyed = false;
 let simImageAllowlist = '';
 let robotLaunchError = '';
 let robotProfiles: ImageRobotProfile[] = [];
@@ -165,6 +168,7 @@ onMount(async () => {
   } catch {
     // Keep the documented five-minute default when configuration is unavailable.
   }
+  if (destroyed) return;
   const cacheFresh = !!cached && Date.now() - cached.capturedAt < stateCacheRefreshSeconds * 1000;
   loadImages();
   if (!cacheFresh) pollContainers().then(reconcileRobots);
@@ -178,6 +182,7 @@ onMount(async () => {
 });
 
 onDestroy(() => {
+  destroyed = true;
   setLocalSimulationSnapshot({ containers, robots: spawnedRobots, capturedAt: Date.now() });
   if (pollTimer) clearInterval(pollTimer);
   if (warmTimer) clearInterval(warmTimer);
@@ -254,7 +259,7 @@ async function spawnRobot(form: { name: string; x: string; y: string; yaw: strin
   clearCachedDiagnostics(localTargetKey(runningContainer.id), form.name);
   const isDefaultTurtleBot3 =
     selectedProfile?.kind === 'launch' &&
-    selectedProfile.id === 'turtlebot3' &&
+    selectedProfile.id === DEFAULT_ROBOT_ID &&
     selection?.customized === false &&
     selection?.packageName === selectedProfile.packageName &&
     selection?.launchFile === selectedProfile.launchFile;
@@ -381,27 +386,35 @@ async function pruneStaleRobots() {
 
 /** Poll Nav2 pre-warm state for robots still warming, so the badge tracks reality. */
 async function pollWarmStatus() {
-  if (!runningContainer || spawnedRobots.length === 0) return;
+  if (destroyed || warmPollBusy || !runningContainer || spawnedRobots.length === 0) return;
+  const containerId = runningContainer.id;
+  warmPollBusy = true;
   let changed = false;
-  for (let i = 0; i < spawnedRobots.length; i++) {
-    const robot = spawnedRobots[i];
-    // 'ready'/'failed' are terminal until re-spawn — skip to save exec calls.
-    if (robot.warmStatus === 'ready' || robot.warmStatus === 'failed') continue;
-    try {
-      const status = await physicalAiClient.getRobotWarmStatus(runningContainer.id, robot.name);
-      if (status !== robot.warmStatus) {
-        spawnedRobots[i] = {
-          ...spawnedRobots[i],
-          warmStatus: status,
-          ...((status === 'ready' || status === 'failed') && robot.warmStartedAt
-            ? { warmElapsedMs: Date.now() - robot.warmStartedAt }
-            : {}),
-        };
-        changed = true;
+  try {
+    for (const robot of spawnedRobots) {
+      // Terminal states do not need repeated status queries until re-spawn.
+      if (
+        !robot.supportsNavigation ||
+        robot.warmStatus === 'ready' ||
+        robot.warmStatus === 'failed' ||
+        robot.warmStatus === 'idle'
+      )
+        continue;
+      try {
+        const { status, elapsedMs } = await physicalAiClient.getRobotWarmState(containerId, robot.name);
+        if (destroyed || runningContainer?.id !== containerId) return;
+        const index = spawnedRobots.indexOf(robot);
+        if (index < 0) continue;
+        if (status !== robot.warmStatus) {
+          spawnedRobots[index] = { ...robot, warmStatus: status, warmElapsedMs: elapsedMs };
+          changed = true;
+        }
+      } catch {
+        // ignore — keep the last known warm status
       }
-    } catch {
-      // ignore — keep the last known warm status
     }
+  } finally {
+    warmPollBusy = false;
   }
   if (changed) spawnedRobots = [...spawnedRobots];
 }

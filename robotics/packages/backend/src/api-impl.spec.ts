@@ -3788,6 +3788,11 @@ linear_acceleration:
       expect(pattern).toContain('__ns:=/');
       expect(pattern).toContain('entrypoint-(spawn-robot|nav2)');
       expect(pattern).not.toContain('/robot_1/');
+      const processMatcher = new RegExp(pattern);
+      expect(processMatcher.test('python3 /usr/local/lib/robotics/wait-for-scan.py robot_1 70')).toBe(true);
+      expect(processMatcher.test('python3 /usr/local/lib/robotics/wait-for-scan.py robot_10 70')).toBe(false);
+      expect(processMatcher.test('ros2 topic echo --once /robot_1/scan sensor_msgs/msg/LaserScan')).toBe(true);
+      expect(processMatcher.test(`bash -c pkill _ ${pattern}`)).toBe(false);
 
       const gzCall = calls.find(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes('gz service')));
       expect(gzCall).toBeDefined();
@@ -3817,6 +3822,131 @@ linear_acceleration:
 
     it("returns 'idle' for a robot that was never spawned", async () => {
       expect(await api.getRobotWarmStatus(CONTAINER_ID, 'robot_9')).toBe('idle');
+      expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_9')).toEqual({ status: 'idle' });
+    });
+
+    function mockReadyWarmExec(options?: { scanResult?: Promise<extensionApi.RunResult>; scanFailure?: boolean }) {
+      vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+        const script = (args as string[]).join(' ');
+        if (script.includes('if [ -f /usr/local/lib/robotics/wait-for-scan.py ]')) {
+          if (options?.scanFailure) throw { exitCode: 124, stderr: 'No scan before deadline' };
+          if (options?.scanResult) return options.scanResult;
+        }
+        const stdout = script.includes('gz model')
+          ? 'Model: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]'
+          : script.includes('tf2_echo map base_link')
+            ? 'Translation: [0.0, 0.0, 0.0]'
+            : '';
+        return { stdout, stderr: '', command: 'podman' } as extensionApi.RunResult;
+      });
+    }
+
+    it.each(['quay.io/sgahlot/ros2-jazzy-sim:noble', 'quay.io/sgahlot/robotics-fedora-bootc-43:ros2-lyrical'])(
+      'holds one scan subscriber before Nav2 readiness on %s',
+      async image => {
+        vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+          simContainer(CONTAINER_ID, image),
+        ] as unknown as extensionApi.ContainerInfo[]);
+        let receive!: (value: extensionApi.RunResult) => void;
+        mockReadyWarmExec({
+          scanResult: new Promise(resolve => {
+            receive = resolve;
+          }),
+        });
+        await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '-0.5', '0.0']);
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual({ status: 'warming' });
+        const scanCalls = vi
+          .mocked(extensionApi.process.exec)
+          .mock.calls.filter(call =>
+            (call[1] as string[]).some(arg => arg.includes('if [ -f /usr/local/lib/robotics/wait-for-scan.py ]')),
+          );
+        expect(scanCalls).toHaveLength(1);
+        const argv = scanCalls[0][1] as string[];
+        const script = argv.find(arg => arg.includes('if [ -f'))!;
+        expect(script).toContain('timeout -k 2 "$2" python3 /usr/local/lib/robotics/wait-for-scan.py "$1" "$2"');
+        expect(script).toContain('sensor_msgs/msg/LaserScan --qos-reliability best_effort --qos-durability volatile');
+        expect(argv.slice(-2)).toEqual(['robot_1', '70']);
+        expect(
+          vi
+            .mocked(extensionApi.process.exec)
+            .mock.calls.some(call => (call[1] as string[]).some(arg => arg.includes('tf2_echo map base_link'))),
+        ).toBe(false);
+        receive({ stdout: 'scan received', stderr: '', command: 'podman' } as extensionApi.RunResult);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual({ status: 'ready', elapsedMs: 5000 });
+      },
+    );
+
+    it('does not start Nav2 when the scan subscriber times out', async () => {
+      mockReadyWarmExec({ scanFailure: true });
+      await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '-0.5', '0.0']);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual({ status: 'failed', elapsedMs: 1000 });
+      expect(
+        vi
+          .mocked(extensionApi.process.exec)
+          .mock.calls.some(call =>
+            (call[1] as string[]).some(arg => arg.includes('tf2_echo map base_link') || arg === '/entrypoint-nav2.sh'),
+          ),
+      ).toBe(false);
+    });
+
+    it('does not launch Nav2 if a pending subscriber finishes after removal', async () => {
+      let receive!: (value: extensionApi.RunResult) => void;
+      mockReadyWarmExec({
+        scanResult: new Promise(resolve => {
+          receive = resolve;
+        }),
+      });
+      await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '-0.5', '0.0']);
+      await vi.advanceTimersByTimeAsync(1000);
+      await api.despawnRobot(CONTAINER_ID, 'robot_1');
+      receive({ stdout: 'late scan', stderr: '', command: 'podman' } as extensionApi.RunResult);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual({ status: 'idle' });
+      expect(
+        vi
+          .mocked(extensionApi.process.exec)
+          .mock.calls.some(call =>
+            (call[1] as string[]).some(arg => arg.includes('tf2_echo map base_link') || arg === '/entrypoint-nav2.sh'),
+          ),
+      ).toBe(false);
+    });
+
+    it('freezes backend duration at completion regardless of later UI reads', async () => {
+      mockReadyWarmExec();
+      await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '-0.5', '0.0']);
+      expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual({ status: 'warming' });
+      await vi.advanceTimersByTimeAsync(1000);
+      const completed = await api.getRobotWarmState(CONTAINER_ID, 'robot_1');
+      expect(completed).toEqual({ status: 'ready', elapsedMs: 1000 });
+      await vi.advanceTimersByTimeAsync(300_000);
+      expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual(completed);
+      // Returned snapshots must not expose mutable backend state.
+      completed.elapsedMs = -1;
+      expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual({ status: 'ready', elapsedMs: 1000 });
+    });
+
+    it('records a stable duration when the robot never appears', async () => {
+      await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '-0.5', '0.0']);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual({ status: 'failed', elapsedMs: 30_000 });
+      await vi.advanceTimersByTimeAsync(300_000);
+      expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual({ status: 'failed', elapsedMs: 30_000 });
+    });
+
+    it('does not let a previous attempt overwrite a respawn or teardown', async () => {
+      mockReadyWarmExec();
+      await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '-0.5', '0.0']);
+      await vi.advanceTimersByTimeAsync(500);
+      await api.despawnRobot(CONTAINER_ID, 'robot_1');
+      await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '-0.5', '0.0']);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual({ status: 'warming' });
+      await api.despawnRobot(CONTAINER_ID, 'robot_1');
+      await vi.advanceTimersByTimeAsync(500);
+      expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual({ status: 'idle' });
     });
 
     it("reports 'warming' after a jazzy spawn, then 'idle' once despawned", async () => {
@@ -4623,6 +4753,36 @@ linear_acceleration:
     });
 
     describe('listOpenShiftDeployments', () => {
+      it.each([
+        ['False', 'ProgressDeadlineExceeded', 'Image never became ready', 'Image never became ready'],
+        ['False', 'ProgressDeadlineExceeded', '', 'Deployment progress deadline exceeded.'],
+        ['True', 'NewReplicaSetAvailable', '', undefined],
+        ['False', 'ReplicaSetUpdated', '', undefined],
+      ])('maps only terminal rollout failures (%s/%s)', async (status, reason, message, expected) => {
+        vi.mocked(extensionApi.process.exec).mockImplementation(
+          async (_cmd, args) =>
+            ({
+              stdout:
+                (args as string[])[1] === 'deployment'
+                  ? JSON.stringify({
+                      items: [
+                        {
+                          metadata: { name: 'sim' },
+                          status: {
+                            conditions: [{ type: 'Progressing', status, reason, message }],
+                          },
+                        },
+                      ],
+                    })
+                  : '',
+              stderr: '',
+              command: 'oc',
+            }) as extensionApi.RunResult,
+        );
+        const [workload] = await api.listOpenShiftDeployments('sgahlot-pd-extn');
+        expect(workload.rolloutFailure).toBe(expected);
+      });
+
       it('maps oc output to workloads with readiness and route URL', async () => {
         vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
           const a = args as string[];
@@ -4866,35 +5026,47 @@ linear_acceleration:
         await expect(api.spawnRobotInOpenShift(NS, NAME, 'robot_1', '0', '0', '0')).rejects.toThrow(/No running pod/);
       });
 
-      it('warms Nav2 in the background after a jazzy spawn', async () => {
-        const GZ_POSE =
-          'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
-        vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
-          const a = args as string[];
-          if (a[0] === 'get' && a[1] === 'pods')
-            return { stdout: POD, stderr: '', command: 'oc' } as extensionApi.RunResult;
-          if (a[0] === 'get' && a[1] === 'deployment')
-            return {
-              stdout: 'quay.io/ns/ros2-jazzy-sim:noble-amd64',
-              stderr: '',
-              command: 'oc',
-            } as extensionApi.RunResult;
-          const script = a.find((s): s is string => typeof s === 'string' && s.includes('source'));
-          if (script?.includes('gz model'))
-            return { stdout: GZ_POSE, stderr: '', command: 'oc' } as extensionApi.RunResult;
-          // TF never ready + pgrep empty → forces a Nav2 launch.
-          return { stdout: '', stderr: '', command: 'oc' } as extensionApi.RunResult;
-        });
+      it.each(['quay.io/ns/ros2-jazzy-sim:noble-amd64', 'quay.io/ns/robotics-fedora-bootc-43:ros2-lyrical'])(
+        'warms Nav2 after one in-pod scan wait for %s',
+        async image => {
+          const GZ_POSE =
+            'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
+          vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
+            const a = args as string[];
+            if (a[0] === 'get' && a[1] === 'pods')
+              return { stdout: POD, stderr: '', command: 'oc' } as extensionApi.RunResult;
+            if (a[0] === 'get' && a[1] === 'deployment')
+              return {
+                stdout: image,
+                stderr: '',
+                command: 'oc',
+              } as extensionApi.RunResult;
+            const script = a.find((s): s is string => typeof s === 'string' && s.includes('source'));
+            if (script?.includes('gz model'))
+              return { stdout: GZ_POSE, stderr: '', command: 'oc' } as extensionApi.RunResult;
+            // TF never ready + pgrep empty → forces a Nav2 launch.
+            return { stdout: '', stderr: '', command: 'oc' } as extensionApi.RunResult;
+          });
 
-        await api.spawnRobotInOpenShift(NS, NAME, 'robot_1', '-2.0', '-0.5', '0.0');
-        // Pre-warm is fire-and-forget, parked on its first poll sleep; drive it.
-        await vi.advanceTimersByTimeAsync(1500);
+          await api.spawnRobotInOpenShift(NS, NAME, 'robot_1', '-2.0', '-0.5', '0.0');
+          // Pre-warm is fire-and-forget, parked on its first poll sleep; drive it.
+          await vi.advanceTimersByTimeAsync(1500);
 
-        const launched = vi
-          .mocked(extensionApi.process.exec)
-          .mock.calls.some(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes(NAV2_ENTRYPOINT)));
-        expect(launched).toBe(true);
-      });
+          const launched = vi
+            .mocked(extensionApi.process.exec)
+            .mock.calls.some(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes(NAV2_ENTRYPOINT)));
+          expect(launched).toBe(true);
+          const scanCalls = vi
+            .mocked(extensionApi.process.exec)
+            .mock.calls.filter(call =>
+              (call[1] as string[]).some(arg => arg.includes('if [ -f /usr/local/lib/robotics/wait-for-scan.py ]')),
+            );
+          expect(scanCalls).toHaveLength(1);
+          expect(scanCalls[0][0]).toBe('oc');
+          expect((scanCalls[0][1] as string[]).slice(0, 5)).toEqual(['exec', '-n', NS, POD, '--']);
+          expect((scanCalls[0][1] as string[]).slice(-2)).toEqual(['robot_1', '70']);
+        },
+      );
 
       it('does not warm Nav2 for a humble spawn', async () => {
         mockPodLookup(POD, 'quay.io/ns/ros2-humble-turtlebot3:sloretz-amd64');

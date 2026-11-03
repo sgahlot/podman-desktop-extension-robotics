@@ -103,9 +103,23 @@ pai_ros_distro_dir() {
   cd "$(dirname "${setup}")" && pwd
 }
 
-# Gazebo model lookup for nav2_minimal_tb3_sim worlds (must match the sourced ROS distro).
+# Load the image-owned descriptor on every exec, not just in the PID 1 shell.
+# Source-tree tests and standalone image builds use the same catalog.
+pai_load_robot_definition() {
+  local lib_dir catalog resolver values name value
+  lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  resolver="${lib_dir}/robot-definition.py"
+  catalog="${lib_dir}/../config/robot-definitions.json"
+  [[ -f "${catalog}" ]] || catalog="/opt/ros2-demo/config/robot-definitions.json"
+  values="$(python3 "${resolver}" "${catalog}" "$(pai_ros_distro_dir)" "${ROBOTICS_SIM_DIR:-}")" || return 1
+  while IFS='=' read -r name value; do
+    export "${name}=${value}"
+  done <<< "${values}"
+}
+
+# Gazebo model lookup must match the sourced ROS distro and robot descriptor.
 pai_export_gz_sim_resource_path() {
   local d
   d="$(pai_ros_distro_dir)"
-  export GZ_SIM_RESOURCE_PATH="${d}/share:${d}/share/nav2_minimal_tb3_sim/models:${GZ_SIM_RESOURCE_PATH:-}"
+  export GZ_SIM_RESOURCE_PATH="${d}/share:${PHYSICAL_AI_ROBOT_RESOURCE_DIR:?robot definition not loaded}:${GZ_SIM_RESOURCE_PATH:-}"
 }

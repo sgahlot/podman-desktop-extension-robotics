@@ -33,7 +33,15 @@ export const SIMULATION_CACHE_MIN_SECONDS = 15;
 export const SIMULATION_CACHE_MAX_SECONDS = 24 * 60 * 60;
 export const SIMULATION_CACHE_DEFAULT_SECONDS = 5 * 60;
 
+export interface PendingSimulationDeployment {
+  name: string;
+  namespace: string;
+  context: string;
+  deadline: number;
+}
+
 export interface OpenShiftSimulationSnapshot {
+  pendingDeployment?: PendingSimulationDeployment;
   namespace: string;
   selectedContext: string;
   workloads: OpenShiftWorkload[];

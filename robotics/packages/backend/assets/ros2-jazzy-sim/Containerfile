@@ -90,6 +90,9 @@ COPY entrypoint-nav2.sh /entrypoint-nav2.sh
 COPY lib/validate-input.sh /usr/local/lib/robotics/validate-input.sh
 COPY lib/load-validate-input.sh /usr/local/lib/robotics/load-validate-input.sh
 COPY lib/patch-nav2-params.py /usr/local/lib/robotics/patch-nav2-params.py
+COPY lib/robot-definition.py /usr/local/lib/robotics/robot-definition.py
+COPY lib/wait-for-scan.py /usr/local/lib/robotics/wait-for-scan.py
+COPY config/robot-definitions.json /opt/ros2-demo/config/robot-definitions.json
 COPY config/cyclonedds-qos.xml /opt/ros2-demo/config/cyclonedds-qos.xml
 COPY worlds/ /opt/ros2-demo/worlds/
 COPY www/ /opt/ros2-demo/www/
@@ -99,6 +102,8 @@ RUN chmod +x /entrypoint-gazebo.sh /entrypoint-spawn-robot.sh /entrypoint-launch
                  /usr/local/lib/robotics/load-validate-input.sh \
                  /usr/local/lib/robotics/patch-nav2-params.py
 
+# Preserve the legacy container-level default for direct ROS exec/custom launches.
+# Checked against config/robot-definitions.json by RobotDefinitions.spec.ts.
 ENV TURTLEBOT3_MODEL=waffle
 
 EXPOSE 6080 8080

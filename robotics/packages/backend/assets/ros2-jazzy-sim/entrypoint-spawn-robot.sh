@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-# Spawn a TurtleBot3 into a running Gazebo simulation.
+# Spawn the configured robot into a running Gazebo simulation.
 # Designed to be called via: podman exec <container> /entrypoint-spawn-robot.sh <name> <x> <y> <yaw>
 #
 # Usage:
@@ -36,12 +36,11 @@ export ROS_LOG_DIR="${HOME}/.ros/log"
 # shellcheck disable=SC1090
 source "${ROBOTICS_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
 
-export TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-waffle}"
+pai_load_robot_definition
 pai_export_gz_sim_resource_path
 
-SIM_DIR="${ROBOTICS_SIM_DIR:-/opt/ros/jazzy/share/nav2_minimal_tb3_sim}"
-URDF_FILE="${SIM_DIR}/urdf/turtlebot3_waffle.urdf"
-BRIDGE_CONFIG="${SIM_DIR}/configs/turtlebot3_waffle_bridge.yaml"
+URDF_FILE="${PHYSICAL_AI_ROBOT_URDF}"
+BRIDGE_CONFIG="${PHYSICAL_AI_ROBOT_BRIDGE_CONFIG}"
 BRIDGE_PROBE_TOPIC="/${ROBOT_NAME}/scan"
 # A cold Podman machine can take longer than the historical 8 seconds for DDS
 # discovery and the first Gazebo scan. Keep the launch-managed bridge intact
@@ -56,18 +55,22 @@ if [[ ! -f "${BRIDGE_CONFIG}" ]]; then
   exit 1
 fi
 
-# `ros2 topic echo --once` exits immediately when discovery has not yet found a
-# publisher, so wrapping one invocation in `timeout` does not create a grace
-# period. Retry short probes for the complete startup window instead.
+# Keep one subscriber alive throughout discovery instead of restarting the CLI.
+SCAN_WAIT_HELPER="${SCRIPT_DIR}/lib/wait-for-scan.py"
+[[ -f "${SCAN_WAIT_HELPER}" ]] || SCAN_WAIT_HELPER="/usr/local/lib/robotics/wait-for-scan.py"
+if [[ ! -f "${SCAN_WAIT_HELPER}" ]]; then
+  echo "error: wait-for-scan.py not found" >&2
+  exit 1
+fi
+SCAN_WAIT_PID=""
 wait_for_bridge_sample() {
-  local deadline=$((SECONDS + BRIDGE_READY_TIMEOUT))
-  while (( SECONDS < deadline )); do
-    if ROS2CLI_USE_DAEMON=0 timeout 2 ros2 topic echo --once "${BRIDGE_PROBE_TOPIC}" >/dev/null 2>&1; then
-      return 0
-    fi
-    sleep 1
-  done
-  return 1
+  local result=0
+  # Hard outer bound includes Python/ROS imports; background wait lets traps reap it.
+  timeout -k 2 "${BRIDGE_READY_TIMEOUT}" python3 "${SCAN_WAIT_HELPER}" "${ROBOT_NAME}" "${BRIDGE_READY_TIMEOUT}" &
+  SCAN_WAIT_PID=$!
+  wait "${SCAN_WAIT_PID}" || result=$?
+  SCAN_WAIT_PID=""
+  return "${result}"
 }
 
 echo "[spawn] Spawning ${ROBOT_NAME} at (${X_POSE}, ${Y_POSE}, yaw=${YAW})..."
@@ -85,13 +88,14 @@ cleanup_children() {
   [[ -n "${SPAWN_PID}" ]] && pids+=("${SPAWN_PID}")
   [[ -n "${BRIDGE_PID}" ]] && pids+=("${BRIDGE_PID}")
   [[ -n "${RSP_PID}" ]] && pids+=("${RSP_PID}")
+  [[ -n "${SCAN_WAIT_PID}" ]] && pids+=("${SCAN_WAIT_PID}")
   ((${#pids[@]})) || return 0
   echo "[spawn] Shutting down ${ROBOT_NAME}..."
   kill "${pids[@]}" 2>/dev/null || true
   wait "${pids[@]}" 2>/dev/null || true
 }
 
-ros2 launch nav2_minimal_tb3_sim spawn_tb3.launch.py \
+ros2 launch "${PHYSICAL_AI_MINIMAL_SIM_PKG}" "${PHYSICAL_AI_MINIMAL_SIM_LAUNCH}" \
   use_sim_time:=True \
   namespace:="${ROBOT_NAME}" \
   robot_name:="${ROBOT_NAME}" \

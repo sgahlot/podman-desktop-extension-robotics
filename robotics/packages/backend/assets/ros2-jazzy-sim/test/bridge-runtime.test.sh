@@ -28,8 +28,9 @@ case "${1:-}" in
   launch)
     echo '[INFO] Entity creation successful.'
     "${FAKE_DIRECT_BRIDGE_BIN}" --launch-managed &
-    child=$!
-    stop() { [[ -n "${child}" ]] && kill "${child}" 2>/dev/null || true; [[ -n "${child}" ]] && wait "${child}" 2>/dev/null || true; exit 0; }
+    bridge=$!
+    child=""
+    stop() { kill "${bridge}" 2>/dev/null || true; [[ -n "${child}" ]] && kill "${child}" 2>/dev/null || true; wait "${bridge}" 2>/dev/null || true; [[ -n "${child}" ]] && wait "${child}" 2>/dev/null || true; exit 0; }
     trap stop TERM INT
     while true; do sleep 1 & child=$!; wait "${child}" || true; child=""; done
     ;;
@@ -54,6 +55,22 @@ case "${1:-}" in
 esac
 STUB
   chmod +x "${case_dir}/bin/ros2"
+  cat > "${case_dir}/bin/python3" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" != */wait-for-scan.py ]]; then
+  exec "${REAL_PYTHON}" "$@"
+fi
+echo "$$" >> "${FAKE_SCAN_PROBES}"
+child=""
+stop() { [[ -n "${child}" ]] && kill "${child}" 2>/dev/null || true; [[ -n "${child}" ]] && wait "${child}" 2>/dev/null || true; exit 143; }
+trap stop TERM INT
+while true; do
+  [[ -f "${FAKE_LAUNCH_BRIDGE_READY:-/nonexistent}" || -f "${FAKE_DIRECT_BRIDGE_READY:-/nonexistent}" ]] && exit 0
+  sleep 0.1 & child=$!; wait "${child}" || true; child=""
+done
+STUB
+  chmod +x "${case_dir}/bin/python3"
 cat > "${case_dir}/ros/lib/ros_gz_bridge/parameter_bridge" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -81,6 +98,8 @@ start_spawn() {
   local case_dir="$1"
   env \
     PATH="${case_dir}/bin:${PATH}" \
+    REAL_PYTHON="$(command -v python3)" \
+    FAKE_SCAN_PROBES="${case_dir}/scan-probes" \
     ROBOTICS_ROS_SETUP="${case_dir}/setup.bash" \
     ROBOTICS_SIM_DIR="${case_dir}/sim" \
     ROBOTICS_BRIDGE_BIN="${case_dir}/ros/lib/ros_gz_bridge/parameter_bridge" \
@@ -154,7 +173,7 @@ echo "=== delayed launch-managed bridge ==="
 DELAYED="${TMP}/delayed"
 setup_case "${DELAYED}"
 FAKE_LAUNCH_BRIDGE_READY="${DELAYED}/launch-ready"
-FAKE_LAUNCH_BRIDGE_DELAY=2
+FAKE_LAUNCH_BRIDGE_DELAY=3
 FAKE_TOPIC_EARLY_EXIT=1
 TEST_BRIDGE_READY_TIMEOUT=6
 start_spawn "${DELAYED}"
@@ -167,6 +186,7 @@ if [[ -e "${DELAYED}/direct-args" ]]; then
   echo "FAIL: delayed launch bridge unnecessarily started fallback bridge"
   exit 1
 fi
+[[ "$(wc -l < "${DELAYED}/scan-probes" | tr -d ' ')" == "1" ]] || { echo "FAIL: discovery restarted the subscriber"; exit 1; }
 kill -TERM "${TARGET_PID}" 2>/dev/null || true
 wait "${TARGET_PID}" 2>/dev/null || true
 TARGET_PID=""
@@ -197,4 +217,25 @@ unset FAKE_DIRECT_BRIDGE_SILENT TEST_BRIDGE_READY_TIMEOUT
 echo "PASS: failed direct bridge retains launch bridge"
 
 echo
-echo "Results: 4 passed, 0 failed"
+echo "=== cancellation during scan discovery ==="
+CANCEL="${TMP}/cancel"
+setup_case "${CANCEL}"
+FAKE_LAUNCH_BRIDGE_READY="/nonexistent"
+TEST_BRIDGE_READY_TIMEOUT=30
+start_spawn "${CANCEL}"
+for _ in {1..100}; do [[ -s "${CANCEL}/scan-probes" ]] && break; sleep 0.1; done
+[[ -s "${CANCEL}/scan-probes" ]] || { echo "FAIL: subscriber never started"; exit 1; }
+scan_pid="$(head -n1 "${CANCEL}/scan-probes")"
+kill -TERM "${TARGET_PID}" 2>/dev/null || true
+wait "${TARGET_PID}" 2>/dev/null || true
+TARGET_PID=""
+if kill -0 "${scan_pid}" 2>/dev/null; then
+  echo "FAIL: scan subscriber survived spawn cancellation"
+  exit 1
+fi
+[[ ! -e "${CANCEL}/direct-args" ]] || { echo "FAIL: cancellation launched a fallback bridge"; exit 1; }
+unset TEST_BRIDGE_READY_TIMEOUT
+echo "PASS: scan subscriber reaped on cancellation"
+
+echo
+echo "Results: 5 passed, 0 failed"

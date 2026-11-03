@@ -36,6 +36,7 @@ const mockSpawnEmbeddedRobotInOpenShift = vi.fn();
 const mockListRobotProfilesInOpenShift = vi.fn();
 const mockSendOpenShiftNavigationGoal = vi.fn();
 const mockGetRobotWarmStatusInOpenShift = vi.fn();
+const mockGetRobotWarmStateInOpenShift = vi.fn();
 const mockListSpawnedRobotsInOpenShift = vi.fn();
 const mockDespawnRobotInOpenShift = vi.fn();
 const mockOpenUrlInBrowser = vi.fn();
@@ -65,6 +66,7 @@ vi.mock('./api/client', () => ({
     listRobotProfilesInOpenShift: (...args: unknown[]) => mockListRobotProfilesInOpenShift(...args),
     sendOpenShiftNavigationGoal: (...args: unknown[]) => mockSendOpenShiftNavigationGoal(...args),
     getRobotWarmStatusInOpenShift: (...args: unknown[]) => mockGetRobotWarmStatusInOpenShift(...args),
+    getRobotWarmStateInOpenShift: (...args: unknown[]) => mockGetRobotWarmStateInOpenShift(...args),
     listSpawnedRobotsInOpenShift: (...args: unknown[]) => mockListSpawnedRobotsInOpenShift(...args),
     despawnRobotInOpenShift: (...args: unknown[]) => mockDespawnRobotInOpenShift(...args),
     openUrlInBrowser: (...args: unknown[]) => mockOpenUrlInBrowser(...args),
@@ -121,6 +123,9 @@ describe('OpenShiftSimulation', () => {
     mockListRobotProfilesInOpenShift.mockResolvedValue([TURTLEBOT3_IMAGE_PROFILE]);
     mockDeleteOpenShiftDeployment.mockResolvedValue(undefined);
     mockGetRobotWarmStatusInOpenShift.mockResolvedValue('idle');
+    mockGetRobotWarmStateInOpenShift.mockImplementation(async (...args: unknown[]) => ({
+      status: await mockGetRobotWarmStatusInOpenShift(...args),
+    }));
     mockListSpawnedRobotsInOpenShift.mockResolvedValue([]);
     mockDespawnRobotInOpenShift.mockResolvedValue(undefined);
     mockOpenUrlInBrowser.mockResolvedValue(undefined);
@@ -132,6 +137,194 @@ describe('OpenShiftSimulation', () => {
     expect(await screen.findByText('Deployed simulations')).toBeTruthy();
     expect(screen.queryByText(/Cached snapshot — refresh manually/)).toBeNull();
     expect(screen.queryByText(/Cached deployment snapshot/)).toBeNull();
+  });
+
+  describe('active-operation polling with a five-minute inventory cache', () => {
+    const PENDING_WORKLOAD = { ...READY_WORKLOAD, ready: false, readyReplicas: 0 };
+
+    async function deployPending() {
+      mockGetSimulationStateCacheRefreshSeconds.mockResolvedValue(300);
+      mockListOpenShiftDeployments.mockResolvedValue([PENDING_WORKLOAD]);
+      mockDeployToOpenShift.mockResolvedValue({
+        name: READY_WORKLOAD.name,
+        namespace: READY_WORKLOAD.namespace,
+        applied: ['Deployment', 'Service', 'Route'],
+        message: 'Deployed',
+      });
+      const view = render(DeployOpenShift);
+      await vi.advanceTimersByTimeAsync(100);
+      await fireEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+      await vi.advanceTimersByTimeAsync(0);
+      return view;
+    }
+
+    it('polls a new deployment promptly, then leaves settled inventory cached', async () => {
+      vi.useFakeTimers();
+      try {
+        const view = await deployPending();
+        const initialCalls = mockListOpenShiftDeployments.mock.calls.length;
+        mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
+        await vi.advanceTimersByTimeAsync(3000);
+        expect(screen.getByText('1/1 ready')).toBeTruthy();
+        expect(mockListOpenShiftDeployments).toHaveBeenCalledTimes(initialCalls + 1);
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(mockListOpenShiftDeployments).toHaveBeenCalledTimes(initialCalls + 1);
+        view.unmount();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('polls warming robots independently and displays backend duration rather than observation delay', async () => {
+      vi.useFakeTimers();
+      try {
+        mockGetSimulationStateCacheRefreshSeconds.mockResolvedValue(300);
+        mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
+        mockGetRobotWarmStateInOpenShift.mockResolvedValue({ status: 'warming' });
+        const view = render(DeployOpenShift);
+        await vi.advanceTimersByTimeAsync(100);
+        await fireEvent.click(screen.getByRole('button', { name: 'Spawn' }));
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(mockGetRobotWarmStateInOpenShift).toHaveBeenCalledTimes(10);
+        mockGetRobotWarmStateInOpenShift.mockResolvedValue({ status: 'ready', elapsedMs: 12_300 });
+        await vi.advanceTimersByTimeAsync(3000);
+        expect(screen.getByText('Nav2 warmed in 12.3s')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Navigate' })).toBeTruthy();
+        const statusCalls = mockGetRobotWarmStateInOpenShift.mock.calls.length;
+        const inventoryCalls = mockListOpenShiftDeployments.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(9000);
+        expect(mockGetRobotWarmStateInOpenShift).toHaveBeenCalledTimes(statusCalls);
+        expect(mockListOpenShiftDeployments).toHaveBeenCalledTimes(inventoryCalls);
+        view.unmount();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('resumes initial deployment polling from a fresh cached snapshot', async () => {
+      vi.useFakeTimers();
+      try {
+        const first = await deployPending();
+        first.unmount();
+        const calls = mockListOpenShiftDeployments.mock.calls.length;
+        mockGetOpenShiftContext.mockResolvedValue({
+          context: 'other-ctx',
+          namespace: 'other-ns',
+          kubeconfigPath: '/k/config',
+        });
+        const second = render(DeployOpenShift);
+        await vi.advanceTimersByTimeAsync(100);
+        expect(mockListOpenShiftDeployments).toHaveBeenCalledTimes(calls);
+        mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
+        await vi.advanceTimersByTimeAsync(3000);
+        expect(screen.getByText('1/1 ready')).toBeTruthy();
+        expect(mockListOpenShiftDeployments).toHaveBeenLastCalledWith(READY_WORKLOAD.namespace, 'ctx');
+        second.unmount();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('resumes cached robot warming without counting time away in the completed duration', async () => {
+      vi.useFakeTimers();
+      try {
+        mockGetSimulationStateCacheRefreshSeconds.mockResolvedValue(300);
+        mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]);
+        mockGetRobotWarmStateInOpenShift.mockResolvedValue({ status: 'warming' });
+        const first = render(DeployOpenShift);
+        await vi.advanceTimersByTimeAsync(100);
+        await fireEvent.click(screen.getByRole('button', { name: 'Spawn' }));
+        await vi.advanceTimersByTimeAsync(3000);
+        first.unmount();
+        const inventoryCalls = mockListOpenShiftDeployments.mock.calls.length;
+        const warmCalls = mockGetRobotWarmStateInOpenShift.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(mockGetRobotWarmStateInOpenShift).toHaveBeenCalledTimes(warmCalls);
+        mockGetRobotWarmStateInOpenShift.mockResolvedValue({ status: 'ready', elapsedMs: 23_000 });
+        const second = render(DeployOpenShift);
+        await vi.advanceTimersByTimeAsync(3100);
+        expect(screen.getByText('Nav2 warmed in 23.0s')).toBeTruthy();
+        expect(mockListOpenShiftDeployments).toHaveBeenCalledTimes(inventoryCalls);
+        second.unmount();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('discards a late readiness response and refreshes the newly selected project', async () => {
+      vi.useFakeTimers();
+      try {
+        const view = await deployPending();
+        let resolve!: (value: (typeof READY_WORKLOAD)[]) => void;
+        mockListOpenShiftDeployments.mockImplementationOnce(() => new Promise(r => (resolve = r)));
+        await vi.advanceTimersByTimeAsync(3000);
+        mockListOpenShiftDeployments.mockResolvedValue([]);
+        await fireEvent.input(screen.getByLabelText('Project / namespace'), { target: { value: 'other-ns' } });
+        await fireEvent.change(screen.getByLabelText('Project / namespace'));
+        resolve([READY_WORKLOAD]);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(mockListOpenShiftDeployments).toHaveBeenLastCalledWith('other-ns', 'ctx');
+        expect(screen.queryByText('1/1 ready')).toBeNull();
+        const calls = mockListOpenShiftDeployments.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(9000);
+        expect(mockListOpenShiftDeployments).toHaveBeenCalledTimes(calls);
+        view.unmount();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('stops fast polling on an explicit rollout failure', async () => {
+      vi.useFakeTimers();
+      try {
+        const view = await deployPending();
+        mockListOpenShiftDeployments.mockResolvedValue([
+          { ...PENDING_WORKLOAD, rolloutFailure: 'Image never became ready' },
+        ]);
+        await vi.advanceTimersByTimeAsync(3000);
+        expect(screen.getByText(/Deployment ros2-jazzy-sim failed: Image never became ready/)).toBeTruthy();
+        const calls = mockListOpenShiftDeployments.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(9000);
+        expect(mockListOpenShiftDeployments).toHaveBeenCalledTimes(calls);
+        view.unmount();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('bounds readiness polling and reports its timeout without deleting the deployment', async () => {
+      vi.useFakeTimers();
+      try {
+        const view = await deployPending();
+        await vi.advanceTimersByTimeAsync(603_000);
+        expect(screen.getByText(/Stopped readiness polling.*after 10 minutes/)).toBeTruthy();
+        const calls = mockListOpenShiftDeployments.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(9000);
+        expect(mockListOpenShiftDeployments).toHaveBeenCalledTimes(calls);
+        expect(mockDeleteOpenShiftDeployment).not.toHaveBeenCalled();
+        view.unmount();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not overlap a slow readiness request or poll after unmount', async () => {
+      vi.useFakeTimers();
+      try {
+        const view = await deployPending();
+        let resolve!: (value: (typeof READY_WORKLOAD)[]) => void;
+        mockListOpenShiftDeployments.mockImplementation(() => new Promise(r => (resolve = r)));
+        const calls = mockListOpenShiftDeployments.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(12_000);
+        expect(mockListOpenShiftDeployments).toHaveBeenCalledTimes(calls + 1);
+        view.unmount();
+        resolve([READY_WORKLOAD]);
+        await vi.advanceTimersByTimeAsync(9000);
+        expect(mockListOpenShiftDeployments).toHaveBeenCalledTimes(calls + 1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it('lists a ready workload with its ready count', async () => {

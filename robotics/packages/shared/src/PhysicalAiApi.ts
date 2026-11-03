@@ -26,7 +26,7 @@ import type {
   TopicCompressedImageSnapshot,
   TopicCompressedImagePreview,
 } from './types/TopicInfo';
-import type { NavigationGoalResult, Nav2WarmStatus } from './types/NavigationGoalResult';
+import type { NavigationGoalResult, Nav2WarmStatus, Nav2WarmState } from './types/NavigationGoalResult';
 import type {
   TfTreeResult,
   CostmapSummaryResult,
@@ -333,6 +333,8 @@ export abstract class PhysicalAiApi {
   abstract despawnRobot(containerId: string, robotName: string): Promise<void>;
   /** Nav2 pre-warm state for a spawned robot (local sim), for an honest "warming…" indicator. */
   abstract getRobotWarmStatus(containerId: string, robotName: string): Promise<Nav2WarmStatus>;
+  /** Detailed state including the backend-measured duration once pre-warm finishes. */
+  abstract getRobotWarmState(containerId: string, robotName: string): Promise<Nav2WarmState>;
   /** Robots actually running in the local sim container, via `ros2 node list` — used
    * to reconcile the UI's robot list after a reload/restart forgets in-memory spawn
    * state (APPENG-6250). */
@@ -425,6 +427,8 @@ export abstract class PhysicalAiApi {
   abstract despawnRobotInOpenShift(namespace: string, name: string, robotName: string, context?: string): Promise<void>;
   /** Nav2 pre-warm state for a robot in a deployed pod, for an honest "warming…" indicator. */
   abstract getRobotWarmStatusInOpenShift(namespace: string, name: string, robotName: string): Promise<Nav2WarmStatus>;
+  /** Detailed state including the backend-measured duration once pre-warm finishes. */
+  abstract getRobotWarmStateInOpenShift(namespace: string, name: string, robotName: string): Promise<Nav2WarmState>;
   /** Robots actually running in the deployment's pod, via `ros2 node list` (S8-17) — used
    * to reconcile the UI's robot list after a reload/restart forgets in-memory spawn state. */
   abstract listSpawnedRobotsInOpenShift(namespace: string, name: string, context?: string): Promise<string[]>;

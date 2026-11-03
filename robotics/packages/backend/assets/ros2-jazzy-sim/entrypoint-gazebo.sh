@@ -53,7 +53,7 @@ set -u
 # depth and configure RELIABLE mode to prevent message loss under render bottleneck.
 export CYCLONEDDS_URI="file:///opt/ros2-demo/config/cyclonedds-qos.xml"
 
-export TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-waffle}"
+pai_load_robot_definition
 pai_export_gz_sim_resource_path
 
 # Zenoh middleware (APPENG-5775): RMW_IMPLEMENTATION is a runtime choice baked into the
@@ -297,7 +297,6 @@ for i in $(seq 1 60); do
 done
 
 # --- 8. Optionally spawn robots (Path A) ---
-SIM_DIR="${ROBOTICS_SIM_DIR:-/opt/ros/jazzy/share/nav2_minimal_tb3_sim}"
 SPAWN_SCRIPT="${SCRIPT_DIR}/entrypoint-spawn-robot.sh"
 [[ -x "${SPAWN_SCRIPT}" ]] || SPAWN_SCRIPT="/entrypoint-spawn-robot.sh"
 

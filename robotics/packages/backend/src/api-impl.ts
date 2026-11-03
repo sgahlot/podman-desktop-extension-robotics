@@ -16,6 +16,7 @@ import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import type { RobotLaunch } from '/@shared/src/types/RobotLaunch';
 import type { EmbeddedRobotProfile } from '/@shared/src/types/EmbeddedRobotProfile';
 import { TURTLEBOT3_IMAGE_PROFILE, type ImageRobotProfile } from '/@shared/src/types/ImageRobotProfile';
+import { DEFAULT_ROBOT_ID, resolveRobotDefinition } from '/@shared/src/types/RobotDefinitions';
 import type { SimLaunchOptions, SimContainerInfo, ExecResult } from '/@shared/src/types/SimulationContainer';
 import {
   SIM_CONTAINER_LABEL,
@@ -199,7 +200,7 @@ const NAV2_TF_POLL_ATTEMPTS = 120;
  * if needed, its direct-bridge fallback probe before Nav2 starts. This mirrors
  * the existing October bridge-recovery contract rather than racing it.
  */
-const NAV2_BRIDGE_READY_ATTEMPTS = 70;
+const NAV2_BRIDGE_READY_SECONDS = 70;
 
 /**
  * Fixed per-pair timeout for the curated TF chain (getTfTreeStatus), NOT the user-configurable
@@ -248,6 +249,7 @@ function firstNonEmpty(...values: (string | undefined)[]): string {
 }
 /** Cap concurrent in-flight pull/build/push ops. */
 const MAX_IN_FLIGHT_OPS = 5;
+const DEFAULT_ROBOT = resolveRobotDefinition(DEFAULT_ROBOT_ID);
 
 const IMAGE_ROBOT_PROFILE_DISCOVERY_PYTHON = String.raw`
 import json
@@ -258,13 +260,13 @@ import subprocess
 profiles = []
 try:
     prefix = subprocess.run(
-        ['ros2', 'pkg', 'prefix', 'nav2_minimal_tb3_sim'],
+        ['ros2', 'pkg', 'prefix', ${JSON.stringify(DEFAULT_ROBOT.minimalSimPackage)}],
         check=True, capture_output=True, text=True, timeout=5
     ).stdout.strip()
-    launch = pathlib.Path(prefix) / 'share/nav2_minimal_tb3_sim/launch/spawn_tb3.launch.py'
+    launch = pathlib.Path(prefix) / ${JSON.stringify(`share/${DEFAULT_ROBOT.minimalSimPackage}/launch/${DEFAULT_ROBOT.minimalSimLaunch}`)}
     if launch.is_file():
         profiles.append({
-            'id': 'turtlebot3', 'displayName': 'TurtleBot3', 'kind': 'builtin-turtlebot3',
+            'id': ${JSON.stringify(DEFAULT_ROBOT.id)}, 'displayName': ${JSON.stringify(DEFAULT_ROBOT.displayName)}, 'kind': 'builtin-turtlebot3',
         })
 except Exception:
     pass
@@ -515,7 +517,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
    * if pre-warm gives up, and cleared on teardown. Queried by the UI so an early
    * Navigate click can show honest "warming…" progress. Absent key = 'idle'.
    */
-  private nav2WarmStatus = new Map<string, Nav2WarmStatus>();
+  private nav2WarmStatus = new Map<string, { status: Nav2WarmStatus; elapsedMs?: number }>();
 
   /**
    * Robots with a pending one-time cold-start costmap clear (keyed by #navTargetKey).
@@ -2107,7 +2109,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const baseImage =
       rawBase === CUSTOM_SIMULATION_BASE_IMAGE ? CUSTOM_SIMULATION_BASE_IMAGE : resolveSimulationBaseImage(rawBase).id;
     return {
-      robot: config.get<string>('simulation.robot') ?? 'turtlebot3',
+      robot: config.get<string>('simulation.robot') ?? DEFAULT_ROBOT_ID,
       distro: config.get<string>('simulation.distro') ?? 'jazzy',
       middleware: config.get<string>('simulation.middleware') ?? 'dds',
       engine: config.get<string>('simulation.engine') ?? 'gazebo',
@@ -2381,7 +2383,8 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     const y = argumentValue('y_pose');
     const yaw = argumentValue('yaw') ?? '0';
     const isKnownTurtleBot3 =
-      safeLaunch.packageName === 'nav2_minimal_tb3_sim' && safeLaunch.launchFile === 'launch/spawn_tb3.launch.py';
+      safeLaunch.packageName === TURTLEBOT3_IMAGE_PROFILE.packageName &&
+      safeLaunch.launchFile === TURTLEBOT3_IMAGE_PROFILE.launchFile;
     const usesLegacyTurtleBot3Arguments =
       !!robotName &&
       !!x &&
@@ -3370,20 +3373,24 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   async despawnRobot(containerId: string, robotName: string): Promise<void> {
     const { id, image } = await this.#resolveSimulationContainer(containerId);
     const distro = PhysicalAiApiImpl.#distroFromImage(image);
-    await this.#teardownRobot({ kind: 'podman', id }, robotName, distro);
     this.nav2WarmStatus.delete(PhysicalAiApiImpl.#warmKey(id, robotName));
+    await this.#teardownRobot({ kind: 'podman', id }, robotName, distro);
     this.nav2ClearPending.delete(PhysicalAiApiImpl.#navTargetKey({ kind: 'podman', id }, robotName));
   }
 
   async getRobotWarmStatus(containerId: string, robotName: string): Promise<Nav2WarmStatus> {
+    return (await this.getRobotWarmState(containerId, robotName)).status;
+  }
+
+  async getRobotWarmState(containerId: string, robotName: string) {
     let id: string;
     try {
       ({ id } = await this.#resolveSimulationContainer(containerId));
     } catch {
-      return 'idle';
+      return { status: 'idle' as const };
     }
     const safeRobot = assertRobotName(robotName);
-    return this.nav2WarmStatus.get(PhysicalAiApiImpl.#warmKey(id, safeRobot)) ?? 'idle';
+    return { ...(this.nav2WarmStatus.get(PhysicalAiApiImpl.#warmKey(id, safeRobot)) ?? { status: 'idle' as const }) };
   }
 
   async #sendNav2NavigationGoal(
@@ -3449,6 +3456,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     robotName: string,
     pose: { x: number; y: number; yaw: number },
     distro: SupportedRosDistro,
+    isCurrent?: () => boolean,
   ): Promise<void> {
     // Do not trust action list alone — other sim containers on the default ROS domain
     // can expose /robot_N/navigate_to_pose before this container's Nav2 stack is up.
@@ -3461,6 +3469,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     // Cold path: either a bringup is already in flight (e.g. pre-warm) or we launch
     // one now. Both funnel through the same TF wait.
     const bringupRunning = await this.#isNav2BringupRunning(target, robotName, distro);
+    if (isCurrent && !isCurrent()) return;
     if (!bringupRunning) {
       // We're launching a fresh bringup → the first goal must clear the costmaps once.
       this.nav2ClearPending.add(PhysicalAiApiImpl.#navTargetKey(target, robotName));
@@ -3472,6 +3481,7 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
     for (let attempt = 0; attempt < NAV2_TF_POLL_ATTEMPTS; attempt++) {
       await PhysicalAiApiImpl.#sleep(1000);
+      if (isCurrent && !isCurrent()) return;
       if (await this.#hasMapBaseLinkTf(target, robotName, distro)) {
         return;
       }
@@ -3535,11 +3545,21 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
     pose: { x: number; y: number; yaw: number },
     distro: SupportedRosDistro,
   ): Promise<void> {
-    this.nav2WarmStatus.set(warmKey, 'warming');
+    const startedAt = performance.now();
+    const state: { status: Nav2WarmStatus; elapsedMs?: number } = { status: 'warming' };
+    this.nav2WarmStatus.set(warmKey, state);
+    const isCurrent = () => this.nav2WarmStatus.get(warmKey) === state;
+    const finish = (status: 'ready' | 'failed') => {
+      // A teardown or re-spawn must not be overwritten by an older asynchronous attempt.
+      if (this.nav2WarmStatus.get(warmKey) !== state) return;
+      state.status = status;
+      state.elapsedMs = Math.max(0, performance.now() - startedAt);
+    };
     try {
       let appeared = false;
       for (let attempt = 0; attempt < 30 && !appeared; attempt++) {
         await PhysicalAiApiImpl.#sleep(1000);
+        if (!isCurrent()) return;
         try {
           await this.#getRobotPose(target, robotName, distro);
           appeared = true;
@@ -3547,8 +3567,9 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
           // Robot not in the world yet — keep polling.
         }
       }
+      if (!isCurrent()) return;
       if (!appeared) {
-        this.nav2WarmStatus.set(warmKey, 'failed');
+        finish('failed');
         return;
       }
       // entrypoint-spawn-robot.sh owns the Gazebo-to-ROS bridge recovery added in
@@ -3558,13 +3579,14 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       // odom, and TF are actually flowing, then spend minutes waiting for map→TF.
       // Keep the same observable readiness gate here before launching Nav2.
       if (!(await this.#waitForRobotBridge(target, robotName, distro))) {
-        this.nav2WarmStatus.set(warmKey, 'failed');
+        finish('failed');
         return;
       }
-      await this.#ensureNav2Running(target, robotName, pose, distro);
-      this.nav2WarmStatus.set(warmKey, 'ready');
+      if (!isCurrent()) return;
+      await this.#ensureNav2Running(target, robotName, pose, distro, isCurrent);
+      finish('ready');
     } catch (err) {
-      this.nav2WarmStatus.set(warmKey, 'failed');
+      finish('failed');
       console.error(`[physical-ai] Nav2 pre-warm for "${robotName}" failed (non-fatal):`, err);
     }
   }
@@ -3580,17 +3602,18 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
 
   /** Match the spawn entrypoint's successful bridge condition before Nav2 starts. */
   async #waitForRobotBridge(target: ExecTarget, robotName: string, distro: SupportedRosDistro): Promise<boolean> {
-    for (let attempt = 0; attempt < NAV2_BRIDGE_READY_ATTEMPTS; attempt++) {
-      const sample = await this.#execRosBash(
-        target,
-        distro,
-        'ROS2CLI_USE_DAEMON=0 timeout 2 ros2 topic echo --once "/$1/scan" >/dev/null 2>&1',
-        [robotName],
-      );
-      if (sample.exitCode === 0) return true;
-      await PhysicalAiApiImpl.#sleep(1000);
-    }
-    return false;
+    const sample = await this.#execRosBash(
+      target,
+      distro,
+      // Older images lack the helper. An explicitly typed CLI subscriber also stays
+      // alive before a publisher appears; never restart discovery in short probes.
+      'if [ -f /usr/local/lib/robotics/wait-for-scan.py ]; then ' +
+        'timeout -k 2 "$2" python3 /usr/local/lib/robotics/wait-for-scan.py "$1" "$2"; ' +
+        'else ROS2CLI_USE_DAEMON=0 timeout -k 2 "$2" ros2 topic echo --once "/$1/scan" ' +
+        'sensor_msgs/msg/LaserScan --qos-reliability best_effort --qos-durability volatile >/dev/null; fi',
+      [robotName, String(NAV2_BRIDGE_READY_SECONDS)],
+    );
+    return sample.exitCode === 0;
   }
 
   async #hasMapBaseLinkTf(target: ExecTarget, robotName: string, distro: SupportedRosDistro): Promise<boolean> {
@@ -4336,7 +4359,7 @@ print(json.dumps(result or {'error': 'No image received before the peek timeout.
     // pattern intentionally omits a bare `/<R>/` branch so it can't match the
     // pkill shell's own argv (which carries this pattern); the transient
     // initialpose publisher is a child of the Nav2 wrapper and dies with it.
-    const pattern = `(namespace:=|robot_name:=|__ns:=/|entrypoint-(spawn-robot|nav2)\\.sh )${safeRobot}([ /:]|$)`;
+    const pattern = `(namespace:=|robot_name:=|__ns:=/|entrypoint-(spawn-robot|nav2)\\.sh |wait-for-scan\\.py |topic echo --once /)${safeRobot}([ /:]|$)`;
     // SIGTERM first (the entrypoint scripts trap it and reap their children),
     // then SIGKILL any straggler. pkill exits non-zero when nothing matches —
     // swallow it so a partially-up or already-gone robot isn't an error.
@@ -4781,12 +4804,18 @@ print(json.dumps(result or {'error': 'No image received before the peek timeout.
             };
           };
         };
-        status?: { readyReplicas?: number };
+        status?: {
+          readyReplicas?: number;
+          conditions?: Array<{ type?: string; status?: string; reason?: string; message?: string }>;
+        };
       };
       const name = d.metadata?.name;
       if (!name) continue;
       const replicas = d.spec?.replicas ?? 0;
       const readyReplicas = d.status?.readyReplicas ?? 0;
+      const rolloutFailure = d.status?.conditions?.find(
+        c => c.type === 'Progressing' && c.status === 'False' && c.reason === 'ProgressDeadlineExceeded',
+      );
       const containers = d.spec?.template?.spec?.containers ?? [];
       const simContainer = containers.find(c => c.name === 'sim') ?? containers[0];
       const image = simContainer?.image;
@@ -4807,6 +4836,13 @@ print(json.dumps(result or {'error': 'No image received before the peek timeout.
         replicas,
         readyReplicas,
         ready,
+        ...(rolloutFailure
+          ? {
+              rolloutFailure: rolloutFailure.message?.trim()
+                ? rolloutFailure.message
+                : 'Deployment progress deadline exceeded.',
+            }
+          : {}),
         image,
         routeUrl,
         hasHummingbirdSidecar,
@@ -4966,18 +5002,26 @@ print(json.dumps(result or {'error': 'No image received before the peek timeout.
     const image = await this.#openShiftDeploymentImage(ns, safeName, context);
     const distro = PhysicalAiApiImpl.#distroFromImage(image);
     const pod = await this.#resolveOpenShiftPod(ns, safeName, context);
-    await this.#teardownRobot({ kind: 'oc', pod, namespace: ns, context }, safeRobot, distro);
     this.nav2WarmStatus.delete(PhysicalAiApiImpl.#warmKey(`${ns}/${safeName}`, safeRobot));
+    await this.#teardownRobot({ kind: 'oc', pod, namespace: ns, context }, safeRobot, distro);
     this.nav2ClearPending.delete(
       PhysicalAiApiImpl.#navTargetKey({ kind: 'oc', pod, namespace: ns, context }, safeRobot),
     );
   }
 
   async getRobotWarmStatusInOpenShift(namespace: string, name: string, robotName: string): Promise<Nav2WarmStatus> {
+    return (await this.getRobotWarmStateInOpenShift(namespace, name, robotName)).status;
+  }
+
+  async getRobotWarmStateInOpenShift(namespace: string, name: string, robotName: string) {
     const ns = assertNamespace(namespace);
     const safeName = assertK8sName(name, 'name');
     const safeRobot = assertRobotName(robotName);
-    return this.nav2WarmStatus.get(PhysicalAiApiImpl.#warmKey(`${ns}/${safeName}`, safeRobot)) ?? 'idle';
+    return {
+      ...(this.nav2WarmStatus.get(PhysicalAiApiImpl.#warmKey(`${ns}/${safeName}`, safeRobot)) ?? {
+        status: 'idle' as const,
+      }),
+    };
   }
 
   /**

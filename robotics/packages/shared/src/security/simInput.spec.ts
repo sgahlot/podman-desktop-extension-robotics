@@ -166,6 +166,20 @@ describe('simInput security validators', () => {
     expect(() => assertLaunchEnv({ RMW_IMPLEMENTATION: 'evil; rm -rf /' })).toThrow(/Invalid RMW_IMPLEMENTATION/);
   });
 
+  it('keeps robot descriptor paths and selection image-owned, not client launch environment', () => {
+    for (const key of [
+      'PHYSICAL_AI_ROBOT_ID',
+      'PHYSICAL_AI_ROBOT_URDF',
+      'PHYSICAL_AI_ROBOT_BRIDGE_CONFIG',
+      'PHYSICAL_AI_MINIMAL_SIM_PKG',
+      'PHYSICAL_AI_MINIMAL_SIM_LAUNCH',
+      'PHYSICAL_AI_NAV2_PARAMS',
+    ]) {
+      expect(() => assertLaunchEnv({ [key]: 'override' })).toThrow(/not allowed/);
+    }
+    expect(assertLaunchEnv({ TURTLEBOT3_MODEL: 'waffle' })).toEqual({ TURTLEBOT3_MODEL: 'waffle' });
+  });
+
   it('allowlists browser ports for openSimulationInBrowser', () => {
     expect(assertBrowserPort(6080)).toBe(6080);
     expect(assertBrowserPort(8080)).toBe(8080);

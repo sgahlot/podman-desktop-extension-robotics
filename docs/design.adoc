@@ -114,6 +114,7 @@ The frontend is a Svelte 5 SPA rendered inside a Podman Desktop webview panel. I
 * Image catalog browser with All/Curated views and pull progress _(APPENG-5770, done)_
 * Image Builder with Presets, Customize, and Layers layouts. Quick Starts are shared across all layouts; Customize and Layers independently compose base and simulation sources _(APPENG-6313)_
 * Simulation page — Local and OpenShift robot controls discover supported robot profiles in each running image, seed launch fields from a selected profile, and allow users to customize or reset those defaults. The backend detects TurtleBot3 by its installed package/launch file and reads embedded SDF profile metadata under `/opt/physical-ai/robots/`. An embedded profile shows its `ros_gz_sim` package, `gz_spawn_model.launch.py`, and arguments; unchanged defaults use the validated SDF spawn entrypoint, while edits use the preflighted ROS launch path. Optional Image Builder Step 3 embeds a selected SDF asset directory into a derived image; its narrow in-image spawn entrypoint applies the Add Robot X/Y/yaw pose for both Podman and OpenShift. TurtleBot3 remains the navigation-capable profile (Jazzy: Nav2 `navigate_to_pose`; Humble: `cmd_vel`). Embedded SDF profiles provide model insertion only; mobile robot support remains follow-up scope. Runtime host mounts and arbitrary robot-file uploads are out of scope.
+* Built-in robot configuration — `RobotDefinitions.ts` exposes a single TurtleBot3 catalog entry from the managed runtime bundle's `config/robot-definitions.json`. The shared image-profile adapter, existing backend discovery probe, build defaults, and managed Gazebo/spawn/Nav2 entrypoints consume this descriptor rather than duplicating robot asset names in scripts. The catalog belongs to the runtime bundle so standalone image builds use the same data as the extension and CLI. Each managed entrypoint resolves the image-owned descriptor into validated environment values on every invocation, including fresh `podman exec` and `oc exec` shells; PID 1 exports are not assumed to propagate. ROS-prefix-relative paths preserve Jazzy/Lyrical support and the existing `ROBOTICS_SIM_DIR`, `ROBOTICS_NAV2_MAP`, and model overrides. The separate legacy Humble image retains its burger defaults. This internal catalog is not an image-advertised discovery protocol and does not restrict custom ROS launch or embedded-SDF profiles. Previously built images keep their existing entrypoints; rebuilding installs the new descriptor/helper together.
 * In-extension Help page _(done)_
 * ROS2 topic monitor — local and OpenShift topology browser with List, Graph, and Cards views, filters, schema, Peek, telemetry, guarded publish, rosbag recording, and bounded compressed-camera preview _(APPENG-5773 / APPENG-6620, shipped)_
 * Fleet status dashboard _(APPENG-5776, planned — Story 3)_
@@ -414,7 +415,7 @@ User clicks "Launch" ──► Frontend calls launchSimulation(imageTag, name, o
                                 │   (single container, NOT a pod — labels: io.physical-ai.role=simulation)
                                 │
                          Frontend polls listSimulationContainers ◄── Backend filters by label
-                         (every 3s)                                  Returns SimContainerInfo[]
+                         (configured inventory cache interval)       Returns SimContainerInfo[]
 
 User clicks "Open"   ──► Frontend calls openSimulationInBrowser(6080)
                          ──► Backend calls extensionApi.env.openExternal → localhost:6080 (noVNC)
@@ -424,6 +425,25 @@ TurtleBot3"              ──► Backend runs podman exec -d (detached, long-r
 
 User clicks "Stop & remove" ──► Frontend calls deleteSimulation ──► Backend force-removes container (+ noVNC tab hint)
 ----
+
+Simulation inventory uses the configured cache interval (five minutes by default) plus explicit refresh.
+Active-operation polling is separate: Local and OpenShift query nonterminal Nav2 warm state every three seconds.
+OpenShift also refreshes deployment readiness every three seconds after a user-initiated deployment, stopping
+when ready, on a controller-reported `ProgressDeadlineExceeded`, or after ten minutes. The pending deployment
+and original deadline survive cached tab remounts; settled inventory and robot pruning retain the cache cadence.
+Operation polls are serialized and timers stop on component teardown. Backend pre-warm state records a monotonic
+completion duration exposed through `getRobotWarmState` / `getRobotWarmStateInOpenShift`; the existing string-status
+APIs remain compatible. The displayed completed duration excludes frontend observation delay, and stale pre-warm
+attempts cannot overwrite a later respawn or teardown's state.
+
+Before managed Nav2 launch, scan readiness is sample-based rather than inferred from ROS graph presence.
+The spawn entrypoint and backend reuse the image-owned `wait-for-scan.py` helper: one `LaserScan` subscriber
+with sensor-data QoS per wait remains alive across DDS discovery until its first sample, cancellation, or a
+monotonic deadline. Spawn retains its configurable 30-second bridge grace window and bounded direct-bridge
+fallback; backend pre-warm bounds its scan wait to 70 seconds. Outer process timeouts include Python/ROS startup.
+Robot teardown terminates the per-robot scan helper (or the explicitly typed single CLI subscriber used for
+older images), and invalidates warm-up state before teardown so a late sample cannot initiate new Nav2 bringup.
+This changes readiness observation, not scan publication, navigation parameters, physics, or rendering.
 
 == Container Architecture
 

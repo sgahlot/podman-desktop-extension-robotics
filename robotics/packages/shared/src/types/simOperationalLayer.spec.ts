@@ -45,6 +45,12 @@ describe('generateSimOperationalLayerFragment', () => {
     expect(fragment).toContain(SIM_RUNTIME_LAYER_MARKER);
     expect(fragment).toContain('io.physical-ai.simulation.capability="managed"');
     expect(fragment).toContain('ENV ROBOTICS_ROS_SETUP=/opt/ros/lyrical/setup.bash');
+    expect(fragment).toContain('ENV PHYSICAL_AI_ROBOT_ID=turtlebot3');
+    expect(fragment).toContain('ENV ROBOTICS_SIM_DIR=/opt/ros/lyrical/share/nav2_minimal_tb3_sim');
+    expect(fragment).toContain('COPY config/robot-definitions.json /opt/ros2-demo/config/robot-definitions.json');
+    expect(fragment).toContain('COPY lib/robot-definition.py /usr/local/lib/robotics/robot-definition.py');
+    expect(fragment).toContain('COPY lib/wait-for-scan.py /usr/local/lib/robotics/wait-for-scan.py');
+    expect(fragment).toContain('ENV TURTLEBOT3_MODEL=waffle');
     expect(fragment).toContain('COPY entrypoint-gazebo.sh /entrypoint-gazebo.sh');
     expect(fragment).toContain('xorg-x11-server-Xvfb');
     expect(fragment).toContain('mesa-demos');

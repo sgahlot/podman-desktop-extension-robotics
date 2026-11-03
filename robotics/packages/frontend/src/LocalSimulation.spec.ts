@@ -45,6 +45,10 @@ vi.mock('./api/client', () => ({
     spawnEmbeddedRobotInSimulation: (...args: unknown[]) => mockSpawnEmbeddedRobotInSimulation(...args),
     sendNavigationGoal: (...args: unknown[]) => mockSendNavigationGoal(...args),
     getRobotWarmStatus: (...args: unknown[]) => mockGetRobotWarmStatus(...args),
+    getRobotWarmState: async (...args: unknown[]) => ({
+      status: await mockGetRobotWarmStatus(...args),
+      elapsedMs: 1200,
+    }),
     getSimulationConfig: (...args: unknown[]) => mockGetSimulationConfig(...args),
     getSimulationStateCacheRefreshSeconds: (...args: unknown[]) => mockGetSimulationStateCacheRefreshSeconds(...args),
     listRobotProfilesInSimulation: (...args: unknown[]) => mockListRobotProfilesInSimulation(...args),
@@ -285,6 +289,7 @@ describe('LocalSimulation', () => {
     await vi.advanceTimersByTimeAsync(3000);
     expect(mockGetRobotWarmStatus).toHaveBeenCalledWith('abc123def456', 'robot_1');
     expect(screen.getByRole('button', { name: 'Navigate' })).toBeTruthy();
+    expect(screen.getByText('Nav2 warmed in 1.2s')).toBeTruthy();
   });
 
   it('passes an installed package, launch file, and expanded arguments to the launch API', async () => {

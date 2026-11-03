@@ -16,6 +16,7 @@ import {
   baseImagesForDistro,
 } from '../../../../shared/src/types/SimulationBaseImages';
 import type { SimulationConfig } from '../../../../shared/src/types/SimulationConfig';
+import { DEFAULT_ROBOT_ID } from '../../../../shared/src/types/RobotDefinitions';
 
 const PROFILE_FLAGS = ['robot', 'distro', 'middleware', 'engine', 'base-image', 'target-arch'];
 
@@ -54,7 +55,7 @@ export default class BuildBase extends Command {
         "Apply the extension's Quick Start preset (TurtleBot3+Jazzy+DDS+Gazebo, Ubuntu Noble) for this target architecture, instead of the profile flags below",
       exclusive: PROFILE_FLAGS,
     }),
-    robot: Flags.string({ default: 'turtlebot3', description: 'Robot type' }),
+    robot: Flags.string({ default: DEFAULT_ROBOT_ID, description: 'Robot type' }),
     distro: Flags.string({ options: ['humble', 'jazzy'], default: 'jazzy', description: 'ROS distro' }),
     middleware: Flags.string({ options: ['dds', 'zenoh'], default: 'dds', description: 'Middleware' }),
     engine: Flags.string({ default: 'gazebo', description: 'Simulation engine' }),

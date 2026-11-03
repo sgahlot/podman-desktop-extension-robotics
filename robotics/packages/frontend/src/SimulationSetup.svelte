@@ -39,10 +39,11 @@ import type { ImageBuilderRecipe } from '/@shared/src/types/ImageBuilderRecipe';
 import { customSimulationImageTag } from '/@shared/src/types/imageBuilderPlan';
 import { middlewareLabel } from '/@shared/src/types/middlewareLabels';
 import type { EmbeddedRobotProfile } from '/@shared/src/types/EmbeddedRobotProfile';
+import { DEFAULT_ROBOT_ID } from '/@shared/src/types/RobotDefinitions';
 
 export let active = true;
 
-let robot = 'turtlebot3';
+let robot = DEFAULT_ROBOT_ID;
 let distro = 'jazzy';
 let middleware = 'dds';
 let engine = 'gazebo';
@@ -339,7 +340,7 @@ async function applyQuickStart(id: QuickStartId = DEFAULT_QUICK_START_ID) {
       } satisfies ImageBuilderRecipe,
       id,
     );
-    robot = 'turtlebot3';
+    robot = DEFAULT_ROBOT_ID;
     distro = 'jazzy';
     middleware = 'dds';
     engine = 'gazebo';

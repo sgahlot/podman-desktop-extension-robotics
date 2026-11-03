@@ -13,6 +13,7 @@ import {
 } from '/@shared/src/types/simRuntimeStatus';
 import type { SimulationConfig } from '/@shared/src/types/SimulationConfig';
 import RobotProfileEditor from './lib/RobotProfileEditor.svelte';
+import { DEFAULT_ROBOT_ID } from '/@shared/src/types/RobotDefinitions';
 import {
   CUSTOM_LAUNCH_PROFILE_ID,
   customLaunchSelection,
@@ -32,6 +33,7 @@ import { formatRpcError } from './lib/formatRpcError';
 import { imageSupportsNav2Prewarm } from '/@shared/src/security/simInput';
 import { middlewareLabelForImage } from '/@shared/src/types/middlewareLabels';
 import { getOpenShiftSimulationSnapshot, setOpenShiftSimulationSnapshot } from './lib/simulationViewState';
+import type { PendingSimulationDeployment } from './lib/simulationViewState';
 
 let loading = true;
 let stateCacheRefreshSeconds = 300;
@@ -184,6 +186,21 @@ let missingStreaks = new Map<string, number>();
  * at 1s intervals, #prewarmNav2). */
 let trackedSince = new Map<string, number>();
 let warmTimer: ReturnType<typeof setInterval> | null = null;
+let cacheTimer: ReturnType<typeof setInterval> | null = null;
+let pendingDeployment: PendingSimulationDeployment | undefined;
+let operationPollBusy = false;
+let workloadRefreshBusy = false;
+let destroyed = false;
+const ACTIVE_POLL_MS = 3000;
+const DEPLOYMENT_READY_TIMEOUT_MS = 10 * 60 * 1000;
+
+// Never let a prior target's operation poll follow a context/project switch.
+$: if (
+  pendingDeployment &&
+  (pendingDeployment.namespace !== namespace || pendingDeployment.context !== selectedContext)
+) {
+  pendingDeployment = undefined;
+}
 
 $: config = {
   name,
@@ -549,6 +566,7 @@ onMount(async () => {
   if (cached) {
     namespace = cached.namespace;
     selectedContext = cached.selectedContext;
+    pendingDeployment = cached.pendingDeployment;
     workloads = cached.workloads;
     robotsByWorkload = cached.robotsByWorkload as Record<string, RobotEntry[]>;
     robotProfilesByWorkload = cached.robotProfilesByWorkload as Record<string, ImageRobotProfile[]>;
@@ -565,8 +583,11 @@ onMount(async () => {
   }
   try {
     context = await physicalAiClient.getOpenShiftContext();
-    if (context) selectedContext = context.context;
-    await seedNamespaceFromContext(context?.namespace);
+    // Cached operations belong to the saved selection, not necessarily oc's current project.
+    if (!cached) {
+      if (context) selectedContext = context.context;
+      await seedNamespaceFromContext(context?.namespace);
+    }
   } catch {
     context = undefined;
   }
@@ -596,17 +617,19 @@ onMount(async () => {
   }
   loading = false;
   if (!cacheFresh) void refreshWorkloads({ silent: true });
-  // Auto-refresh the deployment list + robot warm-status so a newly-ready
-  // deployment reveals its Robots section without a manual Refresh click.
-  warmTimer = setInterval(async () => {
+  if (destroyed) return;
+  // Inventory caching must not delay operations the user just initiated.
+  cacheTimer = setInterval(async () => {
     await refreshWorkloads({ silent: true });
-    await pollWarmStatus();
     await pruneStaleRobots();
   }, stateCacheRefreshSeconds * 1000);
+  warmTimer = setInterval(pollActiveOperations, ACTIVE_POLL_MS);
 });
 
 onDestroy(() => {
+  destroyed = true;
   setOpenShiftSimulationSnapshot({
+    pendingDeployment,
     namespace,
     selectedContext,
     workloads,
@@ -619,9 +642,29 @@ onDestroy(() => {
     capturedAt: Date.now(),
   });
   if (warmTimer) clearInterval(warmTimer);
+  if (cacheTimer) clearInterval(cacheTimer);
   if (namespaceBlurTimeout) clearTimeout(namespaceBlurTimeout);
   if (imageBlurTimeout) clearTimeout(imageBlurTimeout);
 });
+
+/** Cheap status queries for warming robots; inventory queries only during initial rollout. */
+async function pollActiveOperations() {
+  if (destroyed || operationPollBusy) return;
+  operationPollBusy = true;
+  try {
+    if (pendingDeployment) {
+      if (Date.now() >= pendingDeployment.deadline) {
+        deployError = `Stopped readiness polling for ${pendingDeployment.name} after 10 minutes. Refresh deployments to check its current state.`;
+        pendingDeployment = undefined;
+      } else {
+        await refreshWorkloads({ silent: true });
+      }
+    }
+    if (!destroyed) await pollWarmStatus();
+  } finally {
+    operationPollBusy = false;
+  }
+}
 
 /** Poll Nav2 pre-warm state for robots still warming across all deployments. */
 async function pollWarmStatus() {
@@ -630,16 +673,27 @@ async function pollWarmStatus() {
     for (let i = 0; i < robots.length; i++) {
       const robot = robots[i];
       // 'ready'/'failed' are terminal until re-spawn — skip to save exec calls.
-      if (robot.warmStatus === 'ready' || robot.warmStatus === 'failed') continue;
+      if (
+        !robot.supportsNavigation ||
+        robot.warmStatus === 'ready' ||
+        robot.warmStatus === 'failed' ||
+        robot.warmStatus === 'idle'
+      )
+        continue;
       try {
-        const status = await physicalAiClient.getRobotWarmStatusInOpenShift(namespace, wname, robot.name);
+        const targetNamespace = namespace;
+        const targetContext = selectedContext;
+        const state = await physicalAiClient.getRobotWarmStateInOpenShift(targetNamespace, wname, robot.name);
+        if (destroyed || namespace !== targetNamespace || selectedContext !== targetContext) return;
+        // Ignore late results after removal or re-spawn under the same robot name.
+        const currentIndex = robotsByWorkload[wname]?.indexOf(robot) ?? -1;
+        if (currentIndex < 0) continue;
+        const { status } = state;
         if (status !== robot.warmStatus) {
-          robots[i] = {
+          robotsByWorkload[wname][currentIndex] = {
             ...robot,
             warmStatus: status,
-            ...((status === 'ready' || status === 'failed') && robot.warmStartedAt
-              ? { warmElapsedMs: Date.now() - robot.warmStartedAt }
-              : {}),
+            warmElapsedMs: state.elapsedMs,
           };
           changed = true;
         }
@@ -703,9 +757,18 @@ async function deploy() {
   deploying = true;
   deployError = '';
   deployResult = null;
+  const request = { ...config };
   try {
-    deployResult = await physicalAiClient.deployToOpenShift(config);
-    deployedName = name;
+    const result = await physicalAiClient.deployToOpenShift(request);
+    if (destroyed || request.namespace !== namespace || (request.context ?? '') !== selectedContext) return;
+    deployResult = result;
+    deployedName = result.name;
+    pendingDeployment = {
+      name: result.name,
+      namespace: result.namespace,
+      context: selectedContext,
+      deadline: Date.now() + DEPLOYMENT_READY_TIMEOUT_MS,
+    };
     await refreshWorkloads();
   } catch (e) {
     deployError = formatRpcError(e, 'Deploy failed');
@@ -720,17 +783,32 @@ async function deploy() {
  * instead of clearing it — so the periodic poll never flickers the UI.
  */
 async function refreshWorkloads(opts?: { silent?: boolean }) {
+  if (destroyed || workloadRefreshBusy) return;
   const silent = opts?.silent ?? false;
   if (!namespace) {
     workloads = [];
     return;
   }
+  const targetNamespace = namespace;
+  const targetContext = selectedContext;
+  workloadRefreshBusy = true;
   if (!silent) {
     listBusy = true;
     listError = '';
   }
   try {
-    workloads = await physicalAiClient.listOpenShiftDeployments(namespace, selectedContext || undefined);
+    const result = await physicalAiClient.listOpenShiftDeployments(targetNamespace, targetContext || undefined);
+    if (destroyed || namespace !== targetNamespace || selectedContext !== targetContext) return;
+    workloads = result;
+    if (pendingDeployment) {
+      const deployed = workloads.find(w => w.name === pendingDeployment?.name);
+      if (deployed?.rolloutFailure) {
+        deployError = `Deployment ${deployed.name} failed: ${deployed.rolloutFailure}`;
+        pendingDeployment = undefined;
+      } else if (deployed?.ready) {
+        pendingDeployment = undefined;
+      }
+    }
     isCachedDeploymentSnapshot = false;
     listError = '';
     // Drop robot state for deployments that no longer exist; seed the rest.
@@ -753,7 +831,7 @@ async function refreshWorkloads(opts?: { silent?: boolean }) {
       // replacement profile lookup is pending. Reload only when the workload image changes.
       loadRobotProfiles(w);
       // Reconcile a ready workload's actually-running robots (S8-17) at most once —
-      // pollWarmStatus's existing 3s loop already picks up warmStatus for whatever
+      // The independent 3s operation loop picks up warmStatus for whatever
       // ends up in robotsByWorkload, so no extra polling wire-up is needed here.
       if (w.ready && !reconciledWorkloads.has(w.name)) {
         reconciledWorkloads.add(w.name);
@@ -767,13 +845,19 @@ async function refreshWorkloads(opts?: { silent?: boolean }) {
       deployedName = '';
     }
   } catch (e) {
+    if (destroyed || namespace !== targetNamespace || selectedContext !== targetContext) return;
     if (!silent) {
       listError = formatRpcError(e, 'Failed to list deployments');
       workloads = [];
     }
     // silent: keep the last-known list; a transient oc hiccup shouldn't blank the UI.
   } finally {
+    workloadRefreshBusy = false;
     if (!silent) listBusy = false;
+    // A context/project switch during a slow request must not wait for the cache timer.
+    if (!destroyed && (namespace !== targetNamespace || selectedContext !== targetContext)) {
+      void refreshWorkloads();
+    }
   }
 }
 
@@ -851,6 +935,7 @@ async function remove(w: OpenShiftWorkload) {
   deletingName = w.name;
   try {
     await physicalAiClient.deleteOpenShiftDeployment(w.namespace, w.name, selectedContext || undefined);
+    if (pendingDeployment?.name === w.name) pendingDeployment = undefined;
     // Clear this deployment's robot list and the stale result panel.
     delete robotsByWorkload[w.name];
     reconciledWorkloads.delete(w.name);
@@ -881,7 +966,7 @@ async function spawnRobot(w: OpenShiftWorkload, form: { name: string; x: string;
   clearCachedDiagnostics(ocTargetKey(w.namespace, w.name, selectedContext || undefined), form.name);
   const isDefaultTurtleBot3 =
     selectedProfile?.kind === 'launch' &&
-    selectedProfile.id === 'turtlebot3' &&
+    selectedProfile.id === DEFAULT_ROBOT_ID &&
     selection?.customized === false &&
     selection?.packageName === selectedProfile.packageName &&
     selection?.launchFile === selectedProfile.launchFile;

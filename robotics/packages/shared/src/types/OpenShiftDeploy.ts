@@ -102,6 +102,8 @@ export interface OpenShiftWorkload {
   replicas: number;
   readyReplicas: number;
   ready: boolean;
+  /** Terminal rollout failure reported by the Deployment controller. */
+  rolloutFailure?: string;
   routeUrl?: string;
   image?: string;
   /**
