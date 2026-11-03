@@ -415,7 +415,7 @@ User clicks "Launch" ──► Frontend calls launchSimulation(imageTag, name, o
                                 │   (single container, NOT a pod — labels: io.physical-ai.role=simulation)
                                 │
                          Frontend polls listSimulationContainers ◄── Backend filters by label
-                         (every 3s)                                  Returns SimContainerInfo[]
+                         (configured inventory cache interval)       Returns SimContainerInfo[]
 
 User clicks "Open"   ──► Frontend calls openSimulationInBrowser(6080)
                          ──► Backend calls extensionApi.env.openExternal → localhost:6080 (noVNC)
@@ -425,6 +425,25 @@ TurtleBot3"              ──► Backend runs podman exec -d (detached, long-r
 
 User clicks "Stop & remove" ──► Frontend calls deleteSimulation ──► Backend force-removes container (+ noVNC tab hint)
 ----
+
+Simulation inventory uses the configured cache interval (five minutes by default) plus explicit refresh.
+Active-operation polling is separate: Local and OpenShift query nonterminal Nav2 warm state every three seconds.
+OpenShift also refreshes deployment readiness every three seconds after a user-initiated deployment, stopping
+when ready, on a controller-reported `ProgressDeadlineExceeded`, or after ten minutes. The pending deployment
+and original deadline survive cached tab remounts; settled inventory and robot pruning retain the cache cadence.
+Operation polls are serialized and timers stop on component teardown. Backend pre-warm state records a monotonic
+completion duration exposed through `getRobotWarmState` / `getRobotWarmStateInOpenShift`; the existing string-status
+APIs remain compatible. The displayed completed duration excludes frontend observation delay, and stale pre-warm
+attempts cannot overwrite a later respawn or teardown's state.
+
+Before managed Nav2 launch, scan readiness is sample-based rather than inferred from ROS graph presence.
+The spawn entrypoint and backend reuse the image-owned `wait-for-scan.py` helper: one `LaserScan` subscriber
+with sensor-data QoS per wait remains alive across DDS discovery until its first sample, cancellation, or a
+monotonic deadline. Spawn retains its configurable 30-second bridge grace window and bounded direct-bridge
+fallback; backend pre-warm bounds its scan wait to 70 seconds. Outer process timeouts include Python/ROS startup.
+Robot teardown terminates the per-robot scan helper (or the explicitly typed single CLI subscriber used for
+older images), and invalidates warm-up state before teardown so a late sample cannot initiate new Nav2 bringup.
+This changes readiness observation, not scan publication, navigation parameters, physics, or rendering.
 
 == Container Architecture
 

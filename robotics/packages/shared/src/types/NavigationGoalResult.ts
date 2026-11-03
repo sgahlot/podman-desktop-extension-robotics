@@ -13,3 +13,10 @@ export interface NavigationGoalResult {
  * - `failed`: pre-warm gave up; the next Navigate pays the cold-start itself
  */
 export type Nav2WarmStatus = 'idle' | 'warming' | 'ready' | 'failed';
+
+/** Backend-measured pre-warm duration, independent of frontend polling or remounts. */
+export interface Nav2WarmState {
+  status: Nav2WarmStatus;
+  /** Present once tracked pre-warm completes or fails; absent for untracked robots. */
+  elapsedMs?: number;
+}

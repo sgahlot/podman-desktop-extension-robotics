@@ -15,6 +15,7 @@
       "lib/validate-input.sh",
       "lib/patch-nav2-params.py",
       "lib/robot-definition.py",
+      "lib/wait-for-scan.py",
       "config/robot-definitions.json",
       "config/cyclonedds-qos.xml",
       "worlds",

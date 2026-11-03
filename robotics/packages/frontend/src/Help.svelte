@@ -341,9 +341,15 @@ let topicMonitorCaption =
           <strong>Nav2 warming</strong> — After you spawn a robot on a Jazzy image, the extension starts Nav2 in the
           background so the first <strong>Navigate</strong> is not starting from a cold stop. While warming you see
           <strong>Nav2 warming&hellip;</strong> and the target/Navigate controls stay hidden; once Nav2 is ready the
-          controls appear with the elapsed warm-up time. Each completed or failed Navigate also reports its elapsed time
-          and target X/Y. Warming is best-effort (if it fails, <strong>Navigate</strong> can still cold-start Nav2, just slower).
-          Times are for the current extension session and are reset by a reload.
+          controls appear with the backend-measured warm-up time (including robot/bridge startup, excluding UI polling
+          delay). Local and OpenShift readiness checks run every three seconds while warming, independently of the
+          inventory cache. Returning to a cached tab resumes pending checks without inflating completed warm-up time.
+          Managed Jazzy/Lyrical startup waits for a real lidar scan using a bounded subscriber that stays alive during
+          discovery; removing the robot cancels the pending scan wait. Rebuild simulation images to update their startup
+          scripts &mdash; reloading the extension alone does not update existing images. Each completed or failed
+          Navigate also reports its elapsed time and target X/Y. Warming is best-effort (if it fails,
+          <strong>Navigate</strong> can still cold-start Nav2, just slower). Warm-up timing lasts for the current extension
+          backend session.
         </div>
         <div>
           <strong>Why nothing moves for ~15&ndash;20&nbsp;s after Navigate</strong> — On the <em>first</em> navigation after
@@ -395,9 +401,13 @@ let topicMonitorCaption =
           cluster's route.
         </div>
         <div>
-          <strong>Manage</strong> — Deployed sims are listed with delete/refresh and per-robot spawn/navigate/remove, same
-          as the local Simulation page. Embedded SDF profiles appear only when their assets are present in the deployed image;
-          choose one from the profile menu, then set X/Y/yaw before spawning.
+          <strong>Manage</strong> — Deployed sims are listed with delete/refresh and per-robot spawn/navigate/remove,
+          same as the local Simulation page. Embedded SDF profiles appear only when their assets are present in the
+          deployed image; choose one from the profile menu, then set X/Y/yaw before spawning. After
+          <strong>Deploy</strong>, readiness is checked every three seconds until ready, an explicit rollout failure, or
+          a ten-minute timeout. Returning to the cached tab resumes this check within its original deadline. Settled
+          inventory keeps the configured auto-refresh interval (five minutes by default); use <strong>Refresh</strong>
+          for an immediate update, including after a timeout.
         </div>
         <div>
           <strong>Cluster has a GPU</strong> — Toggle for NVIDIA GPU Operator clusters: requests

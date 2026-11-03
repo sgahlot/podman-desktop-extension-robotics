@@ -99,6 +99,8 @@ npm run zero-errors-gate
 
 That runs, in order: `typecheck`, `lint:check`, `svelte:check`, `format:check`, and `test`. From a git worktree root, `../scripts/run-zero-errors-gate.sh` wraps the same npm script with compact console output.
 
+Runtime-script changes also require rebuilt simulation images and manual spawn/navigation testing. Use the [startup/navigation regression checklist](packages/backend/assets/ros2-jazzy-sim/README.md#startupnavigation-regression-checklist) for Local Jazzy and OpenShift Jazzy/Lyrical; automated tests do not establish visual smoothness or end-to-end navigation success.
+
 ### Integration (Podman — optional, not in `npm test`)
 
 Exercises **all three** Image Builder Presets quick starts (`ubuntu-jazzy-arm64`, `ubuntu-jazzy-amd64`, `fedora-bootc43-lyrical-amd64`). Requires Podman and network (pull base images, Fedora ROS testing repo, apt). Build logs are suppressed unless a step fails. Images tagged `physical-ai-integration-*:local` are removed when each phase finishes (including on failure).

@@ -49,6 +49,7 @@ describe('verifyBuildContext', () => {
     'lib/validate-input.sh',
     'lib/patch-nav2-params.py',
     'lib/robot-definition.py',
+    'lib/wait-for-scan.py',
     'config/robot-definitions.json',
     'config/cyclonedds-qos.xml',
     'worlds/tb3_sandbox.world',
@@ -69,7 +70,7 @@ COPY lib/load-validate-input.sh /usr/local/lib/robotics/load-validate-input.sh
     expect(issues.some(i => i.kind === 'missing-copy-source')).toBe(true);
   });
 
-  it.each(['config/robot-definitions.json', 'lib/robot-definition.py'])(
+  it.each(['config/robot-definitions.json', 'lib/robot-definition.py', 'lib/wait-for-scan.py'])(
     'rejects managed images missing the robot runtime dependency %s',
     missing => {
       const context = new Set(fullRuntimeContext);
