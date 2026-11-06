@@ -11,10 +11,10 @@ exactly what is and isn't implemented today.
 
 ## Prerequisites
 
-| Requirement | Version |
-|---|---|
-| Node.js (to build the CLI) | ≥ 24.0.0 |
-| Podman | 5.x or 6.x (tested with 6.0.2) — must be installed and running |
+| Requirement                | Version                                                        |
+| -------------------------- | -------------------------------------------------------------- |
+| Node.js (to build the CLI) | ≥ 24.0.0                                                       |
+| Podman                     | 5.x or 6.x (tested with 6.0.2) — must be installed and running |
 
 > **Why Node ≥24 is a hard floor, not just a version match:** this package is built as
 > CommonJS, but its `listr2` dependency (used for `build:*`'s progress output) ships **ESM
@@ -92,16 +92,16 @@ via the "Resolving architecture of ..." step's own title instead of the upfront 
 physical-ai build:base --tag quay.io/<ns>/ros2-humble-base:sloretz
 ```
 
-| Flag | Required | Default | Notes |
-|---|---|---|---|
-| `--tag` | yes | — | Full image tag to build |
-| `--quickstart` | no | — | `arm64` \| `amd64` — applies the extension's Quick Start preset (below) for this architecture; mutually exclusive with all the profile flags below |
-| `--robot` | no | `turtlebot3` | Robot type |
-| `--distro` | no | `humble` | `humble` \| `jazzy` |
-| `--middleware` | no | `dds` | `dds` \| `zenoh` |
-| `--engine` | no | `gazebo` | Simulation engine |
-| `--base-image` | no | depends on `--distro` | `sloretz` \| `osrf` \| `jazzy` \| `jazzy-noble` |
-| `--target-arch` | no | detected host arch | `amd64` \| `arm64` — always resolves to a concrete value and is always passed to `podman build --platform`, rather than silently deferring to whatever the container runtime picks when unset |
+| Flag            | Required | Default               | Notes                                                                                                                                                                                         |
+| --------------- | -------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--tag`         | yes      | —                     | Full image tag to build                                                                                                                                                                       |
+| `--quickstart`  | no       | —                     | `arm64` \| `amd64` — applies the extension's Quick Start preset (below) for this architecture; mutually exclusive with all the profile flags below                                            |
+| `--robot`       | no       | `turtlebot3`          | Robot type                                                                                                                                                                                    |
+| `--distro`      | no       | `humble`              | `humble` \| `jazzy`                                                                                                                                                                           |
+| `--middleware`  | no       | `dds`                 | `dds` \| `zenoh`                                                                                                                                                                              |
+| `--engine`      | no       | `gazebo`              | Simulation engine                                                                                                                                                                             |
+| `--base-image`  | no       | depends on `--distro` | `sloretz` \| `osrf` \| `jazzy` \| `jazzy-noble`                                                                                                                                               |
+| `--target-arch` | no       | detected host arch    | `amd64` \| `arm64` — always resolves to a concrete value and is always passed to `podman build --platform`, rather than silently deferring to whatever the container runtime picks when unset |
 
 `--robot`/`--distro`/`--middleware`/`--engine` aren't free-form — they're matched as an exact
 4-tuple against a fixed list of "known-good" profiles, each backed by a real bundled Containerfile.
@@ -137,19 +137,19 @@ every other command.
 ### `build:sim` — build the simulation image (Phase 2)
 
 ```bash
-physical-ai build:sim --tag quay.io/<ns>/ros2-humble-turtlebot3:sloretz \
+physical-ai build:sim --tag quay.io/<ns>/ros2-humble-sim:sloretz \
   --base-tag quay.io/<ns>/ros2-humble-base:sloretz
 ```
 
-| Flag | Required | Default | Notes |
-|---|---|---|---|
-| `--tag` | yes | — | Full image tag to build for the sim image |
-| `--base-tag` | yes | — | Tag of an already-built base image to layer this on — must resolve locally via `podman` (i.e. built by `build:base`/`build:file` first, or already pulled) |
-| `--quickstart` | no | — | Boolean — applies the extension's Quick Start preset (same as `build:base --quickstart`, minus the arch, since arch here comes from `--base-tag`); mutually exclusive with `--robot`/`--distro`/`--middleware`/`--engine` |
-| `--robot` | no | `turtlebot3` | Robot type |
-| `--distro` | no | `humble` | `humble` \| `jazzy` |
-| `--middleware` | no | `dds` | `dds` \| `zenoh` |
-| `--engine` | no | `gazebo` | Simulation engine |
+| Flag           | Required | Default      | Notes                                                                                                                                                                                                                     |
+| -------------- | -------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--tag`        | yes      | —            | Full image tag to build for the sim image                                                                                                                                                                                 |
+| `--base-tag`   | yes      | —            | Tag of an already-built base image to layer this on — must resolve locally via `podman` (i.e. built by `build:base`/`build:file` first, or already pulled)                                                                |
+| `--quickstart` | no       | —            | Boolean — applies the extension's Quick Start preset (same as `build:base --quickstart`, minus the arch, since arch here comes from `--base-tag`); mutually exclusive with `--robot`/`--distro`/`--middleware`/`--engine` |
+| `--robot`      | no       | `turtlebot3` | Robot type                                                                                                                                                                                                                |
+| `--distro`     | no       | `humble`     | `humble` \| `jazzy`                                                                                                                                                                                                       |
+| `--middleware` | no       | `dds`        | `dds` \| `zenoh`                                                                                                                                                                                                          |
+| `--engine`     | no       | `gazebo`     | Simulation engine                                                                                                                                                                                                         |
 
 There is no `--target-arch` flag here: `build:sim` inspects `--base-tag`'s actual architecture
 via `podman image inspect` and always builds the sim layer for that same architecture. This is
@@ -173,13 +173,13 @@ physical-ai build:file --tag localhost/my-image:latest \
   --context-dir ./my-build-context --containerfile Containerfile
 ```
 
-| Flag | Required | Default | Notes |
-|---|---|---|---|
-| `--tag` | yes | — | Image tag to build |
-| `--context-dir` | yes | — | Directory containing the Containerfile (the build context) |
-| `--containerfile` | no | `Containerfile` | Name, relative to `--context-dir` |
-| `--platform` | no | — | e.g. `linux/amd64` |
-| `--build-arg` | no | none | `KEY=VALUE`, repeatable — needed for Containerfiles with a required `ARG` (e.g. the sim images' `LOCAL_BASE_IMAGE`, which has no default) |
+| Flag              | Required | Default         | Notes                                                                                                                                     |
+| ----------------- | -------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `--tag`           | yes      | —               | Image tag to build                                                                                                                        |
+| `--context-dir`   | yes      | —               | Directory containing the Containerfile (the build context)                                                                                |
+| `--containerfile` | no       | `Containerfile` | Name, relative to `--context-dir`                                                                                                         |
+| `--platform`      | no       | —               | e.g. `linux/amd64`                                                                                                                        |
+| `--build-arg`     | no       | none            | `KEY=VALUE`, repeatable — needed for Containerfiles with a required `ARG` (e.g. the sim images' `LOCAL_BASE_IMAGE`, which has no default) |
 
 Unlike the extension's Layer Composer (which accepts pasted Containerfile text and writes it to
 a throwaway temp dir), this takes a real directory already on disk — the natural shape for CLI
@@ -188,18 +188,18 @@ use. SBOM generation is not ported (see [Scope and limitations](#scope-and-limit
 ### `sim:launch` — launch a simulation container
 
 ```bash
-physical-ai sim:launch --image quay.io/<ns>/ros2-humble-turtlebot3:sloretz
+physical-ai sim:launch --image quay.io/<ns>/ros2-humble-sim:sloretz
 ```
 
 Prints the new container id on success.
 
-| Flag | Required | Default | Notes |
-|---|---|---|---|
-| `--image` | yes | — | Image tag to launch |
-| `--name` | no | auto-generated | Container name |
-| `--port` | no | `6080:6080/tcp`, `8080:8080/tcp` | `hostPort:containerPort[/tcp\|udp]`, repeatable |
-| `--env` | no | none | `KEY=VALUE`, repeatable — allowlisted keys only |
-| `--gpu` / `--no-gpu` | no | on for arm64 host, off otherwise | GPU device passthrough |
+| Flag                 | Required | Default                          | Notes                                           |
+| -------------------- | -------- | -------------------------------- | ----------------------------------------------- |
+| `--image`            | yes      | —                                | Image tag to launch                             |
+| `--name`             | no       | auto-generated                   | Container name                                  |
+| `--port`             | no       | `6080:6080/tcp`, `8080:8080/tcp` | `hostPort:containerPort[/tcp\|udp]`, repeatable |
+| `--env`              | no       | none                             | `KEY=VALUE`, repeatable — allowlisted keys only |
+| `--gpu` / `--no-gpu` | no       | on for arm64 host, off otherwise | GPU device passthrough                          |
 
 The container command is always the sim entrypoint (matching the extension's own restriction) —
 there is no `--cmd` escape hatch.
@@ -211,9 +211,9 @@ physical-ai sim:list
 physical-ai sim:list --format json
 ```
 
-| Flag | Required | Default | Notes |
-|---|---|---|---|
-| `--format` | no | `table` | `table` \| `json` |
+| Flag       | Required | Default | Notes             |
+| ---------- | -------- | ------- | ----------------- |
+| `--format` | no       | `table` | `table` \| `json` |
 
 Lists containers by the same simulation label the extension uses, so containers launched from
 either the extension or the CLI show up here.
@@ -224,12 +224,12 @@ either the extension or the CLI show up here.
 physical-ai sim:spawn <container-id> --robot robot1 --x 0 --y 0 --yaw 0
 ```
 
-| Arg/Flag | Required | Notes |
-|---|---|---|
-| `CONTAINER_ID` (positional) | yes | Container id or unambiguous prefix |
-| `--robot` | yes | Robot name |
-| `--x` / `--y` | yes | Spawn position |
-| `--yaw` | yes | Spawn yaw, radians |
+| Arg/Flag                    | Required | Notes                              |
+| --------------------------- | -------- | ---------------------------------- |
+| `CONTAINER_ID` (positional) | yes      | Container id or unambiguous prefix |
+| `--robot`                   | yes      | Robot name                         |
+| `--x` / `--y`               | yes      | Spawn position                     |
+| `--yaw`                     | yes      | Spawn yaw, radians                 |
 
 Note: the extension's Nav2 pre-warm side effect for Jazzy images is **not** ported here — see
 [Scope and limitations](#scope-and-limitations).
@@ -258,10 +258,10 @@ physical-ai sim:open <container-id>
 physical-ai sim:open <container-id> --port 8080
 ```
 
-| Arg/Flag | Required | Default | Notes |
-|---|---|---|---|
-| `CONTAINER_ID` (positional) | yes | — | Container id or unambiguous prefix |
-| `--port` | no | `6080` | `6080` (noVNC viewer) \| `8080` (plain landing page) |
+| Arg/Flag                    | Required | Default | Notes                                                |
+| --------------------------- | -------- | ------- | ---------------------------------------------------- |
+| `CONTAINER_ID` (positional) | yes      | —       | Container id or unambiguous prefix                   |
+| `--port`                    | no       | `6080`  | `6080` (noVNC viewer) \| `8080` (plain landing page) |
 
 Reuses `simulationBrowserUrl` from `packages/shared/src/security/simInput.ts` unmodified — the
 exact same URL (noVNC autoconnect/reconnect query string) the extension's "Open in Browser"
@@ -280,11 +280,11 @@ alone has no sim entrypoint:
 physical-ai build:base --tag quay.io/<ns>/ros2-humble-base:local
 
 # Phase 2: simulation image, explicitly layered on the base image above via --base-tag
-physical-ai build:sim --tag quay.io/<ns>/ros2-humble-turtlebot3:local \
+physical-ai build:sim --tag quay.io/<ns>/ros2-humble-sim:local \
   --base-tag quay.io/<ns>/ros2-humble-base:local
 
 # Launch the SIM image (not the base image), open it, spawn, list, clean up
-physical-ai sim:launch --image quay.io/<ns>/ros2-humble-turtlebot3:local
+physical-ai sim:launch --image quay.io/<ns>/ros2-humble-sim:local
 physical-ai sim:open <container-id>
 physical-ai sim:list
 physical-ai sim:spawn <container-id> --robot robot1 --x 0 --y 0 --yaw 0
@@ -318,7 +318,7 @@ additional command topics (`catalog:*`, `config:*`, `openshift:*`, `ros:*`).
 
 **Known issue — Humble sim image build:** `build:sim --distro humble` can fail with
 `E: Unable to locate package ros-humble-ros-gz` on some Ubuntu/arch combinations (reproduced on
-arm64). This is a package-availability issue in the bundled `ros2-humble-turtlebot3`
+arm64). This is a package-availability issue in the bundled Humble TurtleBot3 asset directory
 Containerfile itself, not something introduced by this CLI — the extension would hit the same
 failure building this same profile. Tracked under the Humble/Jazzy parity work in APPENG-6071.
 Jazzy sim builds (`--distro jazzy`) are unaffected.

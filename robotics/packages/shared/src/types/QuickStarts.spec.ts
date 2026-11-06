@@ -3,16 +3,20 @@ import { applyQuickStart, inferQuickStartIdFromSimulationConfig, QUICK_STARTS, r
 import { DEFAULT_IMAGE_BUILDER_RECIPE } from './ImageBuilderRecipe';
 
 describe('QuickStarts', () => {
-  it('defines three fixed-architecture presets', () => {
-    expect(QUICK_STARTS).toHaveLength(3);
+  it('defines five fixed-architecture presets', () => {
+    expect(QUICK_STARTS).toHaveLength(5);
     expect(resolveQuickStart('ubuntu-jazzy-arm64')?.targetArch).toBe('arm64');
     expect(resolveQuickStart('ubuntu-jazzy-amd64')?.targetArch).toBe('amd64');
+    expect(resolveQuickStart('ubuntu-humble-arm64')?.targetArch).toBe('arm64');
+    expect(resolveQuickStart('ubuntu-humble-amd64')?.targetArch).toBe('amd64');
     expect(resolveQuickStart('fedora-bootc43-lyrical-amd64')?.buildMode).toBe('fedora-layers');
   });
 
   it('applyQuickStart always sets targetArch from the definition', () => {
     expect(applyQuickStart(DEFAULT_IMAGE_BUILDER_RECIPE, 'ubuntu-jazzy-arm64').targetArch).toBe('arm64');
     expect(applyQuickStart(DEFAULT_IMAGE_BUILDER_RECIPE, 'ubuntu-jazzy-amd64').targetArch).toBe('amd64');
+    expect(applyQuickStart(DEFAULT_IMAGE_BUILDER_RECIPE, 'ubuntu-humble-arm64').targetArch).toBe('arm64');
+    expect(applyQuickStart(DEFAULT_IMAGE_BUILDER_RECIPE, 'ubuntu-humble-amd64').targetArch).toBe('amd64');
   });
 
   it('infers quick start id from saved simulation config', () => {
@@ -23,6 +27,13 @@ describe('QuickStarts', () => {
         targetArch: 'arm64',
       }),
     ).toBe('ubuntu-jazzy-arm64');
+    expect(
+      inferQuickStartIdFromSimulationConfig({
+        baseImage: 'sloretz',
+        distro: 'humble',
+        targetArch: 'amd64',
+      }),
+    ).toBe('ubuntu-humble-amd64');
     expect(
       inferQuickStartIdFromSimulationConfig({
         quickStartId: 'fedora-bootc43-lyrical-amd64',

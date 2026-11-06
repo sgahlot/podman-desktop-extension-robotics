@@ -10,7 +10,7 @@
       "baseAssetDir": "ros2-humble-base",
       "baseImageName": "ros2-humble-base",
       "assetDir": "ros2-humble-turtlebot3",
-      "imageName": "ros2-humble-turtlebot3",
+      "imageName": "ros2-humble-sim",
       "hardenedImageName": "ros2-humble-hardened",
       "label": "ROS2 Humble + TurtleBot3 + Gazebo (DDS)"
     },

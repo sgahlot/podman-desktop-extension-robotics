@@ -217,7 +217,7 @@ describe('ImageCatalog', () => {
     mockListCatalogImages.mockResolvedValue([
       { name: 'ros2-humble-base', namespace: 'ns' },
       { name: 'other-tool', namespace: 'ns' },
-      { name: 'ros2-humble-turtlebot3', namespace: 'ns' },
+      { name: 'ros2-humble-sim', namespace: 'ns' },
       { name: 'ros2-jazzy-sim', namespace: 'ns' },
     ]);
     render(ImageCatalog);

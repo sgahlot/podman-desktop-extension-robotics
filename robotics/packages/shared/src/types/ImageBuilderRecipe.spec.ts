@@ -13,7 +13,9 @@ describe('shared Image Builder foundation', () => {
   it('applies shared Quick Starts as complete recipe values', () => {
     expect(applyQuickStart(DEFAULT_IMAGE_BUILDER_RECIPE, 'ubuntu-jazzy-arm64').targetArch).toBe('arm64');
     expect(applyQuickStart(DEFAULT_IMAGE_BUILDER_RECIPE, 'ubuntu-jazzy-amd64').targetArch).toBe('amd64');
-    expect(QUICK_STARTS).toHaveLength(3);
+    expect(applyQuickStart(DEFAULT_IMAGE_BUILDER_RECIPE, 'ubuntu-humble-arm64').targetArch).toBe('arm64');
+    expect(applyQuickStart(DEFAULT_IMAGE_BUILDER_RECIPE, 'ubuntu-humble-amd64').targetArch).toBe('amd64');
+    expect(QUICK_STARTS).toHaveLength(5);
     expect(QUICK_STARTS.find(quickStart => quickStart.id === 'fedora-bootc43-lyrical-amd64')?.layerPreset).toEqual({
       baseOs: 'fedora-bootc-43',
       ros: 'ros2-lyrical',

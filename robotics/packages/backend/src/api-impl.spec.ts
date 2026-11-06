@@ -8,6 +8,7 @@ import {
 } from '/@shared/src/types/SimulationContainer';
 import { SPAWN_ENTRYPOINT, GAZEBO_ENTRYPOINT, NAV2_ENTRYPOINT } from '/@shared/src/security/simInput';
 import type { BuildHistoryEntry } from '/@shared/src/types/BuildHistory';
+import * as rosDistroCatalog from '/@shared/src/config/rosDistroCatalog';
 
 vi.mock('@podman-desktop/api', () => ({
   provider: {
@@ -496,18 +497,15 @@ describe('PhysicalAiApiImpl', () => {
         },
         {
           RepoTags: undefined,
-          Names: [
-            'quay.io/sgahlot/ros2-humble-turtlebot3:latest',
-            'quay.io/ecosystem-appeng/ros2-humble-turtlebot3:latest',
-          ],
+          Names: ['quay.io/sgahlot/ros2-humble-sim:latest', 'quay.io/ecosystem-appeng/ros2-humble-sim:latest'],
         },
       ] as unknown as extensionApi.ImageInfo[]);
 
       const result = await api.listLocalImages();
       expect(result).toEqual([
         'quay.io/sgahlot/ros2-jazzy-base:latest',
-        'quay.io/sgahlot/ros2-humble-turtlebot3:latest',
-        'quay.io/ecosystem-appeng/ros2-humble-turtlebot3:latest',
+        'quay.io/sgahlot/ros2-humble-sim:latest',
+        'quay.io/ecosystem-appeng/ros2-humble-sim:latest',
       ]);
     });
 
@@ -517,16 +515,13 @@ describe('PhysicalAiApiImpl', () => {
         { RepoTags: [] },
       ] as unknown as extensionApi.ImageInfo[]);
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
-        stdout: 'quay.io/sgahlot/ros2-jazzy-base:latest\nquay.io/sgahlot/ros2-humble-turtlebot3:latest\n',
+        stdout: 'quay.io/sgahlot/ros2-jazzy-base:latest\nquay.io/sgahlot/ros2-humble-sim:latest\n',
         stderr: '',
         command: 'podman',
       } as extensionApi.RunResult);
 
       const result = await api.listLocalImages();
-      expect(result).toEqual([
-        'quay.io/sgahlot/ros2-jazzy-base:latest',
-        'quay.io/sgahlot/ros2-humble-turtlebot3:latest',
-      ]);
+      expect(result).toEqual(['quay.io/sgahlot/ros2-jazzy-base:latest', 'quay.io/sgahlot/ros2-humble-sim:latest']);
       expect(extensionApi.process.exec).toHaveBeenCalledWith('podman', [
         'images',
         '--format',
@@ -2284,7 +2279,7 @@ RUN apt-get install -y ros-jazzy-desktop
 
     it('detects humble distro from image tag', async () => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
-        simContainer(CONTAINER_ID, 'quay.io/ns/ros2-humble-turtlebot3:sloretz'),
+        simContainer(CONTAINER_ID, 'quay.io/ns/ros2-humble-sim:sloretz'),
       ] as unknown as extensionApi.ContainerInfo[]);
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
         stdout: '/rosout\n',
@@ -2488,7 +2483,7 @@ RUN apt-get install -y ros-jazzy-desktop
 
     it('detects humble distro for sourcing', async () => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
-        simContainer(CONTAINER_ID, 'quay.io/ns/ros2-humble-turtlebot3:sloretz'),
+        simContainer(CONTAINER_ID, 'quay.io/ns/ros2-humble-sim:sloretz'),
       ] as unknown as extensionApi.ContainerInfo[]);
       vi.mocked(extensionApi.process.exec).mockResolvedValue({
         stdout: 'Type: std_msgs/msg/String\n\nPublisher count: 0\n\nSubscription count: 0\n',
@@ -3457,7 +3452,7 @@ linear_acceleration:
     });
   });
 
-  describe('sendNavigationGoal (humble cmd_vel)', () => {
+  describe('sendNavigationGoal (compatibility fallback when Nav2 is disabled)', () => {
     const CONTAINER_ID = 'abc123def456';
     const GZ_POSE_ORIGIN =
       'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
@@ -3481,10 +3476,13 @@ linear_acceleration:
     }
 
     beforeEach(() => {
+      vi.spyOn(rosDistroCatalog, 'distroSupportsNav2FromCatalog').mockReturnValue(false);
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
-        simContainer(CONTAINER_ID, 'quay.io/ns/ros2-humble-turtlebot3:sloretz'),
+        simContainer(CONTAINER_ID, 'quay.io/ns/ros2-humble-sim:sloretz'),
       ] as unknown as extensionApi.ContainerInfo[]);
     });
+
+    afterEach(() => vi.restoreAllMocks());
 
     it('returns reached after driving toward target', async () => {
       mockNavExec(GZ_POSE_AT_TARGET);
@@ -3573,12 +3571,19 @@ linear_acceleration:
     });
   });
 
-  describe('sendNavigationGoal (jazzy Nav2)', () => {
+  describe.each(['humble', 'jazzy', 'lyrical'])('sendNavigationGoal (%s Nav2)', distro => {
     const CONTAINER_ID = 'abc123def456';
     const GZ_POSE_ORIGIN =
       'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
 
-    function mockNav2Exec(options?: { tfReadyInitially?: boolean; goalOutput?: string }) {
+    function mockNav2Exec(options?: {
+      tfReadyInitially?: boolean;
+      goalOutput?: string;
+      navigatorStates?: string[];
+      navigatorState?: string;
+      lifecycleFailure?: boolean;
+      probeResult?: { stdout: string; exitCode: number };
+    }) {
       const tfReadyInitially = options?.tfReadyInitially ?? true;
       const goalOutput = options?.goalOutput ?? 'Goal finished with status: SUCCEEDED\n';
       let tfChecks = 0;
@@ -3591,6 +3596,29 @@ linear_acceleration:
           return { stdout: '', stderr: '', command: 'podman' } as extensionApi.RunResult;
         }
         const bashScript = argv.find((a): a is string => typeof a === 'string' && a.includes('source'));
+        if (argv.some(a => a.includes('physical_ai_nav2_readiness_'))) {
+          if (options?.probeResult) {
+            if (options.probeResult.exitCode !== 0) throw options.probeResult;
+            return { ...options.probeResult, stderr: '', command: 'podman' } as extensionApi.RunResult;
+          }
+          const state = options?.navigatorStates?.shift() ?? options?.navigatorState ?? 'active [3]\n';
+          if (options?.lifecycleFailure || state.trim() !== 'active [3]') {
+            throw { exitCode: 1, stdout: '', stderr: 'Nav2 readiness timed out' };
+          }
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          return { stdout: 'PHYSICAL_AI_NAV2_READY\n', stderr: '', command: 'podman' } as extensionApi.RunResult;
+        }
+        if (bashScript?.includes('ros2 lifecycle get')) {
+          if (options?.lifecycleFailure) throw { exitCode: 124, stdout: 'active [3]\n', stderr: 'timeout' };
+          return {
+            stdout: options?.navigatorStates?.shift() ?? options?.navigatorState ?? 'active [3]\n',
+            stderr: '',
+            command: 'podman',
+          } as extensionApi.RunResult;
+        }
+        if (bashScript?.includes('pgrep -f') && options?.navigatorStates) {
+          return { stdout: 'running', stderr: '', command: 'podman' } as extensionApi.RunResult;
+        }
         if (bashScript?.includes('send_goal')) {
           return { stdout: goalOutput, stderr: '', command: 'podman' } as extensionApi.RunResult;
         }
@@ -3615,7 +3643,7 @@ linear_acceleration:
 
     beforeEach(() => {
       vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
-        simContainer(CONTAINER_ID, 'quay.io/sgahlot/ros2-jazzy-sim:noble'),
+        simContainer(CONTAINER_ID, `quay.io/sgahlot/ros2-${distro}-sim:test`),
       ] as unknown as extensionApi.ContainerInfo[]);
     });
 
@@ -3626,6 +3654,69 @@ linear_acceleration:
       expect(result.status).toBe('reached');
       expect(result.message).toContain('Nav2');
     });
+
+    if (distro === 'humble') {
+      it.each([
+        { stdout: '', exitCode: 0 },
+        { stdout: 'not PHYSICAL_AI_NAV2_READY\n', exitCode: 0 },
+        { stdout: 'PHYSICAL_AI_NAV2_READY\n', exitCode: 124 },
+      ])('does not accept an unsuccessful persistent probe: %j', async probeResult => {
+        mockNav2Exec({ tfReadyInitially: false, navigatorStates: [], probeResult });
+        await expect(api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2, 2)).rejects.toThrow(/active bt_navigator/);
+        expect(
+          vi
+            .mocked(extensionApi.process.exec)
+            .mock.calls.some(call => (call[1] as string[]).some(arg => arg.includes('send_goal'))),
+        ).toBe(false);
+      });
+    }
+
+    it('waits for navigator activation even when map TF already exists without duplicating bringup', async () => {
+      mockNav2Exec({ navigatorStates: ['inactive [2]\n', 'active [3]\n'] });
+      const result = api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(
+        vi
+          .mocked(extensionApi.process.exec)
+          .mock.calls.some(call => (call[1] as string[]).some(arg => arg.includes('send_goal'))),
+      ).toBe(false);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect((await result).status).toBe('reached');
+      const calls = vi.mocked(extensionApi.process.exec).mock.calls;
+      expect(calls.some(call => (call[1] as string[]).includes('-d'))).toBe(false);
+      const readiness = calls.filter(call => (call[1] as string[]).some(arg => arg.includes('ros2 lifecycle get')));
+      expect(readiness).toHaveLength(distro === 'humble' ? 1 : 2);
+      expect(readiness[0][1]).toContain('robot_1');
+      expect((readiness[0][1] as string[]).join(' ')).toContain('"/$1/bt_navigator"');
+      if (distro === 'humble') {
+        const persistent = calls.filter(call =>
+          (call[1] as string[]).some(arg => arg.includes('physical_ai_nav2_readiness_')),
+        );
+        expect(persistent).toHaveLength(1);
+        expect((persistent[0][1] as string[]).slice(-3)).toEqual(['robot_1', '120', '125']);
+      }
+    });
+
+    it.each([{ navigatorState: 'inactive [2]\n' }, { navigatorState: 'not active [3]\n' }, { lifecycleFailure: true }])(
+      'fails closed without sending a goal when navigator readiness fails: %j',
+      async options => {
+        mockNav2Exec({ ...options, navigatorStates: [] });
+        const failure = expect(api.sendNavigationGoal(CONTAINER_ID, 'robot_1', 2.0, 2.0)).rejects.toThrow(
+          /active bt_navigator/,
+        );
+        await vi.advanceTimersByTimeAsync(120_000);
+        await failure;
+        expect(
+          vi
+            .mocked(extensionApi.process.exec)
+            .mock.calls.some(call =>
+              (call[1] as string[]).some(
+                arg => arg.includes('send_goal') || (arg.includes('topic pub') && arg.includes('cmd_vel')),
+              ),
+            ),
+        ).toBe(false);
+      },
+    );
 
     it('returns failed when Nav2 goal reports non-success status', async () => {
       mockNav2Exec({ goalOutput: 'Goal finished with status: ABORTED\n' });
@@ -3791,6 +3882,10 @@ linear_acceleration:
       const processMatcher = new RegExp(pattern);
       expect(processMatcher.test('python3 /usr/local/lib/robotics/wait-for-scan.py robot_1 70')).toBe(true);
       expect(processMatcher.test('python3 /usr/local/lib/robotics/wait-for-scan.py robot_10 70')).toBe(false);
+      expect(processMatcher.test('python3 /usr/local/lib/robotics/seed-initial-pose.py robot_1 -2 -0.5 60')).toBe(true);
+      expect(processMatcher.test('python3 /usr/local/lib/robotics/seed-initial-pose.py robot_10 -2 -0.5 60')).toBe(
+        false,
+      );
       expect(processMatcher.test('ros2 topic echo --once /robot_1/scan sensor_msgs/msg/LaserScan')).toBe(true);
       expect(processMatcher.test(`bash -c pkill _ ${pattern}`)).toBe(false);
 
@@ -3825,58 +3920,68 @@ linear_acceleration:
       expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_9')).toEqual({ status: 'idle' });
     });
 
-    function mockReadyWarmExec(options?: { scanResult?: Promise<extensionApi.RunResult>; scanFailure?: boolean }) {
+    function mockReadyWarmExec(options?: {
+      scanResult?: Promise<extensionApi.RunResult>;
+      scanFailure?: boolean;
+      navResult?: Promise<extensionApi.RunResult>;
+    }) {
       vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
         const script = (args as string[]).join(' ');
+        if (script.includes('physical_ai_nav2_readiness_') && options?.navResult) return options.navResult;
         if (script.includes('if [ -f /usr/local/lib/robotics/wait-for-scan.py ]')) {
           if (options?.scanFailure) throw { exitCode: 124, stderr: 'No scan before deadline' };
           if (options?.scanResult) return options.scanResult;
         }
         const stdout = script.includes('gz model')
           ? 'Model: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [0.000000 0.000000 0.010000]\n    [0.000000 0.000000 0.000000]'
-          : script.includes('tf2_echo map base_link')
-            ? 'Translation: [0.0, 0.0, 0.0]'
-            : '';
+          : script.includes('ros2 lifecycle get')
+            ? 'active [3]\n'
+            : script.includes('tf2_echo map base_link')
+              ? options?.navResult
+                ? ''
+                : 'Translation: [0.0, 0.0, 0.0]'
+              : '';
         return { stdout, stderr: '', command: 'podman' } as extensionApi.RunResult;
       });
     }
 
-    it.each(['quay.io/sgahlot/ros2-jazzy-sim:noble', 'quay.io/sgahlot/robotics-fedora-bootc-43:ros2-lyrical'])(
-      'holds one scan subscriber before Nav2 readiness on %s',
-      async image => {
-        vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
-          simContainer(CONTAINER_ID, image),
-        ] as unknown as extensionApi.ContainerInfo[]);
-        let receive!: (value: extensionApi.RunResult) => void;
-        mockReadyWarmExec({
-          scanResult: new Promise(resolve => {
-            receive = resolve;
-          }),
-        });
-        await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '-0.5', '0.0']);
-        await vi.advanceTimersByTimeAsync(5000);
-        expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual({ status: 'warming' });
-        const scanCalls = vi
+    it.each([
+      'quay.io/sgahlot/ros2-humble-sim:sloretz',
+      'quay.io/sgahlot/ros2-jazzy-sim:noble',
+      'quay.io/sgahlot/robotics-fedora-bootc-43:ros2-lyrical',
+    ])('holds one scan subscriber before Nav2 readiness on %s', async image => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, image),
+      ] as unknown as extensionApi.ContainerInfo[]);
+      let receive!: (value: extensionApi.RunResult) => void;
+      mockReadyWarmExec({
+        scanResult: new Promise(resolve => {
+          receive = resolve;
+        }),
+      });
+      await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '-0.5', '0.0']);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual({ status: 'warming' });
+      const scanCalls = vi
+        .mocked(extensionApi.process.exec)
+        .mock.calls.filter(call =>
+          (call[1] as string[]).some(arg => arg.includes('if [ -f /usr/local/lib/robotics/wait-for-scan.py ]')),
+        );
+      expect(scanCalls).toHaveLength(1);
+      const argv = scanCalls[0][1] as string[];
+      const script = argv.find(arg => arg.includes('if [ -f'))!;
+      expect(script).toContain('timeout -k 2 "$2" python3 /usr/local/lib/robotics/wait-for-scan.py "$1" "$2"');
+      expect(script).toContain('sensor_msgs/msg/LaserScan --qos-reliability best_effort --qos-durability volatile');
+      expect(argv.slice(-2)).toEqual(['robot_1', '70']);
+      expect(
+        vi
           .mocked(extensionApi.process.exec)
-          .mock.calls.filter(call =>
-            (call[1] as string[]).some(arg => arg.includes('if [ -f /usr/local/lib/robotics/wait-for-scan.py ]')),
-          );
-        expect(scanCalls).toHaveLength(1);
-        const argv = scanCalls[0][1] as string[];
-        const script = argv.find(arg => arg.includes('if [ -f'))!;
-        expect(script).toContain('timeout -k 2 "$2" python3 /usr/local/lib/robotics/wait-for-scan.py "$1" "$2"');
-        expect(script).toContain('sensor_msgs/msg/LaserScan --qos-reliability best_effort --qos-durability volatile');
-        expect(argv.slice(-2)).toEqual(['robot_1', '70']);
-        expect(
-          vi
-            .mocked(extensionApi.process.exec)
-            .mock.calls.some(call => (call[1] as string[]).some(arg => arg.includes('tf2_echo map base_link'))),
-        ).toBe(false);
-        receive({ stdout: 'scan received', stderr: '', command: 'podman' } as extensionApi.RunResult);
-        await vi.advanceTimersByTimeAsync(0);
-        expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual({ status: 'ready', elapsedMs: 5000 });
-      },
-    );
+          .mock.calls.some(call => (call[1] as string[]).some(arg => arg.includes('tf2_echo map base_link'))),
+      ).toBe(false);
+      receive({ stdout: 'scan received', stderr: '', command: 'podman' } as extensionApi.RunResult);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual({ status: 'ready', elapsedMs: 5000 });
+    });
 
     it('does not start Nav2 when the scan subscriber times out', async () => {
       mockReadyWarmExec({ scanFailure: true });
@@ -3892,27 +3997,55 @@ linear_acceleration:
       ).toBe(false);
     });
 
-    it('does not launch Nav2 if a pending subscriber finishes after removal', async () => {
-      let receive!: (value: extensionApi.RunResult) => void;
-      mockReadyWarmExec({
-        scanResult: new Promise(resolve => {
-          receive = resolve;
-        }),
-      });
+    it('does not mark a same-name replacement ready when an old persistent Humble probe finishes', async () => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, 'quay.io/ns/ros2-humble-sim:test'),
+      ] as unknown as extensionApi.ContainerInfo[]);
+      let finish!: (value: extensionApi.RunResult) => void;
+      mockReadyWarmExec({ navResult: new Promise(resolve => (finish = resolve)) });
       await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '-0.5', '0.0']);
       await vi.advanceTimersByTimeAsync(1000);
-      await api.despawnRobot(CONTAINER_ID, 'robot_1');
-      receive({ stdout: 'late scan', stderr: '', command: 'podman' } as extensionApi.RunResult);
-      await vi.advanceTimersByTimeAsync(0);
-      expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual({ status: 'idle' });
       expect(
         vi
           .mocked(extensionApi.process.exec)
-          .mock.calls.some(call =>
-            (call[1] as string[]).some(arg => arg.includes('tf2_echo map base_link') || arg === '/entrypoint-nav2.sh'),
-          ),
-      ).toBe(false);
+          .mock.calls.filter(call => (call[1] as string[]).some(arg => arg.includes('physical_ai_nav2_readiness_'))),
+      ).toHaveLength(1);
+      await api.despawnRobot(CONTAINER_ID, 'robot_1');
+      await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '-0.5', '0.0']);
+      finish({ stdout: 'PHYSICAL_AI_NAV2_READY\n', stderr: '', command: 'podman' } as extensionApi.RunResult);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual({ status: 'warming' });
     });
+
+    it.each(['humble', 'jazzy'])(
+      'does not launch %s Nav2 if a pending subscriber finishes after removal',
+      async distro => {
+        vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+          simContainer(CONTAINER_ID, `quay.io/ns/ros2-${distro}-sim:test`),
+        ] as unknown as extensionApi.ContainerInfo[]);
+        let receive!: (value: extensionApi.RunResult) => void;
+        mockReadyWarmExec({
+          scanResult: new Promise(resolve => {
+            receive = resolve;
+          }),
+        });
+        await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '-0.5', '0.0']);
+        await vi.advanceTimersByTimeAsync(1000);
+        await api.despawnRobot(CONTAINER_ID, 'robot_1');
+        receive({ stdout: 'late scan', stderr: '', command: 'podman' } as extensionApi.RunResult);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual({ status: 'idle' });
+        expect(
+          vi
+            .mocked(extensionApi.process.exec)
+            .mock.calls.some(call =>
+              (call[1] as string[]).some(
+                arg => arg.includes('tf2_echo map base_link') || arg === '/entrypoint-nav2.sh',
+              ),
+            ),
+        ).toBe(false);
+      },
+    );
 
     it('freezes backend duration at completion regardless of later UI reads', async () => {
       mockReadyWarmExec();
@@ -3936,7 +4069,10 @@ linear_acceleration:
       expect(await api.getRobotWarmState(CONTAINER_ID, 'robot_1')).toEqual({ status: 'failed', elapsedMs: 30_000 });
     });
 
-    it('does not let a previous attempt overwrite a respawn or teardown', async () => {
+    it.each(['humble', 'jazzy'])('does not let a previous %s attempt overwrite a respawn or teardown', async distro => {
+      vi.mocked(extensionApi.containerEngine.listContainers).mockResolvedValue([
+        simContainer(CONTAINER_ID, `quay.io/ns/ros2-${distro}-sim:test`),
+      ] as unknown as extensionApi.ContainerInfo[]);
       mockReadyWarmExec();
       await api.execInSimulation(CONTAINER_ID, [SPAWN_ENTRYPOINT, 'robot_1', '-2.0', '-0.5', '0.0']);
       await vi.advanceTimersByTimeAsync(500);
@@ -5069,7 +5205,7 @@ linear_acceleration:
       );
 
       it('does not warm Nav2 for a humble spawn', async () => {
-        mockPodLookup(POD, 'quay.io/ns/ros2-humble-turtlebot3:sloretz-amd64');
+        mockPodLookup(POD, 'quay.io/ns/ros2-humble-sim:sloretz-amd64');
         await api.spawnRobotInOpenShift(NS, NAME, 'robot_1', '-2.0', '-0.5', '0.0');
         await vi.advanceTimersByTimeAsync(5000);
 
@@ -5181,6 +5317,15 @@ linear_acceleration:
         const gzScript = (gzCall![1] as string[]).find(a => typeof a === 'string' && a.includes('gz service'))!;
         // oc path gets the writable HOME prefix so `gz` can source ROS under HOME=/.
         expect(gzScript).toContain('export HOME=/tmp/ros-home');
+        expect(gzScript).toContain('source "${ROBOTICS_ROS_SETUP:-/opt/ros/jazzy/setup.bash}"');
+      });
+
+      it('honors a managed Humble source overlay with a distro fallback for older images', async () => {
+        mockOc('quay.io/ns/ros2-humble-sim:sloretz');
+        await api.despawnRobotInOpenShift(NS, NAME, 'robot_1');
+        const scripts = vi.mocked(extensionApi.process.exec).mock.calls.flatMap(call => call[1] as string[]);
+        const script = scripts.find(arg => arg.includes('gz service'));
+        expect(script).toContain('source "${ROBOTICS_ROS_SETUP:-/opt/ros/humble/setup.bash}"');
       });
 
       it('rejects an injectable robot name before touching the cluster', async () => {
@@ -5591,9 +5736,9 @@ ranges: [0.3, 0.5, .inf, .nan]
       const GZ_POSE_AT_TARGET =
         'Requesting state for world [tb3_sandbox]...\n\nModel: [42]\n  - Name: robot_1\n  - Pose [ XYZ (m) ] [ RPY (rad) ]:\n    [2.000000 2.000000 0.010000]\n    [0.000000 0.000000 0.000000]';
 
-      function mockOc(image: string, options?: { goalOutput?: string }) {
+      function mockOc(image: string, options?: { goalOutput?: string; cold?: boolean }) {
         const goalOutput = options?.goalOutput ?? 'Goal finished with status: SUCCEEDED\n';
-        // Origin first, then at-target so the humble cmd_vel path drives and reaches.
+        // Keep positional pose queries deterministic for navigation tests.
         let poseCalls = 0;
         vi.mocked(extensionApi.process.exec).mockImplementation(async (_cmd, args) => {
           const a = args as string[];
@@ -5605,6 +5750,9 @@ ranges: [0.3, 0.5, .inf, .nan]
           }
           // oc exec -- bash -c <script>
           const script = a.find((s): s is string => typeof s === 'string' && s.includes('source'));
+          if (a.some(arg => arg.includes('physical_ai_nav2_readiness_'))) {
+            return { stdout: 'PHYSICAL_AI_NAV2_READY\n', stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
           if (script?.includes('gz model')) {
             poseCalls++;
             return {
@@ -5616,9 +5764,12 @@ ranges: [0.3, 0.5, .inf, .nan]
           if (script?.includes('send_goal')) {
             return { stdout: goalOutput, stderr: '', command: 'oc' } as extensionApi.RunResult;
           }
+          if (script?.includes('ros2 lifecycle get')) {
+            return { stdout: 'active [3]\n', stderr: '', command: 'oc' } as extensionApi.RunResult;
+          }
           if (script?.includes('tf2_echo map base_link')) {
             return {
-              stdout: 'At time 1.0\n- Translation: [2.0, 2.0, 0.010]\n',
+              stdout: options?.cold ? '' : 'At time 1.0\n- Translation: [2.0, 2.0, 0.010]\n',
               stderr: '',
               command: 'oc',
             } as extensionApi.RunResult;
@@ -5642,6 +5793,26 @@ ranges: [0.3, 0.5, .inf, .nan]
         expect(goalA).not.toContain('-d');
       });
 
+      it('uses the bounded persistent Humble readiness probe over oc exec on cold startup', async () => {
+        mockOc('quay.io/ns/ros2-humble-sim:sloretz-amd64', { cold: true });
+        const goal = api.sendOpenShiftNavigationGoal(NS, NAME, 'robot_1', 2.0, 2.0);
+        await vi.advanceTimersByTimeAsync(3000);
+        expect((await goal).status).toBe('reached');
+        const calls = vi.mocked(extensionApi.process.exec).mock.calls;
+        const probes = calls.filter(call =>
+          (call[1] as string[]).some(arg => arg.includes('physical_ai_nav2_readiness_')),
+        );
+        expect(probes).toHaveLength(1);
+        expect(probes[0][0]).toBe('oc');
+        const argv = probes[0][1] as string[];
+        expect(argv.slice(0, 5)).toEqual(['exec', '-n', NS, POD, '--']);
+        expect(argv.slice(-3)).toEqual(['robot_1', '120', '125']);
+        expect(argv.find(arg => arg.includes('source'))).toContain('export HOME=/tmp/ros-home');
+        expect(
+          calls.filter(call => (call[1] as string[]).some(arg => arg.includes('tf2_echo map base_link'))),
+        ).toHaveLength(1);
+      });
+
       it('sets a writable HOME/ROS_HOME on the oc exec path so rclcpp can create its log dir', async () => {
         mockOc('quay.io/ns/ros2-jazzy-sim:noble-amd64');
 
@@ -5658,17 +5829,25 @@ ranges: [0.3, 0.5, .inf, .nan]
         expect(script.indexOf('HOME=/tmp/ros-home')).toBeLessThan(script.indexOf('source'));
       });
 
-      it('routes a humble image through the cmd_vel path over oc exec', async () => {
-        mockOc('quay.io/ns/ros2-humble-turtlebot3:sloretz');
+      it('routes a Humble overlay image through Nav2 over oc exec without open-loop publishing', async () => {
+        mockOc('quay.io/ns/ros2-humble-sim:sloretz');
 
         const result = await api.sendOpenShiftNavigationGoal(NS, NAME, 'robot_1', 2.0, 2.0);
         expect(result.status).toBe('reached');
 
-        const driveCall = vi
+        const goalCall = vi
           .mocked(extensionApi.process.exec)
-          .mock.calls.find(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes('linear')));
-        expect(driveCall).toBeDefined();
-        expect((driveCall![1] as string[]).slice(0, 5)).toEqual(['exec', '-n', NS, POD, '--']);
+          .mock.calls.find(c => (c[1] as string[]).some(a => typeof a === 'string' && a.includes('send_goal')));
+        expect(goalCall).toBeDefined();
+        expect((goalCall![1] as string[]).slice(0, 5)).toEqual(['exec', '-n', NS, POD, '--']);
+        expect((goalCall![1] as string[]).join(' ')).toContain('${ROBOTICS_ROS_SETUP:-/opt/ros/humble/setup.bash}');
+        expect(
+          vi
+            .mocked(extensionApi.process.exec)
+            .mock.calls.some(call =>
+              (call[1] as string[]).some(arg => arg.includes('topic pub') && arg.includes('cmd_vel')),
+            ),
+        ).toBe(false);
       });
 
       it('rejects an injectable robot name before touching the cluster', async () => {

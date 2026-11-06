@@ -12,16 +12,16 @@ Base layer for Physical AI simulation images. Adds build tools to a ROS2 Humble 
 The Containerfile takes `ROS_BASE_IMAGE` as a build-arg (digest-pinned). The extension
 exposes a dropdown with two presets:
 
-| Preset id | Image | Arch | Output tag |
-|-----------|--------|------|------------|
+| Preset id           | Image                                                | Arch         | Output tag |
+| ------------------- | ---------------------------------------------------- | ------------ | ---------- |
 | `sloretz` (default) | `ghcr.io/sloretz/ros:humble-desktop@sha256:970146e…` | amd64, arm64 | `:sloretz` |
-| `osrf` | `docker.io/osrf/ros:humble-desktop@sha256:3d87cf3…` | amd64 only | `:osrf` |
+| `osrf`              | `docker.io/osrf/ros:humble-desktop@sha256:3d87cf3…`  | amd64 only   | `:osrf`    |
 
 Digests are stored in `packages/shared/src/types/SimulationBaseImages.ts` and bumped deliberately.
 
 ## Relationship to simulation images
 
-Simulation Containerfiles (e.g. `ros2-humble-turtlebot3`) use `FROM <this-image>` and
+Simulation Containerfiles (which build the `ros2-humble-sim` image) use `FROM <this-image>` and
 add robot-specific packages, simulation engines, and workspace builds on top.
 
 ## Build (CLI)

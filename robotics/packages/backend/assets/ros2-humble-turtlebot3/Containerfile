@@ -1,4 +1,4 @@
-# Simulation image for TurtleBot3 + Gazebo + Nav2.
+# Managed simulation image for TurtleBot3 + Gazebo + Nav2 + noVNC.
 # Builds on top of the locally-built ros2-humble-base image which provides
 # ROS2 Humble desktop + build tools (colcon, rosdep, vcstool, cmake, git).
 #
@@ -7,14 +7,8 @@
 ARG LOCAL_BASE_IMAGE
 FROM ${LOCAL_BASE_IMAGE}
 
-# TurtleBot3 humble-branch commits (ROBOTIS-GIT), pinned 2026-07-22
-ARG TURTLEBOT3_SHA=90a68bd2e3c61c12966779da89d8eeaec82730e9
-ARG TURTLEBOT3_MSGS_SHA=cdee60f7618b9ed2f85f65259c0f96e3f02b1c55
-ARG DYNAMIXEL_SDK_SHA=0d3403df29561890eb168652b2ed234dd6728bb2
-ARG TURTLEBOT3_SIMULATIONS_SHA=a35a56c8b04877dc89772b598084d8ce648a9023
-
 LABEL org.opencontainers.image.title="ROS2 Humble TurtleBot3 Simulation" \
-      org.opencontainers.image.description="ROS2 Humble with TurtleBot3, Gazebo, and Nav2 for simulation" \
+       org.opencontainers.image.description="ROS2 Humble with TurtleBot3, Gazebo, Nav2, and noVNC for simulation" \
       org.opencontainers.image.vendor="Red Hat" \
       org.opencontainers.image.source="https://github.com/redhat-appeng/physical-ai"
 
@@ -29,36 +23,112 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
          > /etc/apt/sources.list.d/gazebo-stable.list \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Gazebo packages and Nav2
+# Humble has no released nav2-minimal-tb3-sim binary, and the OSRF Humble/
+# Harmonic ROS binaries are amd64-only. Build the same pinned overlay on both
+# architectures instead. Do not install the default Humble ros-gz packages:
+# those link against Fortress, not Harmonic.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ros-humble-ros-gz \
+    gz-harmonic \
+    libgz-sim8-dev \
+    libgz-transport13-dev \
+    libgz-msgs10-dev \
+    libgflags-dev \
+    libyaml-cpp-dev \
+    ros-humble-navigation2 \
     ros-humble-nav2-bringup \
+    ros-humble-teleop-twist-keyboard \
+    ros-humble-actuator-msgs \
+    ros-humble-gps-msgs \
+    ros-humble-vision-msgs \
+    ros-humble-image-transport \
+    ros-humble-cv-bridge \
+    ros-humble-xacro \
+    ros-humble-robot-state-publisher \
+    ros-humble-rmw-zenoh-cpp \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone TurtleBot3 packages at pinned commits (not floating branch tips)
-RUN mkdir -p /root/turtlebot3_ws/src \
-    && cd /root/turtlebot3_ws/src \
-    && git clone https://github.com/ROBOTIS-GIT/turtlebot3.git \
-    && git -C turtlebot3 checkout "${TURTLEBOT3_SHA}" \
-    && git clone https://github.com/ROBOTIS-GIT/turtlebot3_msgs.git \
-    && git -C turtlebot3_msgs checkout "${TURTLEBOT3_MSGS_SHA}" \
-    && git clone https://github.com/ROBOTIS-GIT/DynamixelSDK.git \
-    && git -C DynamixelSDK checkout "${DYNAMIXEL_SDK_SHA}" \
-    && git clone https://github.com/ROBOTIS-GIT/turtlebot3_simulations.git \
-    && git -C turtlebot3_simulations checkout "${TURTLEBOT3_SIMULATIONS_SHA}"
+COPY lib/build-harmonic-overlay.sh /usr/local/lib/robotics/build-harmonic-overlay.sh
+RUN bash /usr/local/lib/robotics/build-harmonic-overlay.sh
 
-# Build TurtleBot3 workspace (skip turtlebot3_gazebo — uses classic Gazebo, not gz-sim)
-RUN . /opt/ros/humble/setup.sh \
-    && cd /root/turtlebot3_ws \
-    && touch src/turtlebot3_simulations/turtlebot3_gazebo/COLCON_IGNORE \
-    && colcon build --symlink-install --parallel-workers 2
+# noVNC display stack and Mesa software GL/EGL. The latter provides llvmpipe
+# plus surfaceless EGL, avoiding the GLX sensor-render crash in CPU-only pods.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libegl1 \
+    libgl1-mesa-dri \
+    libegl-mesa0 \
+    libgbm1 \
+    mesa-utils \
+    xvfb \
+    x11vnc \
+    novnc \
+    python3-websockify \
+    openbox \
+    xterm \
+    python3 \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# VirtualGL uses the NVIDIA headless EGL device for the GUI viewport in an
+# OpenShift GPU pod that has no /dev/dri render node. The server remains on the
+# safe software-EGL path; see entrypoint-gazebo.sh for the three render modes.
+ARG VIRTUALGL_VERSION=3.1.5
+RUN apt-get update \
+    && VGL_ARCH="$(dpkg --print-architecture)" \
+    && wget -q "https://github.com/VirtualGL/virtualgl/releases/download/${VIRTUALGL_VERSION}/virtualgl_${VIRTUALGL_VERSION}_${VGL_ARCH}.deb" \
+         -O /tmp/virtualgl.deb \
+    && apt-get install -y --no-install-recommends /tmp/virtualgl.deb \
+    && rm -f /tmp/virtualgl.deb \
+    && rm -rf /var/lib/apt/lists/*
+ENV PATH="/opt/VirtualGL/bin:${PATH}"
 
-ENV TURTLEBOT3_MODEL=burger
+# OGRE 2.3.1 can abort when a depth camera is removed and recreated. Backport
+# the upstream material-lifetime fix using OSRF's packaging on both arches.
+COPY lib/build-ogre-next.sh /usr/local/lib/robotics/build-ogre-next.sh
+COPY patches/ogre-next-material-lifetime.patch /opt/physical-ai/sources/ogre-next/material-lifetime.patch
+RUN bash /usr/local/lib/robotics/build-ogre-next.sh
+# Check in a NEW layer: an in-process checksum cannot detect dropped layer data.
+RUN sha256sum -c /opt/physical-ai/sources/ogre-next/installed-library.sha256
 
-WORKDIR /root/turtlebot3_ws
+RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 
-ENTRYPOINT ["/entrypoint.sh"]
+# noVNC landing: full UI + autoconnect + auto-reconnect.
+RUN printf '<!DOCTYPE html>\n<html><head><meta http-equiv="refresh" content="0;url=vnc.html?autoconnect=true&reconnect=true&reconnect_delay=2000&resize=scale"></head></html>\n' \
+    > /usr/share/novnc/index.html
+
+WORKDIR /opt/ros2-demo
+
+COPY entrypoint-gazebo.sh /entrypoint-gazebo.sh
+COPY entrypoint-spawn-robot.sh /entrypoint-spawn-robot.sh
+COPY entrypoint-spawn-embedded-robot.sh /entrypoint-spawn-embedded-robot.sh
+COPY entrypoint-launch-robot.sh /entrypoint-launch-robot.sh
+COPY entrypoint-nav2.sh /entrypoint-nav2.sh
+COPY lib/validate-input.sh /usr/local/lib/robotics/validate-input.sh
+COPY lib/load-validate-input.sh /usr/local/lib/robotics/load-validate-input.sh
+COPY lib/patch-nav2-params.py /usr/local/lib/robotics/patch-nav2-params.py
+COPY lib/robot-definition.py /usr/local/lib/robotics/robot-definition.py
+COPY lib/wait-for-scan.py /usr/local/lib/robotics/wait-for-scan.py
+COPY lib/seed-initial-pose.py /usr/local/lib/robotics/seed-initial-pose.py
+COPY lib/run-clock-bridge.sh /usr/local/lib/robotics/run-clock-bridge.sh
+COPY patches/simulation-owned-clock.patch /opt/physical-ai/sources/simulation-owned-clock.patch
+COPY config/robot-definitions.json /opt/ros2-demo/config/robot-definitions.json
+COPY config/cyclonedds-qos.xml /opt/ros2-demo/config/cyclonedds-qos.xml
+COPY worlds/ /opt/ros2-demo/worlds/
+COPY www/ /opt/ros2-demo/www/
+
+# Patch the pinned package's installed config once, after the expensive source
+# builds. Both upstream launch and the fallback consume this same clock-free file.
+RUN patch --fuzz=0 /opt/physical-ai/humble/share/nav2_minimal_tb3_sim/configs/turtlebot3_waffle_bridge.yaml \
+          /opt/physical-ai/sources/simulation-owned-clock.patch \
+    && chmod +x /entrypoint-gazebo.sh /entrypoint-spawn-robot.sh /entrypoint-spawn-embedded-robot.sh /entrypoint-launch-robot.sh /entrypoint-nav2.sh \
+    && chmod 644 /usr/local/lib/robotics/validate-input.sh \
+                  /usr/local/lib/robotics/load-validate-input.sh \
+                  /usr/local/lib/robotics/patch-nav2-params.py \
+    && sha256sum -c /opt/physical-ai/sources/ogre-next/installed-library.sha256
+
+ENV ROBOTICS_ROS_SETUP=/opt/physical-ai/humble/setup.bash \
+    TURTLEBOT3_MODEL=waffle
+
+EXPOSE 6080 8080
+
+ENTRYPOINT ["/bin/bash"]
 CMD ["bash"]

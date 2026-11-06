@@ -181,6 +181,7 @@ import {
   ROS_TOPIC_PUBLISH_TIMEOUT_SECONDS,
 } from '/@shared/src/ros/topicPublish';
 import { appendProgressLog } from './progressLogs';
+import { HUMBLE_NAV2_READINESS_PYTHON } from './nav2Readiness';
 
 const QUAY_API_BASE = 'https://quay.io/api/v1';
 const DOCKER_HUB_API_BASE = 'https://hub.docker.com/v2';
@@ -195,6 +196,8 @@ const PROGRESS_RETENTION_MS = 30_000;
  * readiness condition, so Nav2 does not start against a silent bridge.
  */
 const NAV2_TF_POLL_ATTEMPTS = 120;
+/** Humble keeps one listener for this entire wall-clock budget, even in slow sim. */
+const HUMBLE_NAV2_READY_SECONDS = 120;
 /**
  * Allow the spawn entrypoint to complete its 30-second launch-bridge probe and,
  * if needed, its direct-bridge fallback probe before Nav2 starts. This mirrors
@@ -3460,9 +3463,11 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
   ): Promise<void> {
     // Do not trust action list alone — other sim containers on the default ROS domain
     // can expose /robot_N/navigate_to_pose before this container's Nav2 stack is up.
-    // Warm path: TF already present → the stack is up. The cold-start costmap clear
+    // TF can appear before bt_navigator activates (observed on Humble). Require
+    // both TF and active lifecycle state before accepting a goal or marking warm.
+    // The cold-start costmap clear
     // is done at goal-dispatch time (see #sendNav2NavigationGoal), not here.
-    if (await this.#hasMapBaseLinkTf(target, robotName, distro)) {
+    if (await this.#isNav2Ready(target, robotName, distro)) {
       return;
     }
 
@@ -3479,18 +3484,32 @@ export class PhysicalAiApiImpl implements PhysicalAiApi {
       });
     }
 
-    for (let attempt = 0; attempt < NAV2_TF_POLL_ATTEMPTS; attempt++) {
-      await PhysicalAiApiImpl.#sleep(1000);
+    if (distro === 'humble') {
+      // Do not repeatedly discard TF history/discovery after five seconds. This
+      // read-only probe owns its ROS endpoints until success or a wall-clock deadline.
+      // A removed/replaced robot's pre-warm cannot publish stale status (isCurrent).
+      const ready = await this.#execRosBash(target, distro, 'timeout -k 2 "$4" python3 -c "$1" "$2" "$3"', [
+        HUMBLE_NAV2_READINESS_PYTHON,
+        robotName,
+        String(HUMBLE_NAV2_READY_SECONDS),
+        String(HUMBLE_NAV2_READY_SECONDS + 5),
+      ]);
       if (isCurrent && !isCurrent()) return;
-      if (await this.#hasMapBaseLinkTf(target, robotName, distro)) {
-        return;
+      if (ready.exitCode === 0 && /^PHYSICAL_AI_NAV2_READY$/m.test(ready.stdout)) return;
+    } else {
+      for (let attempt = 0; attempt < NAV2_TF_POLL_ATTEMPTS; attempt++) {
+        await PhysicalAiApiImpl.#sleep(1000);
+        if (isCurrent && !isCurrent()) return;
+        if (await this.#isNav2Ready(target, robotName, distro)) {
+          return;
+        }
       }
     }
 
     throw new Error(
       bringupRunning
-        ? `Nav2 bringup for "${robotName}" is running but map→base_link TF never became available.`
-        : `Nav2 stack for "${robotName}" did not become ready (map→base_link TF missing). ` +
+        ? `Nav2 bringup for "${robotName}" is running but map→base_link TF or active bt_navigator is missing.`
+        : `Nav2 stack for "${robotName}" did not become ready (map→base_link TF or active bt_navigator missing). ` +
             'Stop other sim containers or use a fresh simulation before Go.',
     );
   }
@@ -4254,6 +4273,14 @@ print(json.dumps(result or {'error': 'No image received before the peek timeout.
     return { robotNamespace: safeRobot, sensors, capturedAt };
   }
 
+  async #isNav2Ready(target: ExecTarget, robotName: string, distro: SupportedRosDistro): Promise<boolean> {
+    if (!(await this.#hasMapBaseLinkTf(target, robotName, distro))) return false;
+    const result = await this.#execRosBash(target, distro, 'timeout 5 ros2 lifecycle get "/$1/bt_navigator"', [
+      robotName,
+    ]);
+    return result.exitCode === 0 && /^active\s+\[3\]\s*$/m.test(result.stdout);
+  }
+
   async #isNav2BringupRunning(target: ExecTarget, robotName: string, distro: SupportedRosDistro): Promise<boolean> {
     const result = await this.#execRosBash(
       target,
@@ -4358,8 +4385,8 @@ print(json.dumps(result or {'error': 'No image received before the peek timeout.
     // names are [A-Za-z0-9_-], so there are no ERE metacharacters to escape. The
     // pattern intentionally omits a bare `/<R>/` branch so it can't match the
     // pkill shell's own argv (which carries this pattern); the transient
-    // initialpose publisher is a child of the Nav2 wrapper and dies with it.
-    const pattern = `(namespace:=|robot_name:=|__ns:=/|entrypoint-(spawn-robot|nav2)\\.sh |wait-for-scan\\.py |topic echo --once /)${safeRobot}([ /:]|$)`;
+    // initialpose helper is also matched explicitly in case a wrapper has exited.
+    const pattern = `(namespace:=|robot_name:=|__ns:=/|entrypoint-(spawn-robot|nav2)\\.sh |wait-for-scan\\.py |seed-initial-pose\\.py |topic echo --once /)${safeRobot}([ /:]|$)`;
     // SIGTERM first (the entrypoint scripts trap it and reap their children),
     // then SIGKILL any straggler. pkill exits non-zero when nothing matches —
     // swallow it so a partially-up or already-gone robot isn't an error.
@@ -4404,7 +4431,15 @@ print(json.dumps(result or {'error': 'No image received before the peek timeout.
       target.kind === 'oc'
         ? 'export HOME=/tmp/ros-home ROS_HOME=/tmp/ros-home ROS_LOG_DIR=/tmp/ros-home/log && mkdir -p "$ROS_LOG_DIR" && '
         : '';
-    return this.#execAttached(target, ['bash', '-c', `${prefix}source "${setup}" && ${script}`, '_', ...args]);
+    // Managed images may install ROS packages in a source overlay. Quoting the
+    // image-owned environment value avoids interpreting it as shell syntax.
+    return this.#execAttached(target, [
+      'bash',
+      '-c',
+      `${prefix}source "\${ROBOTICS_ROS_SETUP:-${setup}}" && ${script}`,
+      '_',
+      ...args,
+    ]);
   }
 
   async #assertSimulationContainer(containerId: string): Promise<string> {

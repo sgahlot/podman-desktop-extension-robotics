@@ -27,6 +27,7 @@ describe('CatalogCurated', () => {
     expect(repoMatchesAllowlist('ros2-humble-base', patterns)).toBe(true);
     expect(repoMatchesAllowlist('ros2-jazzy-base', patterns)).toBe(true);
     expect(repoMatchesAllowlist('ros2-humble-turtlebot3', patterns)).toBe(true);
+    expect(repoMatchesAllowlist('ros2-humble-sim', patterns)).toBe(true);
     expect(repoMatchesAllowlist('ros2-jazzy-sim', patterns)).toBe(true);
     expect(repoMatchesAllowlist('busybox', parseCuratedAllowlist('box'))).toBe(true);
     expect(repoMatchesAllowlist('aiobs-foo', patterns)).toBe(false);
@@ -37,11 +38,13 @@ describe('CatalogCurated', () => {
       { name: 'ros2-humble-base' },
       { name: 'other-tool' },
       { name: 'ros2-humble-turtlebot3' },
+      { name: 'ros2-humble-sim' },
       { name: 'ros2-jazzy-sim' },
     ];
     expect(filterCuratedRepos(repos, DEFAULT_CURATED_ALLOWLIST).map(r => r.name)).toEqual([
       'ros2-humble-base',
       'ros2-humble-turtlebot3',
+      'ros2-humble-sim',
       'ros2-jazzy-sim',
     ]);
   });

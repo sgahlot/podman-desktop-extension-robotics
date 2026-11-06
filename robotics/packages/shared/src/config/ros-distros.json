@@ -6,8 +6,8 @@
       "shortLabel": "Humble",
       "layerRosOptionId": "ros2-humble",
       "imageRefHints": ["humble"],
-      "nav2": false,
-      "nav2Prewarm": false
+      "nav2": true,
+      "nav2Prewarm": true
     },
     "jazzy": {
       "label": "ROS 2 Jazzy",

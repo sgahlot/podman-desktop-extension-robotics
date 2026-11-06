@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# Shared input validation for Physical AI sim entrypoints.
+# Patterns MUST stay aligned with packages/shared/src/security/simInput.ts
+
+# Robot / Gazebo model / ROS namespace: letter, then alnum/_/- (max 64).
+pai_validate_robot_name() {
+  local name="${1:-}"
+  if [[ ! "${name}" =~ ^[a-zA-Z][a-zA-Z0-9_-]{0,63}$ ]]; then
+    echo "error: invalid robot name '${name}' (use letters, digits, underscore, hyphen; max 64; must start with a letter)" >&2
+    return 1
+  fi
+}
+
+# Numeric pose / duration (optional leading minus, optional fraction).
+pai_validate_numeric() {
+  local value="${1:-}"
+  local label="${2:-value}"
+  if [[ ! "${value}" =~ ^-?[0-9]+([.][0-9]+)?$ ]]; then
+    echo "error: invalid ${label} '${value}' (must be a number)" >&2
+    return 1
+  fi
+}
+
+# Absolute ROS topic: /segment[/segment...]
+pai_validate_topic_name() {
+  local name="${1:-}"
+  if [[ ! "${name}" =~ ^(/[a-zA-Z][a-zA-Z0-9_]*)+$ ]]; then
+    echo "error: invalid ROS topic name '${name}'" >&2
+    return 1
+  fi
+}
+
+# World / identifier used in paths and grep: same as robot name rules.
+pai_validate_identifier() {
+  local name="${1:-}"
+  local label="${2:-identifier}"
+  if [[ ! "${name}" =~ ^[a-zA-Z][a-zA-Z0-9_-]{0,63}$ ]]; then
+    echo "error: invalid ${label} '${name}'" >&2
+    return 1
+  fi
+}
+
+# ROS package names passed to ros2 pkg/launch (never a shell fragment).
+pai_validate_package_name() {
+  local name="${1:-}"
+  if [[ ! "${name}" =~ ^[a-z][a-z0-9_]{0,127}$ ]]; then
+    echo "error: invalid ROS package '${name}'" >&2
+    return 1
+  fi
+}
+
+# Relative URDF or SDF model path. The entrypoint maps an accepted curated
+# package/path pair to a known in-image asset; this only rejects shell/path traversal.
+pai_validate_model_path() {
+  local path="${1:-}"
+  if [[ ! "${path}" =~ ^[a-zA-Z0-9_./-]+\.(urdf|sdf)$ || "${path}" == *..* ]]; then
+    echo "error: invalid robot model path '${path}'" >&2
+    return 1
+  fi
+}
+
+# Compatibility name for existing callers/tests. New callers should use the model-neutral name.
+pai_validate_urdf_path() { pai_validate_model_path "$@"; }
+
+# TCP port 1–65535.
+pai_validate_port() {
+  local value="${1:-}"
+  local label="${2:-port}"
+  if [[ ! "${value}" =~ ^[0-9]+$ ]] || (( value < 1 || value > 65535 )); then
+    echo "error: invalid ${label} '${value}' (1-65535)" >&2
+    return 1
+  fi
+}
+
+# Single ROBOTS spec: name:x:y:yaw
+pai_validate_robot_spec() {
+  local spec="${1:-}"
+  local rname rx ry ryaw
+  IFS=: read -r rname rx ry ryaw <<< "${spec}"
+  if [[ -z "${rname}" || -z "${rx}" || -z "${ry}" ]]; then
+    echo "error: invalid ROBOTS spec '${spec}' (expected name:x:y:yaw)" >&2
+    return 1
+  fi
+  pai_validate_robot_name "${rname}" || return 1
+  pai_validate_numeric "${rx}" "x" || return 1
+  pai_validate_numeric "${ry}" "y" || return 1
+  pai_validate_numeric "${ryaw:-0.0}" "yaw" || return 1
+}
+
+# Space-separated ROBOTS env value.
+pai_validate_robots_env() {
+  local robots="${1:-}"
+  local spec
+  [[ -z "${robots}" ]] && return 0
+  for spec in ${robots}; do
+    pai_validate_robot_spec "${spec}" || return 1
+  done
+}
+
+# Setup prefix (may be a source overlay rather than /opt/ros/<distro>).
+pai_ros_distro_dir() {
+  local setup="${ROBOTICS_ROS_SETUP:-/opt/ros/humble/setup.bash}"
+  cd "$(dirname "${setup}")" && pwd
+}
+
+# Load the image-owned descriptor on every exec, not just in the PID 1 shell.
+# Source-tree tests and standalone image builds use the same catalog.
+pai_load_robot_definition() {
+  local lib_dir catalog resolver values name value
+  lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  resolver="${lib_dir}/robot-definition.py"
+  catalog="${lib_dir}/../config/robot-definitions.json"
+  [[ -f "${catalog}" ]] || catalog="/opt/ros2-demo/config/robot-definitions.json"
+  values="$(python3 "${resolver}" "${catalog}" "$(pai_ros_distro_dir)" "${ROBOTICS_SIM_DIR:-}")" || return 1
+  while IFS='=' read -r name value; do
+    export "${name}=${value}"
+  done <<< "${values}"
+}
+
+# Gazebo model lookup must match the sourced ROS distro and robot descriptor.
+pai_export_gz_sim_resource_path() {
+  local d resources="${GZ_SIM_RESOURCE_PATH:-}"
+  # Resolve package:// URIs from both the overlay and the ROS underlay.
+  local prefixes="${AMENT_PREFIX_PATH:-$(pai_ros_distro_dir)}"
+  local old_ifs="${IFS}"
+  IFS=:
+  for d in ${prefixes}; do
+    [[ -z "${d}" ]] || resources="${d}/share:${resources}"
+  done
+  IFS="${old_ifs}"
+  export GZ_SIM_RESOURCE_PATH="${resources}${PHYSICAL_AI_ROBOT_RESOURCE_DIR:?robot definition not loaded}:"
+}
