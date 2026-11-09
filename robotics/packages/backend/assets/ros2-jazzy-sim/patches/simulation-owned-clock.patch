@@ -1,0 +1,14 @@
+The managed simulation owns /clock once for the lifetime of the world.
+Robot launch and fallback bridges must not add competing clock writers.
+
+--- a/turtlebot3_waffle_bridge.yaml
++++ b/turtlebot3_waffle_bridge.yaml
+@@ -1,8 +1,2 @@
+-# replace clock_bridge
+-- topic_name: "/clock"
+-  ros_type_name: "rosgraph_msgs/msg/Clock"
+-  gz_type_name: "gz.msgs.Clock"
+-  direction: GZ_TO_ROS
+-
+ # no equivalent in TB3 - add
+ - topic_name: "joint_states"

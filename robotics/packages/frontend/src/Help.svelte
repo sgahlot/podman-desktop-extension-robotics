@@ -115,9 +115,11 @@ let topicMonitorCaption =
           the rebuilt managed image with the updated extension; Local/OpenShift platform validation is still ongoing.
           Rebuilt Humble images wait for AMCL to acknowledge initial localization, with bounded retries if the first
           pose is not received. Rebuild and redeploy the image for this startup fix; reloading the extension does not
-          update an existing pod. Updated Humble images use one world-owned <span class="font-mono">/clock</span>
+          update an existing pod. Updated Humble and Jazzy images use one world-owned
+          <span class="font-mono">/clock</span>
           bridge, independent of robot spawning/removal, to avoid competing clocks clearing Nav2's TF buffers. The simulation
-          stops if that bridge exits. Rebuild and redeploy for this change; concurrent-robot runtime acceptance is still pending.
+          stops if that bridge exits. Rebuild and redeploy the selected image for this change; concurrent-robot runtime acceptance
+          is still pending.
           <i>Disabled until the base exists locally.</i>
         </div>
         <div class="text-xs font-semibold text-[var(--pd-content-header)] mt-3 mb-2">Customize tab</div>
@@ -768,8 +770,10 @@ let topicMonitorCaption =
           discover a late reader. Normal topic and service-request writers keep their defaults. This profile is ignored
           when you choose Zenoh, so <span class="font-mono">rmw_zenoh_cpp</span> remains available in the same image.
           The managed Humble and Jazzy recipes also route each costmap observation source to that robot's
-          <span class="font-mono">/robot_name/scan</span> bridge topic instead of an unbridged nested costmap topic. Rebuild
-          and redeploy the selected image before testing DDS lifecycle reliability or lidar obstacle avoidance.
+          <span class="font-mono">/robot_name/scan</span> bridge topic instead of an unbridged nested costmap topic.
+          Rebuild and redeploy the selected image before testing DDS lifecycle reliability or lidar obstacle avoidance.
+          Both recipes also give the world sole ownership of <span class="font-mono">/clock</span>, so multiple robots
+          do not create competing simulation-clock writers; rebuild and redeploy before multi-robot testing.
         </p>
       </div>
     </div>
