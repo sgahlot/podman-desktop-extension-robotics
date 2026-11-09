@@ -7,6 +7,7 @@ import json
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -16,6 +17,9 @@ SPEC = importlib.util.spec_from_file_location("robot_definition", ROOT / "lib/ro
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 CATALOG = json.loads((ROOT / "config/robot-definitions.json").read_text())
+PATCH_SPEC = importlib.util.spec_from_file_location("patch_nav2_params", ROOT / "lib/patch-nav2-params.py")
+PATCH_MODULE = importlib.util.module_from_spec(PATCH_SPEC)
+PATCH_SPEC.loader.exec_module(PATCH_MODULE)
 
 
 class RobotDefinitionTests(unittest.TestCase):
@@ -99,6 +103,114 @@ class RobotDefinitionTests(unittest.TestCase):
                 self.assertEqual(values["TURTLEBOT3_MODEL"], "waffle")
                 self.assertEqual(values["PHYSICAL_AI_ROBOT_URDF"], f"{directory}/share/nav2_minimal_tb3_sim/urdf/turtlebot3_waffle.urdf")
                 self.assertEqual(values["GZ_SIM_RESOURCE_PATH"], f"{directory}/share:{directory}/share/nav2_minimal_tb3_sim/models:")
+
+
+class Nav2ParameterPatchTests(unittest.TestCase):
+    def test_costmap_sources_use_the_robot_scan_while_other_relative_topics_remain_relative(self):
+        params = {
+            "amcl": {"ros__parameters": {"scan_topic": "/scan"}},
+            "local_costmap": {"ros__parameters": {
+                "observation_sources": "scan",
+                "scan": {"topic": "scan"},
+            }},
+            "global_costmap": {"ros__parameters": {
+                "observation_sources": "obstacles",
+                "obstacles": {"topic": "/scan"},
+            }},
+        }
+        patched = PATCH_MODULE.patch_topics(params, "robot_3")
+        self.assertEqual(patched["amcl"]["ros__parameters"]["scan_topic"], "scan")
+        self.assertEqual(patched["local_costmap"]["ros__parameters"]["scan"]["topic"], "/robot_3/scan")
+        self.assertEqual(patched["global_costmap"]["ros__parameters"]["obstacles"]["topic"], "/robot_3/scan")
+
+
+class ClockBridgeTests(unittest.TestCase):
+    def test_helper_executes_only_world_to_ros_clock_with_validated_arguments(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = pathlib.Path(directory)
+            binary = base / "lib/ros_gz_bridge/parameter_bridge"
+            binary.parent.mkdir(parents=True)
+            binary.write_text(f"#!{sys.executable}\nimport json, sys\nprint(json.dumps(sys.argv[1:]))\n")
+            binary.chmod(0o755)
+            setup = base / "setup.bash"
+            setup.write_text('ros2() { [[ "$*" == "pkg prefix ros_gz_bridge" ]] || return 1; printf "%s\\n" "$FAKE_PREFIX"; }\n')
+            env = {"PATH": os.defpath, "ROBOTICS_ROS_SETUP": str(setup), "FAKE_PREFIX": directory}
+            helper = ROOT / "lib/run-clock-bridge.sh"
+            result = subprocess.run(["bash", str(helper), "tb3_sandbox"], env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout), [
+                "/world/tb3_sandbox/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock", "--ros-args",
+                "-r", "__node:=physical_ai_clock_bridge", "-r", "/world/tb3_sandbox/clock:=/clock",
+                "-p", "use_sim_time:=false",
+            ])
+            for world in ["bad;touch nope", "../world", "world/name", "$(id)", ""]:
+                result = subprocess.run(["bash", str(helper), world], env=env, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0, world)
+                self.assertNotIn("--ros-args", result.stdout)
+
+    def test_patch_removes_only_clock_and_rejects_upstream_drift(self):
+        header = ('# replace clock_bridge\n- topic_name: "/clock"\n'
+                  '  ros_type_name: "rosgraph_msgs/msg/Clock"\n  gz_type_name: "gz.msgs.Clock"\n'
+                  '  direction: GZ_TO_ROS\n\n')
+        sensors = ('# no equivalent in TB3 - add\n- topic_name: "joint_states"\n'
+                   '  ros_type_name: "sensor_msgs/msg/JointState"\n')
+        sensors += ''.join(f'- topic_name: "{topic}"\n' for topic in ["odom", "tf", "imu", "scan", "cmd_vel"])
+        with tempfile.TemporaryDirectory() as directory:
+            config = pathlib.Path(directory) / "bridge.yaml"
+            config.write_text(header + sensors)
+            args = ["patch", "--batch", "--fuzz=0", str(config), str(ROOT / "patches/simulation-owned-clock.patch")]
+            result = subprocess.run(args, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertEqual(config.read_text(), sensors)
+            config.write_text((header + sensors).replace('"/clock"', '"/changed_clock"'))
+            result = subprocess.run(args, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+
+    def test_packaged_patch_and_world_clock_lifecycle_are_wired(self):
+        recipe = (ROOT / "Containerfile").read_text()
+        self.assertIn("COPY lib/run-clock-bridge.sh /usr/local/lib/robotics/run-clock-bridge.sh", recipe)
+        self.assertIn("COPY patches/simulation-owned-clock.patch", recipe)
+        self.assertIn("RUN patch --fuzz=0 /opt/ros/jazzy/share/nav2_minimal_tb3_sim/configs/turtlebot3_waffle_bridge.yaml", recipe)
+        entrypoint = (ROOT / "entrypoint-gazebo.sh").read_text()
+        self.assertLess(entrypoint.index("trap term_handler EXIT"), entrypoint.index("GZ_SERVER_PID=$!"))
+        self.assertIn('wait -n "${GZ_SERVER_PID}" "${CLOCK_BRIDGE_PID}"', entrypoint)
+        self.assertIn('bash "${CLOCK_BRIDGE_SCRIPT}" "${WORLD_NAME}" &', entrypoint)
+
+    def test_startup_failure_and_signal_cleanup_reap_world_children(self):
+        entrypoint = (ROOT / "entrypoint-gazebo.sh").read_text()
+        lifecycle = entrypoint.split("# Simulation process cleanup", 1)[1].split("# Zenoh middleware", 1)[0]
+        lifecycle = "# Simulation process cleanup" + lifecycle
+        for mode in ["clock_failure", "server_failure", "clock_clean_exit", "signal"]:
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                pids = pathlib.Path(directory) / "pids"
+                server = '(sleep 0.1; exit 9)' if mode == "server_failure" else 'sleep 30'
+                clock = '(sleep 0.1; exit 7)' if mode == "clock_failure" else '(sleep 0.1; exit 0)' if mode == "clock_clean_exit" else 'sleep 30'
+                script = 'set -eu\n' + lifecycle + f'\n{server} &\nGZ_SERVER_PID=$!\n{clock} &\nCLOCK_BRIDGE_PID=$!\n'
+                script += 'printf "%s\\n" "$GZ_SERVER_PID" "$CLOCK_BRIDGE_PID" > "$1"\nsleep 0.3\n'
+                script += 'kill -TERM $$\n' if mode == "signal" else 'check_simulation_processes\n'
+                result = subprocess.run(["bash", "-c", script, "_", str(pids)], capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, {"clock_failure": 7, "server_failure": 9, "clock_clean_exit": 1, "signal": 143}[mode], result.stderr)
+                for pid in pids.read_text().splitlines():
+                    with self.assertRaises(ProcessLookupError):
+                        os.kill(int(pid), 0)
+
+    @unittest.skipUnless(sys.platform == "linux", "runtime wait -n requires the image's Linux Bash")
+    def test_runtime_wait_supervises_server_and_clock_and_cleans_up(self):
+        entrypoint = (ROOT / "entrypoint-gazebo.sh").read_text()
+        lifecycle = "# Simulation process cleanup" + entrypoint.split("# Simulation process cleanup", 1)[1].split("# Zenoh middleware", 1)[0]
+        supervise = "# A dead clock bridge" + entrypoint.split("# A dead clock bridge", 1)[1]
+        for server_status, clock_status, expected in [(None, 7, 7), (None, 0, 1), (9, None, 9)]:
+            with self.subTest(server=server_status, clock=clock_status), tempfile.TemporaryDirectory() as directory:
+                pids = pathlib.Path(directory) / "pids"
+                def child(status):
+                    return 'sleep 30' if status is None else f'(sleep 0.3; exit {status})'
+                script = 'set -eu\n' + lifecycle + f'\n{child(server_status)} &\nGZ_SERVER_PID=$!\n{child(clock_status)} &\nCLOCK_BRIDGE_PID=$!\n'
+                script += 'printf "%s\\n" "$GZ_SERVER_PID" "$CLOCK_BRIDGE_PID" > "$1"\n' + supervise
+                result = subprocess.run(["bash", "-c", script, "_", str(pids)], capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                for pid in pids.read_text().splitlines():
+                    with self.assertRaises(ProcessLookupError):
+                        os.kill(int(pid), 0)
 
 
 if __name__ == "__main__":

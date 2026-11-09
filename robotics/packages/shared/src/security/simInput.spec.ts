@@ -17,6 +17,7 @@ import {
   GAZEBO_ENTRYPOINT,
   distroFromImageRef,
   imageSupportsNav2Prewarm,
+  distroSupportsNav2,
 } from './simInput';
 
 describe('simInput security validators', () => {
@@ -54,7 +55,15 @@ describe('simInput security validators', () => {
     expect(distroFromImageRef('quay.io/ns/ros2-jazzy-sim:noble-amd64')).toBe('jazzy');
     expect(distroFromImageRef('quay.io/ns/robotics-fedora-bootc-43:ros2-lyrical')).toBe('lyrical');
     expect(imageSupportsNav2Prewarm('quay.io/ns/robotics-fedora-bootc-43:ros2-lyrical')).toBe(true);
-    expect(imageSupportsNav2Prewarm('quay.io/ns/ros2-humble-turtlebot3:sloretz')).toBe(false);
+    for (const image of [
+      'quay.io/ns/ros2-humble-sim:sloretz',
+      'quay.io/ns/ros2-humble-sim:sloretz-amd64',
+      'quay.io/ns/ros2-humble-turtlebot3:sloretz',
+    ]) {
+      expect(imageSupportsNav2Prewarm(image)).toBe(true);
+    }
+    expect(distroSupportsNav2(assertRosDistro('humble'))).toBe(true);
+    expect(imageSupportsNav2Prewarm('quay.io/ns/custom:latest')).toBe(false);
   });
 
   it('validates spawn exec commands', () => {

@@ -551,7 +551,7 @@ describe('OpenShiftSimulation', () => {
     });
 
     it('falls back to the first local amd64 image when the sim-config tag is absent', async () => {
-      const humbleConfigTag = 'quay.io/sgahlot-pd-extn/ros2-humble-turtlebot3:sloretz-amd64';
+      const humbleConfigTag = 'quay.io/sgahlot-pd-extn/ros2-humble-sim:sloretz-amd64';
       mockGetSimulationConfig.mockResolvedValue({
         robot: 'turtlebot3',
         distro: 'humble',
@@ -1261,43 +1261,43 @@ describe('OpenShiftSimulation', () => {
     expect(screen.getAllByText('robot_1')).toHaveLength(1);
   });
 
-  it('skips the liveness check entirely for a robot still in the warming phase', async () => {
-    vi.useFakeTimers();
-    try {
-      mockListOpenShiftDeployments.mockResolvedValue([READY_WORKLOAD]); // jazzy image
-      mockListSpawnedRobotsInOpenShift.mockResolvedValue([]); // would look "gone" if ever checked
-      mockGetRobotWarmStatusInOpenShift.mockResolvedValue('warming'); // stays warming every poll
+  it.each([READY_WORKLOAD.image, 'quay.io/ns/ros2-humble-sim:sloretz-amd64'])(
+    'skips the liveness check entirely for a robot still in the warming phase on %s',
+    async image => {
+      vi.useFakeTimers();
+      try {
+        mockListOpenShiftDeployments.mockResolvedValue([{ ...READY_WORKLOAD, image }]);
+        mockListSpawnedRobotsInOpenShift.mockResolvedValue([]); // would look "gone" if ever checked
+        mockGetRobotWarmStatusInOpenShift.mockResolvedValue('warming'); // stays warming every poll
 
-      render(DeployOpenShift);
-      await vi.advanceTimersByTimeAsync(100); // onMount + reconcile finds nothing yet
+        render(DeployOpenShift);
+        await vi.advanceTimersByTimeAsync(100); // onMount + reconcile finds nothing yet
 
-      await fireEvent.click(screen.getByRole('button', { name: 'Spawn' }));
-      await vi.advanceTimersByTimeAsync(0); // spawn settles; optimistically warmStatus 'warming'
+        await fireEvent.click(screen.getByRole('button', { name: 'Spawn' }));
+        await vi.advanceTimersByTimeAsync(0); // spawn settles; optimistically warmStatus 'warming'
 
-      const callsAfterSpawn = mockListSpawnedRobotsInOpenShift.mock.calls.length;
+        const callsAfterSpawn = mockListSpawnedRobotsInOpenShift.mock.calls.length;
 
-      // A robot still 'warming' has its own state machine (pollWarmStatus + the backend's
-      // bounded pre-warm timeout) resolving it — pruneStaleRobots must not touch it, and
-      // shouldn't even bother calling the liveness check when every tracked robot for a
-      // workload is still warming.
-      await vi.advanceTimersByTimeAsync(9000); // 3 more poll ticks
-      expect(screen.getByText('robot_1')).toBeTruthy();
-      expect(mockListSpawnedRobotsInOpenShift.mock.calls.length).toBe(callsAfterSpawn);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+        // A robot still 'warming' has its own state machine (pollWarmStatus + the backend's
+        // bounded pre-warm timeout) resolving it — pruneStaleRobots must not touch it, and
+        // shouldn't even bother calling the liveness check when every tracked robot for a
+        // workload is still warming.
+        await vi.advanceTimersByTimeAsync(9000); // 3 more poll ticks
+        expect(screen.getByText('robot_1')).toBeTruthy();
+        expect(mockListSpawnedRobotsInOpenShift.mock.calls.length).toBe(callsAfterSpawn);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it('does not prune a freshly-spawned robot still within its startup grace period, even if briefly absent', async () => {
     vi.useFakeTimers();
     try {
-      // Humble, not Jazzy — this exercises the wall-clock grace fallback specifically
-      // (no `warming` phase at all is ever assigned on this path; that case has its own
-      // dedicated test above). Its ROS nodes still take a moment to register after a
-      // Gazebo spawn regardless of distro, matching the raw appear-in-world latency the
-      // backend's own pre-warm pose-poll accounts for (#prewarmNav2, up to 30 x 1s).
-      const humbleWorkload = { ...READY_WORKLOAD, image: 'quay.io/ns/ros2-humble-sim:sloretz-amd64' };
-      mockListOpenShiftDeployments.mockResolvedValue([humbleWorkload]);
+      // An unrecognized custom image has no automatic Nav2 warm phase;
+      // its ROS nodes still need wall-clock grace after insertion.
+      const customWorkload = { ...READY_WORKLOAD, image: 'quay.io/ns/robotics-custom:latest' };
+      mockListOpenShiftDeployments.mockResolvedValue([customWorkload]);
       mockListSpawnedRobotsInOpenShift.mockResolvedValue([]); // absent from ros2 node list the whole time
 
       render(DeployOpenShift);

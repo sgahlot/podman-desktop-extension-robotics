@@ -173,7 +173,7 @@
         "robotics.catalog.curatedAllowlist": {
           "type": "string",
           "default": "ros2-*-base,ros2-*-turtlebot3,ros2-*-sim*",
-          "description": "Comma-separated repository name patterns for Curated catalog view. Use * as a wildcard (e.g. ros2-*-base,ros2-*-sim*,ros2-humble-turtlebot3)."
+          "description": "Comma-separated repository name patterns for Curated catalog view. Use * as a wildcard (e.g. ros2-*-base,ros2-*-sim*). The TurtleBot3 pattern preserves visibility of legacy image names."
         },
         "robotics.build.sectionTitle": {
           "type": "markdown",

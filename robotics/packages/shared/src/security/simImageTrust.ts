@@ -7,14 +7,14 @@
  * still run attacker scripts inside the container.
  *
  * Mitigations:
- * - Server-side allowlist (default: ros2-*-sim* / ros2-*-turtlebot3 repo names)
+ * - Server-side allowlist (default: ros2-*-sim* plus legacy ros2-*-turtlebot3 repo names)
  * - Optional preference to pin exact tags or digests for demos
  * - Prefer images built via Image Builder or pulled from your Quay namespace
  */
 
 import { repoMatchesAllowlist } from '../types/CatalogCurated';
 
-/** Default when preference is empty — repo-name patterns only. */
+/** Default when preference is empty — canonical sim names plus legacy TurtleBot3 repositories. */
 export const DEFAULT_SIM_LAUNCH_ALLOWLIST = 'ros2-*-sim*,ros2-*-turtlebot3';
 
 const UNSAFE_IMAGE_REF_RE = /[\s;|&`$()<>\\\0]/;

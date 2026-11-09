@@ -131,12 +131,12 @@ describe('SimulationSetup (Image Builder)', () => {
     const tag = container.querySelector<HTMLInputElement>('#embeddedRobotTag')!;
     await waitFor(() => expect(tag.value).toBe('quay.io/ecosystem-appeng/ros2-jazzy-sim:boxbot'));
 
-    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · amd64)' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim target amd64' }));
     await waitFor(() => expect(tag.value).toBe('quay.io/ecosystem-appeng/ros2-jazzy-sim:boxbot-amd64'));
 
     await fireEvent.input(tag, { target: { value: 'quay.io/example/boxbot:custom' } });
     await fireEvent.change(tag);
-    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · arm64)' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim target arm64' }));
     await waitFor(() => expect(tag.value).toBe('quay.io/example/boxbot:custom'));
   });
 
@@ -166,6 +166,31 @@ describe('SimulationSetup (Image Builder)', () => {
     expect(presetsLayerBuild?.textContent).not.toContain('Generated Containerfile');
     expect(presetsLayerBuild?.textContent).toContain('DDS (parent image default)');
     expect(presetsLayerBuild?.querySelector('button')).toBeTruthy();
+    const lyrical = screen.getByRole('button', { name: 'TurtleBot3 Sim (Lyrical · amd64)' });
+    expect(lyrical.classList.contains('pai-choice-active')).toBe(true);
+    expect(lyrical.getAttribute('aria-pressed')).toBe('true');
+    for (const name of [
+      'TurtleBot3 Sim distro Jazzy',
+      'TurtleBot3 Sim distro Humble',
+      'TurtleBot3 Sim target arm64',
+      'TurtleBot3 Sim target amd64',
+    ]) {
+      const button = screen.getByRole('button', { name });
+      expect(button.classList.contains('pai-choice-active')).toBe(false);
+      expect(button.getAttribute('aria-pressed')).toBe('false');
+    }
+
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim distro Humble' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'TurtleBot3 Sim distro Humble' }).getAttribute('aria-pressed')).toBe(
+        'true',
+      );
+    });
+    expect(
+      screen.getByRole('button', { name: 'TurtleBot3 Sim target amd64' }).classList.contains('pai-choice-active'),
+    ).toBe(true);
+    expect(lyrical.classList.contains('pai-choice-active')).toBe(false);
+    expect(lyrical.getAttribute('aria-pressed')).toBe('false');
   });
 
   it('renders heading after config loads', async () => {
@@ -175,7 +200,12 @@ describe('SimulationSetup (Image Builder)', () => {
     await waitFor(() => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
-    expect(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · arm64)' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'TurtleBot3 Sim distro Jazzy' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'TurtleBot3 Sim distro Jazzy' }).textContent?.trim()).toBe('Jazzy');
+    expect(screen.getByText('Ubuntu TurtleBot3 Sim')).toBeTruthy();
+    expect(screen.getByText('Fedora Bootc 43')).toBeTruthy();
+    expect(screen.queryByText('Other recipe')).toBeNull();
+    expect(screen.getByRole('button', { name: 'TurtleBot3 Sim distro Humble' })).toBeTruthy();
     expect(screen.getByText(/turtlebot3 · humble · DDS \(Fast DDS \/ rmw_fastrtps_cpp\)/)).toBeTruthy();
 
     // Switch to Customize to verify detailed controls are available
@@ -220,7 +250,7 @@ describe('SimulationSetup (Image Builder)', () => {
     });
 
     // Dropdowns show jazzy/jazzy-noble, matching Quick Start — saves immediately without confirmation
-    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · arm64)' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim target arm64' }));
 
     await waitFor(() => {
       expect(mockSaveSimulationConfig).toHaveBeenCalledWith(
@@ -232,6 +262,37 @@ describe('SimulationSetup (Image Builder)', () => {
           baseImage: 'jazzy-noble',
           targetArch: 'arm64',
           quickStartId: 'ubuntu-jazzy-arm64',
+        }),
+      );
+    });
+  });
+
+  it('selects the Humble Ubuntu recipe without adding a duplicate architecture preset button', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    render(SimulationSetup);
+    await waitFor(() => expect(screen.queryByText('Loading configuration...')).toBeNull());
+
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim distro Humble' }));
+    await waitFor(() => {
+      expect(mockSaveSimulationConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          distro: 'humble',
+          baseImage: 'sloretz',
+          targetArch: 'arm64',
+          quickStartId: 'ubuntu-humble-arm64',
+        }),
+      );
+    });
+    expect(screen.getByRole('button', { name: 'TurtleBot3 Sim distro Humble' }).textContent?.trim()).toBe('Humble');
+    expect(screen.queryByText(/Validation in progress/)).toBeNull();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim target amd64' }));
+    await waitFor(() => {
+      expect(mockSaveSimulationConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          distro: 'humble',
+          targetArch: 'amd64',
+          quickStartId: 'ubuntu-humble-amd64',
         }),
       );
     });
@@ -252,7 +313,7 @@ describe('SimulationSetup (Image Builder)', () => {
     });
 
     // Click Quick Start button — with jazzy/jazzy-noble config already loaded, saves immediately
-    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · arm64)' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim target arm64' }));
 
     await waitFor(() => {
       expect(mockSaveSimulationConfig).toHaveBeenCalledWith(
@@ -317,7 +378,7 @@ describe('SimulationSetup (Image Builder)', () => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · arm64)' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim target arm64' }));
 
     expect(mockSaveSimulationConfig).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Apply Quick Start' })).toBeNull();
@@ -339,7 +400,7 @@ describe('SimulationSetup (Image Builder)', () => {
       expect(screen.queryByText('Loading configuration...')).toBeNull();
     });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim (Jazzy · amd64)' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'TurtleBot3 Sim target amd64' }));
 
     await waitFor(() => {
       expect(mockSaveSimulationConfig).toHaveBeenCalledWith(

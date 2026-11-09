@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+# Spawn the configured robot into a running Gazebo simulation.
+# Designed to be called via: podman exec <container> /entrypoint-spawn-robot.sh <name> <x> <y> <yaw>
+#
+# Usage:
+#   /entrypoint-spawn-robot.sh robot_1 -2.0 -0.5 0.0
+#   /entrypoint-spawn-robot.sh robot_2  2.0  0.5 3.14159
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_pai_loader="${SCRIPT_DIR}/lib/load-validate-input.sh"
+[[ -f "${_pai_loader}" ]] || _pai_loader="/usr/local/lib/robotics/load-validate-input.sh"
+if [[ ! -f "${_pai_loader}" ]]; then
+  echo "error: load-validate-input.sh not found (tried ${SCRIPT_DIR}/lib/ and /usr/local/lib/robotics/)" >&2
+  exit 1
+fi
+# shellcheck source=lib/load-validate-input.sh
+source "${_pai_loader}"
+
+ROBOT_NAME="${1:?Usage: $0 <robot_name> <x> <y> <yaw>}"
+X_POSE="${2:?Usage: $0 <robot_name> <x> <y> <yaw>}"
+Y_POSE="${3:?Usage: $0 <robot_name> <x> <y> <yaw>}"
+YAW="${4:-0.0}"
+pai_validate_robot_name "${ROBOT_NAME}"
+pai_validate_numeric "${X_POSE}" "x"
+pai_validate_numeric "${Y_POSE}" "y"
+pai_validate_numeric "${YAW}" "yaw"
+
+export HOME="${ROBOTICS_HOME:-/tmp/ros-home}"
+mkdir -p "${HOME}/.ros"
+export ROS_HOME="${HOME}/.ros"
+export ROS_LOG_DIR="${HOME}/.ros/log"
+
+# Overridable for stubbed unit tests (default: real image path).
+# shellcheck disable=SC1090
+source "${ROBOTICS_ROS_SETUP:-/opt/ros/humble/setup.bash}"
+
+pai_load_robot_definition
+pai_export_gz_sim_resource_path
+
+URDF_FILE="${PHYSICAL_AI_ROBOT_URDF}"
+BRIDGE_CONFIG="${PHYSICAL_AI_ROBOT_BRIDGE_CONFIG}"
+BRIDGE_PROBE_TOPIC="/${ROBOT_NAME}/scan"
+# A cold Podman machine can take longer than the historical 8 seconds for DDS
+# discovery and the first Gazebo scan. Keep the launch-managed bridge intact
+# during normal startup; recover only a bridge that remains silent.
+BRIDGE_READY_TIMEOUT="${ROBOTICS_BRIDGE_READY_TIMEOUT:-30}"
+if [[ ! "${BRIDGE_READY_TIMEOUT}" =~ ^[0-9]+$ ]] || [[ "${BRIDGE_READY_TIMEOUT}" -lt 1 ]] || [[ "${BRIDGE_READY_TIMEOUT}" -gt 60 ]]; then
+  echo "error: ROBOTICS_BRIDGE_READY_TIMEOUT must be a whole number from 1 to 60" >&2
+  exit 1
+fi
+if [[ ! -f "${BRIDGE_CONFIG}" ]]; then
+  echo "error: Gazebo bridge config not found: ${BRIDGE_CONFIG}" >&2
+  exit 1
+fi
+
+# Keep one subscriber alive throughout discovery instead of restarting the CLI.
+SCAN_WAIT_HELPER="${SCRIPT_DIR}/lib/wait-for-scan.py"
+[[ -f "${SCAN_WAIT_HELPER}" ]] || SCAN_WAIT_HELPER="/usr/local/lib/robotics/wait-for-scan.py"
+if [[ ! -f "${SCAN_WAIT_HELPER}" ]]; then
+  echo "error: wait-for-scan.py not found" >&2
+  exit 1
+fi
+SCAN_WAIT_PID=""
+wait_for_bridge_sample() {
+  local result=0
+  # Hard outer bound includes Python/ROS imports; background wait lets traps reap it.
+  timeout -k 2 "${BRIDGE_READY_TIMEOUT}" python3 "${SCAN_WAIT_HELPER}" "${ROBOT_NAME}" "${BRIDGE_READY_TIMEOUT}" &
+  SCAN_WAIT_PID=$!
+  wait "${SCAN_WAIT_PID}" || result=$?
+  SCAN_WAIT_PID=""
+  return "${result}"
+}
+
+echo "[spawn] Spawning ${ROBOT_NAME} at (${X_POSE}, ${Y_POSE}, yaw=${YAW})..."
+
+# Keep launch output so the fallback does not terminate the launch before the model
+# creation request has completed. The upstream launch starts parameter_bridge before
+# creating the entity; some runs leave that bridge alive but never forwarding samples.
+SPAWN_LOG="${HOME}/spawn-${ROBOT_NAME}.log"
+: >"${SPAWN_LOG}"
+SPAWN_PID=""
+BRIDGE_PID=""
+RSP_PID=""
+cleanup_children() {
+  local pids=()
+  [[ -n "${SPAWN_PID}" ]] && pids+=("${SPAWN_PID}")
+  [[ -n "${BRIDGE_PID}" ]] && pids+=("${BRIDGE_PID}")
+  [[ -n "${RSP_PID}" ]] && pids+=("${RSP_PID}")
+  [[ -n "${SCAN_WAIT_PID}" ]] && pids+=("${SCAN_WAIT_PID}")
+  ((${#pids[@]})) || return 0
+  echo "[spawn] Shutting down ${ROBOT_NAME}..."
+  kill "${pids[@]}" 2>/dev/null || true
+  wait "${pids[@]}" 2>/dev/null || true
+}
+
+ros2 launch "${PHYSICAL_AI_MINIMAL_SIM_PKG}" "${PHYSICAL_AI_MINIMAL_SIM_LAUNCH}" \
+  use_sim_time:=True \
+  namespace:="${ROBOT_NAME}" \
+  robot_name:="${ROBOT_NAME}" \
+  x_pose:="${X_POSE}" \
+  y_pose:="${Y_POSE}" \
+  yaw:="${YAW}" \
+  z_pose:=0.01 >>"${SPAWN_LOG}" 2>&1 &
+SPAWN_PID=$!
+
+ros2 run robot_state_publisher robot_state_publisher \
+  --ros-args \
+  --remap __ns:=/"${ROBOT_NAME}" \
+  -r "/tf:=/${ROBOT_NAME}/tf" \
+  -r "/tf_static:=/${ROBOT_NAME}/tf_static" \
+  -p use_sim_time:=true \
+  -p "robot_description:=$(cat "${URDF_FILE}")" &
+RSP_PID=$!
+trap cleanup_children EXIT
+trap 'exit 130' SIGINT
+trap 'exit 143' SIGTERM
+
+echo "[spawn] Waiting for ${ROBOT_NAME} model creation..."
+for ((i = 1; i <= 60; i++)); do
+  # Humble ros_gz reports "OK creation of entity"; newer bridges use the
+  # "Entity creation successful" wording. Neither request-start log is success.
+  if grep -Eq "Entity creation successful|OK creation of entity" "${SPAWN_LOG}"; then
+    echo "[spawn] ${ROBOT_NAME} model created."
+    break
+  fi
+  if ! kill -0 "${SPAWN_PID}" 2>/dev/null; then
+    echo "error: spawn launch exited before creating ${ROBOT_NAME}" >&2
+    cat "${SPAWN_LOG}" >&2
+    exit 1
+  fi
+  if (( i == 60 )); then
+    echo "error: timed out waiting for ${ROBOT_NAME} model creation" >&2
+    cat "${SPAWN_LOG}" >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+if wait_for_bridge_sample; then
+  echo "[spawn] Gazebo-to-ROS bridge is publishing ${BRIDGE_PROBE_TOPIC}."
+else
+  echo "[spawn] WARN: launch-managed bridge did not deliver ${BRIDGE_PROBE_TOPIC}; testing a direct bridge from ${BRIDGE_CONFIG}..."
+  # Do not tear down the launch-managed bridge until the replacement has proven it
+  # can forward a sample. Killing it first can leave Nav2 with no odom/TF at all
+  # when the direct bridge is also unable to connect.
+  BRIDGE_BIN="${ROBOTICS_BRIDGE_BIN:-$(ros2 pkg prefix ros_gz_bridge)/lib/ros_gz_bridge/parameter_bridge}"
+  if [[ ! -x "${BRIDGE_BIN}" ]]; then
+    echo "error: ros_gz_bridge executable not found: ${BRIDGE_BIN}" >&2
+    exit 1
+  fi
+  "${BRIDGE_BIN}" --ros-args \
+    -r "__ns:=/${ROBOT_NAME}" \
+    -p "config_file:=${BRIDGE_CONFIG}" \
+    -p expand_gz_topic_names:=true \
+    -p use_sim_time:=true \
+    >>"${HOME}/bridge-${ROBOT_NAME}.log" 2>&1 &
+  BRIDGE_PID=$!
+
+  if wait_for_bridge_sample; then
+    # The sample can come from either bridge while both are alive. Retain the
+    # launch-managed bridge: stopping it here can remove the only bridge that
+    # Nav2's TF and odometry depend on.
+    echo "[spawn] Direct ros_gz_bridge is publishing ${BRIDGE_PROBE_TOPIC}; retaining launch-managed bridge."
+  else
+    echo "[spawn] WARN: direct ros_gz_bridge did not deliver ${BRIDGE_PROBE_TOPIC}; retaining launch-managed bridge." >&2
+    cat "${HOME}/bridge-${ROBOT_NAME}.log" >&2
+    kill -TERM "${BRIDGE_PID}" 2>/dev/null || true
+    wait "${BRIDGE_PID}" 2>/dev/null || true
+    BRIDGE_PID=""
+  fi
+fi
+
+echo "[spawn] ${ROBOT_NAME} spawn initiated. Waiting for processes..."
+
+wait_pids=("${SPAWN_PID}" "${RSP_PID}")
+[[ -n "${BRIDGE_PID}" ]] && wait_pids+=("${BRIDGE_PID}")
+wait "${wait_pids[@]}"

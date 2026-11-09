@@ -33,7 +33,7 @@ export default class BuildSim extends Command {
   static examples = [
     {
       command:
-        '<%= config.bin %> build:sim --tag quay.io/my-ns/ros2-humble-turtlebot3:test --base-tag quay.io/my-ns/ros2-humble-base:test',
+        '<%= config.bin %> build:sim --tag quay.io/my-ns/ros2-humble-sim:test --base-tag quay.io/my-ns/ros2-humble-base:test',
       description: 'Build the sim image on top of an already-built local base image',
     },
     {

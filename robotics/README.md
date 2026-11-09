@@ -18,6 +18,7 @@ Podman Desktop → Extensions → **Install custom…** → `quay.io/fedora-sig-
 | Podman | 5.x | 6.0+ | Tested with 5.8.5 and 6.0.2 |
 | Node.js | 24.0.0 | 24.x | Matches Podman Desktop's Node requirement |
 | npm | 11.0.0 | 11.x | |
+| Python (`python3`) | 3.10 | 3.10+ | Backend readiness-probe regression tests and container-script tests; no host ROS installation needed |
 | oc | 4.22.3 | 4.22.x | OpenShift deploy tab — kubeconfig context and `oc login` |
 
 **Podman Machine** (for local simulation)
@@ -101,9 +102,13 @@ That runs, in order: `typecheck`, `lint:check`, `svelte:check`, `format:check`, 
 
 Runtime-script changes also require rebuilt simulation images and manual spawn/navigation testing. Use the [startup/navigation regression checklist](packages/backend/assets/ros2-jazzy-sim/README.md#startupnavigation-regression-checklist) for Local Jazzy and OpenShift Jazzy/Lyrical; automated tests do not establish visual smoothness or end-to-end navigation success.
 
+The Humble simulation build additionally runs a native C++ AMCL initialization regression from `packages/backend/assets/ros2-humble-turtlebot3/test/amcl-initialization/`. This uses the image's existing ROS/CMake toolchain, not a host ROS installation. It checks the pinned AMCL source backport before image assembly; rebuild and runtime acceptance requirements still apply.
+
+The Humble recipe also packages a scoped Fast DDS service-response profile without enabling global XML QoS overrides; it is ignored by the Zenoh runtime selection. Both managed Humble and Jazzy Nav2 parameter patchers qualify costmap observation-source scans as `/<robot>/scan`; container-free tests cover that shared routing rule. Rebuild the affected image before runtime validation.
+
 ### Integration (Podman — optional, not in `npm test`)
 
-Exercises **all three** Image Builder Presets quick starts (`ubuntu-jazzy-arm64`, `ubuntu-jazzy-amd64`, `fedora-bootc43-lyrical-amd64`). Requires Podman and network (pull base images, Fedora ROS testing repo, apt). Build logs are suppressed unless a step fails. Images tagged `physical-ai-integration-*:local` are removed when each phase finishes (including on failure).
+Exercises all five Image Builder Presets quick starts: Jazzy and Humble on arm64/amd64, plus `fedora-bootc43-lyrical-amd64`. Requires Podman and network (pull base images, Fedora ROS testing repo, apt, pinned Humble source archives). Build logs are suppressed unless a step fails. Images tagged `physical-ai-integration-*:local` are removed when each phase finishes (including on failure). These are build checks, not runtime parity evidence.
 
 ```bash
 npm run integration:smoke   # Ubuntu: Phase 1 base per arch; Lyrical: desktop-runtime RPM only (faster than full preset)
@@ -112,6 +117,15 @@ npm run integration         # smoke then full
 ```
 
 Tune timeouts with `SMOKE_LYRICAL_TIMEOUT_SEC`, `SMOKE_UBUNTU_TIMEOUT_SEC`, `FULL_*` (see `scripts/integration/image-builder-presets.sh`).
+
+For a separately built Humble/Harmonic image, run the explicit functional probe:
+
+```bash
+bash scripts/integration/humble-sim.sh localhost/appeng-6071-humble-sim:arm64 arm64
+# Repeat on amd64; optionally set HUMBLE_SMOKE_UID=10001:0 for non-root execution.
+```
+
+The probe creates and removes its own container; it checks HTTP endpoints, sensor/TF data, real Nav2 movement, and remove/re-spawn. It does not establish GUI quality, OpenShift acceptance, or native performance when the target architecture is emulated. See the [Humble runtime notes](packages/backend/assets/ros2-humble-turtlebot3/README.md) for validation limits.
 
 Canonical Lyrical Containerfile logic: `packages/shared/src/build/presetContainerfile.ts` (unit tests + snapshots under `packages/shared/src/build/`).
 

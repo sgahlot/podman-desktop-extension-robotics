@@ -87,6 +87,13 @@ let optionsExpanded = false;
 
 let appliedQuickStartId: QuickStartId | undefined;
 let selectedQuickStartId: QuickStartId = DEFAULT_QUICK_START_ID;
+let selectedUbuntuDistro: UbuntuQuickStartDistro = 'jazzy';
+let selectedUbuntuArch: TargetArch = 'amd64';
+
+type UbuntuQuickStartDistro = 'jazzy' | 'humble';
+
+const ubuntuQuickStartId = (distro: UbuntuQuickStartDistro, arch: TargetArch): QuickStartId =>
+  `ubuntu-${distro}-${arch}` as QuickStartId;
 
 let layout: 'presets' | 'layers' = 'presets';
 let buildChoice: 'base' | 'sim' | 'both' | undefined = undefined;
@@ -132,6 +139,13 @@ $: otherArchLabel = otherArch === 'amd64' ? 'amd64 (for OpenShift)' : `${otherAr
 $: selectedQuickStart = resolveQuickStart(selectedQuickStartId);
 $: appliedQuickStart = appliedQuickStartId ? resolveQuickStart(appliedQuickStartId) : undefined;
 $: quickStartDescription = selectedQuickStart?.description ?? 'Select a supported Image Builder configuration.';
+$: ubuntuQuickStartSelected = selectedQuickStart?.buildMode === 'ubuntu-preset';
+$: selectedUbuntuQuickStart =
+  selectedQuickStart?.buildMode === 'ubuntu-preset'
+    ? selectedQuickStart
+    : resolveQuickStart(ubuntuQuickStartId('jazzy', targetArch));
+$: selectedUbuntuDistro = selectedUbuntuQuickStart?.id.includes('-humble-') ? 'humble' : 'jazzy';
+$: selectedUbuntuArch = selectedUbuntuQuickStart?.targetArch ?? targetArch;
 $: middlewareDisplayLabel = middlewareLabel(middleware, { distro });
 $: presetsLayerBuild = appliedQuickStart?.buildMode === 'fedora-layers';
 $: profile = resolveSimulationProfile(currentConfig);
@@ -341,13 +355,13 @@ async function applyQuickStart(id: QuickStartId = DEFAULT_QUICK_START_ID) {
       id,
     );
     robot = DEFAULT_ROBOT_ID;
-    distro = 'jazzy';
     middleware = 'dds';
     engine = 'gazebo';
     baseImage =
       selected.base.kind === 'preset'
         ? (selected.base.presetId as SimulationBaseImageSelection)
         : DEFAULT_SIMULATION_BASE_IMAGE;
+    distro = selected.base.kind === 'preset' ? resolveSimulationBaseImage(selected.base.presetId).distro : 'jazzy';
   }
 
   await tick();
@@ -372,6 +386,14 @@ function onQuickStartClick(id: QuickStartId) {
   selectedQuickStartId = id;
   if (appliedQuickStartId === id || buildBusy || saving) return;
   void applyQuickStart(id);
+}
+
+function onUbuntuDistroClick(distro: UbuntuQuickStartDistro) {
+  onQuickStartClick(ubuntuQuickStartId(distro, selectedUbuntuArch));
+}
+
+function onUbuntuArchClick(arch: TargetArch) {
+  onQuickStartClick(ubuntuQuickStartId(selectedUbuntuDistro, arch));
 }
 </script>
 
@@ -417,24 +439,64 @@ function onQuickStartClick(id: QuickStartId) {
         class="rounded-lg border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] p-4 max-w-md flex flex-col gap-2">
         <h2 class="text-sm font-medium text-[var(--pd-content-header)]">Quick Start</h2>
         <p class="text-xs text-[var(--pd-content-text)]">
-          Choose a tested TurtleBot3 simulation recipe. Each option fixes the OS, ROS distro, and target architecture (<span
-            class="font-mono">arm64</span>
-          or <span class="font-mono">amd64</span>). Use <strong>Customize</strong>
-          for other stacks.
+          Choose a TurtleBot3 simulation recipe. Select the ROS distro first, then the target architecture. Use
+          <strong>Customize</strong> for other stacks.
         </p>
-        <div class="flex flex-row gap-2 flex-wrap">
-          {#each QUICK_STARTS as quickStart}
-            <button
-              on:click={() => onQuickStartClick(quickStart.id)}
-              disabled={buildBusy || saving}
-              aria-label={quickStart.label}
-              class="pai-choice px-3 py-1.5 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed {selectedQuickStartId ===
-              quickStart.id
-                ? 'pai-choice-active'
-                : ''}">
-              {quickStart.label}
-            </button>
-          {/each}
+        <div class="flex flex-col gap-3">
+          <div class="flex flex-col gap-1.5">
+            <span class="text-xs font-medium text-[var(--pd-content-header)]">Ubuntu TurtleBot3 Sim</span>
+            <div class="flex flex-row gap-2 flex-wrap items-center">
+              <span class="text-xs pai-text-muted w-20">ROS distro</span>
+              <button
+                on:click={() => onUbuntuDistroClick('jazzy')}
+                disabled={buildBusy || saving}
+                aria-label="TurtleBot3 Sim distro Jazzy"
+                aria-pressed={ubuntuQuickStartSelected && selectedUbuntuDistro === 'jazzy'}
+                class="pai-choice px-3 py-1.5 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed {ubuntuQuickStartSelected &&
+                selectedUbuntuDistro === 'jazzy'
+                  ? 'pai-choice-active'
+                  : ''}">Jazzy</button>
+              <button
+                on:click={() => onUbuntuDistroClick('humble')}
+                disabled={buildBusy || saving}
+                aria-label="TurtleBot3 Sim distro Humble"
+                aria-pressed={ubuntuQuickStartSelected && selectedUbuntuDistro === 'humble'}
+                class="pai-choice px-3 py-1.5 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed {ubuntuQuickStartSelected &&
+                selectedUbuntuDistro === 'humble'
+                  ? 'pai-choice-active'
+                  : ''}">Humble</button>
+            </div>
+            <div class="flex flex-row gap-2 flex-wrap items-center">
+              <span class="text-xs pai-text-muted w-20">Architecture</span>
+              {#each ['arm64', 'amd64'] as arch}
+                <button
+                  on:click={() => onUbuntuArchClick(arch as TargetArch)}
+                  disabled={buildBusy || saving}
+                  aria-label={`TurtleBot3 Sim target ${arch}`}
+                  aria-pressed={ubuntuQuickStartSelected && selectedUbuntuArch === arch}
+                  class="pai-choice px-3 py-1.5 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed {ubuntuQuickStartSelected &&
+                  selectedUbuntuArch === arch
+                    ? 'pai-choice-active'
+                    : ''}">{arch}</button>
+              {/each}
+            </div>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <span class="text-xs font-medium text-[var(--pd-content-header)]">Fedora Bootc 43</span>
+            {#each QUICK_STARTS.filter(quickStart => quickStart.buildMode === 'fedora-layers') as quickStart}
+              <button
+                on:click={() => onQuickStartClick(quickStart.id)}
+                disabled={buildBusy || saving}
+                aria-label={quickStart.label}
+                aria-pressed={selectedQuickStartId === quickStart.id}
+                class="pai-choice px-3 py-1.5 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed {selectedQuickStartId ===
+                quickStart.id
+                  ? 'pai-choice-active'
+                  : ''}">
+                {quickStart.label}
+              </button>
+            {/each}
+          </div>
         </div>
         <span class="text-xs pai-text-muted">
           {quickStartDescription}

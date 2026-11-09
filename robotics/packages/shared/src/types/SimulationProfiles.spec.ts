@@ -23,7 +23,7 @@ describe('SimulationProfiles', () => {
     const profile = resolveSimulationProfile(supported);
     expect(profile).toBeDefined();
     expect(profile!.assetDir).toBe('ros2-humble-turtlebot3');
-    expect(profile!.imageName).toBe('ros2-humble-turtlebot3');
+    expect(profile!.imageName).toBe('ros2-humble-sim');
   });
 
   it('returns undefined for unsupported combinations', () => {
@@ -87,11 +87,9 @@ describe('SimulationProfiles', () => {
   });
 
   it('builds the image tag from the profile and base image preset', () => {
-    expect(simulationImageTag('ecosystem-appeng', supported)).toBe(
-      'quay.io/ecosystem-appeng/ros2-humble-turtlebot3:sloretz',
-    );
+    expect(simulationImageTag('ecosystem-appeng', supported)).toBe('quay.io/ecosystem-appeng/ros2-humble-sim:sloretz');
     expect(simulationImageTag('ecosystem-appeng', { ...supported, baseImage: 'osrf' })).toBe(
-      'quay.io/ecosystem-appeng/ros2-humble-turtlebot3:osrf',
+      'quay.io/ecosystem-appeng/ros2-humble-sim:osrf',
     );
     expect(
       simulationImageTag('ecosystem-appeng', {
@@ -148,7 +146,7 @@ describe('SimulationProfiles', () => {
         baseImage: 'custom',
         customBaseImage: 'quay.io/example/ros:jazzy',
       }),
-    ).toBe('quay.io/ecosystem-appeng/ros2-humble-turtlebot3:custom');
+    ).toBe('quay.io/ecosystem-appeng/ros2-humble-sim:custom');
   });
 
   it('formats config for error messages', () => {

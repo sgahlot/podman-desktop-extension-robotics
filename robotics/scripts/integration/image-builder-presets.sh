@@ -5,6 +5,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 JAZZY_BASE_ASSET="$ROOT/packages/backend/assets/ros2-jazzy-base"
 JAZZY_SIM_ASSET="$ROOT/packages/backend/assets/ros2-jazzy-sim"
+HUMBLE_BASE_ASSET="$ROOT/packages/backend/assets/ros2-humble-base"
+HUMBLE_SIM_ASSET="$ROOT/packages/backend/assets/ros2-humble-turtlebot3"
 SMOKE_LYRICAL_TIMEOUT_SEC="${SMOKE_LYRICAL_TIMEOUT_SEC:-600}"
 SMOKE_UBUNTU_TIMEOUT_SEC="${SMOKE_UBUNTU_TIMEOUT_SEC:-900}"
 FULL_LYRICAL_TIMEOUT_SEC="${FULL_LYRICAL_TIMEOUT_SEC:-3600}"
@@ -13,12 +15,16 @@ FULL_UBUNTU_TIMEOUT_SEC="${FULL_UBUNTU_TIMEOUT_SEC:-3600}"
 SMOKE_IMAGE_TAGS=(
   physical-ai-integration-jazzy-base-arm64:local
   physical-ai-integration-jazzy-base-amd64:local
+  physical-ai-integration-humble-base-arm64:local
+  physical-ai-integration-humble-base-amd64:local
   physical-ai-integration-lyrical-smoke:local
 )
 
 FULL_EXTRA_IMAGE_TAGS=(
   physical-ai-integration-jazzy-sim-arm64:local
   physical-ai-integration-jazzy-sim-amd64:local
+  physical-ai-integration-humble-sim-arm64:local
+  physical-ai-integration-humble-sim-amd64:local
   physical-ai-integration-lyrical-full:local
 )
 
@@ -29,6 +35,8 @@ Usage: image-builder-presets.sh [smoke|full|all]
 Runs Podman builds for every Image Builder Presets quick start (see quick-starts.json):
   ubuntu-jazzy-arm64   — Phase 1 base (smoke) / base + sim (full)
   ubuntu-jazzy-amd64   — Phase 1 base (smoke) / base + sim (full)
+  ubuntu-humble-arm64  — Phase 1 base (smoke) / base + Harmonic source overlay (full)
+  ubuntu-humble-amd64  — Phase 1 base (smoke) / base + Harmonic source overlay (full)
   fedora-bootc43-lyrical-amd64 — Lyrical desktop RPMs (smoke) / full layer stack (full)
 
 Podman build logs are hidden unless a step fails.
@@ -156,6 +164,21 @@ run_ubuntu_sim() {
     "$JAZZY_SIM_ASSET"
 }
 
+run_humble_base() {
+  local arch="$1" timeout_sec="$2"
+  quiet_run "ubuntu-humble-${arch} preset — Phase 1 base" \
+    timeout "$timeout_sec" podman build --platform "$(platform_for_arch "$arch")" \
+    -t "physical-ai-integration-humble-base-${arch}:local" "$HUMBLE_BASE_ASSET"
+}
+
+run_humble_sim() {
+  local arch="$1" timeout_sec="$2"
+  quiet_run "ubuntu-humble-${arch} preset — Phase 2 Harmonic simulation" \
+    timeout "$timeout_sec" podman build --platform "$(platform_for_arch "$arch")" \
+    --build-arg "LOCAL_BASE_IMAGE=physical-ai-integration-humble-base-${arch}:local" \
+    -t "physical-ai-integration-humble-sim-${arch}:local" "$HUMBLE_SIM_ASSET"
+}
+
 run_lyrical_smoke() {
   local ctx
   ctx="$(mktemp -d)"
@@ -192,6 +215,8 @@ run_smoke() {
   echo "Presets integration smoke (all quick starts)"
   run_ubuntu_base arm64 "$SMOKE_UBUNTU_TIMEOUT_SEC"
   run_ubuntu_base amd64 "$SMOKE_UBUNTU_TIMEOUT_SEC"
+  run_humble_base arm64 "$SMOKE_UBUNTU_TIMEOUT_SEC"
+  run_humble_base amd64 "$SMOKE_UBUNTU_TIMEOUT_SEC"
   run_lyrical_smoke
 }
 
@@ -202,6 +227,10 @@ run_full() {
   run_ubuntu_sim arm64 "$FULL_UBUNTU_TIMEOUT_SEC"
   run_ubuntu_base amd64 "$FULL_UBUNTU_TIMEOUT_SEC"
   run_ubuntu_sim amd64 "$FULL_UBUNTU_TIMEOUT_SEC"
+  run_humble_base arm64 "$FULL_UBUNTU_TIMEOUT_SEC"
+  run_humble_sim arm64 "$FULL_UBUNTU_TIMEOUT_SEC"
+  run_humble_base amd64 "$FULL_UBUNTU_TIMEOUT_SEC"
+  run_humble_sim amd64 "$FULL_UBUNTU_TIMEOUT_SEC"
   run_lyrical_full
 }
 

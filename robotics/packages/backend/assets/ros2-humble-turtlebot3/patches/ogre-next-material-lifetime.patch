@@ -1,0 +1,20 @@
+From fce90a5c8c2ae33815c7d6acf841344726364c50 Mon Sep 17 00:00:00 2001
+From: yeseorizi <172019512+yeseorizi@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 23:23:41 +0900
+Subject: [PATCH] Keep the previous material alive until its datablock is unlinked
+
+Upstream: https://github.com/OGRECave/ogre-next/commit/fce90a5c8c2ae33815c7d6acf841344726364c50
+Fixes depth-camera remove/recreate abort without removing sensors or changing ABI.
+
+--- a/OgreMain/src/OgreRenderable.cpp
++++ b/OgreMain/src/OgreRenderable.cpp
+@@ -210,6 +210,9 @@ namespace Ogre
+     {
+         // Ensure new material loaded (will not load again if already loaded)
+         material->load();
++        // Keep the previous material alive until setDatablock has unlinked its
++        // low-level datablock; mMaterial may own its last remaining reference.
++        const MaterialPtr previousMaterial = mMaterial;
+         mMaterial = material;
+         setDatablock( material->getTechnique(0)->getPass(0)->_getDatablock() );
+         mLodMaterial = material->_getLodValues();

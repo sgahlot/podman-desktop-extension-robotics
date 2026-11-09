@@ -4,7 +4,12 @@ import type { ImageBuilderRecipe } from '../types/ImageBuilderRecipe';
 import type { SupportedArchitecture } from './customSimulationTemplateCatalog';
 import { DEFAULT_QUICK_START_ID_FROM_CATALOG } from './platformDefaultsCatalog';
 
-export type QuickStartId = 'ubuntu-jazzy-arm64' | 'ubuntu-jazzy-amd64' | 'fedora-bootc43-lyrical-amd64';
+export type QuickStartId =
+  | 'ubuntu-jazzy-arm64'
+  | 'ubuntu-jazzy-amd64'
+  | 'ubuntu-humble-arm64'
+  | 'ubuntu-humble-amd64'
+  | 'fedora-bootc43-lyrical-amd64';
 export type QuickStartBuildMode = 'ubuntu-preset' | 'fedora-layers';
 
 export interface QuickStartDefinition {

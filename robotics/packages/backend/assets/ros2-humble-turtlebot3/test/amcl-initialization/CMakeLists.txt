@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+project(amcl_initialization_regression)
+find_package(ament_cmake REQUIRED)
+find_package(nav2_amcl REQUIRED)
+add_executable(amcl_initialization_regression main.cpp)
+ament_target_dependencies(amcl_initialization_regression nav2_amcl)
+target_compile_features(amcl_initialization_regression PRIVATE cxx_std_17)

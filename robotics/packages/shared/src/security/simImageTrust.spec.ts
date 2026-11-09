@@ -16,12 +16,14 @@ describe('simImageTrust', () => {
         'quay.io/ns/ros2-jazzy-sim@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       ),
     ).toBe('ros2-jazzy-sim');
-    expect(extractImageRepoName('ros2-humble-turtlebot3:sloretz')).toBe('ros2-humble-turtlebot3');
+    expect(extractImageRepoName('ros2-humble-sim:sloretz')).toBe('ros2-humble-sim');
   });
 
-  it('defaults allowlist to sim / turtlebot3 patterns', () => {
+  it('defaults allowlist to canonical sim and legacy turtlebot3 patterns', () => {
     expect(parseSimLaunchAllowlist(undefined).join(',')).toBe(DEFAULT_SIM_LAUNCH_ALLOWLIST);
     expect(assertLaunchImageTag('quay.io/ns/ros2-jazzy-sim:noble')).toBe('quay.io/ns/ros2-jazzy-sim:noble');
+    expect(assertLaunchImageTag('quay.io/ns/ros2-humble-sim:sloretz')).toContain('humble-sim');
+    // Preserve launch compatibility for images built before the canonical rename.
     expect(assertLaunchImageTag('quay.io/ns/ros2-humble-turtlebot3:sloretz')).toContain('turtlebot3');
   });
 

@@ -44,7 +44,7 @@ PARAMS_FILE="${HOME}/nav2-${ROBOT_NAME}-params.yaml"
 MAP_FILE="${ROBOTICS_NAV2_MAP}"
 NAV2_PARAMS_SOURCE="${PHYSICAL_AI_NAV2_PARAMS}"
 
-python3 "${PATCH_SCRIPT}" --source "${NAV2_PARAMS_SOURCE}" --output "${PARAMS_FILE}"
+python3 "${PATCH_SCRIPT}" --source "${NAV2_PARAMS_SOURCE}" --output "${PARAMS_FILE}" --robot-name "${ROBOT_NAME}"
 
 echo "[nav2] Starting Nav2 bringup for ${ROBOT_NAME} (map: ${MAP_FILE})..."
 

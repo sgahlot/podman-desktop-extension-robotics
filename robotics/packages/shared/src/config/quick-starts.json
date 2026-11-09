@@ -52,6 +52,56 @@
       }
     },
     {
+      "id": "ubuntu-humble-arm64",
+      "label": "TurtleBot3 Sim (Humble · arm64)",
+      "description": "Ubuntu Jammy + ROS 2 Humble + managed Gazebo/Nav2/TurtleBot3 simulation (arm64)",
+      "targetArch": "arm64",
+      "buildMode": "ubuntu-preset",
+      "recipeSummary": [
+        "Robot: TurtleBot3",
+        "ROS distro: Humble (managed simulation)",
+        "Simulation: Gazebo + noVNC + Nav2",
+        "Base image: Ubuntu 22.04 Jammy",
+        "Target architecture: arm64"
+      ],
+      "recipe": {
+        "base": { "kind": "preset", "presetId": "sloretz" },
+        "simulation": { "kind": "preset", "profileId": "turtlebot3-humble-dds-gazebo" },
+        "hardenedTools": [],
+        "generateSbom": false
+      },
+      "inferFromSimulationConfig": {
+        "baseImagePresetId": "sloretz",
+        "distro": "humble",
+        "targetArch": "arm64"
+      }
+    },
+    {
+      "id": "ubuntu-humble-amd64",
+      "label": "TurtleBot3 Sim (Humble · amd64)",
+      "description": "Ubuntu Jammy + ROS 2 Humble + managed Gazebo/Nav2/TurtleBot3 simulation (amd64)",
+      "targetArch": "amd64",
+      "buildMode": "ubuntu-preset",
+      "recipeSummary": [
+        "Robot: TurtleBot3",
+        "ROS distro: Humble (managed simulation)",
+        "Simulation: Gazebo + noVNC + Nav2",
+        "Base image: Ubuntu 22.04 Jammy",
+        "Target architecture: amd64"
+      ],
+      "recipe": {
+        "base": { "kind": "preset", "presetId": "sloretz" },
+        "simulation": { "kind": "preset", "profileId": "turtlebot3-humble-dds-gazebo" },
+        "hardenedTools": [],
+        "generateSbom": false
+      },
+      "inferFromSimulationConfig": {
+        "baseImagePresetId": "sloretz",
+        "distro": "humble",
+        "targetArch": "amd64"
+      }
+    },
+    {
       "id": "fedora-bootc43-lyrical-amd64",
       "label": "TurtleBot3 Sim (Lyrical · amd64)",
       "description": "Fedora bootc 43 + ROS 2 Lyrical + Gazebo/Nav2/TurtleBot3 simulation (amd64)",

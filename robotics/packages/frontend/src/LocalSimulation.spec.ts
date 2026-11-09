@@ -255,42 +255,45 @@ describe('LocalSimulation', () => {
     expect(screen.queryByText('Launch a simulation first to add robots.')).toBeNull();
   });
 
-  it('polls Nav2 warm status every three seconds independently of the simulation cache interval', async () => {
-    vi.useFakeTimers();
-    mockGetSimulationStateCacheRefreshSeconds.mockResolvedValue(300);
-    mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
-    mockListSimulationContainers.mockResolvedValue([
-      {
-        id: 'abc123def456',
-        name: 'pai-sim-run',
-        imageTag: SIM_IMAGE,
-        state: 'running',
-        ports: ['6080:6080/tcp'],
-        labels: {},
-      },
-    ]);
-    mockGetRobotWarmStatus.mockResolvedValue('ready');
+  it.each([SIM_IMAGE, 'quay.io/ns/ros2-humble-sim:sloretz'])(
+    'polls Nav2 warm status every three seconds independently of the simulation cache interval for %s',
+    async image => {
+      vi.useFakeTimers();
+      mockGetSimulationStateCacheRefreshSeconds.mockResolvedValue(300);
+      mockListLocalImages.mockResolvedValue([image]);
+      mockListSimulationContainers.mockResolvedValue([
+        {
+          id: 'abc123def456',
+          name: 'pai-sim-run',
+          imageTag: image,
+          state: 'running',
+          ports: ['6080:6080/tcp'],
+          labels: {},
+        },
+      ]);
+      mockGetRobotWarmStatus.mockResolvedValue('ready');
 
-    render(SimulationPage);
-    await vi.advanceTimersByTimeAsync(100); // onMount + container list
+      render(SimulationPage);
+      await vi.advanceTimersByTimeAsync(100); // onMount + container list
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Add robot' }));
-    await vi.advanceTimersByTimeAsync(0); // let the spawn promise settle
+      await fireEvent.click(screen.getByRole('button', { name: 'Add robot' }));
+      await vi.advanceTimersByTimeAsync(0); // let the spawn promise settle
 
-    expect(mockExecInSimulation).toHaveBeenCalledWith('abc123def456', [
-      '/entrypoint-spawn-robot.sh',
-      'robot_1',
-      '-2.0',
-      '-0.5',
-      '0.0',
-    ]);
+      expect(mockExecInSimulation).toHaveBeenCalledWith('abc123def456', [
+        '/entrypoint-spawn-robot.sh',
+        'robot_1',
+        '-2.0',
+        '-0.5',
+        '0.0',
+      ]);
 
-    expect(screen.queryByRole('button', { name: 'Navigate' })).toBeNull();
-    await vi.advanceTimersByTimeAsync(3000);
-    expect(mockGetRobotWarmStatus).toHaveBeenCalledWith('abc123def456', 'robot_1');
-    expect(screen.getByRole('button', { name: 'Navigate' })).toBeTruthy();
-    expect(screen.getByText('Nav2 warmed in 1.2s')).toBeTruthy();
-  });
+      expect(screen.queryByRole('button', { name: 'Navigate' })).toBeNull();
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(mockGetRobotWarmStatus).toHaveBeenCalledWith('abc123def456', 'robot_1');
+      expect(screen.getByRole('button', { name: 'Navigate' })).toBeTruthy();
+      expect(screen.getByText('Nav2 warmed in 1.2s')).toBeTruthy();
+    },
+  );
 
   it('passes an installed package, launch file, and expanded arguments to the launch API', async () => {
     mockListLocalImages.mockResolvedValue([SIM_IMAGE]);
@@ -451,10 +454,10 @@ describe('LocalSimulation', () => {
   it('does not prune a freshly-spawned robot still within its startup grace period', async () => {
     vi.useFakeTimers();
     try {
-      // Humble (no `warming` phase) — exercises the wall-clock grace fallback.
-      mockListLocalImages.mockResolvedValue(['quay.io/ns/ros2-humble-sim:sloretz-amd64']);
+      // An unrecognized custom image has no automatic Nav2 warm phase.
+      mockListLocalImages.mockResolvedValue(['quay.io/ns/robotics-custom:latest']);
       mockListSimulationContainers.mockResolvedValue([
-        { ...RUNNING_CONTAINER, imageTag: 'quay.io/ns/ros2-humble-sim:sloretz-amd64' },
+        { ...RUNNING_CONTAINER, imageTag: 'quay.io/ns/robotics-custom:latest' },
       ]);
       mockGetSimulationConfig.mockResolvedValue({
         robot: 'turtlebot3',

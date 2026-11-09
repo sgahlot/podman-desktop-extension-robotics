@@ -42,7 +42,7 @@ export default class SimLaunch extends Command {
 
   static examples = [
     {
-      command: '<%= config.bin %> sim:launch --image quay.io/my-ns/ros2-humble-turtlebot3:sloretz',
+      command: '<%= config.bin %> sim:launch --image quay.io/my-ns/ros2-humble-sim:sloretz',
       description: 'Launch a simulation container, printing its container id',
     },
     {

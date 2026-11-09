@@ -1,0 +1,23 @@
+{
+  "defaultRobot": "turtlebot3",
+  "robots": [
+    {
+      "id": "turtlebot3",
+      "displayName": "TurtleBot3",
+      "modelEnvVar": "TURTLEBOT3_MODEL",
+      "modelValue": "waffle",
+      "descriptionPackage": "nav2_minimal_tb3_sim",
+      "urdfPath": "urdf/turtlebot3_waffle.urdf",
+      "bridgeConfig": "configs/turtlebot3_waffle_bridge.yaml",
+      "resourcePath": "models",
+      "minimalSimPackage": "nav2_minimal_tb3_sim",
+      "minimalSimLaunch": "spawn_tb3.launch.py",
+      "launchArguments": "use_sim_time:=True\nnamespace:={name}\nrobot_name:={name}\nx_pose:={x}\ny_pose:={y}\nyaw:={yaw}\nz_pose:=0.01",
+      "navigationPackage": "nav2_bringup",
+      "navigationLaunch": "bringup_launch.py",
+      "nav2ParamsTemplate": "params/nav2_params.yaml",
+      "navigationMapPackage": "nav2_minimal_tb3_sim",
+      "navigationMap": "maps/tb3_sandbox.yaml"
+    }
+  ]
+}

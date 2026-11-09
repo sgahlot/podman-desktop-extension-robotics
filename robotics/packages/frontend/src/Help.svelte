@@ -89,16 +89,18 @@ let topicMonitorCaption =
       <div class="text-sm text-[var(--pd-content-text)] flex flex-col gap-2">
         <div class="text-xs font-semibold text-[var(--pd-content-header)] mb-2">Presets tab</div>
         <div>
-          <strong>Overview</strong> — Known-good TurtleBot3 simulation recipes on <strong>Presets</strong> only (use
-          <strong>Customize</strong> for other stacks). Ubuntu Jazzy uses Phase 1 (base) then Phase 2 (simulation). Fedora
+          <strong>Overview</strong> — TurtleBot3 simulation recipes on <strong>Presets</strong> (use
+          <strong>Customize</strong> for other stacks). Ubuntu recipes use Phase 1 (base) then Phase 2 (simulation). Fedora
           bootc 43 + ROS 2 Lyrical uses the layered containerfile builder on the same tab.
         </div>
         <div>
-          <strong>Quick Start</strong> — Three fixed recipes: Jazzy on Ubuntu Noble (<span class="font-mono"
-            >arm64</span>
-          or <span class="font-mono">amd64</span>) and Lyrical on Fedora bootc 43 (<span class="font-mono">amd64</span>
-          only). Each option sets OS, ROS distro, and architecture; the <strong>Recipe</strong> list shows what will be
-          built. <i>Building amd64 on an arm64 Mac uses QEMU and is slower.</i>
+          <strong>Quick Start</strong> — Under <strong>Ubuntu TurtleBot3 Sim</strong>, select <strong>Jazzy</strong> or
+          <strong>Humble</strong> first, then choose <span class="font-mono">arm64</span> or
+          <span class="font-mono">amd64</span>. Jazzy uses Ubuntu Noble; Humble uses Ubuntu Jammy. Lyrical remains a
+          separate <span class="font-mono">amd64</span>-only recipe under <strong>Fedora Bootc 43</strong>. Only the
+          selected recipe's choices are highlighted. The
+          <strong>Recipe</strong> list shows what will be built.
+          <i>Building amd64 on an arm64 Mac uses QEMU and is slower.</i>
         </div>
         <div>
           <strong>Phase 1: Base image</strong> — Humble: <span class="font-mono">sloretz</span> (<span class="font-mono"
@@ -108,8 +110,16 @@ let topicMonitorCaption =
           <span class="font-mono">:latest</span>.
         </div>
         <div>
-          <strong>Phase 2: Simulation image</strong> — Layers Gazebo, TurtleBot3 spawn assets, and noVNC (Jazzy) on your
-          Phase 1 local base. Nav2 packages are included; on Jazzy sim (for obstacle-aware navigation).
+          <strong>Phase 2: Simulation image</strong> — Layers Gazebo, TurtleBot3 spawn assets, and noVNC on your Phase 1
+          local base. Managed Humble, Jazzy, and Lyrical images use Nav2 for obstacle-aware navigation. For Humble, use
+          the rebuilt managed image with the updated extension; Local/OpenShift platform validation is still ongoing.
+          Rebuilt Humble images wait for AMCL to acknowledge initial localization, with bounded retries if the first
+          pose is not received. Rebuild and redeploy the image for this startup fix; reloading the extension does not
+          update an existing pod. Updated Humble and Jazzy images use one world-owned
+          <span class="font-mono">/clock</span>
+          bridge, independent of robot spawning/removal, to avoid competing clocks clearing Nav2's TF buffers. The simulation
+          stops if that bridge exits. Rebuild and redeploy the selected image for this change; concurrent-robot runtime acceptance
+          is still pending.
           <i>Disabled until the base exists locally.</i>
         </div>
         <div class="text-xs font-semibold text-[var(--pd-content-header)] mt-3 mb-2">Customize tab</div>
@@ -331,25 +341,37 @@ let topicMonitorCaption =
         </div>
         <div>
           <strong>Navigate</strong> — Each spawned robot has a <strong>Navigate</strong> button with target X/Y
-          coordinates (map frame). On Jazzy sim images, the extension launches Nav2 if needed and sends a
+          coordinates (map frame). On managed Humble, Jazzy, and Lyrical sim images, the extension launches Nav2 if
+          needed and sends a
           <span class="font-mono">navigate_to_pose</span>
-          goal with lidar-based obstacle avoidance. Status shows: Navigating &rarr; Reached (X, Y) / Failed. Humble images
-          still use open-loop <span class="font-mono">cmd_vel</span> (turn + drive, no obstacle avoidance). Run one simulation
-          at a time when navigating (default ROS domain is shared across containers).
+          goal with lidar-based obstacle avoidance. Status shows: Navigating &rarr; Reached (X, Y) / Failed. Missing Nav2
+          readiness is reported as a failure, not replaced with open-loop motion. Run one simulation at a time when navigating
+          (default ROS domain is shared across containers).
         </div>
         <div>
-          <strong>Nav2 warming</strong> — After you spawn a robot on a Jazzy image, the extension starts Nav2 in the
-          background so the first <strong>Navigate</strong> is not starting from a cold stop. While warming you see
+          <strong>Nav2 warming</strong> — After you spawn a TurtleBot3 on a managed Humble, Jazzy, or Lyrical image, the
+          extension starts Nav2 in the background so the first <strong>Navigate</strong> is not starting from a cold
+          stop. While warming you see
           <strong>Nav2 warming&hellip;</strong> and the target/Navigate controls stay hidden; once Nav2 is ready the
-          controls appear with the backend-measured warm-up time (including robot/bridge startup, excluding UI polling
-          delay). Local and OpenShift readiness checks run every three seconds while warming, independently of the
-          inventory cache. Returning to a cached tab resumes pending checks without inflating completed warm-up time.
-          Managed Jazzy/Lyrical startup waits for a real lidar scan using a bounded subscriber that stays alive during
-          discovery; removing the robot cancels the pending scan wait. Rebuild simulation images to update their startup
-          scripts &mdash; reloading the extension alone does not update existing images. Each completed or failed
-          Navigate also reports its elapsed time and target X/Y. Warming is best-effort (if it fails,
+          controls appear after map-to-base TF and active navigator checks, with the backend-measured warm-up time
+          (including robot/bridge startup, excluding UI polling delay). Local and OpenShift readiness checks run every
+          three seconds while warming, independently of the inventory cache. Returning to a cached tab resumes pending
+          checks without inflating completed warm-up time. Managed Jazzy/Lyrical startup waits for a real lidar scan
+          using a bounded subscriber that stays alive during discovery; the same managed Humble runtime validates the
+          scan when it spawns a robot. Removing the robot cancels the pending scan wait. Rebuild simulation images to
+          update their startup scripts &mdash; reloading the extension alone does not update existing images. Each
+          completed or failed Navigate also reports its elapsed time and target X/Y. Warming is best-effort (if it
+          fails,
           <strong>Navigate</strong> can still cold-start Nav2, just slower). Warm-up timing lasts for the current extension
           backend session.
+        </div>
+        <div>
+          Humble readiness keeps one TF listener and navigator lifecycle client alive for up to 120 wall-clock seconds
+          after a failed quick check, so slow simulation does not repeatedly restart discovery. Both map-to-base TF and
+          a fresh active navigator response are still required. Reload the updated extension for this observer change;
+          no image rebuild is needed. Removing or replacing a robot invalidates its old warm status. An in-flight
+          read-only observer may finish in the background, bounded to 125 seconds plus a two-second kill grace, but
+          cannot mark the replacement ready.
         </div>
         <div>
           <strong>Why nothing moves for ~15&ndash;20&nbsp;s after Navigate</strong> — On the <em>first</em> navigation after
@@ -726,7 +748,32 @@ let topicMonitorCaption =
         <p><strong>Additional robots</strong> — Beyond TurtleBot3.</p>
         <p><strong>Fleet</strong> — Multi-robot local fleets with Zenoh.</p>
         <p>
-          <strong>Humble support</strong> — exists in the codebase but is not currently verified working; needs re-validation.
+          <strong>Humble validation</strong> — the image recipe targets Harmonic on arm64 and amd64 using pinned source-built
+          ROS bridge and TurtleBot3 assets, plus the managed noVNC and rendering runtime. Rebuild the image before testing;
+          full navigation parity is not yet validated. Verify a rebuilt image locally and on your OpenShift profile before
+          recommending it. The updated recipe also includes an upstream OGRE2 depth-camera fix for remove/re-spawn crashes;
+          existing images must be rebuilt to acquire it. Use the current recipe even if an earlier amd64 image reports the
+          patched package version: an image-layer issue could leave the old library in place. The current build checks the
+          library checksum after committing the layer and at final assembly. Rebuild, push, and redeploy affected images before
+          repeating remove/re-spawn tests.
+        </p>
+        <p>
+          The Humble recipe also source-builds an AMCL 1.1.20 backport that initializes pose/covariance before creating
+          its particle filter. This fixes an initialization-order defect reproduced as an intermittent AMCL startup
+          crash with Local arm64 Zenoh; it does not require disabling Zenoh or increasing the warm-up timeout. Rebuild
+          and redeploy the simulation image to acquire it; reloading the extension alone is insufficient. The build runs
+          an invalid-initial-state regression and verifies installed binary checksums. Disposable arm64 candidate checks
+          do not establish final-image, amd64, OpenShift, or full parity acceptance.
+        </p>
+        <p>
+          For Humble DDS, the rebuilt image gives only Fast DDS lifecycle-service response writers up to two seconds to
+          discover a late reader. Normal topic and service-request writers keep their defaults. This profile is ignored
+          when you choose Zenoh, so <span class="font-mono">rmw_zenoh_cpp</span> remains available in the same image.
+          The managed Humble and Jazzy recipes also route each costmap observation source to that robot's
+          <span class="font-mono">/robot_name/scan</span> bridge topic instead of an unbridged nested costmap topic.
+          Rebuild and redeploy the selected image before testing DDS lifecycle reliability or lidar obstacle avoidance.
+          Both recipes also give the world sole ownership of <span class="font-mono">/clock</span>, so multiple robots
+          do not create competing simulation-clock writers; rebuild and redeploy before multi-robot testing.
         </p>
       </div>
     </div>

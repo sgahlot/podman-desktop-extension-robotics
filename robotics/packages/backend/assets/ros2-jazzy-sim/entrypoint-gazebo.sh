@@ -56,6 +56,33 @@ export CYCLONEDDS_URI="file:///opt/ros2-demo/config/cyclonedds-qos.xml"
 pai_load_robot_definition
 pai_export_gz_sim_resource_path
 
+# Simulation process cleanup is installed before any children can be started.
+SPAWN_PIDS=()
+term_handler() {
+  echo "[gazebo] Shutting down..."
+  kill "${GUI_SUPERVISOR_PID:-}" "${GZ_GUI_PID:-}" "${SPAWN_PIDS[@]:-}" \
+    "${CLOCK_BRIDGE_PID:-}" "${GZ_SERVER_PID:-}" "${XVFB_PID:-}" "${ZENOHD_PID:-}" 2>/dev/null || true
+  pkill -P $$ 2>/dev/null || true
+  [[ -z "${GZ_SERVER_PID:-}" ]] || wait "${GZ_SERVER_PID}" 2>/dev/null || true
+  [[ -z "${CLOCK_BRIDGE_PID:-}" ]] || wait "${CLOCK_BRIDGE_PID}" 2>/dev/null || true
+}
+trap term_handler EXIT
+trap 'exit 143' SIGTERM
+trap 'exit 130' SIGINT
+
+check_simulation_processes() {
+  local pid status
+  for pid in "${GZ_SERVER_PID}" "${CLOCK_BRIDGE_PID}"; do
+    if ! kill -0 "${pid}" 2>/dev/null; then
+      status=0
+      wait "${pid}" || status=$?
+      echo "[gazebo] Required simulation process ${pid} exited during startup." >&2
+      [[ "${status}" -ne 0 ]] || status=1
+      exit "${status}"
+    fi
+  done
+}
+
 # Zenoh middleware (APPENG-5775): RMW_IMPLEMENTATION is a runtime choice baked into the
 # same image as the default DDS RMW (rmw_cyclonedds_cpp/rmw_fastrtps_cpp). When the
 # caller selects rmw_zenoh_cpp, start its router (rmw_zenohd) as a background daemon
@@ -286,9 +313,17 @@ echo "[gazebo] Starting Gazebo server..."
 "${GZ_SERVER_GL[@]+"${GZ_SERVER_GL[@]}"}" gz sim -r -s ${GZ_SERVER_RENDER_FLAG} "${WORLD_SDF}" &
 GZ_SERVER_PID=$!
 
+# Simulation time belongs to the world, not to each robot's bridge. Multiple
+# /clock writers interleave delayed samples and make TF see backwards time.
+CLOCK_BRIDGE_SCRIPT="${SCRIPT_DIR}/lib/run-clock-bridge.sh"
+[[ -f "${CLOCK_BRIDGE_SCRIPT}" ]] || CLOCK_BRIDGE_SCRIPT="/usr/local/lib/robotics/run-clock-bridge.sh"
+bash "${CLOCK_BRIDGE_SCRIPT}" "${WORLD_NAME}" &
+CLOCK_BRIDGE_PID=$!
+
 # --- 7. Wait for Gazebo to be ready ---
 echo "[gazebo] Waiting for Gazebo server to start..."
 for i in $(seq 1 60); do
+  check_simulation_processes
   if gz topic -l 2>/dev/null | grep -q "/world/${WORLD_NAME}/"; then
     echo "[gazebo] Gazebo server detected after $((i * 2))s"
     break
@@ -300,7 +335,6 @@ done
 SPAWN_SCRIPT="${SCRIPT_DIR}/entrypoint-spawn-robot.sh"
 [[ -x "${SPAWN_SCRIPT}" ]] || SPAWN_SCRIPT="/entrypoint-spawn-robot.sh"
 
-SPAWN_PIDS=()
 if [ -n "${ROBOTS}" ]; then
   echo "[gazebo] Spawning robots: ${ROBOTS}"
   for spec in ${ROBOTS}; do
@@ -412,6 +446,7 @@ else
   echo "[gazebo] Launching Gazebo GUI (llvmpipe threads=${ROBOTICS_GUI_LP_THREADS:-inherit}, nice=${ROBOTICS_GUI_NICE:-none})..."
 fi
 for i in $(seq 1 30); do
+  check_simulation_processes
   if gz topic -l 2>/dev/null | grep -q "/world/${WORLD_NAME}/"; then
     _pai_launch_gui
     echo "[gazebo] Gazebo GUI launched."
@@ -469,16 +504,17 @@ _pai_gui_supervisor() {
 _pai_gui_supervisor &
 GUI_SUPERVISOR_PID=$!
 
+check_simulation_processes
 echo "[gazebo] Simulation ready. noVNC at http://localhost:${NOVNC_PORT}"
 
-term_handler() {
-  echo "[gazebo] Shutting down..."
-  kill "${GUI_SUPERVISOR_PID:-}" 2>/dev/null || true
-  kill "${GZ_GUI_PID:-}" "${SPAWN_PIDS[@]:-}" "${GZ_SERVER_PID}" "${XVFB_PID}" "${ZENOHD_PID:-}" 2>/dev/null || true
-  pkill -P $$ 2>/dev/null || true
-  wait "${GZ_SERVER_PID}" 2>/dev/null || true
-}
-
-trap term_handler SIGTERM SIGINT
-
-wait "${GZ_SERVER_PID}"
+# A dead clock bridge must not leave an apparently healthy, timeless simulator.
+if wait -n "${GZ_SERVER_PID}" "${CLOCK_BRIDGE_PID}"; then
+  runtime_status=0
+else
+  runtime_status=$?
+fi
+if kill -0 "${GZ_SERVER_PID}" 2>/dev/null; then
+  echo "[gazebo] Clock bridge exited; stopping simulation." >&2
+  [[ "${runtime_status}" -ne 0 ]] || runtime_status=1
+fi
+exit "${runtime_status}"
