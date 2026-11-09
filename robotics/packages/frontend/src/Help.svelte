@@ -111,15 +111,15 @@ let topicMonitorCaption =
         </div>
         <div>
           <strong>Phase 2: Simulation image</strong> — Layers Gazebo, TurtleBot3 spawn assets, and noVNC on your Phase 1
-          local base. Managed Humble, Jazzy, and Lyrical images use Nav2 for obstacle-aware navigation. For Humble, use
-          the rebuilt managed image with the updated extension; Local/OpenShift platform validation is still ongoing.
-          Rebuilt Humble images wait for AMCL to acknowledge initial localization, with bounded retries if the first
-          pose is not received. Rebuild and redeploy the image for this startup fix; reloading the extension does not
-          update an existing pod. Updated Humble and Jazzy images use one world-owned
+          local base. Managed Humble, Jazzy, and Lyrical images use Nav2 for obstacle-aware navigation. The rebuilt
+          managed Humble image supports both DDS and Zenoh, waits for AMCL to acknowledge initial localization, and has
+          been validated locally and on OpenShift alongside Jazzy. Rebuild and redeploy the image to acquire image
+          changes; reloading the extension does not update an existing pod. Updated Humble and Jazzy images use one
+          world-owned
           <span class="font-mono">/clock</span>
           bridge, independent of robot spawning/removal, to avoid competing clocks clearing Nav2's TF buffers. The simulation
-          stops if that bridge exits. Rebuild and redeploy the selected image for this change; concurrent-robot runtime acceptance
-          is still pending.
+          stops if that bridge exits. Rebuild and redeploy the selected image for this change; separated two-robot navigation
+          has been validated for both Ubuntu distributions with DDS and Zenoh.
           <i>Disabled until the base exists locally.</i>
         </div>
         <div class="text-xs font-semibold text-[var(--pd-content-header)] mt-3 mb-2">Customize tab</div>
@@ -747,34 +747,6 @@ let topicMonitorCaption =
         <p><strong>Customize hardware</strong> — Swap sensors (e.g. camera) on a running robot.</p>
         <p><strong>Additional robots</strong> — Beyond TurtleBot3.</p>
         <p><strong>Fleet</strong> — Multi-robot local fleets with Zenoh.</p>
-        <p>
-          <strong>Humble validation</strong> — the image recipe targets Harmonic on arm64 and amd64 using pinned source-built
-          ROS bridge and TurtleBot3 assets, plus the managed noVNC and rendering runtime. Rebuild the image before testing;
-          full navigation parity is not yet validated. Verify a rebuilt image locally and on your OpenShift profile before
-          recommending it. The updated recipe also includes an upstream OGRE2 depth-camera fix for remove/re-spawn crashes;
-          existing images must be rebuilt to acquire it. Use the current recipe even if an earlier amd64 image reports the
-          patched package version: an image-layer issue could leave the old library in place. The current build checks the
-          library checksum after committing the layer and at final assembly. Rebuild, push, and redeploy affected images before
-          repeating remove/re-spawn tests.
-        </p>
-        <p>
-          The Humble recipe also source-builds an AMCL 1.1.20 backport that initializes pose/covariance before creating
-          its particle filter. This fixes an initialization-order defect reproduced as an intermittent AMCL startup
-          crash with Local arm64 Zenoh; it does not require disabling Zenoh or increasing the warm-up timeout. Rebuild
-          and redeploy the simulation image to acquire it; reloading the extension alone is insufficient. The build runs
-          an invalid-initial-state regression and verifies installed binary checksums. Disposable arm64 candidate checks
-          do not establish final-image, amd64, OpenShift, or full parity acceptance.
-        </p>
-        <p>
-          For Humble DDS, the rebuilt image gives only Fast DDS lifecycle-service response writers up to two seconds to
-          discover a late reader. Normal topic and service-request writers keep their defaults. This profile is ignored
-          when you choose Zenoh, so <span class="font-mono">rmw_zenoh_cpp</span> remains available in the same image.
-          The managed Humble and Jazzy recipes also route each costmap observation source to that robot's
-          <span class="font-mono">/robot_name/scan</span> bridge topic instead of an unbridged nested costmap topic.
-          Rebuild and redeploy the selected image before testing DDS lifecycle reliability or lidar obstacle avoidance.
-          Both recipes also give the world sole ownership of <span class="font-mono">/clock</span>, so multiple robots
-          do not create competing simulation-clock writers; rebuild and redeploy before multi-robot testing.
-        </p>
       </div>
     </div>
   </div>
