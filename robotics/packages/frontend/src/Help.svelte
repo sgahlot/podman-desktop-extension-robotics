@@ -755,6 +755,22 @@ let topicMonitorCaption =
           library checksum after committing the layer and at final assembly. Rebuild, push, and redeploy affected images before
           repeating remove/re-spawn tests.
         </p>
+        <p>
+          The Humble recipe also source-builds an AMCL 1.1.20 backport that initializes pose/covariance before creating
+          its particle filter. This fixes an initialization-order defect reproduced as an intermittent AMCL startup
+          crash with Local arm64 Zenoh; it does not require disabling Zenoh or increasing the warm-up timeout. Rebuild
+          and redeploy the simulation image to acquire it; reloading the extension alone is insufficient. The build runs
+          an invalid-initial-state regression and verifies installed binary checksums. Disposable arm64 candidate checks
+          do not establish final-image, amd64, OpenShift, or full parity acceptance.
+        </p>
+        <p>
+          For Humble DDS, the rebuilt image gives only Fast DDS lifecycle-service response writers up to two seconds to
+          discover a late reader. Normal topic and service-request writers keep their defaults. This profile is ignored
+          when you choose Zenoh, so <span class="font-mono">rmw_zenoh_cpp</span> remains available in the same image.
+          The managed Humble and Jazzy recipes also route each costmap observation source to that robot's
+          <span class="font-mono">/robot_name/scan</span> bridge topic instead of an unbridged nested costmap topic. Rebuild
+          and redeploy the selected image before testing DDS lifecycle reliability or lidar obstacle avoidance.
+        </p>
       </div>
     </div>
   </div>

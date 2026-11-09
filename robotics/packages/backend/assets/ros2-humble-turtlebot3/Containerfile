@@ -89,6 +89,15 @@ RUN bash /usr/local/lib/robotics/build-ogre-next.sh
 # Check in a NEW layer: an in-process checksum cannot detect dropped layer data.
 RUN sha256sum -c /opt/physical-ai/sources/ogre-next/installed-library.sha256
 
+# AMCL 1.1.20 consumes uninitialized pose/covariance during configure. Build a
+# pinned, source-patched AMCL only, on both architectures; do not replace Nav2.
+# Keep this after the expensive renderer build so AMCL-only changes reuse it.
+COPY lib/build-amcl-overlay.sh /usr/local/lib/robotics/build-amcl-overlay.sh
+COPY patches/amcl-initialization-order.patch /opt/physical-ai/sources/nav2-amcl/initialization-order.patch
+COPY test/amcl-initialization/ /opt/physical-ai/sources/nav2-amcl/regression/
+RUN bash /usr/local/lib/robotics/build-amcl-overlay.sh
+RUN sha256sum -c /opt/physical-ai/sources/nav2-amcl/installed-libraries.sha256
+
 RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 
 # noVNC landing: full UI + autoconnect + auto-reconnect.
@@ -112,6 +121,7 @@ COPY lib/run-clock-bridge.sh /usr/local/lib/robotics/run-clock-bridge.sh
 COPY patches/simulation-owned-clock.patch /opt/physical-ai/sources/simulation-owned-clock.patch
 COPY config/robot-definitions.json /opt/ros2-demo/config/robot-definitions.json
 COPY config/cyclonedds-qos.xml /opt/ros2-demo/config/cyclonedds-qos.xml
+COPY config/fastdds-service-response.xml /opt/ros2-demo/config/fastdds-service-response.xml
 COPY worlds/ /opt/ros2-demo/worlds/
 COPY www/ /opt/ros2-demo/www/
 
@@ -124,8 +134,12 @@ RUN patch --fuzz=0 /opt/physical-ai/humble/share/nav2_minimal_tb3_sim/configs/tu
                   /usr/local/lib/robotics/load-validate-input.sh \
                   /usr/local/lib/robotics/patch-nav2-params.py \
     && sha256sum -c /opt/physical-ai/sources/ogre-next/installed-library.sha256
+RUN sha256sum -c /opt/physical-ai/sources/nav2-amcl/installed-libraries.sha256
 
-ENV ROBOTICS_ROS_SETUP=/opt/physical-ai/humble/setup.bash \
+# Fast DDS alone consumes this named `service` publisher profile. Zenoh ignores
+# it, so selecting rmw_zenoh_cpp remains a same-image runtime choice.
+ENV ROBOTICS_ROS_SETUP=/opt/physical-ai/nav2-amcl/setup.bash \
+    FASTRTPS_DEFAULT_PROFILES_FILE=/opt/ros2-demo/config/fastdds-service-response.xml \
     TURTLEBOT3_MODEL=waffle
 
 EXPOSE 6080 8080

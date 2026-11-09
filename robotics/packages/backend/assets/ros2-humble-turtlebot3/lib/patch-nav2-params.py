@@ -7,8 +7,6 @@ import argparse
 import sys
 from pathlib import Path
 
-import yaml
-
 TOPIC_KEYS = frozenset(
     {
         "topic",
@@ -29,21 +27,34 @@ TOPIC_REWRITES = {
 }
 
 
-def patch_topics(value: object) -> object:
+def patch_topics(value: object, robot_name: str) -> object:
     if isinstance(value, dict):
         patched: dict[object, object] = {}
         for key, item in value.items():
             if key in TOPIC_KEYS and isinstance(item, str):
                 patched[key] = TOPIC_REWRITES.get(item, item)
             else:
-                patched[key] = patch_topics(item)
+                patched[key] = patch_topics(item, robot_name)
+        # Costmap observation sources run inside local_costmap/global_costmap
+        # namespaces. A relative `scan` therefore resolves to a silent nested
+        # topic instead of the bridge's /<robot>/scan. Qualify only explicitly
+        # declared observation-source topics; AMCL's relative scan stays scoped
+        # by the robot namespace as intended.
+        sources = patched.get("observation_sources")
+        if isinstance(sources, str):
+            for source in sources.split():
+                source_config = patched.get(source)
+                if isinstance(source_config, dict) and source_config.get("topic") in {"scan", "/scan"}:
+                    source_config["topic"] = f"/{robot_name}/scan"
         return patched
     if isinstance(value, list):
-        return [patch_topics(item) for item in value]
+        return [patch_topics(item, robot_name) for item in value]
     return value
 
 
 def main() -> int:
+    import yaml
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--source",
@@ -51,12 +62,13 @@ def main() -> int:
         help="Upstream Nav2 params file",
     )
     parser.add_argument("--output", required=True, help="Patched params output path")
+    parser.add_argument("--robot-name", required=True, help="Validated Nav2 robot namespace")
     args = parser.parse_args()
 
     source = Path(args.source)
     output = Path(args.output)
     params = yaml.safe_load(source.read_text())
-    patched = patch_topics(params)
+    patched = patch_topics(params, args.robot_name)
     output.write_text(yaml.dump(patched))
     return 0
 

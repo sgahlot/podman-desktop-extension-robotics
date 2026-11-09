@@ -1,0 +1,17 @@
+--- a/src/amcl_node.cpp
++++ b/src/amcl_node.cpp
+@@ -241,12 +241,13 @@
+     rclcpp::CallbackGroupType::MutuallyExclusive, false);
+   initParameters();
+   initTransforms();
++  // Initialize pose and covariance before the particle filter consumes them.
++  initOdometry();
+   initParticleFilter();
+   initLaserScan();
+   initMessageFilters();
+   initPubSub();
+   initServices();
+-  initOdometry();
+   executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+   executor_->add_callback_group(callback_group_, get_node_base_interface());
+   executor_thread_ = std::make_unique<nav2_util::NodeThread>(executor_);

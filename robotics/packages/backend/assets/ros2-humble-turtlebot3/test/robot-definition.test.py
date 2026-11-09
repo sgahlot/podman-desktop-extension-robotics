@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -18,6 +19,9 @@ SPEC = importlib.util.spec_from_file_location("robot_definition", ROOT / "lib/ro
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 CATALOG = json.loads((ROOT / "config/robot-definitions.json").read_text())
+PATCH_SPEC = importlib.util.spec_from_file_location("patch_nav2_params", ROOT / "lib/patch-nav2-params.py")
+PATCH_MODULE = importlib.util.module_from_spec(PATCH_SPEC)
+PATCH_SPEC.loader.exec_module(PATCH_MODULE)
 
 
 class RobotDefinitionTests(unittest.TestCase):
@@ -163,6 +167,98 @@ class OgreRecipeTests(unittest.TestCase):
         check_step = recipe.index("RUN sha256sum -c /opt/physical-ai/sources/ogre-next/installed-library.sha256")
         self.assertGreater(check_step, build_step)
         self.assertEqual(recipe.count("sha256sum -c /opt/physical-ai/sources/ogre-next/installed-library.sha256"), 2)
+
+
+class AmclRecipeTests(unittest.TestCase):
+    def test_recipe_builds_only_pinned_amcl_on_both_architectures(self):
+        recipe = (ROOT / "Containerfile").read_text()
+        builder = (ROOT / "lib/build-amcl-overlay.sh").read_text()
+        digest = hashlib.sha256((ROOT / "patches/amcl-initialization-order.patch").read_bytes()).hexdigest()
+        self.assertIn(f"{digest}  initialization-order.patch", builder)
+        self.assertIn("VERSION=1.1.20", builder)
+        self.assertIn("c965b7a36ef48cd7f35f01c1f98883741693d195dae582232d6d0444d2eedab6", builder)
+        self.assertIn("--packages-select nav2_amcl", builder)
+        self.assertIn("-DCMAKE_BUILD_TYPE=Release", builder)
+        self.assertIn("patch --batch --fuzz=0", builder)
+        self.assertNotIn("aarch64", builder)
+        self.assertNotIn("x86_64", builder)
+        self.assertIn("ROBOTICS_ROS_SETUP=/opt/physical-ai/nav2-amcl/setup.bash", recipe)
+        self.assertIn("COPY test/amcl-initialization/", recipe)
+        build_step = recipe.index("RUN bash /usr/local/lib/robotics/build-amcl-overlay.sh")
+        check_step = recipe.index("RUN sha256sum -c /opt/physical-ai/sources/nav2-amcl/installed-libraries.sha256")
+        self.assertGreater(check_step, build_step)
+        self.assertEqual(recipe.count("sha256sum -c /opt/physical-ai/sources/nav2-amcl/installed-libraries.sha256"), 2)
+        regression = (ROOT / "test/amcl-initialization/main.cpp").read_text()
+        self.assertIn("quiet_NaN()", regression)
+        self.assertIn("std::isfinite(particles.samples[sample].pose.v[axis])", regression)
+        self.assertIn("RMW_IMPLEMENTATION=rmw_fastrtps_cpp", builder)
+
+    def test_patch_initializes_odometry_before_filter_and_rejects_drift(self):
+        # Exact configure excerpt from the pinned Navigation2 1.1.20 source.
+        before = """    rclcpp::CallbackGroupType::MutuallyExclusive, false);
+  initParameters();
+  initTransforms();
+  initParticleFilter();
+  initLaserScan();
+  initMessageFilters();
+  initPubSub();
+  initServices();
+  initOdometry();
+  executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+  executor_->add_callback_group(callback_group_, get_node_base_interface());
+  executor_thread_ = std::make_unique<nav2_util::NodeThread>(executor_);
+"""
+        patch_file = ROOT / "patches/amcl-initialization-order.patch"
+        with tempfile.TemporaryDirectory() as directory:
+            source = pathlib.Path(directory) / "src/amcl_node.cpp"
+            source.parent.mkdir()
+            source.write_text("// fixture\n" * 240 + before)
+            args = ["patch", "--batch", "--fuzz=0", "-p1", "-d", directory, "-i", str(patch_file)]
+            result = subprocess.run(args, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            after = source.read_text()
+            self.assertLess(after.index("initOdometry();"), after.index("initParticleFilter();"))
+            self.assertEqual(after.count("initOdometry();"), 1)
+            source.write_text(before.replace("initParameters();", "changedParameters();"))
+            result = subprocess.run(args, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+
+
+class Nav2ParameterPatchTests(unittest.TestCase):
+    def test_costmap_sources_use_the_robot_scan_while_other_relative_topics_remain_relative(self):
+        params = {
+            "amcl": {"ros__parameters": {"scan_topic": "/scan"}},
+            "local_costmap": {"ros__parameters": {
+                "observation_sources": "scan depth",
+                "scan": {"topic": "scan"},
+                "depth": {"topic": "/depth/points"},
+            }},
+            "global_costmap": {"ros__parameters": {
+                "observation_sources": "obstacles",
+                "obstacles": {"topic": "/scan"},
+            }},
+        }
+        patched = PATCH_MODULE.patch_topics(params, "robot_1")
+        self.assertEqual(patched["amcl"]["ros__parameters"]["scan_topic"], "scan")
+        self.assertEqual(patched["local_costmap"]["ros__parameters"]["scan"]["topic"], "/robot_1/scan")
+        self.assertEqual(patched["local_costmap"]["ros__parameters"]["depth"]["topic"], "/depth/points")
+        self.assertEqual(patched["global_costmap"]["ros__parameters"]["obstacles"]["topic"], "/robot_1/scan")
+
+
+class FastDdsProfileTests(unittest.TestCase):
+    def test_service_response_profile_is_packaged_without_changing_zenoh_selection(self):
+        recipe = (ROOT / "Containerfile").read_text()
+        profile = ROOT / "config/fastdds-service-response.xml"
+        namespace = {"fastdds": "http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles"}
+        root = ET.parse(profile).getroot()
+        publisher = root.find("fastdds:publisher", namespace)
+        self.assertIsNotNone(publisher)
+        self.assertEqual(publisher.attrib["profile_name"], "service")
+        self.assertEqual(publisher.findtext("fastdds:qos/fastdds:reliability/fastdds:kind", namespaces=namespace), "RELIABLE")
+        self.assertEqual(publisher.findtext("fastdds:qos/fastdds:reliability/fastdds:max_blocking_time/fastdds:sec", namespaces=namespace), "2")
+        self.assertIn("COPY config/fastdds-service-response.xml", recipe)
+        self.assertIn("FASTRTPS_DEFAULT_PROFILES_FILE=/opt/ros2-demo/config/fastdds-service-response.xml", recipe)
+        self.assertNotIn("RMW_FASTRTPS_USE_QOS_FROM_XML", recipe)
 
 
 class ClockBridgeTests(unittest.TestCase):

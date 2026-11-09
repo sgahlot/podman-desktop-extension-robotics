@@ -16,6 +16,9 @@ SPEC = importlib.util.spec_from_file_location("robot_definition", ROOT / "lib/ro
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 CATALOG = json.loads((ROOT / "config/robot-definitions.json").read_text())
+PATCH_SPEC = importlib.util.spec_from_file_location("patch_nav2_params", ROOT / "lib/patch-nav2-params.py")
+PATCH_MODULE = importlib.util.module_from_spec(PATCH_SPEC)
+PATCH_SPEC.loader.exec_module(PATCH_MODULE)
 
 
 class RobotDefinitionTests(unittest.TestCase):
@@ -99,6 +102,25 @@ class RobotDefinitionTests(unittest.TestCase):
                 self.assertEqual(values["TURTLEBOT3_MODEL"], "waffle")
                 self.assertEqual(values["PHYSICAL_AI_ROBOT_URDF"], f"{directory}/share/nav2_minimal_tb3_sim/urdf/turtlebot3_waffle.urdf")
                 self.assertEqual(values["GZ_SIM_RESOURCE_PATH"], f"{directory}/share:{directory}/share/nav2_minimal_tb3_sim/models:")
+
+
+class Nav2ParameterPatchTests(unittest.TestCase):
+    def test_costmap_sources_use_the_robot_scan_while_other_relative_topics_remain_relative(self):
+        params = {
+            "amcl": {"ros__parameters": {"scan_topic": "/scan"}},
+            "local_costmap": {"ros__parameters": {
+                "observation_sources": "scan",
+                "scan": {"topic": "scan"},
+            }},
+            "global_costmap": {"ros__parameters": {
+                "observation_sources": "obstacles",
+                "obstacles": {"topic": "/scan"},
+            }},
+        }
+        patched = PATCH_MODULE.patch_topics(params, "robot_3")
+        self.assertEqual(patched["amcl"]["ros__parameters"]["scan_topic"], "scan")
+        self.assertEqual(patched["local_costmap"]["ros__parameters"]["scan"]["topic"], "/robot_3/scan")
+        self.assertEqual(patched["global_costmap"]["ros__parameters"]["obstacles"]["topic"], "/robot_3/scan")
 
 
 if __name__ == "__main__":

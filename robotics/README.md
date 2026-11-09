@@ -102,6 +102,10 @@ That runs, in order: `typecheck`, `lint:check`, `svelte:check`, `format:check`, 
 
 Runtime-script changes also require rebuilt simulation images and manual spawn/navigation testing. Use the [startup/navigation regression checklist](packages/backend/assets/ros2-jazzy-sim/README.md#startupnavigation-regression-checklist) for Local Jazzy and OpenShift Jazzy/Lyrical; automated tests do not establish visual smoothness or end-to-end navigation success.
 
+The Humble simulation build additionally runs a native C++ AMCL initialization regression from `packages/backend/assets/ros2-humble-turtlebot3/test/amcl-initialization/`. This uses the image's existing ROS/CMake toolchain, not a host ROS installation. It checks the pinned AMCL source backport before image assembly; rebuild and runtime acceptance requirements still apply.
+
+The Humble recipe also packages a scoped Fast DDS service-response profile without enabling global XML QoS overrides; it is ignored by the Zenoh runtime selection. Both managed Humble and Jazzy Nav2 parameter patchers qualify costmap observation-source scans as `/<robot>/scan`; container-free tests cover that shared routing rule. Rebuild the affected image before runtime validation.
+
 ### Integration (Podman — optional, not in `npm test`)
 
 Exercises all five Image Builder Presets quick starts: Jazzy and Humble on arm64/amd64, plus `fedora-bootc43-lyrical-amd64`. Requires Podman and network (pull base images, Fedora ROS testing repo, apt, pinned Humble source archives). Build logs are suppressed unless a step fails. Images tagged `physical-ai-integration-*:local` are removed when each phase finishes (including on failure). These are build checks, not runtime parity evidence.
